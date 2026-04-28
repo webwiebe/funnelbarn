@@ -30,7 +30,7 @@ spec:
             - name: FUNNELBARN_ADDR
               value: :8080
             - name: FUNNELBARN_PUBLIC_URL
-              value: https://funnelbarn-testing.wiebe.xyz
+              value: https://funnelbarn.test.wiebe.xyz
             - name: FUNNELBARN_SPOOL_DIR
               value: /var/lib/funnelbarn/spool
             - name: FUNNELBARN_DB_PATH

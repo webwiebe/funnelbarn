@@ -3,13 +3,13 @@ kind: Ingress
 metadata:
   name: funnelbarn
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt
 spec:
   ingressClassName: traefik
   rules:
-    - host: funnelbarn-testing.wiebe.xyz
+    - host: funnelbarn.test.wiebe.xyz
       http:
         paths:
           - path: /api
@@ -28,5 +28,4 @@ spec:
                   name: http
   tls:
     - hosts:
-        - funnelbarn-testing.wiebe.xyz
-      secretName: funnelbarn-testing-wiebe-xyz-tls
+        - funnelbarn.test.wiebe.xyz
