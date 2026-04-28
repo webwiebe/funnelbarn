@@ -148,3 +148,33 @@ jobs:
               \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}\",
               \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
             }" || echo "BugBarn release marker skipped"
+
+  e2e:
+    needs: deploy
+    runs-on: [self-hosted, build]
+    timeout-minutes: 10
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium
+
+      - name: Run E2E tests
+        env:
+          E2E_BASE_URL: https://funnelbarn.test.wiebe.xyz
+          # k3s cluster private IP — reachable from the Mac Mini runner
+          E2E_CLUSTER_IP: 192.168.4.108
+        run: npx playwright test --reporter=list
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/

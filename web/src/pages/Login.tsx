@@ -102,10 +102,11 @@ export default function Login() {
         {/* Form */}
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 6, fontWeight: 500 }}>
+            <label htmlFor="username" style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 6, fontWeight: 500 }}>
               Username
             </label>
             <input
+              id="username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -130,10 +131,11 @@ export default function Login() {
           </div>
 
           <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 6, fontWeight: 500 }}>
+            <label htmlFor="password" style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 6, fontWeight: 500 }}>
               Password
             </label>
             <input
+              id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
