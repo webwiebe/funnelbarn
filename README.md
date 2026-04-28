@@ -4,6 +4,10 @@ Self-hosted web analytics and conversion funnel tracking. Single binary. SQLite.
 
 FunnelBarn replaces Mixpanel, Amplitude, or Fathom for teams who want to own their analytics data. Deploy one binary, point a domain at it, and keep everything on your own server.
 
+## 🐣 Tamagotchi
+
+[![FunnelBarn Tamagotchi](https://tamagotchi.nijmegen.wiebe.xyz/api/v1/pets/webwiebe/funnelbarn/badge.svg)](https://tamagotchi.nijmegen.wiebe.xyz/pets/webwiebe/funnelbarn)
+
 ## Features
 
 - **Event ingestion**: Track pageviews and custom events with properties

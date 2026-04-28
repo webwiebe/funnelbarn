@@ -136,7 +136,7 @@ jobs:
         if: vars.BUGBARN_ENDPOINT != ''
         env:
           BUGBARN_ENDPOINT: ${{ vars.BUGBARN_ENDPOINT }}
-          BUGBARN_API_KEY: ${{ secrets.BUGBARN_API_KEY }}
+          BUGBARN_API_KEY: ${{ secrets.FUNNELBARN_BUGBARN_API_KEY }}
         run: |
           curl -sf -X POST "${BUGBARN_ENDPOINT}/api/v1/releases" \
             -H "Content-Type: application/json" \

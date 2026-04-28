@@ -24,6 +24,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/api"
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
@@ -97,6 +98,9 @@ func run() error {
 			Endpoint:    cfg.SelfEndpoint,
 			ProjectSlug: "funnelbarn",
 		})
+		// Rewire the global logger so Warn+ records are also captured by BugBarn.
+		baseHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
+		slog.SetDefault(slog.New(bblog.NewHandler(baseHandler)))
 		slog.Info("self-reporting enabled", "endpoint", cfg.SelfEndpoint)
 		defer bb.Shutdown(2 * time.Second)
 	}
