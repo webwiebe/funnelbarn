@@ -43,6 +43,6 @@ vendor/
 *.ndjson
 cursor.json
 
-# Secrets (never commit real secrets)
-deploy/k8s/*/secret.yaml
+# Secrets — SOPS-encrypted files are safe to commit; .example files are templates
+# deploy/k8s/*/secret.yaml files are encrypted with SOPS (age) and committed to git
 !deploy/k8s/*/secret.yaml.example
