@@ -1,0 +1,121 @@
+package api
+
+import (
+	"net/http"
+	"time"
+)
+
+// handleDashboard returns aggregate dashboard stats for a project.
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		jsonError(w, "project id required", http.StatusBadRequest)
+		return
+	}
+
+	// Parse time range (default: last 30 days).
+	to := time.Now().UTC()
+	from := to.AddDate(0, 0, -30)
+	if v := r.URL.Query().Get("from"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			from = t
+		}
+	}
+	if v := r.URL.Query().Get("to"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			to = t
+		}
+	}
+
+	ctx := r.Context()
+
+	totalEvents, err := s.store.CountEvents(ctx, projectID, from, to)
+	if err != nil {
+		jsonError(w, "failed to count events", http.StatusInternalServerError)
+		return
+	}
+
+	uniqueSessions, err := s.store.UniqueSessionCount(ctx, projectID, from, to)
+	if err != nil {
+		jsonError(w, "failed to count sessions", http.StatusInternalServerError)
+		return
+	}
+
+	topPages, err := s.store.TopPages(ctx, projectID, from, to, 10)
+	if err != nil {
+		jsonError(w, "failed to get top pages", http.StatusInternalServerError)
+		return
+	}
+
+	topReferrers, err := s.store.TopReferrers(ctx, projectID, from, to, 10)
+	if err != nil {
+		jsonError(w, "failed to get top referrers", http.StatusInternalServerError)
+		return
+	}
+
+	timeSeries, err := s.store.DailyEventCounts(ctx, projectID, from, to)
+	if err != nil {
+		jsonError(w, "failed to get time series", http.StatusInternalServerError)
+		return
+	}
+
+	sessionTimeSeries, err := s.store.DailyUniqueSessions(ctx, projectID, from, to)
+	if err != nil {
+		jsonError(w, "failed to get session time series", http.StatusInternalServerError)
+		return
+	}
+
+	topBrowsers, err := s.store.TopBrowsers(ctx, projectID, from, to, 5)
+	if err != nil {
+		jsonError(w, "failed to get browsers", http.StatusInternalServerError)
+		return
+	}
+
+	deviceTypes, err := s.store.TopDeviceTypes(ctx, projectID, from, to)
+	if err != nil {
+		jsonError(w, "failed to get device types", http.StatusInternalServerError)
+		return
+	}
+
+	topEventNames, err := s.store.TopEventNames(ctx, projectID, from, to, 10)
+	if err != nil {
+		jsonError(w, "failed to get event names", http.StatusInternalServerError)
+		return
+	}
+
+	topUTMSources, err := s.store.TopUTMSources(ctx, projectID, from, to, 5)
+	if err != nil {
+		jsonError(w, "failed to get utm sources", http.StatusInternalServerError)
+		return
+	}
+
+	bounceRate, err := s.store.BounceRate(ctx, projectID, from, to)
+	if err != nil {
+		jsonError(w, "failed to compute bounce rate", http.StatusInternalServerError)
+		return
+	}
+
+	avgEventsPerSession, err := s.store.AvgEventsPerSession(ctx, projectID, from, to)
+	if err != nil {
+		jsonError(w, "failed to compute avg events per session", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"project_id":             projectID,
+		"from":                   from.Format(time.RFC3339),
+		"to":                     to.Format(time.RFC3339),
+		"total_events":           totalEvents,
+		"unique_sessions":        uniqueSessions,
+		"bounce_rate":            bounceRate,
+		"avg_events_per_session": avgEventsPerSession,
+		"top_pages":              topPages,
+		"top_referrers":          topReferrers,
+		"top_browsers":           topBrowsers,
+		"device_types":           deviceTypes,
+		"top_event_names":        topEventNames,
+		"top_utm_sources":        topUTMSources,
+		"events_time_series":     timeSeries,
+		"sessions_time_series":   sessionTimeSeries,
+	})
+}

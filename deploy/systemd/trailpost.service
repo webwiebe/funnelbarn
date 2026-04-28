@@ -1,0 +1,21 @@
+[Unit]
+Description=Trailpost web analytics service
+Documentation=https://github.com/wiebe-xyz/trailpost
+After=network.target
+
+[Service]
+Type=simple
+User=trailpost
+Group=trailpost
+# The leading '-' means systemd won't fail if the file doesn't exist.
+EnvironmentFile=-/etc/trailpost/trailpost.conf
+ExecStart=/usr/bin/trailpost
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trailpost
+WorkingDirectory=/var/lib/trailpost
+
+[Install]
+WantedBy=multi-user.target

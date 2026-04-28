@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trailpost
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trailpost
+      app.kubernetes.io/environment: production
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trailpost
+        app.kubernetes.io/environment: production
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: layer7-prod
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: trailpost
+          image: trailpost/service
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: TRAILPOST_ADDR
+              value: :8080
+            - name: TRAILPOST_PUBLIC_URL
+              value: https://analytics.wiebe.xyz
+            - name: TRAILPOST_SELF_ENDPOINT
+              value: https://bugbarn.wiebe.xyz
+            - name: TRAILPOST_SPOOL_DIR
+              value: /var/lib/trailpost/spool
+            - name: TRAILPOST_DB_PATH
+              value: /var/lib/trailpost/trailpost.db
+            - name: TRAILPOST_MAX_SPOOL_BYTES
+              value: "104857600"
+            - name: TRAILPOST_SESSION_TTL_SECONDS
+              value: "86400"
+            - name: LITESTREAM_REPLICA_PATH
+              value: production/trailpost.db
+            - name: TRAILPOST_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: trailpost-secrets
+                  key: TRAILPOST_API_KEY
+            - name: TRAILPOST_SELF_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: trailpost-secrets
+                  key: TRAILPOST_API_KEY
+            - name: TRAILPOST_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: trailpost-secrets
+                  key: TRAILPOST_ADMIN_USERNAME
+                  optional: true
+            - name: TRAILPOST_ADMIN_PASSWORD_BCRYPT
+              valueFrom:
+                secretKeyRef:
+                  name: trailpost-secrets
+                  key: TRAILPOST_ADMIN_PASSWORD_BCRYPT
+                  optional: true
+            - name: TRAILPOST_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: trailpost-secrets
+                  key: TRAILPOST_SESSION_SECRET
+                  optional: true
+            - name: LITESTREAM_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: trailpost-secrets
+                  key: LITESTREAM_ACCESS_KEY_ID
+            - name: LITESTREAM_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: trailpost-secrets
+                  key: LITESTREAM_SECRET_ACCESS_KEY
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: trailpost-data
+              mountPath: /var/lib/trailpost
+      volumes:
+        - name: trailpost-data
+          persistentVolumeClaim:
+            claimName: trailpost-data

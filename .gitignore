@@ -1,0 +1,48 @@
+# Build artifacts
+dist/
+.cache/
+*.exe
+
+# Data
+.data/
+*.db
+*.db-wal
+*.db-shm
+
+# Node
+node_modules/
+web/dist/
+site/dist/
+sdks/js/dist/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+dist/
+
+# Go
+vendor/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# macOS
+.DS_Store
+
+# Spool/data
+*.ndjson
+cursor.json
+
+# Secrets (never commit real secrets)
+deploy/k8s/*/secret.yaml
+!deploy/k8s/*/secret.yaml.example

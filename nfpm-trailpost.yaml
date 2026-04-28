@@ -1,0 +1,43 @@
+name: trailpost
+arch: "${GOARCH}"
+platform: linux
+version: "${VERSION}"
+maintainer: "Wiebe Zweers <trailpost@wiebe.xyz>"
+description: |
+  Trailpost - Self-hosted web analytics server.
+  Privacy-first analytics with funnel tracking and a web dashboard.
+vendor: "Trailpost"
+homepage: "https://github.com/wiebe-xyz/trailpost"
+license: "MIT"
+
+contents:
+  - src: ./dist/trailpost-linux-${GOARCH}
+    dst: /usr/bin/trailpost
+    file_info:
+      mode: 0755
+  - src: ./deploy/systemd/trailpost.service
+    dst: /lib/systemd/system/trailpost.service
+    file_info:
+      mode: 0644
+  - src: ./deploy/etc/trailpost.conf.example
+    dst: /etc/trailpost/trailpost.conf.example
+    file_info:
+      mode: 0644
+  # Ensure directories exist with correct permissions.
+  - dst: /var/lib/trailpost
+    type: dir
+    file_info:
+      mode: 0750
+      owner: trailpost
+      group: trailpost
+  - dst: /etc/trailpost
+    type: dir
+    file_info:
+      mode: 0755
+
+scripts:
+  postinstall: ./deploy/deb/postinstall.sh
+  preremove: ./deploy/deb/preremove.sh
+
+deb:
+  compression: gzip

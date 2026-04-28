@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trailpost-web
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trailpost-web
+      app.kubernetes.io/environment: staging
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trailpost-web
+        app.kubernetes.io/environment: staging
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: trailpost-web
+          image: trailpost/web
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              name: http
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi

@@ -1,0 +1,40 @@
+# Trailpost configuration file
+# Copy to /etc/trailpost/trailpost.conf and edit before starting.
+# Lines starting with # are comments.
+
+# Listen address (default: :8080)
+TRAILPOST_ADDR=:8080
+
+# Master ingest API key (set this to a strong random value)
+# TRAILPOST_API_KEY=your-secret-api-key
+
+# Alternative: pre-hashed SHA256 of the API key
+# TRAILPOST_API_KEY_SHA256=
+
+# SQLite database path
+TRAILPOST_DB_PATH=/var/lib/trailpost/trailpost.db
+
+# Spool directory for durable event buffering
+TRAILPOST_SPOOL_DIR=/var/lib/trailpost/spool
+
+# Maximum spool size in bytes (default: unlimited)
+# TRAILPOST_MAX_SPOOL_BYTES=104857600
+
+# Admin credentials (used if no DB users exist)
+# TRAILPOST_ADMIN_USERNAME=admin
+# TRAILPOST_ADMIN_PASSWORD=changeme
+# TRAILPOST_ADMIN_PASSWORD_BCRYPT=
+
+# Session configuration
+# TRAILPOST_SESSION_SECRET=
+# TRAILPOST_SESSION_TTL_SECONDS=43200
+
+# Public URL (shown in links and self-reporting)
+# TRAILPOST_PUBLIC_URL=https://analytics.example.com
+
+# CORS allowed origins (CSV)
+# TRAILPOST_ALLOWED_ORIGINS=https://example.com,https://app.example.com
+
+# BugBarn self-error-reporting (optional)
+# TRAILPOST_SELF_ENDPOINT=https://bugbarn.wiebe.xyz
+# TRAILPOST_SELF_API_KEY=

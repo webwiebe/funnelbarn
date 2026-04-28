@@ -1,0 +1,227 @@
+openapi: "3.0.3"
+info:
+  title: Trailpost Ingest API
+  version: "1.0.0"
+  description: |
+    The Trailpost ingest API accepts analytics events. The ingest endpoint
+    is optimized for high-throughput, low-latency use. Events are durably
+    enqueued to a local spool file before the response is sent — no database
+    writes occur in the request path.
+
+servers:
+  - url: https://analytics.example.com
+    description: Your Trailpost instance
+
+security:
+  - ApiKeyHeader: []
+
+paths:
+  /api/v1/events:
+    post:
+      summary: Ingest an analytics event
+      description: |
+        Accepts a single analytics event. The server authenticates the request,
+        validates the payload, and returns 202 Accepted after durably enqueuing
+        the event to the local spool. The event is processed asynchronously by
+        a background worker.
+
+        **Rate limiting**: Returns 429 when the ingest queue is saturated.
+        The response includes a `Retry-After: 1` header.
+
+        **Idempotency**: The returned `ingestId` can be used to detect duplicates.
+        Replaying the same payload will store duplicate events unless the client
+        tracks the ingest ID.
+      operationId: ingestEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventPayload'
+            examples:
+              pageview:
+                summary: Page view with UTM attribution
+                value:
+                  name: "page_view"
+                  url: "https://example.com/pricing?utm_source=newsletter&utm_medium=email"
+                  referrer: "https://google.com"
+                  utm_source: "newsletter"
+                  utm_medium: "email"
+                  utm_campaign: "spring_2026"
+                  session_id: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+              custom_event:
+                summary: Custom purchase event with properties
+                value:
+                  name: "purchase"
+                  url: "https://example.com/checkout/success"
+                  properties:
+                    plan: "pro"
+                    amount: 99
+                    currency: "USD"
+                  user_id: "user_12345"
+                  timestamp: "2026-04-28T10:00:00Z"
+      responses:
+        '202':
+          description: Event accepted and enqueued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: boolean
+                    example: true
+                  ingestId:
+                    type: string
+                    description: Unique identifier for this ingest record
+                    example: "a1b2c3d4e5f6a1b2c3d4"
+        '400':
+          description: Request body could not be read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '405':
+          description: Method not allowed (only POST is accepted)
+        '413':
+          description: Request body too large (default limit 1 MiB)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Ingest queue full — retry after 1 second
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+                example: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Ingest service unavailable
+
+  /api/v1/health:
+    get:
+      summary: Health check
+      description: Returns 200 OK when the server is running. No authentication required.
+      operationId: health
+      security: []
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  time:
+                    type: string
+                    format: date-time
+
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: x-trailpost-api-key
+      description: |
+        API key for authentication. Keys with `ingest` scope can only access
+        the events endpoint. Keys with `full` scope have complete API access.
+
+  schemas:
+    EventPayload:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Event name. Use `page_view` for pageviews. Any string for custom events.
+          example: "purchase"
+          minLength: 1
+          maxLength: 255
+        url:
+          type: string
+          format: uri
+          description: URL of the page or action. UTM parameters are extracted automatically if present.
+          example: "https://example.com/pricing"
+        referrer:
+          type: string
+          format: uri
+          description: Referring URL. Referrer domain is extracted automatically.
+          example: "https://google.com"
+        utm_source:
+          type: string
+          description: UTM source (overrides URL parameter if both provided)
+          example: "newsletter"
+        utm_medium:
+          type: string
+          description: UTM medium
+          example: "email"
+        utm_campaign:
+          type: string
+          description: UTM campaign
+          example: "spring_2026"
+        utm_term:
+          type: string
+          description: UTM term (paid search keyword)
+          example: "web analytics"
+        utm_content:
+          type: string
+          description: UTM content (A/B test variant)
+          example: "hero_banner"
+        properties:
+          type: object
+          additionalProperties: true
+          description: |
+            Arbitrary JSON key-value pairs. Max ~100 KB. Properties are stored
+            as a JSON blob and can be used as funnel step filters.
+          example:
+            plan: "pro"
+            amount: 99
+            currency: "USD"
+        session_id:
+          type: string
+          description: |
+            32-character hex session ID. If omitted or invalid, the server
+            generates one using IP + User-Agent fingerprinting.
+          pattern: "^[0-9a-f]{32}$"
+          example: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        user_id:
+          type: string
+          description: |
+            Optional user identifier. SHA256-hashed before storage.
+            The plaintext user_id is never persisted.
+          example: "user_12345"
+        user_agent:
+          type: string
+          description: |
+            User-Agent string for browser/OS/device detection. If omitted,
+            the server uses the HTTP User-Agent request header.
+          example: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)..."
+        timestamp:
+          type: string
+          format: date-time
+          description: |
+            ISO 8601 event timestamp. If omitted, the server uses the
+            receive time.
+          example: "2026-04-28T10:00:00Z"
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "unauthorized"

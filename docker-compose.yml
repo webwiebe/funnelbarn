@@ -1,0 +1,33 @@
+name: trailpost
+
+services:
+  service:
+    build:
+      context: .
+      dockerfile: deploy/docker/service.Dockerfile
+    image: trailpost/service:local
+    ports:
+      - "8080:8080"
+    environment:
+      TRAILPOST_ADDR: :8080
+      TRAILPOST_API_KEY: local-dev-key
+      TRAILPOST_SPOOL_DIR: /var/lib/trailpost/spool
+      TRAILPOST_DB_PATH: /var/lib/trailpost/trailpost.db
+      TRAILPOST_ADMIN_USERNAME: admin
+      TRAILPOST_ADMIN_PASSWORD: admin
+    volumes:
+      - trailpost-data:/var/lib/trailpost
+
+  web:
+    profiles: ["web"]
+    build:
+      context: .
+      dockerfile: deploy/docker/web.Dockerfile
+    image: trailpost/web:local
+    ports:
+      - "3000:3000"
+    depends_on:
+      - service
+
+volumes:
+  trailpost-data:
