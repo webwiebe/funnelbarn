@@ -1,7 +1,3 @@
 creation_rules:
-  - path_regex: deploy/k8s/testing/secret\.yaml$
-    age: age12cah3mcfejv60zmjm9wglv7wgwfsngnqsemwvg3w2j3utsppv9esdqvmw6
-  - path_regex: deploy/k8s/staging/secret\.yaml$
-    age: age1sp9rhnn3vcummzv4s6680w2qq9t780gldpraty25kgemf65y9yas480sfj
-  - path_regex: deploy/k8s/production/.*secret.*\.yaml$
-    age: age17q8xwypnvg6axjldnrwl3x5re6xvxcs0tmh4plmv8hjpdp20qpasudze9k
+  - path_regex: deploy/k8s/.*secret.*\.yaml$
+    age: age1r7mrwf30q8g6glmngn2cnlzm9vrj6a9arz0t4mwxp6upc0m6tqwskvh295
