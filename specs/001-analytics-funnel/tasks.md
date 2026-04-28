@@ -2,6 +2,34 @@
 
 ---
 
+## UI Overhaul — See Spec 002
+
+> **The web dashboard tasks in this file (T-130 through T-147) are superseded by the UI overhaul spec.**
+>
+> A full UI redesign with a marketing site, flashy dashboard, live stats, funnel visualization, and A/B tests has been specced in:
+>
+> - **Spec**: [`specs/002-ui-overhaul/spec.md`](../002-ui-overhaul/spec.md)
+> - **Tasks**: [`specs/002-ui-overhaul/tasks.md`](../002-ui-overhaul/tasks.md) (tasks UI-001 through UI-208)
+> - **Design System**: [`specs/002-ui-overhaul/design-system.md`](../002-ui-overhaul/design-system.md)
+>
+> **Superseded tasks** (replaced by spec 002 equivalents):
+> - T-130 through T-136: replaced by UI-001 through UI-050 (app shell, dashboard)
+> - T-137 (Login.tsx): replaced by UI-002
+> - T-138 (Projects.tsx): replaced by UI-006, UI-008
+> - T-139 (TimeRangePicker): replaced by UI-042
+> - T-140 (TimeSeriesChart): replaced by UI-043
+> - T-141 (Events.tsx): still needed, not superseded
+> - T-142 (Sessions.tsx): still needed, not superseded
+> - T-143 (APIKeys.tsx): replaced by UI-101, UI-102
+> - T-144 (Attribution.tsx): still needed, addressed in spec 002 Overview page
+> - T-145 (Alerts.tsx): still needed, not superseded
+> - T-146 (401 auth redirect): replaced by UI-003
+> - T-147 (project context): replaced by UI-005
+>
+> All new web UI work should be tracked in `002-ui-overhaul/tasks.md`. The Go backend tasks below remain unchanged.
+
+---
+
 ## Phase 1 — Core Go Binary (MVP)
 
 ### Config Package
