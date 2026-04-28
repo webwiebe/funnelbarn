@@ -1,4 +1,4 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: trailpost-testing
+  name: funnelbarn-testing

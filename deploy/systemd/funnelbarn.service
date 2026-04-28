@@ -1,0 +1,21 @@
+[Unit]
+Description=FunnelBarn web analytics service
+Documentation=https://github.com/wiebe-xyz/funnelbarn
+After=network.target
+
+[Service]
+Type=simple
+User=funnelbarn
+Group=funnelbarn
+# The leading '-' means systemd won't fail if the file doesn't exist.
+EnvironmentFile=-/etc/funnelbarn/funnelbarn.conf
+ExecStart=/usr/bin/funnelbarn
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=funnelbarn
+WorkingDirectory=/var/lib/funnelbarn
+
+[Install]
+WantedBy=multi-user.target

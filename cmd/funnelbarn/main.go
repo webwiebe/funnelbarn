@@ -22,13 +22,13 @@ import (
 
 	bb "github.com/wiebe-xyz/bugbarn-go"
 
-	"github.com/wiebe-xyz/trailpost/internal/api"
-	"github.com/wiebe-xyz/trailpost/internal/auth"
-	"github.com/wiebe-xyz/trailpost/internal/config"
-	"github.com/wiebe-xyz/trailpost/internal/ingest"
-	"github.com/wiebe-xyz/trailpost/internal/spool"
-	"github.com/wiebe-xyz/trailpost/internal/storage"
-	"github.com/wiebe-xyz/trailpost/internal/worker"
+	"github.com/wiebe-xyz/funnelbarn/internal/api"
+	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
+	"github.com/wiebe-xyz/funnelbarn/internal/spool"
+	"github.com/wiebe-xyz/funnelbarn/internal/storage"
+	"github.com/wiebe-xyz/funnelbarn/internal/worker"
 )
 
 // Version and BuildTime are injected at build time via -ldflags.
@@ -57,7 +57,7 @@ func run() error {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "version", "--version", "-v":
-			fmt.Printf("trailpost %s (built %s)\n", Version, BuildTime)
+			fmt.Printf("funnelbarn %s (built %s)\n", Version, BuildTime)
 			return nil
 		case "worker-once":
 			return runWorkerOnce(cfg)
@@ -71,7 +71,7 @@ func run() error {
 	}
 
 	if cfg.SessionSecret == "" {
-		slog.Warn("TRAILPOST_SESSION_SECRET is not set; sessions will not persist across restarts")
+		slog.Warn("FUNNELBARN_SESSION_SECRET is not set; sessions will not persist across restarts")
 	}
 
 	store, err := storage.Open(cfg.DBPath)
@@ -95,7 +95,7 @@ func run() error {
 		bb.Init(bb.Options{
 			APIKey:      cfg.SelfAPIKey,
 			Endpoint:    cfg.SelfEndpoint,
-			ProjectSlug: "trailpost",
+			ProjectSlug: "funnelbarn",
 		})
 		slog.Info("self-reporting enabled", "endpoint", cfg.SelfEndpoint)
 		defer bb.Shutdown(2 * time.Second)
@@ -127,7 +127,7 @@ func run() error {
 		Handler: httpHandler,
 	}
 
-	slog.Info("trailpost starting", "addr", cfg.Addr, "version", Version)
+	slog.Info("funnelbarn starting", "addr", cfg.Addr, "version", Version)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -307,16 +307,16 @@ func runWorkerOnce(cfg config.Config) error {
 	return nil
 }
 
-// runUserCmd handles: trailpost user create --username=X --password=Y
+// runUserCmd handles: funnelbarn user create --username=X --password=Y
 func runUserCmd(cfg config.Config, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: trailpost user <create>")
+		return fmt.Errorf("usage: funnelbarn user <create>")
 	}
 	switch args[0] {
 	case "create":
 		fs := flag.NewFlagSet("user create", flag.ContinueOnError)
-		username := fs.String("username", os.Getenv("TRAILPOST_ADMIN_USERNAME"), "username")
-		password := fs.String("password", os.Getenv("TRAILPOST_ADMIN_PASSWORD"), "plaintext password")
+		username := fs.String("username", os.Getenv("FUNNELBARN_ADMIN_USERNAME"), "username")
+		password := fs.String("password", os.Getenv("FUNNELBARN_ADMIN_PASSWORD"), "plaintext password")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -347,10 +347,10 @@ func runUserCmd(cfg config.Config, args []string) error {
 	}
 }
 
-// runProjectCmd handles: trailpost project create --name=X [--slug=Y]
+// runProjectCmd handles: funnelbarn project create --name=X [--slug=Y]
 func runProjectCmd(cfg config.Config, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: trailpost project <create>")
+		return fmt.Errorf("usage: funnelbarn project <create>")
 	}
 	switch args[0] {
 	case "create":
@@ -386,10 +386,10 @@ func runProjectCmd(cfg config.Config, args []string) error {
 	}
 }
 
-// runAPIKeyCmd handles: trailpost apikey create --project=default --name=my-app
+// runAPIKeyCmd handles: funnelbarn apikey create --project=default --name=my-app
 func runAPIKeyCmd(cfg config.Config, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: trailpost apikey <create>")
+		return fmt.Errorf("usage: funnelbarn apikey <create>")
 	}
 	switch args[0] {
 	case "create":

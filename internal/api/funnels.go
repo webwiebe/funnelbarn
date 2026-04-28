@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/wiebe-xyz/trailpost/internal/storage"
+	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 )
 
 // handleListFunnels returns all funnels for a project.

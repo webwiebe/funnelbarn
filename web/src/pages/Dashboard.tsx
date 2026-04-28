@@ -33,7 +33,7 @@ export default function Dashboard() {
 
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '2rem', maxWidth: 1200, margin: '0 auto' }}>
-      <h1>Trailpost Analytics</h1>
+      <h1>FunnelBarn Analytics</h1>
 
       {!projectId && (
         <p style={{ color: '#6b7280' }}>

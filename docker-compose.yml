@@ -1,33 +1,33 @@
-name: trailpost
+name: funnelbarn
 
 services:
   service:
     build:
       context: .
       dockerfile: deploy/docker/service.Dockerfile
-    image: trailpost/service:local
+    image: funnelbarn/service:local
     ports:
       - "8080:8080"
     environment:
-      TRAILPOST_ADDR: :8080
-      TRAILPOST_API_KEY: local-dev-key
-      TRAILPOST_SPOOL_DIR: /var/lib/trailpost/spool
-      TRAILPOST_DB_PATH: /var/lib/trailpost/trailpost.db
-      TRAILPOST_ADMIN_USERNAME: admin
-      TRAILPOST_ADMIN_PASSWORD: admin
+      FUNNELBARN_ADDR: :8080
+      FUNNELBARN_API_KEY: local-dev-key
+      FUNNELBARN_SPOOL_DIR: /var/lib/funnelbarn/spool
+      FUNNELBARN_DB_PATH: /var/lib/funnelbarn/funnelbarn.db
+      FUNNELBARN_ADMIN_USERNAME: admin
+      FUNNELBARN_ADMIN_PASSWORD: admin
     volumes:
-      - trailpost-data:/var/lib/trailpost
+      - funnelbarn-data:/var/lib/funnelbarn
 
   web:
     profiles: ["web"]
     build:
       context: .
       dockerfile: deploy/docker/web.Dockerfile
-    image: trailpost/web:local
+    image: funnelbarn/web:local
     ports:
       - "3000:3000"
     depends_on:
       - service
 
 volumes:
-  trailpost-data:
+  funnelbarn-data:

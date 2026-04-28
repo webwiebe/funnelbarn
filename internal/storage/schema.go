@@ -1,6 +1,6 @@
 package storage
 
-// Schema is the complete SQLite DDL for Trailpost.
+// Schema is the complete SQLite DDL for FunnelBarn.
 // All tables use TEXT primary keys (UUID v4) except where noted.
 const Schema = `
 CREATE TABLE IF NOT EXISTS projects (

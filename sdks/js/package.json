@@ -1,7 +1,7 @@
 {
-  "name": "@trailpost/js",
+  "name": "@funnelbarn/js",
   "version": "0.1.0",
-  "description": "Browser + Node.js SDK for Trailpost analytics",
+  "description": "Browser + Node.js SDK for FunnelBarn analytics",
   "type": "module",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
@@ -31,7 +31,7 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "keywords": ["analytics", "trailpost", "self-hosted", "privacy"],
+  "keywords": ["analytics", "funnelbarn", "self-hosted", "privacy"],
   "license": "MIT",
-  "homepage": "https://github.com/wiebe-xyz/trailpost"
+  "homepage": "https://github.com/wiebe-xyz/funnelbarn"
 }

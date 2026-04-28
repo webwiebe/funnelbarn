@@ -1,5 +1,5 @@
 """
-Trailpost Python SDK — self-hosted web analytics client.
+FunnelBarn Python SDK — self-hosted web analytics client.
 """
 
 from __future__ import annotations
@@ -15,17 +15,17 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError
 
 
-class TrailpostClient:
+class FunnelBarnClient:
     """
-    Thread-safe client for sending analytics events to a Trailpost server.
+    Thread-safe client for sending analytics events to a FunnelBarn server.
 
     Usage::
 
-        from trailpost import TrailpostClient
+        from funnelbarn import FunnelBarnClient
 
-        analytics = TrailpostClient(
+        analytics = FunnelBarnClient(
             api_key="your-api-key",
-            endpoint="https://analytics.example.com",
+            endpoint="https://funnelbarn.example.com",
             project_name="my-app",
         )
         analytics.page("https://example.com/pricing")
@@ -130,10 +130,10 @@ class TrailpostClient:
         body = json.dumps(event).encode()
         headers = {
             "Content-Type": "application/json",
-            "x-trailpost-api-key": self._api_key,
+            "x-funnelbarn-api-key": self._api_key,
         }
         if self._project_name:
-            headers["x-trailpost-project"] = self._project_name
+            headers["x-funnelbarn-project"] = self._project_name
 
         req = Request(url, data=body, headers=headers, method="POST")
         try:
@@ -154,4 +154,4 @@ def _hash_user_id(user_id: str) -> str:
     return hashlib.sha256(user_id.encode()).hexdigest()
 
 
-__all__ = ["TrailpostClient"]
+__all__ = ["FunnelBarnClient"]

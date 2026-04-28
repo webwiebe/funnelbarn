@@ -1,15 +1,15 @@
 /**
- * Trailpost browser + Node.js SDK.
+ * FunnelBarn browser + Node.js SDK.
  *
  * Tracks page views and custom events. Batches events and flushes every
  * 5 seconds or on beforeunload. Generates a session ID in localStorage
  * with a 30-minute idle timeout (browser only).
  */
 
-export interface TrailpostOptions {
+export interface FunnelBarnOptions {
   apiKey: string;
   endpoint: string;
-  /** Optional project name sent as x-trailpost-project header */
+  /** Optional project name sent as x-funnelbarn-project header */
   projectName?: string;
   /** Flush interval in ms (default: 5000) */
   flushInterval?: number;
@@ -36,14 +36,14 @@ interface EventPayload {
   timestamp: string;
 }
 
-const SESSION_KEY = "trailpost_sid";
-const SESSION_EXPIRY_KEY = "trailpost_sid_exp";
+const SESSION_KEY = "funnelbarn_sid";
+const SESSION_EXPIRY_KEY = "funnelbarn_sid_exp";
 const SESSION_TIMEOUT_DEFAULT = 30 * 60 * 1000; // 30 min
 
 /**
- * TrailpostClient is the main analytics client.
+ * FunnelBarnClient is the main analytics client.
  */
-export class TrailpostClient {
+export class FunnelBarnClient {
   private readonly apiKey: string;
   private readonly endpoint: string;
   private readonly projectName?: string;
@@ -54,7 +54,7 @@ export class TrailpostClient {
   private flushTimer?: ReturnType<typeof setInterval>;
   private userId?: string;
 
-  constructor(options: TrailpostOptions) {
+  constructor(options: FunnelBarnOptions) {
     this.apiKey = options.apiKey;
     this.endpoint = options.endpoint.replace(/\/$/, "");
     this.projectName = options.projectName;
@@ -139,10 +139,10 @@ export class TrailpostClient {
     const url = `${this.endpoint}/api/v1/events`;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "x-trailpost-api-key": this.apiKey,
+      "x-funnelbarn-api-key": this.apiKey,
     };
     if (this.projectName) {
-      headers["x-trailpost-project"] = this.projectName;
+      headers["x-funnelbarn-project"] = this.projectName;
     }
 
     const body = JSON.stringify(event);
@@ -156,7 +156,7 @@ export class TrailpostClient {
         keepalive: true,
       });
       if (!response.ok) {
-        throw new Error(`trailpost: server returned ${response.status}`);
+        throw new Error(`funnelbarn: server returned ${response.status}`);
       }
     } else {
       // Node < 18: use http/https module.
@@ -267,7 +267,7 @@ function sendWithHttp(
         },
         (res: { statusCode: number }) => {
           if (res.statusCode && res.statusCode >= 400) {
-            reject(new Error(`trailpost: server returned ${res.statusCode}`));
+            reject(new Error(`funnelbarn: server returned ${res.statusCode}`));
           } else {
             resolve();
           }

@@ -1,0 +1,40 @@
+# FunnelBarn configuration file
+# Copy to /etc/funnelbarn/funnelbarn.conf and edit before starting.
+# Lines starting with # are comments.
+
+# Listen address (default: :8080)
+FUNNELBARN_ADDR=:8080
+
+# Master ingest API key (set this to a strong random value)
+# FUNNELBARN_API_KEY=your-secret-api-key
+
+# Alternative: pre-hashed SHA256 of the API key
+# FUNNELBARN_API_KEY_SHA256=
+
+# SQLite database path
+FUNNELBARN_DB_PATH=/var/lib/funnelbarn/funnelbarn.db
+
+# Spool directory for durable event buffering
+FUNNELBARN_SPOOL_DIR=/var/lib/funnelbarn/spool
+
+# Maximum spool size in bytes (default: unlimited)
+# FUNNELBARN_MAX_SPOOL_BYTES=104857600
+
+# Admin credentials (used if no DB users exist)
+# FUNNELBARN_ADMIN_USERNAME=admin
+# FUNNELBARN_ADMIN_PASSWORD=changeme
+# FUNNELBARN_ADMIN_PASSWORD_BCRYPT=
+
+# Session configuration
+# FUNNELBARN_SESSION_SECRET=
+# FUNNELBARN_SESSION_TTL_SECONDS=43200
+
+# Public URL (shown in links and self-reporting)
+# FUNNELBARN_PUBLIC_URL=https://funnelbarn.example.com
+
+# CORS allowed origins (CSV)
+# FUNNELBARN_ALLOWED_ORIGINS=https://example.com,https://app.example.com
+
+# BugBarn self-error-reporting (optional)
+# FUNNELBARN_SELF_ENDPOINT=https://bugbarn.wiebe.xyz
+# FUNNELBARN_SELF_API_KEY=

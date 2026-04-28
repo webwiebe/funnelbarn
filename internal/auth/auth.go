@@ -17,7 +17,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const HeaderAPIKey = "x-trailpost-api-key"
+const HeaderAPIKey = "x-funnelbarn-api-key"
 
 // DBKeyLookupWithProject looks up an API key's project association and scope.
 // Returns (projectID, scope, true, nil) on match, ("", "", false, nil) when not found.
@@ -246,7 +246,7 @@ func (m *SessionManager) Valid(token string) (string, bool) {
 // SessionCookie returns an HttpOnly session cookie.
 func SessionCookie(token string, expires time.Time, secure bool) *http.Cookie {
 	return &http.Cookie{
-		Name:     "trailpost_session",
+		Name:     "funnelbarn_session",
 		Value:    token,
 		Path:     "/",
 		Expires:  expires,
@@ -259,7 +259,7 @@ func SessionCookie(token string, expires time.Time, secure bool) *http.Cookie {
 // ClearSessionCookie returns a cookie that expires the session.
 func ClearSessionCookie(secure bool) *http.Cookie {
 	return &http.Cookie{
-		Name:     "trailpost_session",
+		Name:     "funnelbarn_session",
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
@@ -270,10 +270,10 @@ func ClearSessionCookie(secure bool) *http.Cookie {
 }
 
 // CSRFCookie returns the companion CSRF cookie for a session token.
-// HttpOnly=false so JavaScript can read and attach it as X-Trailpost-CSRF.
+// HttpOnly=false so JavaScript can read and attach it as X-FunnelBarn-CSRF.
 func CSRFCookie(sessionToken string, expires time.Time, secure bool) *http.Cookie {
 	return &http.Cookie{
-		Name:     "trailpost_csrf",
+		Name:     "funnelbarn_csrf",
 		Value:    CSRFToken(sessionToken),
 		Path:     "/",
 		Expires:  expires,
@@ -286,7 +286,7 @@ func CSRFCookie(sessionToken string, expires time.Time, secure bool) *http.Cooki
 // ClearCSRFCookie clears the CSRF cookie on logout.
 func ClearCSRFCookie(secure bool) *http.Cookie {
 	return &http.Cookie{
-		Name:     "trailpost_csrf",
+		Name:     "funnelbarn_csrf",
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,

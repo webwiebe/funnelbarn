@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: process.env.TRAILPOST_API_URL || 'http://localhost:8080',
+        target: process.env.FUNNELBARN_API_URL || 'http://localhost:8080',
         changeOrigin: true,
       },
     },

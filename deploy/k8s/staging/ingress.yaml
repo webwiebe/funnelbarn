@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: trailpost
+  name: funnelbarn
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-cloudflare
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
@@ -9,24 +9,24 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - host: analytics-staging.wiebe.xyz
+    - host: funnelbarn-staging.wiebe.xyz
       http:
         paths:
           - path: /api
             pathType: Prefix
             backend:
               service:
-                name: trailpost
+                name: funnelbarn
                 port:
                   name: http
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: trailpost-web
+                name: funnelbarn-web
                 port:
                   name: http
   tls:
     - hosts:
-        - analytics-staging.wiebe.xyz
-      secretName: analytics-staging-wiebe-xyz-tls
+        - funnelbarn-staging.wiebe.xyz
+      secretName: funnelbarn-staging-wiebe-xyz-tls

@@ -1,21 +1,21 @@
-# trailpost-python
+# funnelbarn-python
 
-Python SDK for [Trailpost](https://github.com/wiebe-xyz/trailpost) — self-hosted web analytics.
+Python SDK for [FunnelBarn](https://github.com/wiebe-xyz/funnelbarn) — self-hosted web analytics.
 
 ## Installation
 
 ```bash
-pip install trailpost
+pip install funnelbarn
 ```
 
 ## Usage
 
 ```python
-from trailpost import TrailpostClient
+from funnelbarn import FunnelBarnClient
 
-analytics = TrailpostClient(
+analytics = FunnelBarnClient(
     api_key="your-api-key",
-    endpoint="https://analytics.example.com",
+    endpoint="https://funnelbarn.example.com",
     project_name="my-app",
 )
 
@@ -29,7 +29,7 @@ analytics.shutdown()
 
 ## API
 
-### `TrailpostClient(api_key, endpoint, project_name="")`
+### `FunnelBarnClient(api_key, endpoint, project_name="")`
 
 ### `client.page(url, referrer="", properties=None)`
 

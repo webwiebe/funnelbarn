@@ -23,11 +23,11 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  SERVICE_IMAGE: ghcr.io/webwiebe/trailpost/service
-  WEB_IMAGE: ghcr.io/webwiebe/trailpost/web
+  SERVICE_IMAGE: ghcr.io/webwiebe/funnelbarn/service
+  WEB_IMAGE: ghcr.io/webwiebe/funnelbarn/web
   K3S_HOST: layer7.wiebe.xyz
   K3S_USER: deployer
-  NAMESPACE: trailpost-production
+  NAMESPACE: funnelbarn-production
 
 jobs:
   preflight:
@@ -74,15 +74,15 @@ jobs:
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
-            "rm -rf /tmp/trailpost-deploy && mkdir -p /tmp/trailpost-deploy"
+            "rm -rf /tmp/funnelbarn-deploy && mkdir -p /tmp/funnelbarn-deploy"
           scp -o StrictHostKeyChecking=no -r deploy \
-            "${K3S_USER}@${K3S_HOST}:/tmp/trailpost-deploy/deploy"
+            "${K3S_USER}@${K3S_HOST}:/tmp/funnelbarn-deploy/deploy"
 
       - name: Ensure namespace exists
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
-            "kubectl apply -f /tmp/trailpost-deploy/deploy/k8s/production/namespace.yaml"
+            "kubectl apply -f /tmp/funnelbarn-deploy/deploy/k8s/production/namespace.yaml"
 
       - name: Decrypt and apply secrets
         env:
@@ -111,21 +111,21 @@ jobs:
           VERSION="${{ github.event.inputs.production_version }}"
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
             set -euo pipefail
-            kubectl apply -k /tmp/trailpost-deploy/deploy/k8s/production
-            kubectl -n ${NAMESPACE} set image deployment/trailpost \
-              trailpost=${SERVICE_IMAGE}:${VERSION}
-            kubectl -n ${NAMESPACE} set image deployment/trailpost-web \
-              trailpost-web=${WEB_IMAGE}:${VERSION}
-            kubectl -n ${NAMESPACE} rollout status deployment/trailpost --timeout=180s
-            kubectl -n ${NAMESPACE} rollout status deployment/trailpost-web --timeout=180s
+            kubectl apply -k /tmp/funnelbarn-deploy/deploy/k8s/production
+            kubectl -n ${NAMESPACE} set image deployment/funnelbarn \
+              funnelbarn=${SERVICE_IMAGE}:${VERSION}
+            kubectl -n ${NAMESPACE} set image deployment/funnelbarn-web \
+              funnelbarn-web=${WEB_IMAGE}:${VERSION}
+            kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=180s
+            kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=180s
           "
 
       - name: Rollback on failure
         if: failure()
         run: |
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
-            kubectl -n ${NAMESPACE} rollout undo deployment/trailpost || true
-            kubectl -n ${NAMESPACE} rollout undo deployment/trailpost-web || true
+            kubectl -n ${NAMESPACE} rollout undo deployment/funnelbarn || true
+            kubectl -n ${NAMESPACE} rollout undo deployment/funnelbarn-web || true
             echo 'Rollback triggered'
           " || true
 
@@ -153,6 +153,6 @@ jobs:
           echo "| | |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Version | \`${{ github.event.inputs.production_version }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| URL | https://analytics.wiebe.xyz |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| URL | https://funnelbarn.wiebe.xyz |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Namespace | \`${NAMESPACE}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Cluster | \`${K3S_HOST}\` |" >> "$GITHUB_STEP_SUMMARY"

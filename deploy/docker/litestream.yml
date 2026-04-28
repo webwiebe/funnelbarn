@@ -1,8 +1,8 @@
 dbs:
-  - path: /var/lib/trailpost/trailpost.db
+  - path: /var/lib/funnelbarn/funnelbarn.db
     replicas:
       - type: s3
-        bucket: trailpost-sqlite
+        bucket: funnelbarn-sqlite
         path: ${LITESTREAM_REPLICA_PATH}
         endpoint: https://s3.wiebe.xyz
         force-path-style: true

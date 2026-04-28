@@ -1,6 +1,6 @@
-// Package trailpost provides a Go SDK for sending analytics events to a
-// Trailpost server.
-package trailpost
+// Package funnelbarn provides a Go SDK for sending analytics events to a
+// FunnelBarn server.
+package funnelbarn
 
 import (
 	"bytes"
@@ -94,7 +94,7 @@ func Flush() error {
 		return nil
 	}
 	if ok := t.flush(5 * time.Second); !ok {
-		return fmt.Errorf("trailpost: flush timed out")
+		return fmt.Errorf("funnelbarn: flush timed out")
 	}
 	return nil
 }
@@ -109,7 +109,7 @@ func Shutdown(timeout time.Duration) error {
 		return nil
 	}
 	if ok := t.shutdown(timeout); !ok {
-		return fmt.Errorf("trailpost: shutdown timed out")
+		return fmt.Errorf("funnelbarn: shutdown timed out")
 	}
 	return nil
 }
@@ -163,7 +163,7 @@ func (t *transport) send(e eventPayload) error {
 
 	endpoint := t.opts.Endpoint
 	if endpoint == "" {
-		return fmt.Errorf("trailpost: endpoint not configured")
+		return fmt.Errorf("funnelbarn: endpoint not configured")
 	}
 	url := endpoint + "/api/v1/events"
 
@@ -172,9 +172,9 @@ func (t *transport) send(e eventPayload) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-trailpost-api-key", t.opts.APIKey)
+	req.Header.Set("x-funnelbarn-api-key", t.opts.APIKey)
 	if t.opts.ProjectName != "" {
-		req.Header.Set("x-trailpost-project", t.opts.ProjectName)
+		req.Header.Set("x-funnelbarn-project", t.opts.ProjectName)
 	}
 
 	resp, err := t.client.Do(req)

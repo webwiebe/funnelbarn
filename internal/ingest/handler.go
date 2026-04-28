@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/wiebe-xyz/trailpost/internal/auth"
-	"github.com/wiebe-xyz/trailpost/internal/spool"
+	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 )
 
 const defaultQueueSize = 32768
@@ -139,7 +139,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ingestID := h.idFn()
 
 	// Derive project slug from the API key's project ID or the header.
-	projectSlug := r.Header.Get("x-trailpost-project")
+	projectSlug := r.Header.Get("x-funnelbarn-project")
 	if projectSlug == "" {
 		projectSlug = projectID
 	}

@@ -1,9 +1,9 @@
 name: Binary Release
 
-# Builds and publishes trailpost binaries on every push to main.
+# Builds and publishes funnelbarn binaries on every push to main.
 # Publishes to:
 #   - APT repository:      https://webwiebe.nl/apt/ (via rapid-root centralized workflow)
-#   - Homebrew tap (MinIO): https://webwiebe.nl/brew/trailpost-darwin-*.tar.gz
+#   - Homebrew tap (MinIO): https://webwiebe.nl/brew/funnelbarn-darwin-*.tar.gz
 #   - GitHub Releases:     attached .deb and .tar.gz files
 
 on:
@@ -82,7 +82,7 @@ jobs:
           BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
           LDFLAGS="-X main.Version=v${VERSION} -X main.BuildTime=${BUILD_TIME}"
           mkdir -p dist
-          CGO_ENABLED=1 go build -ldflags "${LDFLAGS}" -o dist/trailpost-linux-${GOARCH} ./cmd/trailpost
+          CGO_ENABLED=1 go build -ldflags "${LDFLAGS}" -o dist/funnelbarn-linux-${GOARCH} ./cmd/funnelbarn
 
       - name: Build .deb package
         env:
@@ -90,9 +90,9 @@ jobs:
           GOARCH: ${{ matrix.arch }}
         run: |
           mkdir -p debs
-          envsubst < nfpm-trailpost.yaml > nfpm-trailpost-processed.yaml
+          envsubst < nfpm-funnelbarn.yaml > nfpm-funnelbarn-processed.yaml
           nfpm package \
-            --config nfpm-trailpost-processed.yaml \
+            --config nfpm-funnelbarn-processed.yaml \
             --packager deb \
             --target debs/
 
@@ -128,10 +128,10 @@ jobs:
           BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
           LDFLAGS="-X main.Version=v${VERSION} -X main.BuildTime=${BUILD_TIME}"
           mkdir -p dist
-          go build -ldflags "${LDFLAGS}" -o dist/trailpost ./cmd/trailpost
-          TARBALL="trailpost-darwin-${{ matrix.arch }}-${VERSION}.tar.gz"
-          tar -czvf dist/${TARBALL} -C dist trailpost
-          rm dist/trailpost
+          go build -ldflags "${LDFLAGS}" -o dist/funnelbarn ./cmd/funnelbarn
+          TARBALL="funnelbarn-darwin-${{ matrix.arch }}-${VERSION}.tar.gz"
+          tar -czvf dist/${TARBALL} -C dist funnelbarn
+          rm dist/funnelbarn
 
       - name: Generate checksums
         run: |
@@ -176,7 +176,7 @@ jobs:
           gh api repos/wiebe-xyz/rapid-root/dispatches \
             --method POST \
             --field event_type=apt-package-update \
-            --field 'client_payload[repo]=webwiebe/trailpost' \
+            --field 'client_payload[repo]=webwiebe/funnelbarn' \
             --field 'client_payload[tag]=${{ needs.tag.outputs.version }}' \
             --field 'client_payload[asset_pattern]=*.deb'
 
@@ -224,32 +224,32 @@ jobs:
           find darwin-download -name "*.tar.gz" -exec cp {} brew-repo/ \;
           find darwin-download -name "*.sha256" -exec cp {} brew-repo/ \;
 
-          AMD64_SHA=$(cat brew-repo/trailpost-darwin-amd64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
-          ARM64_SHA=$(cat brew-repo/trailpost-darwin-arm64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
+          AMD64_SHA=$(cat brew-repo/funnelbarn-darwin-amd64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
+          ARM64_SHA=$(cat brew-repo/funnelbarn-darwin-arm64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
 
-          cat > brew-repo/Formula/trailpost.rb << EOF
-          class Trailpost < Formula
+          cat > brew-repo/Formula/funnelbarn.rb << EOF
+          class Funnelbarn < Formula
             desc "Self-hosted web analytics server"
-            homepage "https://github.com/wiebe-xyz/trailpost"
+            homepage "https://github.com/wiebe-xyz/funnelbarn"
             version "${VERSION}"
             license "MIT"
 
             on_macos do
               if Hardware::CPU.intel?
-                url "https://webwiebe.nl/brew/trailpost-darwin-amd64-${VERSION}.tar.gz"
+                url "https://webwiebe.nl/brew/funnelbarn-darwin-amd64-${VERSION}.tar.gz"
                 sha256 "${AMD64_SHA}"
               elsif Hardware::CPU.arm?
-                url "https://webwiebe.nl/brew/trailpost-darwin-arm64-${VERSION}.tar.gz"
+                url "https://webwiebe.nl/brew/funnelbarn-darwin-arm64-${VERSION}.tar.gz"
                 sha256 "${ARM64_SHA}"
               end
             end
 
             def install
-              bin.install "trailpost"
+              bin.install "funnelbarn"
             end
 
             test do
-              assert_match version.to_s, shell_output("#{bin}/trailpost version")
+              assert_match version.to_s, shell_output("#{bin}/funnelbarn version")
             end
           end
           EOF
@@ -288,43 +288,43 @@ jobs:
             exit 1
           fi
 
-          AMD64_SHA=$(cat darwin-download/darwin-amd64/trailpost-darwin-amd64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
-          ARM64_SHA=$(cat darwin-download/darwin-arm64/trailpost-darwin-arm64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
+          AMD64_SHA=$(cat darwin-download/darwin-amd64/funnelbarn-darwin-amd64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
+          ARM64_SHA=$(cat darwin-download/darwin-arm64/funnelbarn-darwin-arm64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
 
-          git clone https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/webwiebe/homebrew-trailpost.git tap-repo
+          git clone https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/webwiebe/homebrew-funnelbarn.git tap-repo
           cd tap-repo
           mkdir -p Formula
 
-          cat > Formula/trailpost.rb << EOF
-          class Trailpost < Formula
+          cat > Formula/funnelbarn.rb << EOF
+          class Funnelbarn < Formula
             desc "Self-hosted web analytics server"
-            homepage "https://github.com/wiebe-xyz/trailpost"
+            homepage "https://github.com/wiebe-xyz/funnelbarn"
             version "${VERSION}"
             license "MIT"
 
             on_macos do
               if Hardware::CPU.intel?
-                url "https://webwiebe.nl/brew/trailpost-darwin-amd64-${VERSION}.tar.gz"
+                url "https://webwiebe.nl/brew/funnelbarn-darwin-amd64-${VERSION}.tar.gz"
                 sha256 "${AMD64_SHA}"
               elsif Hardware::CPU.arm?
-                url "https://webwiebe.nl/brew/trailpost-darwin-arm64-${VERSION}.tar.gz"
+                url "https://webwiebe.nl/brew/funnelbarn-darwin-arm64-${VERSION}.tar.gz"
                 sha256 "${ARM64_SHA}"
               end
             end
 
             def install
-              bin.install "trailpost"
+              bin.install "funnelbarn"
             end
 
             test do
-              assert_match version.to_s, shell_output("#{bin}/trailpost version")
+              assert_match version.to_s, shell_output("#{bin}/funnelbarn version")
             end
           end
           EOF
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/trailpost.rb
+          git add Formula/funnelbarn.rb
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else

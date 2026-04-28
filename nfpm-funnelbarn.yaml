@@ -1,0 +1,43 @@
+name: funnelbarn
+arch: "${GOARCH}"
+platform: linux
+version: "${VERSION}"
+maintainer: "Wiebe Zweers <funnelbarn@wiebe.xyz>"
+description: |
+  FunnelBarn - Self-hosted web analytics server.
+  Privacy-first analytics with funnel tracking and a web dashboard.
+vendor: "FunnelBarn"
+homepage: "https://github.com/wiebe-xyz/funnelbarn"
+license: "MIT"
+
+contents:
+  - src: ./dist/funnelbarn-linux-${GOARCH}
+    dst: /usr/bin/funnelbarn
+    file_info:
+      mode: 0755
+  - src: ./deploy/systemd/funnelbarn.service
+    dst: /lib/systemd/system/funnelbarn.service
+    file_info:
+      mode: 0644
+  - src: ./deploy/etc/funnelbarn.conf.example
+    dst: /etc/funnelbarn/funnelbarn.conf.example
+    file_info:
+      mode: 0644
+  # Ensure directories exist with correct permissions.
+  - dst: /var/lib/funnelbarn
+    type: dir
+    file_info:
+      mode: 0750
+      owner: funnelbarn
+      group: funnelbarn
+  - dst: /etc/funnelbarn
+    type: dir
+    file_info:
+      mode: 0755
+
+scripts:
+  postinstall: ./deploy/deb/postinstall.sh
+  preremove: ./deploy/deb/preremove.sh
+
+deb:
+  compression: gzip

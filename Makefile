@@ -12,7 +12,7 @@ export GOMODCACHE := $(CURDIR)/.cache/go-mod
 
 help:
 	@printf '%s\n' \
-		'Trailpost targets:' \
+		'FunnelBarn targets:' \
 		'  setup        install all dependencies' \
 		'  build        build Go binary and frontend' \
 		'  test         run all tests' \
@@ -106,11 +106,11 @@ docker-build:
 	found=0; \
 	if [ -f deploy/docker/service.Dockerfile ]; then \
 		found=1; \
-		docker build -f deploy/docker/service.Dockerfile -t trailpost/service:local .; \
+		docker build -f deploy/docker/service.Dockerfile -t funnelbarn/service:local .; \
 	fi; \
 	if [ -f deploy/docker/web.Dockerfile ]; then \
 		found=1; \
-		docker build -f deploy/docker/web.Dockerfile -t trailpost/web:local .; \
+		docker build -f deploy/docker/web.Dockerfile -t funnelbarn/web:local .; \
 	fi; \
 	if [ "$$found" -eq 0 ]; then echo "[docker-build] no Dockerfiles found yet"; fi
 

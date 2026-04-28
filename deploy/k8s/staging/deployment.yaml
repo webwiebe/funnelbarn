@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: trailpost
+  name: funnelbarn
 spec:
   replicas: 1
   revisionHistoryLimit: 2
@@ -9,56 +9,56 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: trailpost
+      app.kubernetes.io/name: funnelbarn
       app.kubernetes.io/environment: staging
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: trailpost
+        app.kubernetes.io/name: funnelbarn
         app.kubernetes.io/environment: staging
     spec:
       imagePullSecrets:
         - name: ghcr-secret
       containers:
-        - name: trailpost
-          image: trailpost/service
+        - name: funnelbarn
+          image: funnelbarn/service
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
               name: http
           env:
-            - name: TRAILPOST_ADDR
+            - name: FUNNELBARN_ADDR
               value: :8080
-            - name: TRAILPOST_PUBLIC_URL
-              value: https://analytics-staging.wiebe.xyz
-            - name: TRAILPOST_SPOOL_DIR
-              value: /var/lib/trailpost/spool
-            - name: TRAILPOST_DB_PATH
-              value: /var/lib/trailpost/trailpost.db
-            - name: TRAILPOST_SESSION_TTL_SECONDS
+            - name: FUNNELBARN_PUBLIC_URL
+              value: https://funnelbarn-staging.wiebe.xyz
+            - name: FUNNELBARN_SPOOL_DIR
+              value: /var/lib/funnelbarn/spool
+            - name: FUNNELBARN_DB_PATH
+              value: /var/lib/funnelbarn/funnelbarn.db
+            - name: FUNNELBARN_SESSION_TTL_SECONDS
               value: "86400"
-            - name: TRAILPOST_API_KEY
+            - name: FUNNELBARN_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: trailpost-secrets
-                  key: TRAILPOST_API_KEY
-            - name: TRAILPOST_ADMIN_USERNAME
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_API_KEY
+            - name: FUNNELBARN_ADMIN_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: trailpost-secrets
-                  key: TRAILPOST_ADMIN_USERNAME
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_ADMIN_USERNAME
                   optional: true
-            - name: TRAILPOST_ADMIN_PASSWORD_BCRYPT
+            - name: FUNNELBARN_ADMIN_PASSWORD_BCRYPT
               valueFrom:
                 secretKeyRef:
-                  name: trailpost-secrets
-                  key: TRAILPOST_ADMIN_PASSWORD_BCRYPT
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_ADMIN_PASSWORD_BCRYPT
                   optional: true
-            - name: TRAILPOST_SESSION_SECRET
+            - name: FUNNELBARN_SESSION_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: trailpost-secrets
-                  key: TRAILPOST_SESSION_SECRET
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_SESSION_SECRET
                   optional: true
           resources:
             requests:
@@ -80,9 +80,9 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
           volumeMounts:
-            - name: trailpost-data
-              mountPath: /var/lib/trailpost
+            - name: funnelbarn-data
+              mountPath: /var/lib/funnelbarn
       volumes:
-        - name: trailpost-data
+        - name: funnelbarn-data
           persistentVolumeClaim:
-            claimName: trailpost-data
+            claimName: funnelbarn-data

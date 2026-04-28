@@ -1,8 +1,8 @@
-# Trailpost
+# FunnelBarn
 
 Self-hosted web analytics and conversion funnel tracking. Single binary. SQLite. Privacy-first.
 
-Trailpost replaces Mixpanel, Amplitude, or Fathom for teams who want to own their analytics data. Deploy one binary, point a domain at it, and keep everything on your own server.
+FunnelBarn replaces Mixpanel, Amplitude, or Fathom for teams who want to own their analytics data. Deploy one binary, point a domain at it, and keep everything on your own server.
 
 ## Features
 
@@ -19,43 +19,43 @@ Trailpost replaces Mixpanel, Amplitude, or Fathom for teams who want to own thei
 
 ```bash
 docker run -d \
-  --name trailpost \
-  -e TRAILPOST_API_KEY=your-secret-ingest-key \
-  -e TRAILPOST_ADMIN_USERNAME=admin \
-  -e TRAILPOST_ADMIN_PASSWORD=changeme \
+  --name funnelbarn \
+  -e FUNNELBARN_API_KEY=your-secret-ingest-key \
+  -e FUNNELBARN_ADMIN_USERNAME=admin \
+  -e FUNNELBARN_ADMIN_PASSWORD=changeme \
   -p 8080:8080 \
-  -v trailpost-data:/var/lib/trailpost \
-  ghcr.io/webwiebe/trailpost/service:latest
+  -v funnelbarn-data:/var/lib/funnelbarn \
+  ghcr.io/webwiebe/funnelbarn/service:latest
 ```
 
 ### Docker Compose
 
 ```bash
-git clone https://github.com/wiebe-xyz/trailpost
-cd trailpost
-TRAILPOST_API_KEY=secret docker compose up
+git clone https://github.com/wiebe-xyz/funnelbarn
+cd funnelbarn
+FUNNELBARN_API_KEY=secret docker compose up
 ```
 
 ### Homebrew (macOS)
 
 ```bash
-brew tap webwiebe/trailpost
-brew install trailpost
+brew tap webwiebe/funnelbarn
+brew install funnelbarn
 ```
 
 ### APT (Debian/Ubuntu)
 
 ```bash
-curl -fsSL https://webwiebe.nl/apt/trailpost-archive-keyring.gpg | sudo tee /etc/apt/keyrings/trailpost.gpg > /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/trailpost.gpg] https://webwiebe.nl/apt/ stable main" | sudo tee /etc/apt/sources.list.d/trailpost.list
-sudo apt update && sudo apt install trailpost
+curl -fsSL https://webwiebe.nl/apt/funnelbarn-archive-keyring.gpg | sudo tee /etc/apt/keyrings/funnelbarn.gpg > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/funnelbarn.gpg] https://webwiebe.nl/apt/ stable main" | sudo tee /etc/apt/sources.list.d/funnelbarn.list
+sudo apt update && sudo apt install funnelbarn
 ```
 
 ## Track Your First Event
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/events \
-  -H "x-trailpost-api-key: your-secret-ingest-key" \
+  -H "x-funnelbarn-api-key: your-secret-ingest-key" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "page_view",
@@ -69,24 +69,24 @@ curl -X POST http://localhost:8080/api/v1/events \
 
 ```bash
 # Create a project
-trailpost project create --name "My Website" --slug my-website
+funnelbarn project create --name "My Website" --slug my-website
 
 # Create an ingest API key
-trailpost apikey create --project my-website --name frontend --scope ingest
+funnelbarn apikey create --project my-website --name frontend --scope ingest
 
 # Create an admin user
-trailpost user create --username admin --password yourpassword
+funnelbarn user create --username admin --password yourpassword
 ```
 
 ## JavaScript SDK
 
 ```html
 <script type="module">
-  import { TrailpostClient } from 'https://cdn.jsdelivr.net/npm/@trailpost/js';
+  import { FunnelBarnClient } from 'https://cdn.jsdelivr.net/npm/@funnelbarn/js';
 
-  const analytics = new TrailpostClient({
+  const analytics = new FunnelBarnClient({
     apiKey: 'your-ingest-key',
-    endpoint: 'https://analytics.yourdomain.com',
+    endpoint: 'https://funnelbarn.yourdomain.com',
     projectName: 'my-website',
   });
 
@@ -99,22 +99,22 @@ trailpost user create --username admin --password yourpassword
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TRAILPOST_ADDR` | `:8080` | Listen address |
-| `TRAILPOST_API_KEY` | — | Master ingest API key |
-| `TRAILPOST_API_KEY_SHA256` | — | Alternative pre-hashed key |
-| `TRAILPOST_DB_PATH` | `.data/trailpost.db` | SQLite database path |
-| `TRAILPOST_SPOOL_DIR` | `.data/spool` | Event spool directory |
-| `TRAILPOST_MAX_BODY_BYTES` | `1048576` | Max request body (1 MiB) |
-| `TRAILPOST_MAX_SPOOL_BYTES` | unlimited | Spool size cap |
-| `TRAILPOST_ADMIN_USERNAME` | — | Admin username |
-| `TRAILPOST_ADMIN_PASSWORD` | — | Admin password (plaintext) |
-| `TRAILPOST_ADMIN_PASSWORD_BCRYPT` | — | Admin password (bcrypt hash) |
-| `TRAILPOST_SESSION_SECRET` | random | HMAC secret for session tokens |
-| `TRAILPOST_SESSION_TTL_SECONDS` | `43200` | Session TTL (12 hours) |
-| `TRAILPOST_ALLOWED_ORIGINS` | — | CORS origins (CSV) |
-| `TRAILPOST_PUBLIC_URL` | — | Public server URL |
-| `TRAILPOST_SELF_ENDPOINT` | — | BugBarn endpoint for self-reporting |
-| `TRAILPOST_SELF_API_KEY` | — | BugBarn API key for self-reporting |
+| `FUNNELBARN_ADDR` | `:8080` | Listen address |
+| `FUNNELBARN_API_KEY` | — | Master ingest API key |
+| `FUNNELBARN_API_KEY_SHA256` | — | Alternative pre-hashed key |
+| `FUNNELBARN_DB_PATH` | `.data/funnelbarn.db` | SQLite database path |
+| `FUNNELBARN_SPOOL_DIR` | `.data/spool` | Event spool directory |
+| `FUNNELBARN_MAX_BODY_BYTES` | `1048576` | Max request body (1 MiB) |
+| `FUNNELBARN_MAX_SPOOL_BYTES` | unlimited | Spool size cap |
+| `FUNNELBARN_ADMIN_USERNAME` | — | Admin username |
+| `FUNNELBARN_ADMIN_PASSWORD` | — | Admin password (plaintext) |
+| `FUNNELBARN_ADMIN_PASSWORD_BCRYPT` | — | Admin password (bcrypt hash) |
+| `FUNNELBARN_SESSION_SECRET` | random | HMAC secret for session tokens |
+| `FUNNELBARN_SESSION_TTL_SECONDS` | `43200` | Session TTL (12 hours) |
+| `FUNNELBARN_ALLOWED_ORIGINS` | — | CORS origins (CSV) |
+| `FUNNELBARN_PUBLIC_URL` | — | Public server URL |
+| `FUNNELBARN_SELF_ENDPOINT` | — | BugBarn endpoint for self-reporting |
+| `FUNNELBARN_SELF_API_KEY` | — | BugBarn API key for self-reporting |
 
 ## API Endpoints
 
@@ -138,7 +138,7 @@ trailpost user create --username admin --password yourpassword
 
 ## Architecture
 
-Trailpost uses a durable spool pattern for high-throughput ingest:
+FunnelBarn uses a durable spool pattern for high-throughput ingest:
 
 ```
 SDK/Browser → POST /api/v1/events

@@ -1,43 +1,85 @@
 openapi: "3.0.3"
 info:
-  title: Trailpost Ingest API
+  title: FunnelBarn API
   version: "1.0.0"
   description: |
-    The Trailpost ingest API accepts analytics events. The ingest endpoint
-    is optimized for high-throughput, low-latency use. Events are durably
-    enqueued to a local spool file before the response is sent — no database
-    writes occur in the request path.
+    The FunnelBarn REST API for event ingest, dashboard analytics, funnel management,
+    and administrative operations.
+
+    ## Authentication
+
+    Two authentication mechanisms are supported:
+
+    **API Key** (`x-funnelbarn-api-key` header): Used for event ingest and API operations.
+    Keys with `ingest` scope can only access `POST /api/v1/events`.
+    Keys with `full` scope have complete API access.
+
+    **Session Cookie** (`funnelbarn_session`): Used for dashboard operations after login.
+    Obtain a session via `POST /api/v1/login`.
 
 servers:
-  - url: https://analytics.example.com
-    description: Your Trailpost instance
+  - url: https://funnelbarn.example.com
+    description: Your FunnelBarn instance
 
 security:
-  - ApiKeyHeader: []
+  - SessionCookie: []
 
 paths:
+  /api/v1/health:
+    get:
+      summary: Health check
+      description: Returns 200 OK when the server is running. No authentication required.
+      operationId: health
+      security: []
+      tags: [System]
+      responses:
+        "200":
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  time:
+                    type: string
+                    format: date-time
+                    example: "2026-04-28T10:00:00Z"
+
   /api/v1/events:
     post:
       summary: Ingest an analytics event
       description: |
-        Accepts a single analytics event. The server authenticates the request,
-        validates the payload, and returns 202 Accepted after durably enqueuing
-        the event to the local spool. The event is processed asynchronously by
-        a background worker.
+        Accepts a single analytics event. The server authenticates the request via
+        `x-funnelbarn-api-key`, validates the payload, and returns 202 Accepted after
+        durably enqueuing the event to the local spool file. The event is processed
+        asynchronously by a background worker.
 
         **Rate limiting**: Returns 429 when the ingest queue is saturated.
         The response includes a `Retry-After: 1` header.
 
-        **Idempotency**: The returned `ingestId` can be used to detect duplicates.
-        Replaying the same payload will store duplicate events unless the client
-        tracks the ingest ID.
+        **Project routing**: The optional `x-funnelbarn-project` header identifies the
+        target project by slug. If omitted, the API key's associated project is used.
       operationId: ingestEvent
+      security:
+        - ApiKeyHeader: []
+      tags: [Ingest]
+      parameters:
+        - name: x-funnelbarn-project
+          in: header
+          required: false
+          description: Project slug to associate this event with
+          schema:
+            type: string
+            example: my-website
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EventPayload'
+              $ref: "#/components/schemas/EventPayload"
             examples:
               pageview:
                 summary: Page view with UTM attribution
@@ -61,7 +103,7 @@ paths:
                   user_id: "user_12345"
                   timestamp: "2026-04-28T10:00:00Z"
       responses:
-        '202':
+        "202":
           description: Event accepted and enqueued
           content:
             application/json:
@@ -75,27 +117,19 @@ paths:
                     type: string
                     description: Unique identifier for this ingest record
                     example: "a1b2c3d4e5f6a1b2c3d4"
-        '400':
-          description: Request body could not be read
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '401':
-          description: Missing or invalid API key
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '405':
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "405":
           description: Method not allowed (only POST is accepted)
-        '413':
+        "413":
           description: Request body too large (default limit 1 MiB)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-        '429':
+                $ref: "#/components/schemas/Error"
+        "429":
           description: Ingest queue full — retry after 1 second
           headers:
             Retry-After:
@@ -105,19 +139,63 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-        '503':
+                $ref: "#/components/schemas/Error"
+        "503":
           description: Ingest service unavailable
 
-  /api/v1/health:
-    get:
-      summary: Health check
-      description: Returns 200 OK when the server is running. No authentication required.
-      operationId: health
+  /api/v1/login:
+    post:
+      summary: Authenticate admin user
+      description: |
+        Authenticates an admin user and returns a signed session cookie.
+        The response also sets a `funnelbarn_csrf` cookie (HttpOnly=false) that
+        JavaScript must send as the `X-FunnelBarn-CSRF` header on mutating requests.
+      operationId: login
       security: []
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: admin
+                password:
+                  type: string
+                  format: password
+                  example: changeme
       responses:
-        '200':
-          description: Server is healthy
+        "200":
+          description: Login successful — session cookie set
+          headers:
+            Set-Cookie:
+              description: "funnelbarn_session=...; HttpOnly; Secure; SameSite=Strict"
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username:
+                    type: string
+                    example: admin
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/logout:
+    post:
+      summary: Logout current session
+      description: Clears the session cookie and CSRF cookie.
+      operationId: logout
+      tags: [Auth]
+      responses:
+        "200":
+          description: Logged out successfully
           content:
             application/json:
               schema:
@@ -125,33 +203,655 @@ paths:
                 properties:
                   status:
                     type: string
-                    example: ok
-                  time:
+                    example: logged out
+
+  /api/v1/me:
+    get:
+      summary: Get current authenticated user
+      description: Returns the username of the currently authenticated session.
+      operationId: getMe
+      tags: [Auth]
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username:
+                    type: string
+                    example: admin
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects:
+    get:
+      summary: List all projects
+      description: Returns all projects visible to the authenticated user.
+      operationId: listProjects
+      tags: [Projects]
+      responses:
+        "200":
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Project"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      summary: Create a project
+      description: Creates a new project. The slug is auto-generated from the name if omitted.
+      operationId: createProject
+      tags: [Projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  example: My Website
+                slug:
+                  type: string
+                  description: URL-safe identifier (auto-generated from name if omitted)
+                  example: my-website
+      responses:
+        "201":
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{id}/dashboard:
+    get:
+      summary: Get dashboard statistics for a project
+      description: |
+        Returns aggregate analytics statistics for a project within a date range.
+        Defaults to the last 30 days.
+      operationId: getDashboard
+      tags: [Dashboard]
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+        - name: from
+          in: query
+          description: Start of date range (RFC3339)
+          schema:
+            type: string
+            format: date-time
+            example: "2026-03-28T00:00:00Z"
+        - name: to
+          in: query
+          description: End of date range (RFC3339)
+          schema:
+            type: string
+            format: date-time
+            example: "2026-04-28T23:59:59Z"
+      responses:
+        "200":
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{id}/events:
+    get:
+      summary: List events for a project
+      description: Returns a paginated list of events, most recent first.
+      operationId: listEvents
+      tags: [Events]
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 500
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: name
+          in: query
+          description: Filter by event name
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Paginated event list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Event"
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{id}/sessions:
+    get:
+      summary: List sessions for a project
+      description: Returns a paginated list of sessions, most recent first.
+      operationId: listSessions
+      tags: [Sessions]
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 500
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Paginated session list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Session"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{id}/funnels:
+    get:
+      summary: List funnels for a project
+      description: Returns all funnels defined for a project, including their steps.
+      operationId: listFunnels
+      tags: [Funnels]
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: List of funnels
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  funnels:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Funnel"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      summary: Create a funnel
+      description: Creates a new funnel with ordered steps.
+      operationId: createFunnel
+      tags: [Funnels]
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFunnelRequest"
+            examples:
+              signup_funnel:
+                summary: Signup conversion funnel
+                value:
+                  name: "Signup Funnel"
+                  description: "Landing page → click → complete"
+                  steps:
+                    - event_name: "page_view"
+                      step_order: 1
+                    - event_name: "signup_click"
+                      step_order: 2
+                    - event_name: "signup_complete"
+                      step_order: 3
+      responses:
+        "201":
+          description: Funnel created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Funnel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{id}/funnels/{fid}/analysis:
+    get:
+      summary: Analyze funnel conversion
+      description: |
+        Returns per-step conversion rates, entry counts, and drop-off percentages
+        for a funnel within a date range.
+      operationId: analyzeFunnel
+      tags: [Funnels]
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+        - name: fid
+          in: path
+          required: true
+          description: Funnel ID
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Funnel analysis results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FunnelAnalysis"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/apikeys:
+    get:
+      summary: List API keys for a project
+      description: Returns all API keys for a project (key hashes are not returned).
+      operationId: listAPIKeys
+      tags: [APIKeys]
+      parameters:
+        - name: project_id
+          in: query
+          required: true
+          description: Project ID to list keys for
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of API keys (plaintext keys not shown)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_keys:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/APIKeySafe"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      summary: Create an API key
+      description: |
+        Creates a new API key for a project. The plaintext key is returned **once** in
+        this response and will never be shown again. Store it securely.
+      operationId: createAPIKey
+      tags: [APIKeys]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project_id, name]
+              properties:
+                project_id:
+                  type: string
+                  description: Project ID the key belongs to
+                name:
+                  type: string
+                  description: Human label for this key
+                  example: frontend-sdk
+                scope:
+                  type: string
+                  enum: [full, ingest]
+                  default: full
+                  description: Key scope (ingest = events only; full = all API access)
+      responses:
+        "201":
+          description: API key created — plaintext key shown once
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  scope:
+                    type: string
+                  key:
+                    type: string
+                    description: Plaintext key — shown once, store securely
+                    example: "a1b2c3d4e5f6...64hexchars..."
+                  created_at:
                     type: string
                     format: date-time
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/projects/{id}/attribution:
+    get:
+      summary: UTM attribution report
+      description: |
+        Returns event and session counts grouped by utm_source, utm_medium, and utm_campaign.
+        Supports first-touch and last-touch attribution models.
+        (Phase 3 — not yet implemented)
+      operationId: getAttribution
+      tags: [Attribution]
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+        - name: model
+          in: query
+          schema:
+            type: string
+            enum: [first_touch, last_touch]
+            default: first_touch
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Attribution report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttributionReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{id}/export:
+    get:
+      summary: Export events as CSV
+      description: |
+        Streams a CSV export of all events for a project within a date range.
+        The response is chunked and streams row by row — suitable for large exports.
+        (Phase 7 — not yet implemented)
+      operationId: exportEvents
+      tags: [Export]
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+        - name: format
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [csv]
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: CSV file stream
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{id}/sessions/{hash}:
+    delete:
+      summary: Delete all events for a session (right to erasure)
+      description: |
+        Deletes all events and the session record associated with the given session hash.
+        This implements GDPR Article 17 (right to erasure).
+        The session hash is the 32-hex-char session fingerprint stored in events.session_id.
+        (Phase 7 — not yet implemented)
+      operationId: deleteSession
+      tags: [Privacy]
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+        - name: hash
+          in: path
+          required: true
+          description: 32-hex-char session fingerprint hash
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{32}$"
+      responses:
+        "200":
+          description: Session deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_events:
+                    type: integer
+                    description: Number of event rows deleted
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/projects/{id}/alerts:
+    get:
+      summary: List alert rules for a project
+      description: Returns all alert rules for a project. (Phase 4 — not yet implemented)
+      operationId: listAlerts
+      tags: [Alerts]
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: List of alert rules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alert_rules:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AlertRule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      summary: Create an alert rule
+      description: Creates a new threshold alert rule. (Phase 4 — not yet implemented)
+      operationId: createAlert
+      tags: [Alerts]
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAlertRuleRequest"
+      responses:
+        "201":
+          description: Alert rule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertRule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/projects/{id}/alerts/{rid}:
+    delete:
+      summary: Delete an alert rule
+      operationId: deleteAlert
+      tags: [Alerts]
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+        - name: rid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Alert rule deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
 components:
   securitySchemes:
     ApiKeyHeader:
       type: apiKey
       in: header
-      name: x-trailpost-api-key
+      name: x-funnelbarn-api-key
       description: |
-        API key for authentication. Keys with `ingest` scope can only access
-        the events endpoint. Keys with `full` scope have complete API access.
+        API key for ingest and administrative operations. Keys with `ingest` scope
+        can only access POST /api/v1/events. Keys with `full` scope have complete access.
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: funnelbarn_session
+      description: HMAC-signed session cookie set by POST /api/v1/login.
+
+  parameters:
+    ProjectID:
+      name: id
+      in: path
+      required: true
+      description: Project ID (UUID)
+      schema:
+        type: string
+        example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters or body
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
 
   schemas:
     EventPayload:
       type: object
-      required:
-        - name
+      required: [name]
+      description: Analytics event payload sent to the ingest endpoint.
       properties:
         name:
           type: string
           description: Event name. Use `page_view` for pageviews. Any string for custom events.
-          example: "purchase"
           minLength: 1
           maxLength: 255
+          example: "purchase"
         url:
           type: string
           format: uri
@@ -215,9 +915,399 @@ components:
           type: string
           format: date-time
           description: |
-            ISO 8601 event timestamp. If omitted, the server uses the
-            receive time.
+            ISO 8601 event timestamp. If omitted, the server uses the receive time.
           example: "2026-04-28T10:00:00Z"
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          description: UUID v4
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        name:
+          type: string
+          example: "My Website"
+        slug:
+          type: string
+          example: "my-website"
+        created_at:
+          type: string
+          format: date-time
+
+    Event:
+      type: object
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+        session_id:
+          type: string
+        name:
+          type: string
+        url:
+          type: string
+        referrer:
+          type: string
+        referrer_domain:
+          type: string
+        utm_source:
+          type: string
+        utm_medium:
+          type: string
+        utm_campaign:
+          type: string
+        utm_term:
+          type: string
+        utm_content:
+          type: string
+        browser:
+          type: string
+        os:
+          type: string
+        device_type:
+          type: string
+        properties:
+          type: string
+          description: Raw JSON blob
+        occurred_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Session fingerprint hash
+        project_id:
+          type: string
+        first_seen_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+        event_count:
+          type: integer
+        entry_url:
+          type: string
+        exit_url:
+          type: string
+        referrer:
+          type: string
+        utm_source:
+          type: string
+        device_type:
+          type: string
+
+    DashboardStats:
+      type: object
+      properties:
+        project_id:
+          type: string
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        total_events:
+          type: integer
+          example: 12450
+        unique_sessions:
+          type: integer
+          example: 3820
+        bounce_rate:
+          type: number
+          format: float
+          description: Fraction of single-event sessions (0.0–1.0)
+          example: 0.42
+        avg_events_per_session:
+          type: number
+          format: float
+          example: 3.26
+        top_pages:
+          type: array
+          items:
+            type: object
+            properties:
+              URL:
+                type: string
+              Views:
+                type: integer
+        top_referrers:
+          type: array
+          items:
+            type: object
+            properties:
+              Domain:
+                type: string
+              Visits:
+                type: integer
+        top_browsers:
+          type: array
+          items:
+            type: object
+            properties:
+              Browser:
+                type: string
+              Count:
+                type: integer
+        device_types:
+          type: array
+          items:
+            type: object
+            properties:
+              DeviceType:
+                type: string
+              Count:
+                type: integer
+        top_event_names:
+          type: array
+          items:
+            type: object
+            properties:
+              Name:
+                type: string
+              Count:
+                type: integer
+        top_utm_sources:
+          type: array
+          items:
+            type: object
+            properties:
+              Source:
+                type: string
+              Count:
+                type: integer
+        events_time_series:
+          type: array
+          items:
+            type: object
+            properties:
+              Time:
+                type: string
+                format: date-time
+              Count:
+                type: integer
+        sessions_time_series:
+          type: array
+          items:
+            type: object
+            properties:
+              Time:
+                type: string
+                format: date-time
+              Count:
+                type: integer
+
+    Funnel:
+      type: object
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+        name:
+          type: string
+          example: "Signup Flow"
+        description:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/FunnelStep"
+        created_at:
+          type: string
+          format: date-time
+
+    FunnelStep:
+      type: object
+      required: [step_order, event_name]
+      properties:
+        id:
+          type: string
+        funnel_id:
+          type: string
+        step_order:
+          type: integer
+          minimum: 1
+          example: 1
+        event_name:
+          type: string
+          example: "page_view"
+        filters:
+          type: string
+          description: JSON array of property filters. e.g. `[{"property":"plan","value":"pro"}]`
+          example: '[{"property":"plan","value":"pro"}]'
+
+    CreateFunnelRequest:
+      type: object
+      required: [name, steps]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          example: "Signup Funnel"
+        description:
+          type: string
+        steps:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/FunnelStep"
+
+    FunnelAnalysis:
+      type: object
+      properties:
+        funnel:
+          $ref: "#/components/schemas/Funnel"
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              StepOrder:
+                type: integer
+              EventName:
+                type: string
+              Count:
+                type: integer
+                description: Number of unique sessions that reached this step
+              Conversion:
+                type: number
+                format: float
+                description: Fraction of step 1 sessions that reached this step (0.0–1.0)
+              DropOff:
+                type: number
+                format: float
+                description: Fraction of previous step sessions that dropped off (0.0–1.0)
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+
+    APIKeySafe:
+      type: object
+      description: API key metadata (plaintext key not included)
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        scope:
+          type: string
+          enum: [full, ingest]
+        created_at:
+          type: string
+          format: date-time
+
+    AttributionReport:
+      type: object
+      description: UTM attribution breakdown
+      properties:
+        model:
+          type: string
+          enum: [first_touch, last_touch]
+        top_sources:
+          type: array
+          items:
+            type: object
+            properties:
+              utm_source:
+                type: string
+              events:
+                type: integer
+              sessions:
+                type: integer
+        top_mediums:
+          type: array
+          items:
+            type: object
+            properties:
+              utm_medium:
+                type: string
+              events:
+                type: integer
+              sessions:
+                type: integer
+        top_campaigns:
+          type: array
+          items:
+            type: object
+            properties:
+              utm_campaign:
+                type: string
+              events:
+                type: integer
+              sessions:
+                type: integer
+
+    AlertRule:
+      type: object
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+        name:
+          type: string
+          example: "Events below 10/hour"
+        metric:
+          type: string
+          enum: [event_count, session_count]
+        condition:
+          type: string
+          enum: [below, above]
+        threshold:
+          type: number
+          example: 10
+        window_minutes:
+          type: integer
+          description: Rolling window in minutes
+          example: 60
+        delivery_type:
+          type: string
+          enum: [email, webhook]
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    CreateAlertRuleRequest:
+      type: object
+      required: [name, metric, condition, threshold, window_minutes, delivery_type]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        metric:
+          type: string
+          enum: [event_count, session_count]
+        condition:
+          type: string
+          enum: [below, above]
+        threshold:
+          type: number
+        window_minutes:
+          type: integer
+          minimum: 1
+        delivery_type:
+          type: string
+          enum: [email, webhook]
+        delivery_config:
+          type: object
+          description: |
+            For email: `{"to": "alerts@example.com"}`
+            For webhook: `{"url": "https://hooks.example.com/funnelbarn"}`
 
     Error:
       type: object

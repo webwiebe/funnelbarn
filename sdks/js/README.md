@@ -1,22 +1,22 @@
-# @trailpost/js
+# @funnelbarn/js
 
-Browser + Node.js SDK for [Trailpost](https://github.com/wiebe-xyz/trailpost) — self-hosted web analytics.
+Browser + Node.js SDK for [FunnelBarn](https://github.com/wiebe-xyz/funnelbarn) — self-hosted web analytics.
 
 ## Installation
 
 ```bash
-npm install @trailpost/js
+npm install @funnelbarn/js
 ```
 
 ## Usage (browser)
 
 ```html
 <script type="module">
-  import { TrailpostClient } from '@trailpost/js';
+  import { FunnelBarnClient } from '@funnelbarn/js';
 
-  const analytics = new TrailpostClient({
+  const analytics = new FunnelBarnClient({
     apiKey: 'your-api-key',
-    endpoint: 'https://analytics.example.com',
+    endpoint: 'https://funnelbarn.example.com',
     projectName: 'my-website',
   });
 
@@ -33,11 +33,11 @@ npm install @trailpost/js
 ## Usage (Node.js)
 
 ```typescript
-import { TrailpostClient } from '@trailpost/js';
+import { FunnelBarnClient } from '@funnelbarn/js';
 
-const analytics = new TrailpostClient({
-  apiKey: process.env.TRAILPOST_API_KEY!,
-  endpoint: process.env.TRAILPOST_ENDPOINT!,
+const analytics = new FunnelBarnClient({
+  apiKey: process.env.FUNNELBARN_API_KEY!,
+  endpoint: process.env.FUNNELBARN_ENDPOINT!,
   projectName: 'my-api',
 });
 
@@ -47,12 +47,12 @@ await analytics.flush();
 
 ## API
 
-### `new TrailpostClient(options)`
+### `new FunnelBarnClient(options)`
 
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `apiKey` | `string` | required | API key |
-| `endpoint` | `string` | required | Trailpost server URL |
+| `endpoint` | `string` | required | FunnelBarn server URL |
 | `projectName` | `string` | — | Project identifier |
 | `flushInterval` | `number` | `5000` | Flush interval in ms |
 | `sessionTimeout` | `number` | `1800000` | Session idle timeout in ms |

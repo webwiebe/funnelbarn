@@ -1,25 +1,25 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: trailpost-web
+  name: funnelbarn-web
 spec:
   replicas: 1
   revisionHistoryLimit: 2
   selector:
     matchLabels:
-      app.kubernetes.io/name: trailpost-web
+      app.kubernetes.io/name: funnelbarn-web
       app.kubernetes.io/environment: testing
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: trailpost-web
+        app.kubernetes.io/name: funnelbarn-web
         app.kubernetes.io/environment: testing
     spec:
       imagePullSecrets:
         - name: ghcr-secret
       containers:
-        - name: trailpost-web
-          image: trailpost/web
+        - name: funnelbarn-web
+          image: funnelbarn/web
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000

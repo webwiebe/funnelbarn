@@ -1,11 +1,11 @@
-# trailpost-go
+# funnelbarn-go
 
-Go SDK for [Trailpost](https://github.com/wiebe-xyz/trailpost) — self-hosted web analytics.
+Go SDK for [FunnelBarn](https://github.com/wiebe-xyz/funnelbarn) — self-hosted web analytics.
 
 ## Installation
 
 ```bash
-go get github.com/wiebe-xyz/trailpost-go
+go get github.com/wiebe-xyz/funnelbarn-go
 ```
 
 ## Usage
@@ -14,22 +14,22 @@ go get github.com/wiebe-xyz/trailpost-go
 package main
 
 import (
-    "github.com/wiebe-xyz/trailpost-go"
+    "github.com/wiebe-xyz/funnelbarn-go"
 )
 
 func main() {
-    trailpost.Init(trailpost.Options{
+    funnelbarn.Init(funnelbarn.Options{
         APIKey:      "your-api-key",
-        Endpoint:    "https://analytics.example.com",
+        Endpoint:    "https://funnelbarn.example.com",
         ProjectName: "my-app",
     })
-    defer trailpost.Shutdown(5 * time.Second)
+    defer funnelbarn.Shutdown(5 * time.Second)
 
     // Track a page view
-    trailpost.Page("https://example.com/pricing", "https://google.com")
+    funnelbarn.Page("https://example.com/pricing", "https://google.com")
 
     // Track a custom event
-    trailpost.Track("signup", map[string]any{
+    funnelbarn.Track("signup", map[string]any{
         "plan": "pro",
     })
 }

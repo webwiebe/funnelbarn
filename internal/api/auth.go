@@ -12,8 +12,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/wiebe-xyz/trailpost/internal/auth"
-	"github.com/wiebe-xyz/trailpost/internal/storage"
+	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 )
 
 // handleLogin authenticates a user and sets a session cookie.
@@ -72,7 +72,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 // handleMe returns the current user.
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("trailpost_session")
+	cookie, err := r.Cookie("funnelbarn_session")
 	if err != nil {
 		jsonError(w, "not authenticated", http.StatusUnauthorized)
 		return

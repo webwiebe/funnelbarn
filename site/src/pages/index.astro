@@ -1,5 +1,5 @@
 ---
-// Trailpost documentation landing page
+// FunnelBarn documentation landing page
 ---
 
 <!DOCTYPE html>
@@ -7,7 +7,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Trailpost — Self-hosted Web Analytics</title>
+  <title>FunnelBarn — Self-hosted Web Analytics</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 0; padding: 0; color: #111; }
     .hero { background: #1e1b4b; color: white; padding: 5rem 2rem; text-align: center; }
@@ -24,9 +24,9 @@
 <body>
 
 <div class="hero">
-  <h1>Trailpost</h1>
+  <h1>FunnelBarn</h1>
   <p>Self-hosted web analytics and funnel tracking. Own your data. No third-party tracking. Single binary.</p>
-  <a class="cta" href="https://github.com/wiebe-xyz/trailpost">Get Started on GitHub</a>
+  <a class="cta" href="https://github.com/wiebe-xyz/funnelbarn">Get Started on GitHub</a>
 </div>
 
 <div class="features">
@@ -60,26 +60,26 @@
   <h2>Quick Start</h2>
   <h3>Docker</h3>
   <pre><code>docker run -d \
-  -e TRAILPOST_API_KEY=my-secret-key \
-  -e TRAILPOST_ADMIN_USERNAME=admin \
-  -e TRAILPOST_ADMIN_PASSWORD=changeme \
+  -e FUNNELBARN_API_KEY=my-secret-key \
+  -e FUNNELBARN_ADMIN_USERNAME=admin \
+  -e FUNNELBARN_ADMIN_PASSWORD=changeme \
   -p 8080:8080 \
-  -v trailpost-data:/var/lib/trailpost \
-  ghcr.io/webwiebe/trailpost/service:latest</code></pre>
+  -v funnelbarn-data:/var/lib/funnelbarn \
+  ghcr.io/webwiebe/funnelbarn/service:latest</code></pre>
 
   <h3>Homebrew (macOS)</h3>
-  <pre><code>brew tap webwiebe/trailpost
-brew install trailpost
-trailpost</code></pre>
+  <pre><code>brew tap webwiebe/funnelbarn
+brew install funnelbarn
+funnelbarn</code></pre>
 
   <h3>APT (Debian/Ubuntu)</h3>
-  <pre><code>curl -fsSL https://webwiebe.nl/apt/trailpost-archive-keyring.gpg | sudo tee /etc/apt/keyrings/trailpost.gpg > /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/trailpost.gpg] https://webwiebe.nl/apt/ stable main" | sudo tee /etc/apt/sources.list.d/trailpost.list
-sudo apt update && sudo apt install trailpost</code></pre>
+  <pre><code>curl -fsSL https://webwiebe.nl/apt/funnelbarn-archive-keyring.gpg | sudo tee /etc/apt/keyrings/funnelbarn.gpg > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/funnelbarn.gpg] https://webwiebe.nl/apt/ stable main" | sudo tee /etc/apt/sources.list.d/funnelbarn.list
+sudo apt update && sudo apt install funnelbarn</code></pre>
 
   <h3>Track your first event</h3>
   <pre><code>curl -X POST http://localhost:8080/api/v1/events \
-  -H "x-trailpost-api-key: my-secret-key" \
+  -H "x-funnelbarn-api-key: my-secret-key" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "page_view",

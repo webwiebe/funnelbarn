@@ -1,14 +1,14 @@
 # Basic Website Example
 
-This example shows how to add Trailpost analytics to a static website.
+This example shows how to add FunnelBarn analytics to a static website.
 
 ## Setup
 
-1. Deploy Trailpost (see root README)
+1. Deploy FunnelBarn (see root README)
 2. Create a project and API key:
    ```bash
-   trailpost project create --name "My Website"
-   trailpost apikey create --project my-website --name frontend --scope ingest
+   funnelbarn project create --name "My Website"
+   funnelbarn apikey create --project my-website --name frontend --scope ingest
    ```
 3. Add the tracking snippet to your HTML
 
@@ -19,11 +19,11 @@ This example shows how to add Trailpost analytics to a static website.
 <html>
 <head>
   <script type="module">
-    import { TrailpostClient } from 'https://cdn.jsdelivr.net/npm/@trailpost/js/dist/esm/index.js';
+    import { FunnelBarnClient } from 'https://cdn.jsdelivr.net/npm/@funnelbarn/js/dist/esm/index.js';
 
-    const analytics = new TrailpostClient({
+    const analytics = new FunnelBarnClient({
       apiKey: 'YOUR_INGEST_API_KEY',
-      endpoint: 'https://analytics.yourdomain.com',
+      endpoint: 'https://funnelbarn.yourdomain.com',
       projectName: 'my-website',
     });
 
@@ -48,8 +48,8 @@ This example shows how to add Trailpost analytics to a static website.
 Create a signup funnel to track conversion:
 
 ```bash
-curl -X POST https://analytics.yourdomain.com/api/v1/projects/PROJECT_ID/funnels \
-  -H "x-trailpost-api-key: YOUR_FULL_API_KEY" \
+curl -X POST https://funnelbarn.yourdomain.com/api/v1/projects/PROJECT_ID/funnels \
+  -H "x-funnelbarn-api-key: YOUR_FULL_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Signup Funnel",

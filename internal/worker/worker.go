@@ -8,10 +8,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/wiebe-xyz/trailpost/internal/enrich"
-	"github.com/wiebe-xyz/trailpost/internal/session"
-	"github.com/wiebe-xyz/trailpost/internal/spool"
-	"github.com/wiebe-xyz/trailpost/internal/storage"
+	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
+	"github.com/wiebe-xyz/funnelbarn/internal/session"
+	"github.com/wiebe-xyz/funnelbarn/internal/spool"
+	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 )
 
 // EventPayload is the JSON body accepted by POST /api/v1/events.

@@ -9,7 +9,7 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY sdks/go ./sdks/go
 
-RUN CGO_ENABLED=1 go build -o /out/trailpost ./cmd/trailpost
+RUN CGO_ENABLED=1 go build -o /out/funnelbarn ./cmd/funnelbarn
 
 FROM alpine:3.20 AS litestream
 ARG LITESTREAM_VERSION=0.3.13
@@ -23,15 +23,15 @@ FROM alpine:3.20
 WORKDIR /app
 
 RUN apk add --no-cache ca-certificates sqlite
-RUN addgroup -S trailpost && adduser -S trailpost -G trailpost
+RUN addgroup -S funnelbarn && adduser -S funnelbarn -G funnelbarn
 
-COPY --from=build /out/trailpost /usr/local/bin/trailpost
+COPY --from=build /out/funnelbarn /usr/local/bin/funnelbarn
 COPY --from=litestream /usr/local/bin/litestream /usr/local/bin/litestream
 COPY deploy/docker/litestream.yml /etc/litestream.yml
 COPY deploy/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-USER trailpost
+USER funnelbarn
 
 EXPOSE 8080
 

@@ -1,4 +1,4 @@
-module github.com/wiebe-xyz/trailpost
+module github.com/wiebe-xyz/funnelbarn
 
 go 1.22
 

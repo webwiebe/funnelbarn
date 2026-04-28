@@ -17,7 +17,7 @@ type Store struct {
 // Open opens the SQLite database at path and runs migrations.
 func Open(path string) (*Store, error) {
 	if path == "" {
-		path = ".data/trailpost.db"
+		path = ".data/funnelbarn.db"
 	}
 
 	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on")

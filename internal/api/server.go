@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/wiebe-xyz/trailpost/internal/auth"
-	"github.com/wiebe-xyz/trailpost/internal/ingest"
-	"github.com/wiebe-xyz/trailpost/internal/storage"
+	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
+	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 )
 
 // Server is the main HTTP API server.
@@ -103,7 +103,7 @@ func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, "+auth.HeaderAPIKey+", X-Trailpost-CSRF")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, "+auth.HeaderAPIKey+", X-FunnelBarn-CSRF")
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
 	w.Header().Set("Access-Control-Max-Age", "86400")
 }
@@ -117,7 +117,7 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		cookie, err := r.Cookie("trailpost_session")
+		cookie, err := r.Cookie("funnelbarn_session")
 		if err != nil {
 			jsonError(w, "unauthorized", http.StatusUnauthorized)
 			return

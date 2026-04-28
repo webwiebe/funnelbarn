@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: trailpost-data
+  name: funnelbarn-data
 spec:
   accessModes:
     - ReadWriteOnce

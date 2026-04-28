@@ -1,4 +1,6 @@
-# Data Model: Trailpost SQLite Schema
+# Data Model: FunnelBarn SQLite Schema
+
+---
 
 ## Tables Overview
 
@@ -8,126 +10,148 @@
 | `api_keys` | Authentication tokens per project |
 | `users` | Admin dashboard users |
 | `sessions_http` | HTTP session tokens for dashboard login |
-| `events` | Analytics events (core data) |
+| `events` | Analytics events (core data table) |
 | `sessions` | Aggregated visitor sessions |
 | `funnels` | Named conversion funnels |
 | `funnel_steps` | Ordered steps within a funnel |
+| `alert_rules` | Threshold and spike alert configurations |
+| `alert_state` | Current firing/resolved state per alert rule |
 
 ---
 
 ## `projects`
 
-Represents one tracked website or application. All events and funnels belong to a project.
+Represents one tracked website or application. All events, sessions, funnels, and API keys belong to a project.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID v4 |
-| `name` | TEXT | Display name (e.g. "My Website") |
-| `slug` | TEXT UNIQUE | URL-safe identifier (e.g. "my-website") |
-| `created_at` | DATETIME | Creation timestamp (UTC) |
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | TEXT PK | NO | UUID v4 |
+| `name` | TEXT | NO | Display name (e.g. `"My Website"`) |
+| `slug` | TEXT UNIQUE | NO | URL-safe identifier (e.g. `"my-website"`) — used in x-funnelbarn-project header |
+| `created_at` | DATETIME | NO | Creation timestamp (UTC, default `CURRENT_TIMESTAMP`) |
+
+**Privacy note**: No PII stored here.
 
 ---
 
 ## `api_keys`
 
-Authentication tokens used by SDKs and integrations. Keys are hashed before storage.
+Authentication tokens used by SDKs and integrations. Keys are hashed before storage; the plaintext is shown once at creation and never stored.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID v4 |
-| `project_id` | TEXT FK → projects | Owning project |
-| `name` | TEXT | Human label (e.g. "production-sdk") |
-| `key_hash` | TEXT UNIQUE | SHA256 hex of the plaintext key |
-| `scope` | TEXT | `full` (all API access) or `ingest` (events only) |
-| `last_used_at` | DATETIME | Last successful authentication |
-| `created_at` | DATETIME | Creation timestamp |
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | TEXT PK | NO | UUID v4 |
+| `project_id` | TEXT FK→projects | NO | Owning project (CASCADE DELETE) |
+| `name` | TEXT | NO | Human label (e.g. `"production-sdk"`, `"frontend"`) |
+| `key_hash` | TEXT UNIQUE | NO | SHA256 hex of the plaintext key — 64 hex chars |
+| `scope` | TEXT | NO | `"full"` (complete API access) or `"ingest"` (events only) |
+| `last_used_at` | DATETIME | YES | Updated on each successful authentication via `TouchAPIKey()` |
+| `expires_at` | DATETIME | YES | Optional expiration (NULL = never expires) |
+| `created_at` | DATETIME | NO | Creation timestamp |
 
-**Security note**: Plaintext API keys are shown once at creation and never stored. Only the SHA256 hash is persisted.
+**Security note**: Plaintext API keys are shown once at creation and never stored or logged. Only the SHA256 hash is persisted. Comparison is done with `crypto/subtle.ConstantTimeCompare`.
 
 ---
 
 ## `users`
 
-Admin users who log into the web dashboard.
+Admin users who log into the web dashboard. In single-tenant deployments, typically one row.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID v4 |
-| `username` | TEXT UNIQUE | Login username |
-| `password_hash` | TEXT | bcrypt hash of password |
-| `created_at` | DATETIME | Creation timestamp |
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | TEXT PK | NO | UUID v4 |
+| `username` | TEXT UNIQUE | NO | Login username |
+| `password_hash` | TEXT | NO | bcrypt hash (cost 10) of password |
+| `created_at` | DATETIME | NO | Creation timestamp |
+
+**Privacy note**: Usernames are admin identifiers, not end-user PII. Password hashes use bcrypt — no rainbow table attacks are feasible.
 
 ---
 
 ## `sessions_http`
 
-Server-side session tokens for dashboard login (alternative to JWT-only approach).
+Server-side session tokens for dashboard login. An HMAC-signed session token is stored in the `funnelbarn_session` cookie.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `token_hash` | TEXT PK | SHA256 of session token |
-| `user_id` | TEXT FK → users | Authenticated user |
-| `expires_at` | DATETIME | Expiry timestamp |
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `token_hash` | TEXT PK | NO | SHA256 of the session token (for server-side invalidation) |
+| `user_id` | TEXT FK→users | NO | Authenticated user (CASCADE DELETE) |
+| `expires_at` | DATETIME | NO | Expiry timestamp |
+
+**Note**: The session token is HMAC-SHA256 signed. This table enables future server-side invalidation. Currently, expiry is validated via the token's embedded expiry claim.
 
 ---
 
 ## `events`
 
-The core analytics table. Each row is one tracked event occurrence.
+The core analytics table. Each row is one tracked event occurrence. This table is written by the background worker and never written directly by the HTTP handler.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID v4 |
-| `project_id` | TEXT FK → projects | Owning project |
-| `session_id` | TEXT | Anonymous session fingerprint hash (32 hex chars) |
-| `user_id_hash` | TEXT | SHA256 of provided user ID (if any) |
-| `name` | TEXT | Event name (e.g. `page_view`, `signup`, `purchase`) |
-| `url` | TEXT | Full URL of the page/action |
-| `referrer` | TEXT | Full referrer URL |
-| `referrer_domain` | TEXT | Extracted domain (e.g. `google.com`) |
-| `utm_source` | TEXT | UTM source parameter |
-| `utm_medium` | TEXT | UTM medium parameter |
-| `utm_campaign` | TEXT | UTM campaign parameter |
-| `utm_term` | TEXT | UTM term parameter |
-| `utm_content` | TEXT | UTM content parameter |
-| `properties` | TEXT | Arbitrary JSON blob with event properties |
-| `user_agent` | TEXT | Raw User-Agent string |
-| `browser` | TEXT | Parsed browser name (e.g. `Chrome`, `Firefox`) |
-| `os` | TEXT | Parsed OS name (e.g. `macOS`, `Windows`, `Android`) |
-| `device_type` | TEXT | `desktop`, `mobile`, `tablet`, or `bot` |
-| `country_code` | TEXT | ISO 3166-1 alpha-2 (reserved for geo-IP, v2) |
-| `ingest_id` | TEXT | Unique ingest record ID (for idempotency) |
-| `occurred_at` | DATETIME | Event timestamp (from payload or server receive time) |
-| `created_at` | DATETIME | Storage timestamp |
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | TEXT PK | NO | UUID v4 generated by worker |
+| `project_id` | TEXT FK→projects | NO | Owning project (CASCADE DELETE) |
+| `session_id` | TEXT | NO | 32-hex-char session fingerprint hash |
+| `user_id_hash` | TEXT | YES | SHA256 of provided user_id; NULL if no user_id sent |
+| `name` | TEXT | NO | Event name (e.g. `page_view`, `signup`, `purchase`) |
+| `url` | TEXT | YES | Full URL of the page/action |
+| `referrer` | TEXT | YES | Full referrer URL (as provided by client) |
+| `referrer_domain` | TEXT | YES | Extracted hostname from referrer (e.g. `google.com`) |
+| `utm_source` | TEXT | YES | UTM source parameter |
+| `utm_medium` | TEXT | YES | UTM medium parameter |
+| `utm_campaign` | TEXT | YES | UTM campaign parameter |
+| `utm_term` | TEXT | YES | UTM term parameter (paid search keyword) |
+| `utm_content` | TEXT | YES | UTM content parameter (A/B test variant) |
+| `properties` | TEXT | YES | Arbitrary JSON blob with event properties (max ~100KB) |
+| `user_agent` | TEXT | YES | Raw User-Agent string from HTTP header or payload |
+| `browser` | TEXT | YES | Parsed browser name (`Chrome`, `Firefox`, `Safari`, `Edge`, `curl`, etc.) |
+| `os` | TEXT | YES | Parsed OS name (`macOS`, `Windows`, `Linux`, `iOS`, `Android`) |
+| `device_type` | TEXT | YES | `desktop`, `mobile`, `tablet`, or `bot` |
+| `country_code` | TEXT | YES | ISO 3166-1 alpha-2 (reserved for Geo-IP, Phase 7) |
+| `ingest_id` | TEXT | YES | Unique ingest record ID from spool — used for idempotency checks |
+| `occurred_at` | DATETIME | NO | Event timestamp (from payload or server receive time) |
+| `created_at` | DATETIME | NO | Storage timestamp (set by worker) |
 
 **Indexes**:
-- `idx_events_project_occurred (project_id, occurred_at DESC)` — primary query index
-- `idx_events_session (session_id)` — session lookups
-- `idx_events_name (project_id, name)` — funnel step matching
+- `idx_events_project_occurred (project_id, occurred_at DESC)` — primary query index for all dashboard queries
+- `idx_events_session (session_id)` — session-level lookups in funnel analysis
+- `idx_events_name (project_id, name)` — funnel step matching queries
+- `idx_events_ingest_id (ingest_id)` — idempotency check (`GetEventByIngestID`)
+
+**Privacy notes**:
+- `session_id` is a one-way hash — it cannot be reversed to recover an IP or User-Agent
+- `user_id_hash` is `SHA256(user_id)` — one-way; the plaintext user_id is never stored
+- `user_agent` is stored for reference; future: add optional `strip_user_agent` config to not persist raw UA
+- URL query parameters may contain PII — operators should strip sensitive params before sending events
 
 ---
 
 ## `sessions`
 
-Aggregated session records. One row per unique fingerprint + project combination. Updated on each event.
+Aggregated session records. One row per unique `(session_id, project_id)` combination. Updated (via `INSERT OR REPLACE`) on each event from a session, keeping the first-seen and last-seen timestamps accurate.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | Session fingerprint hash (same as `events.session_id`) |
-| `project_id` | TEXT FK → projects | Owning project |
-| `first_seen_at` | DATETIME | Timestamp of first event in this session |
-| `last_seen_at` | DATETIME | Timestamp of most recent event |
-| `event_count` | INTEGER | Total events in this session |
-| `entry_url` | TEXT | First URL visited |
-| `exit_url` | TEXT | Last URL visited |
-| `referrer` | TEXT | Referrer from first event |
-| `utm_source` | TEXT | UTM source from first event |
-| `utm_medium` | TEXT | UTM medium from first event |
-| `utm_campaign` | TEXT | UTM campaign from first event |
-| `device_type` | TEXT | Device type from first event |
-| `country_code` | TEXT | Country from first event (reserved) |
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | TEXT PK | NO | Session fingerprint hash (same as `events.session_id`) |
+| `project_id` | TEXT FK→projects | NO | Owning project (CASCADE DELETE) |
+| `first_seen_at` | DATETIME | NO | Timestamp of first event in this session |
+| `last_seen_at` | DATETIME | NO | Timestamp of most recent event |
+| `event_count` | INTEGER | NO | Total events in this session (default 1) |
+| `entry_url` | TEXT | YES | First URL visited |
+| `exit_url` | TEXT | YES | Last URL visited (updated on each event) |
+| `referrer` | TEXT | YES | Referrer URL from the first event |
+| `utm_source` | TEXT | YES | UTM source from the first event (first-touch attribution) |
+| `utm_medium` | TEXT | YES | UTM medium from the first event |
+| `utm_campaign` | TEXT | YES | UTM campaign from the first event |
+| `device_type` | TEXT | YES | Device type from the first event |
+| `country_code` | TEXT | YES | Country from the first event (reserved for Geo-IP) |
 
-**Index**: `idx_sessions_project (project_id, last_seen_at DESC)`
+**Index**: `idx_sessions_project (project_id, last_seen_at DESC)` — for session listing and counting
+
+**Session upsert logic**: `INSERT OR REPLACE INTO sessions` with:
+- On insert: all fields from the first event
+- On replace: `last_seen_at = MAX(last_seen_at, new_value)`, `exit_url = new_value`, `event_count = event_count + 1`
+
+**Bounce rate calculation**: `sessions WHERE event_count = 1 / total sessions` for the date range
 
 ---
 
@@ -135,53 +159,137 @@ Aggregated session records. One row per unique fingerprint + project combination
 
 Named conversion funnels belonging to a project.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID v4 |
-| `project_id` | TEXT FK → projects | Owning project |
-| `name` | TEXT | Display name (e.g. "Signup Flow") |
-| `description` | TEXT | Optional description |
-| `created_at` | DATETIME | Creation timestamp |
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | TEXT PK | NO | UUID v4 |
+| `project_id` | TEXT FK→projects | NO | Owning project (CASCADE DELETE) |
+| `name` | TEXT | NO | Display name (e.g. `"Signup Flow"`, `"Checkout"`) |
+| `description` | TEXT | YES | Optional description for context |
+| `created_at` | DATETIME | NO | Creation timestamp |
 
 ---
 
 ## `funnel_steps`
 
-Ordered steps within a funnel. Each step matches events by name (and optionally property filters).
+Ordered steps within a funnel. Each step matches events by name and optionally by property filters.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID v4 |
-| `funnel_id` | TEXT FK → funnels | Owning funnel (CASCADE DELETE) |
-| `step_order` | INTEGER | Position in funnel (1-indexed) |
-| `event_name` | TEXT | Event name to match (e.g. `page_view`, `purchase`) |
-| `filters` | TEXT | JSON array: `[{"property":"plan","value":"pro"}]` |
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | TEXT PK | NO | UUID v4 |
+| `funnel_id` | TEXT FK→funnels | NO | Owning funnel (CASCADE DELETE) |
+| `step_order` | INTEGER | NO | Position in funnel (1-indexed) |
+| `event_name` | TEXT | NO | Event name to match (e.g. `page_view`, `purchase`) |
+| `filters` | TEXT | YES | JSON array: `[{"property":"plan","value":"pro"}]` — property equality filters |
 
-**Index**: `idx_funnel_steps_funnel (funnel_id, step_order)`
+**Index**: `idx_funnel_steps_funnel (funnel_id, step_order)` — ordered step loading
+
+**Funnel analysis query**: For each step N, count distinct `session_id` values where:
+- The event name matches `step_order = N`
+- The session also has events matching all previous steps (simple: by set intersection; ordered: by timestamp ordering within session)
+
+---
+
+## `alert_rules`
+
+User-defined alert rules for threshold and anomaly detection. (Phase 4 — not yet implemented)
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | TEXT PK | NO | UUID v4 |
+| `project_id` | TEXT FK→projects | NO | Owning project (CASCADE DELETE) |
+| `name` | TEXT | NO | Display name (e.g. `"Events below 10/hour"`) |
+| `metric` | TEXT | NO | `"event_count"` or `"session_count"` |
+| `condition` | TEXT | NO | `"below"` or `"above"` |
+| `threshold` | REAL | NO | Numeric threshold value |
+| `window_minutes` | INTEGER | NO | Rolling window in minutes (e.g. 60 for last hour) |
+| `delivery_type` | TEXT | NO | `"email"` or `"webhook"` |
+| `delivery_config` | TEXT | NO | JSON: `{"to":"email@example.com"}` or `{"url":"https://..."}` |
+| `active` | INTEGER | NO | 0 = disabled, 1 = enabled |
+| `created_at` | DATETIME | NO | Creation timestamp |
+
+---
+
+## `alert_state`
+
+Tracks whether an alert is currently firing. Prevents re-notification while an alert is already active. (Phase 4 — not yet implemented)
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `rule_id` | TEXT PK FK→alert_rules | NO | Alert rule (CASCADE DELETE) |
+| `status` | TEXT | NO | `"ok"`, `"firing"` |
+| `fired_at` | DATETIME | YES | When the alert last transitioned to `"firing"` |
+| `resolved_at` | DATETIME | YES | When the alert last transitioned back to `"ok"` |
+| `last_value` | REAL | YES | Last metric value evaluated |
+| `updated_at` | DATETIME | NO | Last evaluation timestamp |
+
+---
+
+## Spool Record Format (NDJSON)
+
+Each line in `{spooldir}/ingest.ndjson` is a JSON object representing one accepted ingest request.
+
+```json
+{
+  "ingest_id": "a1b2c3d4e5f6a1b2c3d4",
+  "received_at": "2026-04-28T10:00:00.000Z",
+  "content_type": "application/json",
+  "remote_addr": "203.0.113.1:54321",
+  "content_length": 142,
+  "body_base64": "eyJuYW1lIjoicGFnZV92aWV3IiwidXJsIjoiaHR0cHM6Ly9leGFtcGxlLmNvbSJ9",
+  "project_slug": "my-website"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ingest_id` | string | 24-char hex (12 random bytes) — used for idempotency |
+| `received_at` | ISO 8601 | Server receive time (UTC) |
+| `content_type` | string | HTTP Content-Type header value |
+| `remote_addr` | string | Client IP:port (used for session fingerprinting) |
+| `content_length` | int | Body length in bytes |
+| `body_base64` | string | Base64-encoded event JSON payload |
+| `project_slug` | string | Project slug from `x-funnelbarn-project` header or API key's project |
+
+**Note**: `remote_addr` is used only to compute the session fingerprint hash. It is never stored in SQLite.
 
 ---
 
 ## Session Fingerprinting Algorithm
 
-Session IDs are computed server-side using:
+Session IDs are derived server-side from the ingest request:
 
 ```
-session_id = SHA256(normalized_ip + "|" + user_agent)[:32 hex chars]
+session_id = HEX(SHA256(normalized_ip + "|" + user_agent))[:32]
 ```
 
-IP normalization:
-- IPv4: Zero the last octet (`192.168.1.100` → `192.168.1.0`)
-- IPv6: Zero bytes 7–16 (`2001:db8:85a3::8a2e:370:7334` → `2001:db8:85a3::`)
+**IP normalization**:
 
-This provides k-anonymity within a /24 or /48 network while keeping sessions stable for a typical household or office.
+| IP Version | Normalization | Example |
+|------------|---------------|---------|
+| IPv4 | Zero the last octet (/24) | `192.168.1.100` → `192.168.1.0` |
+| IPv6 | Zero bytes 7–16 (/48) | `2001:db8:85a3::8a2e:370:7334` → `2001:db8:85a3::` |
+| Empty/unknown | Use empty string | `""` |
 
-Client-side session IDs (from the JS SDK) use localStorage with a 30-minute idle timeout and take precedence over server fingerprints when provided.
+**Session ID validation**: A valid session ID is exactly 32 lowercase hexadecimal characters (`[0-9a-f]{32}`). Client-provided session IDs (from JS SDK localStorage) are validated against this pattern. Invalid client IDs are discarded and a server fingerprint is computed instead.
+
+**Client-side session IDs**: The JavaScript SDK stores a `funnelbarn_sid` value in `localStorage`. When present and valid, this takes precedence over the server fingerprint. The localStorage key expires after 30 minutes of inactivity (`funnelbarn_sid_exp`).
+
+**Privacy properties of the fingerprint**:
+1. The fingerprint is a one-way hash. The IP prefix and User-Agent cannot be recovered from the session ID.
+2. Two different users behind the same IPv4 /24 using the same browser will produce the same session ID. This is acceptable for analytics (not for authentication or rate limiting).
+3. The nonce-less design means the same user will produce the same session ID on the same day, enabling session counting across page loads without cookies.
 
 ---
 
-## Privacy Design Notes
+## Privacy Design Summary
 
-1. **No IP addresses stored**: The IP is used only to compute the session fingerprint hash. The raw IP never touches the database.
-2. **User IDs hashed**: `user_id_hash = SHA256(user_id)`. One-way only.
-3. **No cross-site tracking**: All data is scoped to one Trailpost instance. No beacon CDN, no shared domain.
-4. **Properties are user-controlled**: Operators choose what goes in `properties`. Sensitive fields should be omitted or pre-hashed by the SDK before sending.
+| Data Element | Treatment |
+|---|---|
+| Raw IP address | Never stored; used only to compute session fingerprint hash |
+| User-Agent | Stored in `events.user_agent` for reference; browser/OS/device parsed from it |
+| Session ID | 32-char one-way hash of (IP prefix + UA) — not reversible |
+| User ID | SHA256-hashed before storage; plaintext never persisted |
+| Event properties | Stored as JSON blob — operator responsibility to exclude PII |
+| URL query parameters | Stored as-is — operators should strip sensitive params |
+| Cookies | None set by FunnelBarn tracking; dashboard uses `funnelbarn_session` cookie only |
+| Cross-site identifiers | None — all data scoped to one FunnelBarn instance |

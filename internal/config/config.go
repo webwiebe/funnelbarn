@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Config holds all runtime configuration for Trailpost.
+// Config holds all runtime configuration for FunnelBarn.
 type Config struct {
 	Addr                string
 	APIKey              string
@@ -35,40 +35,40 @@ func Load() Config {
 	loadConfigFiles()
 
 	cfg := Config{
-		Addr:                getenv("TRAILPOST_ADDR", ":8080"),
-		APIKey:              os.Getenv("TRAILPOST_API_KEY"),
-		APIKeySHA256:        os.Getenv("TRAILPOST_API_KEY_SHA256"),
-		AdminUsername:       os.Getenv("TRAILPOST_ADMIN_USERNAME"),
-		AdminPassword:       os.Getenv("TRAILPOST_ADMIN_PASSWORD"),
-		AdminPasswordBcrypt: os.Getenv("TRAILPOST_ADMIN_PASSWORD_BCRYPT"),
-		SessionSecret:       os.Getenv("TRAILPOST_SESSION_SECRET"),
+		Addr:                getenv("FUNNELBARN_ADDR", ":8080"),
+		APIKey:              os.Getenv("FUNNELBARN_API_KEY"),
+		APIKeySHA256:        os.Getenv("FUNNELBARN_API_KEY_SHA256"),
+		AdminUsername:       os.Getenv("FUNNELBARN_ADMIN_USERNAME"),
+		AdminPassword:       os.Getenv("FUNNELBARN_ADMIN_PASSWORD"),
+		AdminPasswordBcrypt: os.Getenv("FUNNELBARN_ADMIN_PASSWORD_BCRYPT"),
+		SessionSecret:       os.Getenv("FUNNELBARN_SESSION_SECRET"),
 		SessionTTL:          12 * time.Hour,
-		SpoolDir:            getenv("TRAILPOST_SPOOL_DIR", ".data/spool"),
-		DBPath:              getenv("TRAILPOST_DB_PATH", ".data/trailpost.db"),
+		SpoolDir:            getenv("FUNNELBARN_SPOOL_DIR", ".data/spool"),
+		DBPath:              getenv("FUNNELBARN_DB_PATH", ".data/funnelbarn.db"),
 		MaxBodyBytes:        1 << 20, // 1 MiB
-		PublicURL:           os.Getenv("TRAILPOST_PUBLIC_URL"),
-		SelfEndpoint:        os.Getenv("TRAILPOST_SELF_ENDPOINT"),
-		SelfAPIKey:          os.Getenv("TRAILPOST_SELF_API_KEY"),
+		PublicURL:           os.Getenv("FUNNELBARN_PUBLIC_URL"),
+		SelfEndpoint:        os.Getenv("FUNNELBARN_SELF_ENDPOINT"),
+		SelfAPIKey:          os.Getenv("FUNNELBARN_SELF_API_KEY"),
 	}
 
-	if raw := os.Getenv("TRAILPOST_ALLOWED_ORIGINS"); raw != "" {
+	if raw := os.Getenv("FUNNELBARN_ALLOWED_ORIGINS"); raw != "" {
 		for _, o := range strings.Split(raw, ",") {
 			if trimmed := strings.TrimSpace(o); trimmed != "" {
 				cfg.AllowedOrigins = append(cfg.AllowedOrigins, trimmed)
 			}
 		}
 	}
-	if raw := os.Getenv("TRAILPOST_MAX_BODY_BYTES"); raw != "" {
+	if raw := os.Getenv("FUNNELBARN_MAX_BODY_BYTES"); raw != "" {
 		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
 			cfg.MaxBodyBytes = parsed
 		}
 	}
-	if raw := os.Getenv("TRAILPOST_MAX_SPOOL_BYTES"); raw != "" {
+	if raw := os.Getenv("FUNNELBARN_MAX_SPOOL_BYTES"); raw != "" {
 		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
 			cfg.MaxSpoolBytes = parsed
 		}
 	}
-	if raw := os.Getenv("TRAILPOST_SESSION_TTL_SECONDS"); raw != "" {
+	if raw := os.Getenv("FUNNELBARN_SESSION_TTL_SECONDS"); raw != "" {
 		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
 			cfg.SessionTTL = time.Duration(parsed) * time.Second
 		}
@@ -90,14 +90,14 @@ func getenv(key, fallback string) string {
 // always take precedence over values in any file.
 //
 // Supported locations:
-//   - /etc/trailpost/trailpost.conf       (Linux system-wide)
-//   - ~/.config/trailpost/trailpost.conf  (XDG user config, Linux + macOS)
+//   - /etc/funnelbarn/funnelbarn.conf       (Linux system-wide)
+//   - ~/.config/funnelbarn/funnelbarn.conf  (XDG user config, Linux + macOS)
 func loadConfigFiles() {
 	candidates := []string{
-		"/etc/trailpost/trailpost.conf",
+		"/etc/funnelbarn/funnelbarn.conf",
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, ".config", "trailpost", "trailpost.conf"))
+		candidates = append(candidates, filepath.Join(home, ".config", "funnelbarn", "funnelbarn.conf"))
 	}
 	for _, path := range candidates {
 		if err := applyConfigFile(path); err != nil && !os.IsNotExist(err) {
