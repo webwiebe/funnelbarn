@@ -56,6 +56,7 @@ func (s *Server) registerRoutes() {
 	// Projects
 	s.mux.HandleFunc("GET /api/v1/projects", s.requireSession(s.handleListProjects))
 	s.mux.HandleFunc("POST /api/v1/projects", s.requireSession(s.handleCreateProject))
+	s.mux.HandleFunc("PUT /api/v1/projects/{id}", s.requireSession(s.handleUpdateProject))
 
 	// Dashboard & analytics (session required)
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/dashboard", s.requireSession(s.handleDashboard))
@@ -77,6 +78,7 @@ func (s *Server) registerRoutes() {
 	// API keys
 	s.mux.HandleFunc("GET /api/v1/apikeys", s.requireSession(s.handleListAPIKeys))
 	s.mux.HandleFunc("POST /api/v1/apikeys", s.requireSession(s.handleCreateAPIKey))
+	s.mux.HandleFunc("DELETE /api/v1/apikeys/{kid}", s.requireSession(s.handleDeleteAPIKey))
 }
 
 // ServeHTTP adds CORS headers and dispatches to the router.

@@ -105,8 +105,9 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 // handleCreateProject creates a new project.
 func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name string `json:"name"`
-		Slug string `json:"slug"`
+		Name   string `json:"name"`
+		Slug   string `json:"slug"`
+		Domain string `json:"domain"` // UI sends domain; use as slug if slug is empty
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -115,6 +116,9 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	if body.Name == "" {
 		jsonError(w, "name is required", http.StatusBadRequest)
 		return
+	}
+	if body.Slug == "" && body.Domain != "" {
+		body.Slug = toSlug(body.Domain)
 	}
 	if body.Slug == "" {
 		body.Slug = toSlug(body.Name)
@@ -252,6 +256,50 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		},
 		"key": plaintext,
 	})
+}
+
+// handleDeleteAPIKey deletes an API key by its ID.
+func (s *Server) handleDeleteAPIKey(w http.ResponseWriter, r *http.Request) {
+	keyID := r.PathValue("kid")
+	if keyID == "" {
+		jsonError(w, "key id required", http.StatusBadRequest)
+		return
+	}
+	if err := s.store.DeleteAPIKey(r.Context(), keyID); err != nil {
+		jsonError(w, "failed to delete api key", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleUpdateProject updates a project's name.
+func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		jsonError(w, "project id required", http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if body.Name == "" {
+		jsonError(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	project, err := s.store.UpdateProject(r.Context(), projectID, body.Name)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			jsonError(w, "project not found", http.StatusNotFound)
+			return
+		}
+		jsonError(w, "failed to update project", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, project)
 }
 
 // toSlug converts a display name to a URL-safe slug.

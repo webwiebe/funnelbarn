@@ -25,7 +25,7 @@ func (s *Server) handleListABTests(w http.ResponseWriter, r *http.Request) {
 	if tests == nil {
 		tests = []storage.ABTest{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ab_tests": tests})
+	writeJSON(w, http.StatusOK, map[string]any{"tests": tests})
 }
 
 // handleCreateABTest creates a new A/B test for a project.
@@ -121,10 +121,52 @@ func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Map results into the flat shape the UI expects.
+	var controlSample, controlConversions, variantSample, variantConversions int64
+	for _, r := range results {
+		switch r.Variant {
+		case "control":
+			controlSample = r.Total
+			controlConversions = r.Conversions
+		case "variant":
+			variantSample = r.Total
+			variantConversions = r.Conversions
+		}
+	}
+
+	// Simple significance check: require at least 100 samples per arm and
+	// a detectable difference (> 5% relative lift or a minimum absolute diff).
+	significant := false
+	confidence := 0.0
+	if controlSample >= 100 && variantSample >= 100 {
+		controlRate := float64(controlConversions) / float64(controlSample)
+		variantRate := float64(variantConversions) / float64(variantSample)
+		if controlRate > 0 {
+			relativeLift := (variantRate - controlRate) / controlRate
+			if relativeLift > 0.05 || relativeLift < -0.05 {
+				significant = true
+				// Heuristic confidence score: clamp relative lift to [0,1].
+				diff := relativeLift
+				if diff < 0 {
+					diff = -diff
+				}
+				confidence = diff / (diff + 0.1)
+				if confidence > 0.99 {
+					confidence = 0.99
+				}
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ab_test": test,
-		"results": results,
-		"from":    from.Format(time.RFC3339),
-		"to":      to.Format(time.RFC3339),
+		"test":                 test,
+		"control_sample":       controlSample,
+		"control_conversions":  controlConversions,
+		"variant_sample":       variantSample,
+		"variant_conversions":  variantConversions,
+		"significant":          significant,
+		"confidence":           confidence,
+		"from":                 from.Format(time.RFC3339),
+		"to":                   to.Format(time.RFC3339),
 	})
 }

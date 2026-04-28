@@ -233,6 +233,22 @@ func (s *Store) ListAPIKeys(ctx context.Context, projectID string) ([]APIKey, er
 	return keys, rows.Err()
 }
 
+// DeleteAPIKey removes an API key by its ID.
+func (s *Store) DeleteAPIKey(ctx context.Context, id string) error {
+	const q = `DELETE FROM api_keys WHERE id = ?`
+	_, err := s.db.ExecContext(ctx, q, id)
+	return err
+}
+
+// UpdateProject updates a project's name.
+func (s *Store) UpdateProject(ctx context.Context, id, name string) (Project, error) {
+	const q = `UPDATE projects SET name = ? WHERE id = ?`
+	if _, err := s.db.ExecContext(ctx, q, name, id); err != nil {
+		return Project{}, fmt.Errorf("update project: %w", err)
+	}
+	return s.ProjectByID(ctx, id)
+}
+
 // ListAllAPIKeys returns all API keys across all projects, ordered by creation time.
 func (s *Store) ListAllAPIKeys(ctx context.Context) ([]APIKey, error) {
 	const q = `SELECT id, project_id, name, key_hash, scope, created_at FROM api_keys ORDER BY created_at`
