@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 	"unicode"
 
 	"golang.org/x/crypto/bcrypt"
@@ -70,7 +71,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "logged out"})
 }
 
-// handleMe returns the current user.
+// handleMe returns the current user plus metadata useful for first-run detection.
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("funnelbarn_session")
 	if err != nil {
@@ -82,7 +83,13 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "session invalid", http.StatusUnauthorized)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"username": username})
+
+	hasProjects, _ := s.store.HasProjects(r.Context())
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"username":     username,
+		"has_projects": hasProjects,
+	})
 }
 
 // handleListProjects lists all projects.
@@ -121,18 +128,24 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, project)
 }
 
-// handleListAPIKeys lists API keys. Requires project_id query param.
+// handleListAPIKeys lists API keys.
+// Accepts an optional ?project_id= query param to filter by project.
+// When omitted, returns all API keys across all projects.
 func (s *Server) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
-	if projectID == "" {
-		jsonError(w, "project_id required", http.StatusBadRequest)
-		return
+
+	var keys []storage.APIKey
+	var err error
+	if projectID != "" {
+		keys, err = s.store.ListAPIKeys(r.Context(), projectID)
+	} else {
+		keys, err = s.store.ListAllAPIKeys(r.Context())
 	}
-	keys, err := s.store.ListAPIKeys(r.Context(), projectID)
 	if err != nil {
 		jsonError(w, "failed to list api keys", http.StatusInternalServerError)
 		return
 	}
+
 	// Mask key hashes in the response.
 	type safeKey struct {
 		ID        string `json:"id"`
@@ -146,13 +159,18 @@ func (s *Server) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
 			ID:        k.ID,
 			Name:      k.Name,
 			Scope:     k.Scope,
-			CreatedAt: k.CreatedAt.String(),
+			CreatedAt: k.CreatedAt.Format(time.RFC3339),
 		})
+	}
+	if safe == nil {
+		safe = []safeKey{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"api_keys": safe})
 }
 
 // handleCreateAPIKey creates a new API key for a project.
+// project_id may be sent in the request body or as a query param.
+// When omitted, the first project is used (single-tenant convenience).
 func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ProjectID string `json:"project_id"`
@@ -163,16 +181,28 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+
+	// Allow project_id from query param as fallback.
 	if body.ProjectID == "" {
-		jsonError(w, "project_id is required", http.StatusBadRequest)
-		return
+		body.ProjectID = r.URL.Query().Get("project_id")
 	}
+
+	// If still empty, pick the first available project.
+	if body.ProjectID == "" {
+		projects, err := s.store.ListProjects(r.Context())
+		if err != nil || len(projects) == 0 {
+			jsonError(w, "no projects found — create a project first", http.StatusBadRequest)
+			return
+		}
+		body.ProjectID = projects[0].ID
+	}
+
 	if body.Name == "" {
 		jsonError(w, "name is required", http.StatusBadRequest)
 		return
 	}
 	if body.Scope == "" {
-		body.Scope = storage.APIKeyScopeFull
+		body.Scope = storage.APIKeyScopeIngest
 	}
 	if body.Scope != storage.APIKeyScopeFull && body.Scope != storage.APIKeyScopeIngest {
 		jsonError(w, "scope must be 'full' or 'ingest'", http.StatusBadRequest)
@@ -206,12 +236,21 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return the plaintext key once — it won't be shown again.
+	// Response shape: { api_key: {...}, key: "<plaintext>" }
+	type safeKey struct {
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		Scope     string `json:"scope"`
+		CreatedAt string `json:"created_at"`
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"id":         key.ID,
-		"name":       key.Name,
-		"scope":      key.Scope,
-		"key":        plaintext,
-		"created_at": key.CreatedAt,
+		"api_key": safeKey{
+			ID:        key.ID,
+			Name:      key.Name,
+			Scope:     key.Scope,
+			CreatedAt: key.CreatedAt.Format(time.RFC3339),
+		},
+		"key": plaintext,
 	})
 }
 

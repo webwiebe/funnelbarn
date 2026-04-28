@@ -232,3 +232,23 @@ func (s *Store) ListAPIKeys(ctx context.Context, projectID string) ([]APIKey, er
 	}
 	return keys, rows.Err()
 }
+
+// ListAllAPIKeys returns all API keys across all projects, ordered by creation time.
+func (s *Store) ListAllAPIKeys(ctx context.Context) ([]APIKey, error) {
+	const q = `SELECT id, project_id, name, key_hash, scope, created_at FROM api_keys ORDER BY created_at`
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var keys []APIKey
+	for rows.Next() {
+		var k APIKey
+		if err := rows.Scan(&k.ID, &k.ProjectID, &k.Name, &k.KeyHash, &k.Scope, &k.CreatedAt); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
+}

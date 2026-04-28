@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { ReactNode } from 'react'
+import { ReactNode, useState } from 'react'
 import { AuthProvider, useAuth } from './lib/auth'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
@@ -7,6 +7,8 @@ import Dashboard from './pages/Dashboard'
 import Funnels from './pages/Funnels'
 import Live from './pages/Live'
 import Settings from './pages/Settings'
+import ABTests from './pages/ABTests'
+import FirstRunWizard from './components/FirstRunWizard'
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth()
@@ -73,39 +75,58 @@ function RootRedirect() {
 }
 
 function AppRoutes() {
+  const { user } = useAuth()
+  const [wizardDismissed, setWizardDismissed] = useState(false)
+
+  // Show wizard if user is logged in but has no projects (has_projects === false)
+  const showWizard = user && (user as any).has_projects === false && !wizardDismissed
+
   return (
-    <Routes>
-      <Route path="/" element={<RootRedirect />} />
-      <Route path="/login" element={<Login />} />
-      <Route
-        path="/dashboard"
-        element={<ProtectedRoute><Dashboard /></ProtectedRoute>}
-      />
-      <Route
-        path="/dashboard/:projectId"
-        element={<ProtectedRoute><Dashboard /></ProtectedRoute>}
-      />
-      <Route
-        path="/funnels"
-        element={<ProtectedRoute><Funnels /></ProtectedRoute>}
-      />
-      <Route
-        path="/funnels/:projectId"
-        element={<ProtectedRoute><Funnels /></ProtectedRoute>}
-      />
-      <Route
-        path="/live"
-        element={<ProtectedRoute><Live /></ProtectedRoute>}
-      />
-      <Route
-        path="/live/:projectId"
-        element={<ProtectedRoute><Live /></ProtectedRoute>}
-      />
-      <Route
-        path="/settings"
-        element={<ProtectedRoute><Settings /></ProtectedRoute>}
-      />
-    </Routes>
+    <>
+      {showWizard && (
+        <FirstRunWizard onComplete={() => setWizardDismissed(true)} />
+      )}
+      <Routes>
+        <Route path="/" element={<RootRedirect />} />
+        <Route path="/login" element={<Login />} />
+        <Route
+          path="/dashboard"
+          element={<ProtectedRoute><Dashboard /></ProtectedRoute>}
+        />
+        <Route
+          path="/dashboard/:projectId"
+          element={<ProtectedRoute><Dashboard /></ProtectedRoute>}
+        />
+        <Route
+          path="/funnels"
+          element={<ProtectedRoute><Funnels /></ProtectedRoute>}
+        />
+        <Route
+          path="/funnels/:projectId"
+          element={<ProtectedRoute><Funnels /></ProtectedRoute>}
+        />
+        <Route
+          path="/abtests"
+          element={<ProtectedRoute><ABTests /></ProtectedRoute>}
+        />
+        <Route
+          path="/abtests/:projectId"
+          element={<ProtectedRoute><ABTests /></ProtectedRoute>}
+        />
+        <Route
+          path="/live"
+          element={<ProtectedRoute><Live /></ProtectedRoute>}
+        />
+        <Route
+          path="/live/:projectId"
+          element={<ProtectedRoute><Live /></ProtectedRoute>}
+        />
+        <Route
+          path="/settings"
+          element={<ProtectedRoute><Settings /></ProtectedRoute>}
+        />
+      </Routes>
+    </>
   )
 }
 

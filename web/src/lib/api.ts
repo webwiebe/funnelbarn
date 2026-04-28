@@ -99,6 +99,34 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ name, scope }),
     }),
+
+  deleteApiKey: (keyId: string) =>
+    request<void>(`/api/v1/apikeys/${keyId}`, { method: 'DELETE' }),
+
+  // Project update
+  updateProject: (projectId: string, data: { name: string }) =>
+    request<Project>(`/api/v1/projects/${projectId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  // A/B Tests
+  getABTests: (projectId: string) =>
+    request<{ tests: ABTest[] }>(`/api/v1/projects/${projectId}/abtests`),
+
+  createABTest: (projectId: string, data: {
+    name: string
+    conversion_event: string
+    control_filter?: { property: string; value: string }
+    variant_filter?: { property: string; value: string }
+  }) =>
+    request<ABTest>(`/api/v1/projects/${projectId}/abtests`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getABTestAnalysis: (projectId: string, testId: string) =>
+    request<ABTestAnalysis>(`/api/v1/projects/${projectId}/abtests/${testId}/analysis`),
 }
 
 // Types
@@ -161,4 +189,24 @@ export interface ApiKey {
   name: string
   scope: string
   created_at: string
+}
+
+export interface ABTest {
+  id: string
+  name: string
+  conversion_event: string
+  status?: string
+  created_at: string
+  control_filter?: { property: string; value: string }
+  variant_filter?: { property: string; value: string }
+}
+
+export interface ABTestAnalysis {
+  test: ABTest
+  control_sample: number
+  control_conversions: number
+  variant_sample: number
+  variant_conversions: number
+  significant: boolean
+  confidence?: number
 }

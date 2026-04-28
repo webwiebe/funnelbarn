@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Copy, Trash2, Plus, Check } from 'lucide-react'
+import { Copy, Trash2, Plus, Check, Save } from 'lucide-react'
 import Shell from '../components/Shell'
-import { api, ApiKey } from '../lib/api'
+import { api, ApiKey, Project } from '../lib/api'
 
 const C = {
   bg: '#0f1117',
@@ -46,6 +46,23 @@ function CopyButton({ value }: { value: string }) {
   )
 }
 
+function ScopeBadge({ scope }: { scope: string }) {
+  const isIngest = scope === 'ingest'
+  return (
+    <span style={{
+      fontSize: 12,
+      fontWeight: 600,
+      background: isIngest ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)',
+      color: isIngest ? C.amber : C.success,
+      border: `1px solid ${isIngest ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.3)'}`,
+      borderRadius: 99,
+      padding: '0.15rem 0.6rem',
+    }}>
+      {scope}
+    </span>
+  )
+}
+
 export default function Settings() {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(true)
@@ -55,11 +72,29 @@ export default function Settings() {
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Project editing
+  const [projects, setProjects] = useState<Project[]>([])
+  const [editedNames, setEditedNames] = useState<Record<string, string>>({})
+  const [savingProject, setSavingProject] = useState<string | null>(null)
+  const [projectSaveMsg, setProjectSaveMsg] = useState<string | null>(null)
+
+  // Confirm delete
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+
   useEffect(() => {
     api.listApiKeys()
       .then((d) => setApiKeys(d.api_keys || []))
       .catch(() => setApiKeys([]))
       .finally(() => setLoading(false))
+
+    api.listProjects()
+      .then((d) => {
+        setProjects(d.projects || [])
+        const names: Record<string, string> = {}
+        for (const p of d.projects || []) names[p.id] = p.name
+        setEditedNames(names)
+      })
+      .catch(() => setProjects([]))
   }, [])
 
   const handleCreate = async () => {
@@ -78,9 +113,146 @@ export default function Settings() {
     }
   }
 
+  const handleDeleteKey = async (keyId: string) => {
+    if (deleteConfirm !== keyId) {
+      setDeleteConfirm(keyId)
+      return
+    }
+    try {
+      await api.deleteApiKey(keyId)
+      setApiKeys((prev) => prev.filter((k) => k.id !== keyId))
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setDeleteConfirm(null)
+    }
+  }
+
+  const handleSaveProject = async (projectId: string) => {
+    const name = editedNames[projectId]?.trim()
+    if (!name) return
+    setSavingProject(projectId)
+    try {
+      await api.updateProject(projectId, { name })
+      setProjects((prev) => prev.map((p) => p.id === projectId ? { ...p, name } : p))
+      setProjectSaveMsg('Saved!')
+      setTimeout(() => setProjectSaveMsg(null), 2000)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setSavingProject(null)
+    }
+  }
+
+  // Find first ingest key for embed snippet
+  const ingestKey = apiKeys.find((k) => k.scope === 'ingest')
+  const snippet = `<script src="https://funnelbarn.wiebe.xyz/sdk.js"\n        data-api-key="${ingestKey?.id ?? 'fb_your_key_here'}"></script>`
+
+  const inputStyle = {
+    background: C.surface,
+    border: `1px solid ${C.border}`,
+    borderRadius: 7,
+    padding: '0.55rem 0.875rem',
+    color: C.text,
+    fontSize: 14,
+    outline: 'none',
+  }
+
   return (
     <Shell>
       <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.5px', marginBottom: '2rem' }}>Settings</h1>
+
+      {/* Projects section */}
+      {projects.length > 0 && (
+        <div style={{
+          background: C.surface,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          overflow: 'hidden',
+          marginBottom: '2rem',
+        }}>
+          <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${C.border}` }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Projects</div>
+            <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>Edit your project names.</div>
+          </div>
+          {projects.map((p) => (
+            <div key={p.id} style={{
+              padding: '1rem 1.5rem',
+              borderBottom: `1px solid ${C.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}>
+              <input
+                value={editedNames[p.id] ?? p.name}
+                onChange={(e) => setEditedNames((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                style={{ ...inputStyle, flex: 1 }}
+                onFocus={(e) => (e.target.style.borderColor = C.amber)}
+                onBlur={(e) => (e.target.style.borderColor = C.border)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveProject(p.id)}
+              />
+              <button
+                onClick={() => handleSaveProject(p.id)}
+                disabled={savingProject === p.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  background: C.amber,
+                  border: 'none',
+                  borderRadius: 7,
+                  color: '#0f1117',
+                  padding: '0.5rem 1rem',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  fontWeight: 700,
+                }}
+              >
+                <Save size={13} />
+                {savingProject === p.id ? 'Saving…' : 'Save'}
+              </button>
+              {projectSaveMsg && savingProject === null && (
+                <span style={{ fontSize: 13, color: C.success }}>{projectSaveMsg}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Embed snippet */}
+      <div style={{
+        background: C.surface,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        overflow: 'hidden',
+        marginBottom: '2rem',
+      }}>
+        <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>Tracking snippet</div>
+          <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
+            Paste this in the <code style={{ color: C.amber }}>&lt;head&gt;</code> of your site.
+          </div>
+        </div>
+        <div style={{ padding: '1.25rem 1.5rem' }}>
+          <div style={{
+            background: C.bg,
+            border: `1px solid ${C.border}`,
+            borderRadius: 10,
+            padding: '1rem',
+            marginBottom: '0.75rem',
+            fontFamily: '"SF Mono", "Fira Code", monospace',
+            fontSize: 13,
+            color: '#a5f3fc',
+            whiteSpace: 'pre',
+            overflowX: 'auto',
+          }}>
+            {snippet}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <CopyButton value={snippet} />
+          </div>
+        </div>
+      </div>
 
       {/* API Keys section */}
       <div style={{
@@ -181,34 +353,58 @@ export default function Settings() {
                     {key.name}
                   </td>
                   <td style={{ padding: '0.875rem 1.5rem' }}>
-                    <span style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      background: key.scope === 'full' ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)',
-                      color: key.scope === 'full' ? C.error : C.success,
-                      border: `1px solid ${key.scope === 'full' ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`,
-                      borderRadius: 99,
-                      padding: '0.15rem 0.6rem',
-                    }}>
-                      {key.scope}
-                    </span>
+                    <ScopeBadge scope={key.scope} />
                   </td>
                   <td style={{ padding: '0.875rem 1.5rem', fontSize: 13, color: C.muted }}>
                     {new Date(key.created_at).toLocaleDateString()}
                   </td>
                   <td style={{ padding: '0.875rem 1.5rem', textAlign: 'right' }}>
-                    <button
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: C.muted,
-                        cursor: 'pointer',
-                        padding: 4,
-                      }}
-                      title="Delete key"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {deleteConfirm === key.id ? (
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                        <span style={{ fontSize: 12, color: C.error }}>Confirm?</span>
+                        <button
+                          onClick={() => handleDeleteKey(key.id)}
+                          style={{
+                            background: 'rgba(239,68,68,0.1)',
+                            border: `1px solid rgba(239,68,68,0.3)`,
+                            borderRadius: 6,
+                            color: C.error,
+                            cursor: 'pointer',
+                            padding: '0.25rem 0.6rem',
+                            fontSize: 12,
+                            fontWeight: 700,
+                          }}
+                        >
+                          Delete
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirm(null)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: C.muted,
+                            cursor: 'pointer',
+                            fontSize: 12,
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handleDeleteKey(key.id)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: C.muted,
+                          cursor: 'pointer',
+                          padding: 4,
+                        }}
+                        title="Delete key"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -253,6 +449,7 @@ export default function Settings() {
               }}
               onFocus={(e) => (e.target.style.borderColor = C.amber)}
               onBlur={(e) => (e.target.style.borderColor = C.border)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
             />
             <select
               value={newKeyScope}

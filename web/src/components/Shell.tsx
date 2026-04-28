@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { BarChart2, Layers, Radio, Settings, ChevronDown, LogOut, User } from 'lucide-react'
+import { BarChart2, Layers, Radio, Settings, ChevronDown, LogOut, User, FlaskConical } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { api, Project } from '../lib/api'
 
@@ -43,6 +43,7 @@ export default function Shell({ children, projectId, onProjectChange }: ShellPro
   const navLinks = [
     { to: projectId ? `/dashboard/${projectId}` : '/dashboard', label: 'Overview', icon: <BarChart2 size={16} /> },
     { to: projectId ? `/funnels/${projectId}` : '/funnels', label: 'Funnels', icon: <Layers size={16} /> },
+    { to: projectId ? `/abtests/${projectId}` : '/abtests', label: 'A/B Tests', icon: <FlaskConical size={16} /> },
     { to: projectId ? `/live/${projectId}` : '/live', label: 'Live', icon: <Radio size={16} /> },
     { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
   ]

@@ -13,9 +13,18 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse time range (default: last 30 days).
+	// Parse time range. Supports ?range=24h|7d|30d or explicit ?from=&to= (RFC3339).
 	to := time.Now().UTC()
 	from := to.AddDate(0, 0, -30)
+	switch r.URL.Query().Get("range") {
+	case "24h":
+		from = to.Add(-24 * time.Hour)
+	case "7d":
+		from = to.AddDate(0, 0, -7)
+	case "30d":
+		from = to.AddDate(0, 0, -30)
+	}
+	// Explicit from/to override the range shorthand.
 	if v := r.URL.Query().Get("from"); v != "" {
 		if t, err := time.Parse(time.RFC3339, v); err == nil {
 			from = t

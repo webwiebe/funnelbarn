@@ -97,6 +97,19 @@ CREATE TABLE IF NOT EXISTS funnel_steps (
 );
 
 CREATE INDEX IF NOT EXISTS idx_funnel_steps_funnel ON funnel_steps (funnel_id, step_order);
+
+CREATE TABLE IF NOT EXISTS ab_tests (
+    id               TEXT PRIMARY KEY,
+    project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name             TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'running',
+    control_filter   TEXT,
+    variant_filter   TEXT,
+    conversion_event TEXT NOT NULL,
+    created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_ab_tests_project ON ab_tests (project_id, created_at DESC);
 `
 
 // APIKeyScopeFull allows full API access.
