@@ -4,6 +4,84 @@ import { Plus, X, Layers } from 'lucide-react'
 import Shell from '../components/Shell'
 import { api, Funnel, FunnelAnalysis, FunnelStepInput } from '../lib/api'
 
+function ImplementationSnippet({ funnel }: { funnel: Funnel }) {
+  const [copied, setCopied] = useState(false)
+  const steps = funnel.steps || []
+
+  // Convert event_name to camelCase for the const key
+  const toCamelCase = (s: string) => s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
+
+  // Generate the JS snippet
+  const snippet = `<!-- 1. Add this to your <head> -->
+<script src="https://funnelbarn.wiebe.xyz/sdk.js"
+        data-api-key="YOUR_API_KEY"></script>
+
+<script>
+// 2. Define your funnel steps
+const ${toCamelCase(funnel.name.replace(/\s+/g, '_'))}Funnel = {
+${steps.map(s => `  ${toCamelCase(s.event_name)}: '${s.event_name}',`).join('\n')}
+}
+
+// 3. Button click example
+document.querySelector('#your-cta-button').addEventListener('click', () => {
+  funnelbarn.track('${steps[1]?.event_name || steps[0]?.event_name || 'button_click'}')
+})
+
+// 4. Form submit example
+document.querySelector('form').addEventListener('submit', () => {
+  funnelbarn.track('${steps[steps.length - 1]?.event_name || 'form_submit'}')
+})
+
+// 5. Scroll depth tracker (fires once at 50%)
+let _scrollTracked = false
+window.addEventListener('scroll', () => {
+  const pct = window.scrollY / (document.body.scrollHeight - window.innerHeight)
+  if (pct >= 0.5 && !_scrollTracked) {
+    _scrollTracked = true
+    funnelbarn.track('scroll_50_percent')
+  }
+}, { passive: true })
+</script>`
+
+  return (
+    <div style={{
+      marginTop: '1.5rem',
+      background: '#0f1117',
+      border: '1px solid #2a2d3a',
+      borderRadius: 10,
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '0.75rem 1rem',
+        borderBottom: '1px solid #2a2d3a',
+      }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8' }}>Implementation</span>
+        <button
+          onClick={() => { navigator.clipboard.writeText(snippet); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+          style={{
+            background: 'none', border: '1px solid #2a2d3a', borderRadius: 6,
+            color: copied ? '#10b981' : '#94a3b8', cursor: 'pointer',
+            padding: '0.25rem 0.6rem', fontSize: 12,
+          }}
+        >
+          {copied ? '✓ Copied' : 'Copy'}
+        </button>
+      </div>
+      <pre style={{
+        margin: 0, padding: '1rem',
+        fontSize: 12, lineHeight: 1.6,
+        color: '#e2e8f0',
+        overflowX: 'auto',
+        whiteSpace: 'pre',
+        fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+      }}>
+        {snippet}
+      </pre>
+    </div>
+  )
+}
+
 const PRESET_SEGMENTS = [
   { id: 'all', label: 'All' },
   { id: 'logged_in', label: 'Logged in' },
@@ -235,26 +313,29 @@ function CreateFunnelModal({
 }
 
 function FunnelDetail({ analysis, activeSegment }: { analysis: FunnelAnalysis; activeSegment: string }) {
-  const hasData = analysis.results && analysis.results.length > 0 && analysis.results[0]?.Count > 0
+  const hasData = analysis.results && analysis.results.length > 0 && analysis.results[0]?.count > 0
 
   if (!hasData) {
     return (
-      <div style={{ padding: '2rem', textAlign: 'center', color: C.muted }}>
-        <div style={{ fontSize: 40, marginBottom: 16 }}>📭</div>
-        <div style={{ fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 8 }}>
-          No data yet for "{analysis.funnel?.name}"
+      <div>
+        <div style={{ padding: '2rem', textAlign: 'center', color: C.muted }}>
+          <div style={{ fontSize: 40, marginBottom: 16 }}>📭</div>
+          <div style={{ fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 8 }}>
+            No data yet for "{analysis.funnel?.name}"
+          </div>
+          <div style={{ fontSize: 14, lineHeight: 1.6 }}>
+            Start sending events using your tracking snippet.<br />
+            This funnel tracks: {analysis.funnel?.steps?.map(s => s.event_name).join(' → ')}
+          </div>
         </div>
-        <div style={{ fontSize: 14, lineHeight: 1.6 }}>
-          Start sending events using your tracking snippet.<br />
-          This funnel tracks: {analysis.results?.map(r => r.EventName).join(' → ')}
-        </div>
+        {analysis.funnel && <ImplementationSnippet funnel={analysis.funnel} />}
       </div>
     )
   }
 
-  const maxCount = Math.max(...(analysis.results?.map((r) => r.Count) ?? [1]))
+  const maxCount = Math.max(...(analysis.results?.map((r) => r.count) ?? [1]))
   const segLabel = PRESET_SEGMENTS.find((s) => s.id === activeSegment)?.label ?? activeSegment
-  const entryCount = analysis.results?.[0]?.Count ?? 0
+  const entryCount = analysis.results?.[0]?.count ?? 0
 
   return (
     <div>
@@ -274,9 +355,9 @@ function FunnelDetail({ analysis, activeSegment }: { analysis: FunnelAnalysis; a
       )}
 
       {analysis.results?.map((step, i) => (
-        <div key={step.StepOrder} style={{ marginBottom: '1.25rem' }}>
+        <div key={step.step_order} style={{ marginBottom: '1.25rem' }}>
           {/* Drop-off indicator between steps */}
-          {i > 0 && step.DropOff > 0 && (
+          {i > 0 && step.drop_off > 0 && (
             <div style={{
               fontSize: 12,
               color: C.error,
@@ -287,7 +368,7 @@ function FunnelDetail({ analysis, activeSegment }: { analysis: FunnelAnalysis; a
               gap: 4,
             }}>
               <span>▼</span>
-              {(step.DropOff * 100).toFixed(1)}% dropped off
+              {(step.drop_off * 100).toFixed(1)}% dropped off
             </div>
           )}
 
@@ -295,7 +376,7 @@ function FunnelDetail({ analysis, activeSegment }: { analysis: FunnelAnalysis; a
             <div style={{
               width: 32,
               height: 32,
-              background: conversionColor(step.Conversion),
+              background: conversionColor(step.conversion),
               color: '#0f1117',
               borderRadius: '50%',
               display: 'flex',
@@ -309,14 +390,14 @@ function FunnelDetail({ analysis, activeSegment }: { analysis: FunnelAnalysis; a
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 6 }}>
-                {step.EventName}
+                {step.event_name}
               </div>
               <div style={{ height: 20, background: '#2a2d3a', borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
                 <div style={{
                   position: 'absolute',
                   inset: 0,
-                  width: `${(step.Count / maxCount) * 100}%`,
-                  background: conversionColor(step.Conversion),
+                  width: `${(step.count / maxCount) * 100}%`,
+                  background: conversionColor(step.conversion),
                   borderRadius: 4,
                   display: 'flex',
                   alignItems: 'center',
@@ -324,18 +405,20 @@ function FunnelDetail({ analysis, activeSegment }: { analysis: FunnelAnalysis; a
                   transition: 'width 0.5s',
                 }}>
                   <span style={{ fontSize: 11, fontWeight: 700, color: '#0f1117', whiteSpace: 'nowrap' }}>
-                    {(step.Conversion * 100).toFixed(1)}%
+                    {(step.conversion * 100).toFixed(1)}%
                   </span>
                 </div>
               </div>
             </div>
             <div style={{ textAlign: 'right', minWidth: 70 }}>
-              <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>{step.Count.toLocaleString()}</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>{step.count.toLocaleString()}</div>
               <div style={{ fontSize: 12, color: C.muted }}>users</div>
             </div>
           </div>
         </div>
       ))}
+
+      <ImplementationSnippet funnel={analysis.funnel} />
     </div>
   )
 }

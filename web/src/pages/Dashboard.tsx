@@ -141,8 +141,8 @@ export default function Dashboard() {
         const analysis = await api.getFunnelAnalysis(projectId, funnels[0].id)
         const steps = analysis.results || []
         if (steps.length < 2) return
-        const first = steps[0]?.Count ?? 0
-        const last = steps[steps.length - 1]?.Count ?? 0
+        const first = steps[0]?.count ?? 0
+        const last = steps[steps.length - 1]?.count ?? 0
         if (first === 0) return
         setTopFunnelRate((last / first) * 100)
       })

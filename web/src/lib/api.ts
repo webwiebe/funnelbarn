@@ -154,7 +154,7 @@ export interface DashboardData {
   bounce_rate: number
   top_pages: { URL: string; Views: number }[]
   top_referrers: { Domain: string; Visits: number }[]
-  top_event_names: { Name: string; Count: number }[]
+  top_event_names: { name: string; count: number }[]
   events_time_series: { Time: string; Count: number }[]
 }
 
@@ -182,11 +182,11 @@ export interface Funnel {
 }
 
 export interface StepResult {
-  StepOrder: number
-  EventName: string
-  Count: number
-  Conversion: number
-  DropOff: number
+  step_order: number
+  event_name: string
+  count: number
+  conversion: number
+  drop_off: number
 }
 
 export interface FunnelAnalysis {

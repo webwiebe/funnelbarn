@@ -33,18 +33,18 @@ export default function FunnelChart({ results }: FunnelChartProps) {
     return <div style={{ color: C.muted, fontSize: 14 }}>No step data.</div>
   }
 
-  const first = results[0]?.Count ?? 1
+  const first = results[0]?.count ?? 1
 
   return (
     <div style={{ width: '100%' }}>
       {results.map((step, i) => {
-        const widthPct = first > 0 ? (step.Count / first) * 100 : 0
-        const color = barColor(i === 0 ? 1 : step.Conversion)
+        const widthPct = first > 0 ? (step.count / first) * 100 : 0
+        const color = barColor(i === 0 ? 1 : step.conversion)
         const prevStep = i > 0 ? results[i - 1] : null
-        const droppedAbsolute = prevStep ? prevStep.Count - step.Count : 0
+        const droppedAbsolute = prevStep ? prevStep.count - step.count : 0
 
         return (
-          <div key={step.StepOrder}>
+          <div key={step.step_order}>
             {/* Drop arrow between steps */}
             {i > 0 && (
               <div style={{
@@ -60,8 +60,8 @@ export default function FunnelChart({ results }: FunnelChartProps) {
                 <span style={{ color: C.muted }}>
                   {droppedAbsolute.toLocaleString()} dropped off
                   {' '}
-                  ({prevStep && prevStep.Count > 0
-                    ? ((step.DropOff) * 100).toFixed(1)
+                  ({prevStep && prevStep.count > 0
+                    ? ((step.drop_off) * 100).toFixed(1)
                     : '0.0'}%)
                 </span>
               </div>
@@ -91,13 +91,13 @@ export default function FunnelChart({ results }: FunnelChartProps) {
                   {i + 1}
                 </div>
                 <span style={{ fontSize: 13, color: C.text, fontWeight: 600, minWidth: 140 }}>
-                  {step.EventName}
+                  {step.event_name}
                 </span>
                 <span style={{ fontSize: 13, color: C.muted, marginLeft: 'auto' }}>
-                  {step.Count.toLocaleString()} users
+                  {step.count.toLocaleString()} users
                   {' · '}
                   <span style={{ color, fontWeight: 700 }}>
-                    {i === 0 ? '100' : (step.Conversion * 100).toFixed(1)}%
+                    {i === 0 ? '100' : (step.conversion * 100).toFixed(1)}%
                   </span>
                 </span>
               </div>
