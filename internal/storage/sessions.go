@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 )
 
@@ -86,6 +87,17 @@ func (s *Store) ListSessions(ctx context.Context, projectID string, limit, offse
 		sessions = append(sessions, sess)
 	}
 	return sessions, rows.Err()
+}
+
+// ActiveSessionCount returns the number of sessions with last_seen_at within the last withinMinutes minutes.
+func (s *Store) ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error) {
+	const q = `
+		SELECT COUNT(*) FROM sessions
+		WHERE project_id = ?
+		AND last_seen_at >= datetime('now', ? || ' minutes')`
+	var count int64
+	err := s.db.QueryRowContext(ctx, q, projectID, fmt.Sprintf("-%d", withinMinutes)).Scan(&count)
+	return count, err
 }
 
 func scanSession(row *sql.Row) (Session, error) {

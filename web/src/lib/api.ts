@@ -130,6 +130,10 @@ export const api = {
 
   getABTestAnalysis: (projectId: string, testId: string) =>
     request<ABTestAnalysis>(`/api/v1/projects/${projectId}/abtests/${testId}/analysis`),
+
+  // Active sessions (last 5 minutes)
+  getActiveSessions: (projectId: string) =>
+    request<{ active_sessions: number; window_minutes: number }>(`/api/v1/projects/${projectId}/sessions/active`),
 }
 
 // Types

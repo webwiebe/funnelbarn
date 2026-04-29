@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts'
 import { Radio } from 'lucide-react'
 import Shell from '../components/Shell'
+import { api } from '../lib/api'
 
 const C = {
   bg: '#0f1117',
@@ -115,17 +116,24 @@ export default function Live() {
 
     trySSE()
 
-    // Simulated active sessions (replace with real endpoint if available)
-    const sessionInterval = setInterval(() => {
-      setActiveSessions((prev) => Math.max(0, prev + Math.floor(Math.random() * 3) - 1))
-    }, 5000)
-
     return () => {
       es?.close()
       if (polling) clearInterval(polling)
-      clearInterval(sessionInterval)
       setConnected(false)
     }
+  }, [projectId])
+
+  // Poll active sessions from the backend every 30 seconds
+  useEffect(() => {
+    if (!projectId) return
+    const poll = () => {
+      api.getActiveSessions(projectId)
+        .then((d) => setActiveSessions(d.active_sessions))
+        .catch(() => {}) // silent fail — keep last known value
+    }
+    poll() // immediate first fetch
+    const interval = setInterval(poll, 30_000)
+    return () => clearInterval(interval)
   }, [projectId])
 
   if (!projectId) {
@@ -181,7 +189,7 @@ export default function Live() {
           }}>
             {activeSessions}
           </div>
-          <div style={{ fontSize: 13, color: C.muted }}>right now</div>
+          <div style={{ fontSize: 13, color: C.muted }}>active in last 5 min</div>
         </div>
 
         {/* Sparkline */}
