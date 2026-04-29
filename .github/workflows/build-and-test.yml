@@ -149,6 +149,87 @@ jobs:
               \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
             }" || echo "BugBarn release marker skipped"
 
+  deploy-staging:
+    needs: deploy
+    runs-on: [self-hosted, build]
+    timeout-minutes: 15
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      SERVICE_IMAGE: ghcr.io/webwiebe/funnelbarn/service
+      WEB_IMAGE: ghcr.io/webwiebe/funnelbarn/web
+      K3S_HOST: k3s1.nijmegen.wiebe.xyz
+      K3S_USER: root
+      NAMESPACE: funnelbarn-staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Transfer manifests
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "rm -rf /tmp/funnelbarn-deploy-staging && mkdir -p /tmp/funnelbarn-deploy-staging"
+          scp -o StrictHostKeyChecking=no -r deploy \
+            "${K3S_USER}@${K3S_HOST}:/tmp/funnelbarn-deploy-staging/deploy"
+
+      - name: Ensure namespace exists
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl apply -f /tmp/funnelbarn-deploy-staging/deploy/k8s/staging/namespace.yaml"
+
+      - name: Decrypt and apply secret
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY_STAGING }}
+        run: |
+          set -euo pipefail
+          sops -d deploy/k8s/staging/secret.yaml | \
+            ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl apply -f -"
+
+      - name: Create GHCR pull secret
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
+            kubectl create secret docker-registry ghcr-secret \
+              --docker-server=ghcr.io \
+              --docker-username='${{ github.actor }}' \
+              --docker-password='${{ secrets.GITHUB_TOKEN }}' \
+              --namespace=${NAMESPACE} \
+              --dry-run=client -o yaml | kubectl apply -f -
+          "
+
+      - name: Apply manifests and roll out
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
+            set -euo pipefail
+            kubectl apply -k /tmp/funnelbarn-deploy-staging/deploy/k8s/staging
+            kubectl -n ${NAMESPACE} set image deployment/funnelbarn \
+              funnelbarn=${SERVICE_IMAGE}:${{ github.sha }}
+            kubectl -n ${NAMESPACE} set image deployment/funnelbarn-web \
+              funnelbarn-web=${WEB_IMAGE}:${{ github.sha }}
+            kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=180s
+            kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=180s
+          "
+
+      - name: Post release marker to BugBarn
+        if: vars.BUGBARN_ENDPOINT != ''
+        env:
+          BUGBARN_ENDPOINT: ${{ vars.BUGBARN_ENDPOINT }}
+          BUGBARN_API_KEY: ${{ secrets.FUNNELBARN_BUGBARN_API_KEY }}
+        run: |
+          curl -sf -X POST "${BUGBARN_ENDPOINT}/api/v1/releases" \
+            -H "Content-Type: application/json" \
+            -H "X-BugBarn-Api-Key: ${BUGBARN_API_KEY}" \
+            -d "{
+              \"name\": \"${GITHUB_SHA:0:7}\",
+              \"environment\": \"staging\",
+              \"version\": \"${GITHUB_SHA}\",
+              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}\",
+              \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
+            }" || echo "BugBarn release marker skipped"
+
   e2e:
     needs: deploy
     runs-on: [self-hosted, build]
