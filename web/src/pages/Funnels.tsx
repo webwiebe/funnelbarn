@@ -4,17 +4,27 @@ import { Plus, X, Layers } from 'lucide-react'
 import Shell from '../components/Shell'
 import { api, Funnel, FunnelAnalysis, FunnelStepInput } from '../lib/api'
 
-function ImplementationSnippet({ funnel }: { funnel: Funnel }) {
+function ImplementationSnippet({ funnel, apiKey }: { funnel: Funnel; apiKey?: string }) {
   const [copied, setCopied] = useState(false)
   const steps = funnel.steps || []
 
   // Convert event_name to camelCase for the const key
-  const toCamelCase = (s: string) => s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
+  const toCamelCase = (s: string): string => {
+    if (!s) return 'step'
+    return (
+      s
+        .replace(/[^a-zA-Z0-9_]/g, '_')
+        .replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
+        .replace(/^[0-9]/, '_$&') || 'step'
+    )
+  }
+
+  const displayKey = apiKey ?? 'YOUR_INGEST_API_KEY'
 
   // Generate the JS snippet
   const snippet = `<!-- 1. Add this to your <head> -->
 <script src="https://funnelbarn.wiebe.xyz/sdk.js"
-        data-api-key="YOUR_API_KEY"></script>
+        data-api-key="${displayKey}"></script>
 
 <script>
 // 2. Define your funnel steps
@@ -315,7 +325,7 @@ function CreateFunnelModal({
   )
 }
 
-function FunnelDetail({ analysis, activeSegment }: { analysis: FunnelAnalysis; activeSegment: string }) {
+function FunnelDetail({ analysis, activeSegment, apiKey }: { analysis: FunnelAnalysis; activeSegment: string; apiKey?: string }) {
   const hasData = analysis.results && analysis.results.length > 0 && analysis.results[0]?.count > 0
 
   if (!hasData) {
@@ -331,7 +341,7 @@ function FunnelDetail({ analysis, activeSegment }: { analysis: FunnelAnalysis; a
             This funnel tracks: {analysis.funnel?.steps?.map(s => s.event_name).filter(Boolean).join(' → ') || '(no steps defined)'}
           </div>
         </div>
-        {analysis.funnel && <ImplementationSnippet funnel={analysis.funnel} />}
+        {analysis.funnel && <ImplementationSnippet funnel={analysis.funnel} apiKey={apiKey} />}
       </div>
     )
   }
@@ -421,7 +431,7 @@ function FunnelDetail({ analysis, activeSegment }: { analysis: FunnelAnalysis; a
         </div>
       ))}
 
-      <ImplementationSnippet funnel={analysis.funnel} />
+      <ImplementationSnippet funnel={analysis.funnel} apiKey={apiKey} />
     </div>
   )
 }
@@ -436,6 +446,16 @@ export default function Funnels() {
   const [showCreate, setShowCreate] = useState(false)
   const [showDetail, setShowDetail] = useState(false)
   const [activeSegment, setActiveSegment] = useState('all')
+  const [ingestKey, setIngestKey] = useState<string | undefined>(undefined)
+
+  useEffect(() => {
+    api.listApiKeys()
+      .then((d) => {
+        const key = (d.api_keys || []).find((k) => k.scope === 'ingest')
+        if (key) setIngestKey(key.id)
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!projectId) return
@@ -657,7 +677,7 @@ export default function Funnels() {
             </div>
           )}
           {analysis && !analysisLoading && !analysisError && (
-            <FunnelDetail analysis={analysis} activeSegment={activeSegment} />
+            <FunnelDetail analysis={analysis} activeSegment={activeSegment} apiKey={ingestKey} />
           )}
         </div>
       </div>
