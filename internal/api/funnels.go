@@ -9,6 +9,97 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 )
 
+// handleUpdateFunnel updates a funnel's name and steps.
+func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	funnelID := r.PathValue("fid")
+	if projectID == "" || funnelID == "" {
+		jsonError(w, "project id and funnel id required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify funnel belongs to project.
+	existing, err := s.store.FunnelByID(r.Context(), funnelID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			jsonError(w, "funnel not found", http.StatusNotFound)
+			return
+		}
+		jsonError(w, "failed to load funnel", http.StatusInternalServerError)
+		return
+	}
+	if existing.ProjectID != projectID {
+		jsonError(w, "funnel not found", http.StatusNotFound)
+		return
+	}
+
+	var body struct {
+		Name        string               `json:"name"`
+		Description string               `json:"description"`
+		Steps       []storage.FunnelStep `json:"steps"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if body.Name == "" {
+		jsonError(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if len(body.Steps) == 0 {
+		jsonError(w, "at least one step is required", http.StatusBadRequest)
+		return
+	}
+
+	funnel := storage.Funnel{
+		ID:          funnelID,
+		ProjectID:   projectID,
+		Name:        body.Name,
+		Description: body.Description,
+		Steps:       body.Steps,
+	}
+
+	updated, err := s.store.UpdateFunnel(r.Context(), funnel)
+	if err != nil {
+		jsonError(w, "failed to update funnel", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, updated)
+}
+
+// handleDeleteFunnel deletes a funnel and its steps.
+func (s *Server) handleDeleteFunnel(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	funnelID := r.PathValue("fid")
+	if projectID == "" || funnelID == "" {
+		jsonError(w, "project id and funnel id required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify funnel belongs to project.
+	existing, err := s.store.FunnelByID(r.Context(), funnelID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			jsonError(w, "funnel not found", http.StatusNotFound)
+			return
+		}
+		jsonError(w, "failed to load funnel", http.StatusInternalServerError)
+		return
+	}
+	if existing.ProjectID != projectID {
+		jsonError(w, "funnel not found", http.StatusNotFound)
+		return
+	}
+
+	if err := s.store.DeleteFunnel(r.Context(), funnelID); err != nil {
+		jsonError(w, "failed to delete funnel", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleListFunnels returns all funnels for a project.
 func (s *Server) handleListFunnels(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")

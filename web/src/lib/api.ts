@@ -95,6 +95,15 @@ export const api = {
   getFunnelSegments: (projectId: string, funnelId: string) =>
     request<FunnelSegments>(`/api/v1/projects/${projectId}/funnels/${funnelId}/segments`),
 
+  updateFunnel: (projectId: string, funnelId: string, data: { name: string; description?: string; steps: FunnelStepInput[] }) =>
+    request<Funnel>(`/api/v1/projects/${projectId}/funnels/${funnelId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteFunnel: (projectId: string, funnelId: string) =>
+    request<void>(`/api/v1/projects/${projectId}/funnels/${funnelId}`, { method: 'DELETE' }),
+
   // API Keys
   listApiKeys: () =>
     request<{ api_keys: ApiKey[] }>('/api/v1/apikeys'),

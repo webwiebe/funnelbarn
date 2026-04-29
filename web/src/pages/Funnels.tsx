@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Plus, X, Layers } from 'lucide-react'
+import { Plus, X, Layers, Pencil, Trash2 } from 'lucide-react'
 import Shell from '../components/Shell'
 import { api, Funnel, FunnelAnalysis, FunnelStepInput } from '../lib/api'
 
@@ -505,6 +505,214 @@ function CreateFunnelModal({
   )
 }
 
+function EditFunnelModal({
+  projectId,
+  funnel,
+  onClose,
+  onUpdated,
+}: {
+  projectId: string
+  funnel: Funnel
+  onClose: () => void
+  onUpdated: (f: Funnel) => void
+}) {
+  const [name, setName] = useState(funnel.name)
+  const [steps, setSteps] = useState<FunnelStepInput[]>(
+    funnel.steps?.length > 0
+      ? funnel.steps.map((s) => ({ event_name: s.event_name }))
+      : [{ event_name: '' }, { event_name: '' }]
+  )
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const addStep = () => setSteps((s) => [...s, { event_name: '' }])
+  const removeStep = (i: number) => setSteps((s) => s.filter((_, idx) => idx !== i))
+  const updateStep = (i: number, val: string) =>
+    setSteps((s) => s.map((st, idx) => (idx === i ? { event_name: val } : st)))
+
+  const handleSave = async () => {
+    if (!name.trim()) { setError('Name is required'); return }
+    if (steps.some((s) => !s.event_name.trim())) { setError('All steps need an event name'); return }
+    setSaving(true)
+    setError(null)
+    try {
+      const updated = await api.updateFunnel(projectId, funnel.id, { name, steps })
+      onUpdated(updated)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.7)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 500,
+      padding: '1rem',
+    }}>
+      <div style={{
+        background: C.surface,
+        border: `1px solid ${C.border}`,
+        borderRadius: 14,
+        padding: '2rem',
+        width: '100%',
+        maxWidth: 500,
+        boxShadow: '0 25px 60px rgba(0,0,0,0.5)',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Edit funnel</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer' }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {error && (
+          <div style={{
+            background: 'rgba(239,68,68,0.1)',
+            border: `1px solid rgba(239,68,68,0.3)`,
+            borderRadius: 8,
+            padding: '0.6rem 0.875rem',
+            color: C.error,
+            fontSize: 14,
+            marginBottom: '1rem',
+          }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ marginBottom: '1.25rem' }}>
+          <label style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 6 }}>Funnel name</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Signup flow"
+            style={{
+              width: '100%',
+              background: C.bg,
+              border: `1px solid ${C.border}`,
+              borderRadius: 8,
+              padding: '0.6rem 0.875rem',
+              color: C.text,
+              fontSize: 14,
+              boxSizing: 'border-box',
+              outline: 'none',
+            }}
+            onFocus={(e) => (e.target.style.borderColor = C.amber)}
+            onBlur={(e) => (e.target.style.borderColor = C.border)}
+          />
+        </div>
+
+        <div style={{ marginBottom: '1.25rem' }}>
+          <label style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 10 }}>Steps</label>
+          {steps.map((s, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+              <div style={{
+                width: 24,
+                height: 24,
+                background: C.amber,
+                color: '#0f1117',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 12,
+                fontWeight: 800,
+                flexShrink: 0,
+              }}>
+                {i + 1}
+              </div>
+              <input
+                value={s.event_name}
+                onChange={(e) => updateStep(i, e.target.value)}
+                placeholder={`Event name, e.g. page_view`}
+                style={{
+                  flex: 1,
+                  background: C.bg,
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 8,
+                  padding: '0.55rem 0.875rem',
+                  color: C.text,
+                  fontSize: 14,
+                  outline: 'none',
+                }}
+                onFocus={(e) => (e.target.style.borderColor = C.amber)}
+                onBlur={(e) => (e.target.style.borderColor = C.border)}
+              />
+              {steps.length > 1 && (
+                <button
+                  onClick={() => removeStep(i)}
+                  style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 4 }}
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            onClick={addStep}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'transparent',
+              border: `1px dashed ${C.border}`,
+              borderRadius: 8,
+              color: C.muted,
+              padding: '0.5rem 1rem',
+              cursor: 'pointer',
+              fontSize: 13,
+              width: '100%',
+              justifyContent: 'center',
+              marginTop: 4,
+            }}
+          >
+            <Plus size={14} /> Add step
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'transparent',
+              border: `1px solid ${C.border}`,
+              borderRadius: 8,
+              color: C.muted,
+              padding: '0.6rem 1.25rem',
+              cursor: 'pointer',
+              fontSize: 14,
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{
+              background: saving ? '#78481a' : C.amber,
+              border: 'none',
+              borderRadius: 8,
+              color: '#0f1117',
+              padding: '0.6rem 1.25rem',
+              cursor: saving ? 'not-allowed' : 'pointer',
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function FunnelDetail({ analysis, activeSegment, apiKey }: { analysis: FunnelAnalysis; activeSegment: string; apiKey?: string }) {
   const hasData = analysis.results && analysis.results.length > 0 && analysis.results[0]?.count > 0
 
@@ -624,9 +832,11 @@ export default function Funnels() {
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
   const [showDetail, setShowDetail] = useState(false)
   const [activeSegment, setActiveSegment] = useState('all')
   const [ingestKey, setIngestKey] = useState<string | undefined>(undefined)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     api.listApiKeys()
@@ -664,6 +874,24 @@ export default function Funnels() {
     setSelected(funnel)
     setShowDetail(true)
     // Analysis will be fetched by the effect above.
+  }
+
+  const handleDeleteFunnel = async () => {
+    if (!selected || !projectId) return
+    if (!window.confirm(`Delete funnel "${selected.name}"? This cannot be undone.`)) return
+    setDeleting(true)
+    try {
+      await api.deleteFunnel(projectId, selected.id)
+      setFunnels((prev) => prev.filter((f) => f.id !== selected.id))
+      setSelected(null)
+      setAnalysis(null)
+      setShowDetail(false)
+    } catch (e) {
+      console.error(e)
+      alert('Failed to delete funnel: ' + String(e))
+    } finally {
+      setDeleting(false)
+    }
   }
 
   if (!projectId) {
@@ -707,6 +935,21 @@ export default function Funnels() {
             setFunnels((prev) => [...prev, f])
             setShowCreate(false)
             loadAnalysis(f)
+          }}
+        />
+      )}
+
+      {showEdit && selected && projectId && (
+        <EditFunnelModal
+          projectId={projectId}
+          funnel={selected}
+          onClose={() => setShowEdit(false)}
+          onUpdated={(updated) => {
+            setFunnels((prev) => prev.map((f) => f.id === updated.id ? updated : f))
+            setSelected(updated)
+            setShowEdit(false)
+            // Re-trigger analysis by resetting and letting the effect pick it up.
+            setAnalysis(null)
           }}
         />
       )}
@@ -829,6 +1072,53 @@ export default function Funnels() {
             }}>
               <Layers size={40} opacity={0.3} />
               <div>Select a funnel to view analysis</div>
+            </div>
+          )}
+          {selected && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ fontWeight: 700, fontSize: 16, color: C.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {selected.name}
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button
+                  onClick={() => setShowEdit(true)}
+                  title="Edit funnel"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    background: 'transparent',
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 7,
+                    color: C.muted,
+                    padding: '0.35rem 0.7rem',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                  }}
+                >
+                  <Pencil size={13} /> Edit
+                </button>
+                <button
+                  onClick={handleDeleteFunnel}
+                  disabled={deleting}
+                  title="Delete funnel"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    background: 'transparent',
+                    border: `1px solid rgba(239,68,68,0.4)`,
+                    borderRadius: 7,
+                    color: C.error,
+                    padding: '0.35rem 0.7rem',
+                    cursor: deleting ? 'not-allowed' : 'pointer',
+                    fontSize: 13,
+                    opacity: deleting ? 0.5 : 1,
+                  }}
+                >
+                  <Trash2 size={13} /> {deleting ? 'Deleting…' : 'Delete'}
+                </button>
+              </div>
             </div>
           )}
           {selected && (

@@ -122,6 +122,41 @@ func (s *Store) ListFunnels(ctx context.Context, projectID string) ([]Funnel, er
 	return funnels, nil
 }
 
+// UpdateFunnel replaces a funnel's name and steps.
+func (s *Store) UpdateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Funnel{}, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.ExecContext(ctx, `UPDATE funnels SET name=?, description=? WHERE id=?`, f.Name, nullStr(f.Description), f.ID); err != nil {
+		return Funnel{}, fmt.Errorf("update funnel: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM funnel_steps WHERE funnel_id=?`, f.ID); err != nil {
+		return Funnel{}, fmt.Errorf("delete funnel steps: %w", err)
+	}
+
+	const qs = `INSERT INTO funnel_steps (id, funnel_id, step_order, event_name, filters) VALUES (?, ?, ?, ?, ?)`
+	for i := range f.Steps {
+		f.Steps[i].ID = generateUUID()
+		f.Steps[i].FunnelID = f.ID
+		f.Steps[i].StepOrder = i + 1
+
+		filtersJSON, _ := json.Marshal(f.Steps[i].Filters)
+		if _, err := tx.ExecContext(ctx, qs, f.Steps[i].ID, f.ID, f.Steps[i].StepOrder, f.Steps[i].EventName, string(filtersJSON)); err != nil {
+			return Funnel{}, fmt.Errorf("insert funnel step: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Funnel{}, err
+	}
+
+	return s.FunnelByID(ctx, f.ID)
+}
+
 // DeleteFunnel removes a funnel and its steps (cascade).
 func (s *Store) DeleteFunnel(ctx context.Context, id string) error {
 	const q = `DELETE FROM funnels WHERE id = ?`
