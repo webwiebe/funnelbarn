@@ -27,6 +27,7 @@ type Config struct {
 	PublicURL           string
 	SelfEndpoint        string
 	SelfAPIKey          string
+	SelfEnvironment     string
 }
 
 // Load reads config from config files and environment variables.
@@ -49,6 +50,7 @@ func Load() Config {
 		PublicURL:           os.Getenv("FUNNELBARN_PUBLIC_URL"),
 		SelfEndpoint:        os.Getenv("FUNNELBARN_SELF_ENDPOINT"),
 		SelfAPIKey:          os.Getenv("FUNNELBARN_SELF_API_KEY"),
+		SelfEnvironment:     getenv("FUNNELBARN_ENVIRONMENT", "production"),
 	}
 
 	if raw := os.Getenv("FUNNELBARN_ALLOWED_ORIGINS"); raw != "" {

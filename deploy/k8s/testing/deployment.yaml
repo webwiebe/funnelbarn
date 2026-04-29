@@ -58,6 +58,24 @@ spec:
                   name: funnelbarn-secrets
                   key: FUNNELBARN_SESSION_SECRET
                   optional: true
+            - name: FUNNELBARN_SELF_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_SELF_ENDPOINT
+                  optional: true
+            - name: FUNNELBARN_SELF_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_SELF_API_KEY
+                  optional: true
+            - name: FUNNELBARN_ENVIRONMENT
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_ENVIRONMENT
+                  optional: true
           resources:
             requests:
               cpu: 50m

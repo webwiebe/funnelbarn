@@ -97,6 +97,7 @@ func run() error {
 			APIKey:      cfg.SelfAPIKey,
 			Endpoint:    cfg.SelfEndpoint,
 			ProjectSlug: "funnelbarn",
+			Environment: cfg.SelfEnvironment,
 		})
 		// Rewire the global logger so Warn+ records are also captured by BugBarn.
 		baseHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
