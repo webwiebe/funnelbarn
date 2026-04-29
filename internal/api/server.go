@@ -57,6 +57,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/projects", s.requireSession(s.handleListProjects))
 	s.mux.HandleFunc("POST /api/v1/projects", s.requireSession(s.handleCreateProject))
 	s.mux.HandleFunc("PUT /api/v1/projects/{id}", s.requireSession(s.handleUpdateProject))
+	s.mux.HandleFunc("DELETE /api/v1/projects/{id}", s.requireSession(s.handleDeleteProject))
 
 	// Dashboard & analytics (session required)
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/dashboard", s.requireSession(s.handleDashboard))

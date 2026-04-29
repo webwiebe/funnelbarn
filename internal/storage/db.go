@@ -240,6 +240,13 @@ func (s *Store) DeleteAPIKey(ctx context.Context, id string) error {
 	return err
 }
 
+// DeleteProject removes a project and all related data (cascades via FK constraints).
+func (s *Store) DeleteProject(ctx context.Context, id string) error {
+	const q = `DELETE FROM projects WHERE id = ?`
+	_, err := s.db.ExecContext(ctx, q, id)
+	return err
+}
+
 // UpdateProject updates a project's name.
 func (s *Store) UpdateProject(ctx context.Context, id, name string) (Project, error) {
 	const q = `UPDATE projects SET name = ? WHERE id = ?`

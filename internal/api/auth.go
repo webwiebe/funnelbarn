@@ -272,6 +272,20 @@ func (s *Server) handleDeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleDeleteProject deletes a project and all its data.
+func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		jsonError(w, "project id required", http.StatusBadRequest)
+		return
+	}
+	if err := s.store.DeleteProject(r.Context(), projectID); err != nil {
+		jsonError(w, "failed to delete project", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleUpdateProject updates a project's name.
 func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")

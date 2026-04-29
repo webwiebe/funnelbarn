@@ -79,8 +79,12 @@ export default function Settings() {
   const [savingProject, setSavingProject] = useState<string | null>(null)
   const [projectSaveMsg, setProjectSaveMsg] = useState<string | null>(null)
 
-  // Confirm delete
+  // Confirm delete (api key)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+
+  // Confirm delete project
+  const [deleteProjectConfirm, setDeleteProjectConfirm] = useState<string | null>(null)
+  const [deletingProject, setDeletingProject] = useState<string | null>(null)
 
   // Sync editedNames when context projects change
   useEffect(() => {
@@ -126,6 +130,23 @@ export default function Settings() {
       setError(String(e))
     } finally {
       setDeleteConfirm(null)
+    }
+  }
+
+  const handleDeleteProject = async (projectId: string) => {
+    if (deleteProjectConfirm !== projectId) {
+      setDeleteProjectConfirm(projectId)
+      return
+    }
+    setDeletingProject(projectId)
+    try {
+      await api.deleteProject(projectId)
+      setDeleteProjectConfirm(null)
+      refetchProjects()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setDeletingProject(null)
     }
   }
 
@@ -227,6 +248,55 @@ export default function Settings() {
               </button>
               {projectSaveMsg && savingProject === null && (
                 <span style={{ fontSize: 13, color: C.success }}>{projectSaveMsg}</span>
+              )}
+              {deleteProjectConfirm === p.id ? (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: C.error, whiteSpace: 'nowrap' }}>
+                    Delete? This removes all data.
+                  </span>
+                  <button
+                    onClick={() => handleDeleteProject(p.id)}
+                    disabled={deletingProject === p.id}
+                    style={{
+                      background: 'rgba(239,68,68,0.1)',
+                      border: `1px solid rgba(239,68,68,0.3)`,
+                      borderRadius: 6,
+                      color: C.error,
+                      cursor: 'pointer',
+                      padding: '0.25rem 0.6rem',
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {deletingProject === p.id ? 'Deleting…' : 'Confirm'}
+                  </button>
+                  <button
+                    onClick={() => setDeleteProjectConfirm(null)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: C.muted,
+                      cursor: 'pointer',
+                      fontSize: 12,
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => handleDeleteProject(p.id)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: C.muted,
+                    cursor: 'pointer',
+                    padding: 4,
+                  }}
+                  title="Delete project"
+                >
+                  <Trash2 size={14} />
+                </button>
               )}
             </div>
           ))}

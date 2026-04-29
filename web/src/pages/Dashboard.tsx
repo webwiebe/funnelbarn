@@ -145,40 +145,109 @@ export default function Dashboard() {
   // Max views for inline bar
   const maxViews = data?.top_pages ? Math.max(...data.top_pages.map((p) => p.Views)) : 1
 
-  const topFunnelConversion = 87.4 // placeholder — real data would come from funnels API
+  // Compute real trends from time-series data (first vs last half of period)
+  const eventsTrend = (() => {
+    const ts = data?.events_time_series
+    if (!ts || ts.length < 2) return undefined
+    const mid = Math.floor(ts.length / 2)
+    const prev = ts.slice(0, mid).reduce((s, p) => s + p.Count, 0)
+    const curr = ts.slice(mid).reduce((s, p) => s + p.Count, 0)
+    if (prev === 0) return undefined
+    return ((curr - prev) / prev) * 100
+  })()
+
+  const sessionsTrend = (() => {
+    const ts = (data as (DashboardData & { sessions_time_series?: { Time: string; Count: number }[] }) | null)?.sessions_time_series
+    if (!ts || ts.length < 2) return undefined
+    const mid = Math.floor(ts.length / 2)
+    const prev = ts.slice(0, mid).reduce((s, p) => s + p.Count, 0)
+    const curr = ts.slice(mid).reduce((s, p) => s + p.Count, 0)
+    if (prev === 0) return undefined
+    return ((curr - prev) / prev) * 100
+  })()
+
+  const createModal = showCreateProject ? (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 16, zIndex: 1000,
+    }}>
+      <div style={{
+        background: C.surface, borderRadius: 16, padding: '2rem',
+        width: '100%', maxWidth: 400, border: `1px solid ${C.border}`,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <h2 style={{ margin: 0, fontSize: 20, color: C.text }}>New Project</h2>
+          <button onClick={() => setShowCreateProject(false)}
+            style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 4 }}>
+            <X size={20} />
+          </button>
+        </div>
+        <input
+          autoFocus
+          placeholder="My Awesome App"
+          value={newProjectName}
+          onChange={(e) => setNewProjectName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleCreateProject()}
+          style={{
+            width: '100%', boxSizing: 'border-box',
+            background: C.bg, border: `1px solid ${C.border}`,
+            borderRadius: 8, padding: '0.65rem 0.875rem',
+            color: C.text, fontSize: 15, marginBottom: 12,
+          }}
+        />
+        {createError && <div style={{ color: C.error, fontSize: 13, marginBottom: 10 }}>{createError}</div>}
+        <button
+          onClick={handleCreateProject}
+          disabled={creatingProject || !newProjectName.trim()}
+          style={{
+            width: '100%', background: creatingProject ? '#78481a' : C.amber,
+            border: 'none', borderRadius: 8, color: '#0f1117',
+            padding: '0.7rem', fontWeight: 700, fontSize: 15,
+            cursor: creatingProject ? 'wait' : 'pointer',
+          }}
+        >
+          {creatingProject ? 'Creating…' : 'Create Project'}
+        </button>
+      </div>
+    </div>
+  ) : null
 
   if (!projectId) {
     return (
-      <Shell>
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: 400,
-          gap: 16,
-          color: C.muted,
-        }}>
-          <Activity size={48} opacity={0.3} />
-          <div style={{ fontSize: 20, fontWeight: 700, color: C.text }}>No project selected</div>
-          <div>Select a project from the dropdown above to view its dashboard.</div>
-          <button
-            onClick={() => setShowCreateProject(true)}
-            style={{
-              background: C.amber,
-              color: '#0f1117',
-              border: 'none',
-              borderRadius: 8,
-              padding: '0.6rem 1.25rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              marginTop: 8,
-            }}
-          >
-            Create a project
-          </button>
-        </div>
-      </Shell>
+      <>
+        <Shell>
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: 400,
+            gap: 16,
+            color: C.muted,
+          }}>
+            <Activity size={48} opacity={0.3} />
+            <div style={{ fontSize: 20, fontWeight: 700, color: C.text }}>No project selected</div>
+            <div>Select a project from the dropdown above to view its dashboard.</div>
+            <button
+              onClick={() => setShowCreateProject(true)}
+              style={{
+                background: C.amber,
+                color: '#0f1117',
+                border: 'none',
+                borderRadius: 8,
+                padding: '0.6rem 1.25rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                marginTop: 8,
+              }}
+            >
+              Create a project
+            </button>
+          </div>
+        </Shell>
+        {createModal}
+      </>
     )
   }
 
@@ -243,28 +312,26 @@ export default function Dashboard() {
           label="Total Events"
           value={loading ? '—' : (data?.total_events ?? 0).toLocaleString()}
           icon={<Activity size={18} />}
-          trend={12.4}
+          trend={eventsTrend}
           loading={loading}
         />
         <StatCard
           label="Unique Sessions"
           value={loading ? '—' : (data?.unique_sessions ?? 0).toLocaleString()}
           icon={<Users size={18} />}
-          trend={-3.1}
+          trend={sessionsTrend}
           loading={loading}
         />
         <StatCard
           label="Top Funnel"
-          value={loading ? '—' : `${topFunnelConversion}%`}
+          value={loading ? '—' : '—'}
           icon={<MousePointer size={18} />}
-          trend={5.7}
           loading={loading}
         />
         <StatCard
           label="Bounce Rate"
           value={loading ? '—' : `${((data?.bounce_rate ?? 0) * 100).toFixed(1)}%`}
           icon={<TrendingDown size={18} />}
-          trend={-2.8}
           loading={loading}
         />
       </div>
@@ -404,52 +471,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {showCreateProject && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: 16, zIndex: 1000,
-        }}>
-          <div style={{
-            background: C.surface, borderRadius: 16, padding: '2rem',
-            width: '100%', maxWidth: 400, border: `1px solid ${C.border}`,
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h2 style={{ margin: 0, fontSize: 20, color: C.text }}>New Project</h2>
-              <button onClick={() => setShowCreateProject(false)}
-                style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 4 }}>
-                <X size={20} />
-              </button>
-            </div>
-            <input
-              autoFocus
-              placeholder="My Awesome App"
-              value={newProjectName}
-              onChange={(e) => setNewProjectName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreateProject()}
-              style={{
-                width: '100%', boxSizing: 'border-box',
-                background: C.bg, border: `1px solid ${C.border}`,
-                borderRadius: 8, padding: '0.65rem 0.875rem',
-                color: C.text, fontSize: 15, marginBottom: 12,
-              }}
-            />
-            {createError && <div style={{ color: C.error, fontSize: 13, marginBottom: 10 }}>{createError}</div>}
-            <button
-              onClick={handleCreateProject}
-              disabled={creatingProject || !newProjectName.trim()}
-              style={{
-                width: '100%', background: creatingProject ? '#78481a' : C.amber,
-                border: 'none', borderRadius: 8, color: '#0f1117',
-                padding: '0.7rem', fontWeight: 700, fontSize: 15,
-                cursor: creatingProject ? 'wait' : 'pointer',
-              }}
-            >
-              {creatingProject ? 'Creating…' : 'Create Project'}
-            </button>
-          </div>
-        </div>
-      )}
+      {createModal}
     </Shell>
   )
 }
