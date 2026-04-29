@@ -94,10 +94,10 @@ export const api = {
   listApiKeys: () =>
     request<{ api_keys: ApiKey[] }>('/api/v1/apikeys'),
 
-  createApiKey: (name: string, scope: string) =>
+  createApiKey: (name: string, scope: string, projectId?: string) =>
     request<{ api_key: ApiKey; key: string }>('/api/v1/apikeys', {
       method: 'POST',
-      body: JSON.stringify({ name, scope }),
+      body: JSON.stringify({ name, scope, project_id: projectId }),
     }),
 
   deleteApiKey: (keyId: string) =>

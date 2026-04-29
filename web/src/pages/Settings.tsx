@@ -102,7 +102,9 @@ export default function Settings() {
     setCreating(true)
     setError(null)
     try {
-      const res = await api.createApiKey(newKeyName, newKeyScope)
+      // Pass the first project ID so the backend doesn't have to guess.
+      const projectId = projects[0]?.id
+      const res = await api.createApiKey(newKeyName, newKeyScope, projectId)
       setApiKeys((prev) => [...prev, res.api_key])
       setNewKeyValue(res.key)
       setNewKeyName('')
@@ -144,9 +146,12 @@ export default function Settings() {
     }
   }
 
-  // Find first ingest key for embed snippet
+  // Find first ingest key for embed snippet.
+  // If we just created an ingest key, prefer the raw key value (shown once).
+  // Otherwise fall back to the key ID from the list (a human-readable reference).
   const ingestKey = apiKeys.find((k) => k.scope === 'ingest')
-  const snippet = `<script src="https://funnelbarn.wiebe.xyz/sdk.js"\n        data-api-key="${ingestKey?.id ?? 'fb_your_key_here'}"></script>`
+  const snippetKey = newKeyValue ?? ingestKey?.id ?? 'fb_your_key_here'
+  const snippet = `<script src="https://funnelbarn.wiebe.xyz/sdk.js"\n        data-api-key="${snippetKey}"></script>`
 
   const inputStyle = {
     background: C.surface,
