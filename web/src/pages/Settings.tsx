@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Copy, Trash2, Plus, Check, Save } from 'lucide-react'
+import { Copy, Trash2, Plus, Check, Save, CheckCircle, Link } from 'lucide-react'
 import Shell from '../components/Shell'
 import { api, ApiKey } from '../lib/api'
 import { useProjects } from '../lib/projects'
@@ -86,6 +86,9 @@ export default function Settings() {
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState<string | null>(null)
   const [deletingProject, setDeletingProject] = useState<string | null>(null)
 
+  // Approving pending projects
+  const [approvingProject, setApprovingProject] = useState<string | null>(null)
+
   // Sync editedNames when context projects change
   useEffect(() => {
     const names: Record<string, string> = {}
@@ -150,6 +153,18 @@ export default function Settings() {
     }
   }
 
+  const handleApproveProject = async (projectId: string) => {
+    setApprovingProject(projectId)
+    try {
+      await api.approveProject(projectId)
+      refetchProjects()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setApprovingProject(null)
+    }
+  }
+
   const handleSaveProject = async (projectId: string) => {
     const name = editedNames[projectId]?.trim()
     if (!name) return
@@ -165,6 +180,11 @@ export default function Settings() {
       setSavingProject(null)
     }
   }
+
+  const pendingProjects = projects.filter((p) => p.status === 'pending')
+  const activeProjects = projects.filter((p) => p.status !== 'pending')
+
+  const publicURL = window.location.origin
 
   // Find first ingest key for embed snippet.
   // If we just created an ingest key, prefer the raw key value (shown once).
@@ -201,8 +221,120 @@ export default function Settings() {
       `}</style>
       <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.5px', marginBottom: '2rem' }}>Settings</h1>
 
-      {/* Projects section */}
-      {projects.length > 0 && (
+      {/* Pending projects section — shown above active projects */}
+      {pendingProjects.length > 0 && (
+        <div style={{
+          background: C.surface,
+          border: `1px solid rgba(245,158,11,0.4)`,
+          borderRadius: 12,
+          overflow: 'hidden',
+          marginBottom: '2rem',
+        }}>
+          <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid rgba(245,158,11,0.2)`, background: 'rgba(245,158,11,0.06)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>Pending Projects</div>
+              <span style={{
+                fontSize: 11,
+                fontWeight: 700,
+                background: 'rgba(245,158,11,0.15)',
+                color: C.amber,
+                border: `1px solid rgba(245,158,11,0.35)`,
+                borderRadius: 99,
+                padding: '0.1rem 0.5rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+              }}>
+                {pendingProjects.length}
+              </span>
+            </div>
+            <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
+              These projects were created via the setup page and are awaiting approval.
+            </div>
+          </div>
+          {pendingProjects.map((p) => (
+            <div key={p.id} style={{
+              padding: '1rem 1.5rem',
+              borderBottom: `1px solid ${C.border}`,
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 12,
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{p.name}</span>
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    background: 'rgba(245,158,11,0.1)',
+                    color: C.amber,
+                    border: `1px solid rgba(245,158,11,0.3)`,
+                    borderRadius: 99,
+                    padding: '0.1rem 0.5rem',
+                  }}>
+                    pending
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{p.slug}</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {/* Setup URL copy link */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 12, color: C.muted, fontFamily: '"SF Mono", "Fira Code", monospace' }}>
+                    /api/v1/setup/{p.slug}
+                  </span>
+                  <CopyButton value={`${publicURL}/api/v1/setup/${p.slug}`} />
+                  <a
+                    href={`/api/v1/setup/${p.slug}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      background: C.bg,
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 7,
+                      color: C.muted,
+                      padding: '0.4rem 0.75rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      fontSize: 13,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    <Link size={13} />
+                    Open
+                  </a>
+                </div>
+                {/* Approve button */}
+                <button
+                  onClick={() => handleApproveProject(p.id)}
+                  disabled={approvingProject === p.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    background: approvingProject === p.id ? '#1a4a2e' : 'rgba(16,185,129,0.1)',
+                    border: `1px solid rgba(16,185,129,0.3)`,
+                    borderRadius: 7,
+                    color: C.success,
+                    padding: '0.5rem 1rem',
+                    cursor: approvingProject === p.id ? 'not-allowed' : 'pointer',
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                >
+                  <CheckCircle size={13} />
+                  {approvingProject === p.id ? 'Approving…' : 'Approve'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Active projects section */}
+      {activeProjects.length > 0 && (
         <div style={{
           background: C.surface,
           border: `1px solid ${C.border}`,
@@ -214,7 +346,7 @@ export default function Settings() {
             <div style={{ fontWeight: 700, fontSize: 15 }}>Projects</div>
             <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>Edit your project names.</div>
           </div>
-          {projects.map((p) => (
+          {activeProjects.map((p) => (
             <div key={p.id} className="project-row" style={{
               padding: '1rem 1.5rem',
               borderBottom: `1px solid ${C.border}`,

@@ -120,7 +120,7 @@ func run() error {
 	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.MaxBodyBytes)
 	go handler.Start(ctx)
 
-	apiServer := api.NewServer(handler, store, userAuth, sessionManager, cfg.AllowedOrigins)
+	apiServer := api.NewServer(handler, store, userAuth, sessionManager, cfg.AllowedOrigins, cfg.SessionSecret, cfg.PublicURL)
 
 	var httpHandler http.Handler = apiServer
 	if selfReporting {

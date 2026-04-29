@@ -19,6 +19,8 @@ type Server struct {
 	userAuth       *auth.UserAuthenticator
 	sessionManager *auth.SessionManager
 	allowedOrigins []string
+	sessionSecret  string
+	publicURL      string
 }
 
 // NewServer creates the API server and registers all routes.
@@ -28,6 +30,8 @@ func NewServer(
 	userAuth *auth.UserAuthenticator,
 	sessionManager *auth.SessionManager,
 	allowedOrigins []string,
+	sessionSecret string,
+	publicURL string,
 ) *Server {
 	s := &Server{
 		mux:            http.NewServeMux(),
@@ -36,6 +40,8 @@ func NewServer(
 		userAuth:       userAuth,
 		sessionManager: sessionManager,
 		allowedOrigins: allowedOrigins,
+		sessionSecret:  sessionSecret,
+		publicURL:      publicURL,
 	}
 	s.registerRoutes()
 	return s
@@ -44,6 +50,7 @@ func NewServer(
 func (s *Server) registerRoutes() {
 	// Public
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
+	s.mux.HandleFunc("GET /api/v1/setup/{slug}", s.handleSetup)
 
 	// Ingest (API key required)
 	s.mux.Handle("POST /api/v1/events", s.ingest)
@@ -84,6 +91,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/apikeys", s.requireSession(s.handleListAPIKeys))
 	s.mux.HandleFunc("POST /api/v1/apikeys", s.requireSession(s.handleCreateAPIKey))
 	s.mux.HandleFunc("DELETE /api/v1/apikeys/{kid}", s.requireSession(s.handleDeleteAPIKey))
+
+	// Project approval
+	s.mux.HandleFunc("POST /api/v1/projects/{id}/approve", s.requireSession(s.handleApproveProject))
 }
 
 // ServeHTTP adds CORS headers and dispatches to the router.

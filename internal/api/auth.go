@@ -316,6 +316,27 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, project)
 }
 
+// handleApproveProject sets a project's status to 'active'.
+//
+// POST /api/v1/projects/{id}/approve
+func (s *Server) handleApproveProject(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		jsonError(w, "project id required", http.StatusBadRequest)
+		return
+	}
+	project, err := s.store.ApproveProject(r.Context(), projectID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			jsonError(w, "project not found", http.StatusNotFound)
+			return
+		}
+		jsonError(w, "failed to approve project", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, project)
+}
+
 // toSlug converts a display name to a URL-safe slug.
 func toSlug(name string) string {
 	var sb strings.Builder

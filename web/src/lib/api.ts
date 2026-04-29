@@ -127,6 +127,9 @@ export const api = {
   deleteProject: (projectId: string) =>
     request<void>(`/api/v1/projects/${projectId}`, { method: 'DELETE' }),
 
+  approveProject: (projectId: string) =>
+    request<Project>(`/api/v1/projects/${projectId}/approve`, { method: 'POST' }),
+
   // A/B Tests
   getABTests: (projectId: string) =>
     request<{ tests: ABTest[] }>(`/api/v1/projects/${projectId}/abtests`),
@@ -154,6 +157,8 @@ export const api = {
 export interface Project {
   id: string
   name: string
+  slug: string
+  status: string
   domain?: string
 }
 

@@ -35,7 +35,32 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("run schema: %w", err)
 	}
 
+	// Idempotent column migrations — safe to run on every startup.
+	if err := ensureColumn(db, "projects", "status", "TEXT NOT NULL DEFAULT 'active'"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate projects.status: %w", err)
+	}
+
 	return &Store{db: db}, nil
+}
+
+// ensureColumn adds a column to a table if it does not already exist.
+// SQLite does not support IF NOT EXISTS in ALTER TABLE, so we check the
+// pragma_table_info view instead.
+func ensureColumn(db *sql.DB, table, column, definition string) error {
+	var count int
+	row := db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`,
+		table, column,
+	)
+	if err := row.Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil // column already exists
+	}
+	_, err := db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + definition)
+	return err
 }
 
 // Close closes the underlying database connection.
@@ -85,6 +110,7 @@ type Project struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Slug      string    `json:"slug"`
+	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -100,14 +126,14 @@ func (s *Store) CreateProject(ctx context.Context, name, slug string) (Project, 
 
 // ProjectByID fetches a project by its ID.
 func (s *Store) ProjectByID(ctx context.Context, id string) (Project, error) {
-	const q = `SELECT id, name, slug, created_at FROM projects WHERE id = ?`
+	const q = `SELECT id, name, slug, status, created_at FROM projects WHERE id = ?`
 	row := s.db.QueryRowContext(ctx, q, id)
 	return scanProject(row)
 }
 
 // ProjectBySlug fetches a project by its slug.
 func (s *Store) ProjectBySlug(ctx context.Context, slug string) (Project, error) {
-	const q = `SELECT id, name, slug, created_at FROM projects WHERE slug = ?`
+	const q = `SELECT id, name, slug, status, created_at FROM projects WHERE slug = ?`
 	row := s.db.QueryRowContext(ctx, q, slug)
 	return scanProject(row)
 }
@@ -124,9 +150,48 @@ func (s *Store) EnsureProject(ctx context.Context, slug string) (Project, error)
 	return s.CreateProject(ctx, slug, slug)
 }
 
+// EnsureProjectPending fetches a project by slug or creates it with status='pending'.
+// If the project already exists (any status) it is returned as-is.
+func (s *Store) EnsureProjectPending(ctx context.Context, name, slug string) (Project, error) {
+	p, err := s.ProjectBySlug(ctx, slug)
+	if err == nil {
+		return p, nil
+	}
+	if err != sql.ErrNoRows {
+		return Project{}, err
+	}
+	id := newUUID()
+	const q = `INSERT INTO projects (id, name, slug, status) VALUES (?, ?, ?, 'pending')`
+	if _, err := s.db.ExecContext(ctx, q, id, name, slug); err != nil {
+		return Project{}, fmt.Errorf("create pending project: %w", err)
+	}
+	return s.ProjectByID(ctx, id)
+}
+
+// ApproveProject sets status='active' for a project and returns the updated project.
+func (s *Store) ApproveProject(ctx context.Context, id string) (Project, error) {
+	const q = `UPDATE projects SET status = 'active' WHERE id = ?`
+	if _, err := s.db.ExecContext(ctx, q, id); err != nil {
+		return Project{}, fmt.Errorf("approve project: %w", err)
+	}
+	return s.ProjectByID(ctx, id)
+}
+
+// EnsureSetupAPIKey upserts an ingest-scoped API key for a project using the provided SHA-256 hash.
+// The key name is "setup" and the scope is "ingest". If a key with the same hash already exists,
+// nothing changes (idempotent).
+func (s *Store) EnsureSetupAPIKey(ctx context.Context, projectID, keySHA256 string) error {
+	const q = `
+		INSERT INTO api_keys (id, project_id, name, key_hash, scope)
+		VALUES (?, ?, 'setup', ?, 'ingest')
+		ON CONFLICT(key_hash) DO NOTHING`
+	_, err := s.db.ExecContext(ctx, q, newUUID(), projectID, keySHA256)
+	return err
+}
+
 // ListProjects returns all projects.
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
-	const q = `SELECT id, name, slug, created_at FROM projects ORDER BY name`
+	const q = `SELECT id, name, slug, status, created_at FROM projects ORDER BY name`
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
@@ -136,7 +201,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 	var projects []Project
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		projects = append(projects, p)
@@ -146,7 +211,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 
 func scanProject(row *sql.Row) (Project, error) {
 	var p Project
-	err := row.Scan(&p.ID, &p.Name, &p.Slug, &p.CreatedAt)
+	err := row.Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
