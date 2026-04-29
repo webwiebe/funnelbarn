@@ -219,6 +219,7 @@ export default function Settings() {
               padding: '1rem 1.5rem',
               borderBottom: `1px solid ${C.border}`,
               display: 'flex',
+              flexWrap: 'wrap',
               alignItems: 'center',
               gap: 12,
             }}>
@@ -231,33 +232,58 @@ export default function Settings() {
                 onKeyDown={(e) => e.key === 'Enter' && handleSaveProject(p.id)}
               />
               <div className="project-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button
-                className="project-save-btn"
-                onClick={() => handleSaveProject(p.id)}
-                disabled={savingProject === p.id}
-                style={{
+                <button
+                  className="project-save-btn"
+                  onClick={() => handleSaveProject(p.id)}
+                  disabled={savingProject === p.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    background: C.amber,
+                    border: 'none',
+                    borderRadius: 7,
+                    color: '#0f1117',
+                    padding: '0.5rem 1rem',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                >
+                  <Save size={13} />
+                  {savingProject === p.id ? 'Saving…' : 'Save'}
+                </button>
+                {deleteProjectConfirm !== p.id && (
+                  <button
+                    onClick={() => setDeleteProjectConfirm(p.id)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: C.muted,
+                      cursor: 'pointer',
+                      padding: 4,
+                    }}
+                    title="Delete project"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+              {projectSaveMsg && savingProject === null && (
+                <div style={{ width: '100%', fontSize: 13, color: C.success, paddingTop: 2 }}>
+                  {projectSaveMsg}
+                </div>
+              )}
+              {deleteProjectConfirm === p.id && (
+                <div style={{
+                  width: '100%',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 5,
-                  background: C.amber,
-                  border: 'none',
-                  borderRadius: 7,
-                  color: '#0f1117',
-                  padding: '0.5rem 1rem',
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  fontWeight: 700,
-                }}
-              >
-                <Save size={13} />
-                {savingProject === p.id ? 'Saving…' : 'Save'}
-              </button>
-              {projectSaveMsg && savingProject === null && (
-                <span style={{ fontSize: 13, color: C.success }}>{projectSaveMsg}</span>
-              )}
-              {deleteProjectConfirm === p.id ? (
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <span style={{ fontSize: 12, color: C.error, whiteSpace: 'nowrap' }}>
+                  gap: 8,
+                  padding: '0.5rem 0',
+                  flexWrap: 'wrap',
+                }}>
+                  <span style={{ fontSize: 13, color: C.error, flex: 1 }}>
                     Delete? This removes all data.
                   </span>
                   <button
@@ -289,22 +315,7 @@ export default function Settings() {
                     Cancel
                   </button>
                 </div>
-              ) : (
-                <button
-                  onClick={() => handleDeleteProject(p.id)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: C.muted,
-                    cursor: 'pointer',
-                    padding: 4,
-                  }}
-                  title="Delete project"
-                >
-                  <Trash2 size={14} />
-                </button>
               )}
-              </div>
             </div>
           ))}
         </div>

@@ -4,7 +4,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { Activity, Users, TrendingDown, MousePointer, ArrowUpRight, ArrowDownRight, X } from 'lucide-react'
+import { Activity, Users, TrendingDown, MousePointer, ArrowUpRight, ArrowDownRight, X, Plus } from 'lucide-react'
 import Shell from '../components/Shell'
 import { api, DashboardData } from '../lib/api'
 import { useProjects } from '../lib/projects'
@@ -93,7 +93,7 @@ function StatCard({
 export default function Dashboard() {
   const { projectId } = useParams<{ projectId?: string }>()
   const navigate = useNavigate()
-  const { refetch: refetchProjects } = useProjects()
+  const { projects, refetch: refetchProjects } = useProjects()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -233,6 +233,70 @@ export default function Dashboard() {
   ) : null
 
   if (!projectId) {
+    if (projects.length > 0) {
+      return (
+        <>
+          <Shell>
+            <div style={{ maxWidth: 900, margin: '0 auto' }}>
+              <div style={{
+                display: 'flex', justifyContent: 'space-between',
+                alignItems: 'center', marginBottom: '1.5rem',
+              }}>
+                <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>Your Projects</h1>
+                <button onClick={() => setShowCreateProject(true)} style={{
+                  background: C.amber, border: 'none', borderRadius: 8,
+                  color: '#0f1117', padding: '0.5rem 1rem',
+                  fontWeight: 700, fontSize: 14, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}>
+                  <Plus size={16} /> New Project
+                </button>
+              </div>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                gap: 16,
+              }}>
+                {projects.map((p) => (
+                  <div
+                    key={p.id}
+                    onClick={() => navigate(`/dashboard/${p.id}`)}
+                    style={{
+                      background: C.surface,
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 12,
+                      padding: '1.25rem',
+                      cursor: 'pointer',
+                      transition: 'border-color 0.15s',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = C.amber)}
+                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = C.border)}
+                  >
+                    <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>{p.name}</div>
+                    <div style={{ fontSize: 12, color: C.muted }}>
+                      {p.domain || 'No domain set'}
+                    </div>
+                    <div style={{
+                      marginTop: 16,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 13,
+                      color: C.amber,
+                      fontWeight: 600,
+                    }}>
+                      View dashboard →
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Shell>
+          {createModal}
+        </>
+      )
+    }
+
     return (
       <>
         <Shell>
