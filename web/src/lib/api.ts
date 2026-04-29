@@ -87,8 +87,13 @@ export const api = {
       body: JSON.stringify({ name, steps }),
     }),
 
-  getFunnelAnalysis: (projectId: string, funnelId: string) =>
-    request<FunnelAnalysis>(`/api/v1/projects/${projectId}/funnels/${funnelId}/analysis`),
+  getFunnelAnalysis: (projectId: string, funnelId: string, segment?: string) =>
+    request<FunnelAnalysis>(
+      `/api/v1/projects/${projectId}/funnels/${funnelId}/analysis${segment && segment !== 'all' ? `?segment=${encodeURIComponent(segment)}` : ''}`
+    ),
+
+  getFunnelSegments: (projectId: string, funnelId: string) =>
+    request<FunnelSegments>(`/api/v1/projects/${projectId}/funnels/${funnelId}/segments`),
 
   // API Keys
   listApiKeys: () =>
@@ -189,6 +194,12 @@ export interface FunnelAnalysis {
   results: StepResult[]
   from: string
   to: string
+}
+
+export interface FunnelSegments {
+  device_types: string[]
+  browsers: string[]
+  countries: string[]
 }
 
 export interface ApiKey {

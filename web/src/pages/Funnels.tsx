@@ -4,6 +4,17 @@ import { Plus, X, Layers } from 'lucide-react'
 import Shell from '../components/Shell'
 import { api, Funnel, FunnelAnalysis, FunnelStepInput } from '../lib/api'
 
+const PRESET_SEGMENTS = [
+  { id: 'all', label: 'All' },
+  { id: 'logged_in', label: 'Logged in' },
+  { id: 'not_logged_in', label: 'Not logged in' },
+  { id: 'mobile', label: 'Mobile' },
+  { id: 'desktop', label: 'Desktop' },
+  { id: 'tablet', label: 'Tablet' },
+  { id: 'new_visitor', label: 'New visitors' },
+  { id: 'returning', label: 'Returning' },
+]
+
 const C = {
   bg: '#0f1117',
   surface: '#1a1d27',
@@ -223,15 +234,27 @@ function CreateFunnelModal({
   )
 }
 
-function FunnelDetail({ analysis }: { analysis: FunnelAnalysis }) {
+function FunnelDetail({ analysis, activeSegment }: { analysis: FunnelAnalysis; activeSegment: string }) {
   const maxCount = Math.max(...(analysis.results?.map((r) => r.Count) ?? [1]))
+  const segLabel = PRESET_SEGMENTS.find((s) => s.id === activeSegment)?.label ?? activeSegment
+  const entryCount = analysis.results?.[0]?.Count ?? 0
 
   return (
     <div>
       <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>{analysis.funnel.name}</h2>
-      <p style={{ color: C.muted, fontSize: 13, marginBottom: '1.5rem' }}>
+      <p style={{ color: C.muted, fontSize: 13, marginBottom: '0.75rem' }}>
         {analysis.from?.slice(0, 10)} → {analysis.to?.slice(0, 10)}
       </p>
+      {activeSegment !== 'all' && (
+        <p style={{ color: C.amber, fontSize: 13, marginBottom: '1.25rem', fontWeight: 500 }}>
+          Showing {entryCount.toLocaleString()} sessions · {segLabel} segment
+        </p>
+      )}
+      {activeSegment === 'all' && (
+        <p style={{ color: C.muted, fontSize: 13, marginBottom: '1.25rem' }}>
+          {entryCount.toLocaleString()} sessions total
+        </p>
+      )}
 
       {analysis.results?.map((step, i) => (
         <div key={step.StepOrder} style={{ marginBottom: '1.25rem' }}>
@@ -308,6 +331,7 @@ export default function Funnels() {
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [showDetail, setShowDetail] = useState(false)
+  const [activeSegment, setActiveSegment] = useState('all')
 
   useEffect(() => {
     if (!projectId) return
@@ -316,16 +340,22 @@ export default function Funnels() {
       .catch(console.error)
   }, [projectId])
 
+  // Re-fetch analysis whenever selected funnel or active segment changes.
+  useEffect(() => {
+    if (!selected || !projectId) return
+    setAnalysis(null)
+    setAnalysisLoading(true)
+    api.getFunnelAnalysis(projectId, selected.id, activeSegment)
+      .then(setAnalysis)
+      .catch(console.error)
+      .finally(() => setAnalysisLoading(false))
+  }, [selected, projectId, activeSegment])
+
   const loadAnalysis = (funnel: Funnel) => {
     if (!projectId) return
     setSelected(funnel)
     setShowDetail(true)
-    setAnalysis(null)
-    setAnalysisLoading(true)
-    api.getFunnelAnalysis(projectId, funnel.id)
-      .then(setAnalysis)
-      .catch(console.error)
-      .finally(() => setAnalysisLoading(false))
+    // Analysis will be fetched by the effect above.
   }
 
   if (!projectId) {
@@ -480,11 +510,34 @@ export default function Funnels() {
               <div>Select a funnel to view analysis</div>
             </div>
           )}
+          {selected && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+              {PRESET_SEGMENTS.map((seg) => (
+                <button
+                  key={seg.id}
+                  onClick={() => setActiveSegment(seg.id)}
+                  style={{
+                    padding: '0.35rem 0.875rem',
+                    borderRadius: 99,
+                    border: `1px solid ${activeSegment === seg.id ? C.amber : C.border}`,
+                    background: activeSegment === seg.id ? 'rgba(245,158,11,0.15)' : 'transparent',
+                    color: activeSegment === seg.id ? C.amber : C.muted,
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontWeight: activeSegment === seg.id ? 600 : 400,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {seg.label}
+                </button>
+              ))}
+            </div>
+          )}
           {analysisLoading && (
             <div style={{ color: C.muted, padding: '2rem' }}>Loading analysis…</div>
           )}
           {analysis && !analysisLoading && (
-            <FunnelDetail analysis={analysis} />
+            <FunnelDetail analysis={analysis} activeSegment={activeSegment} />
           )}
         </div>
       </div>

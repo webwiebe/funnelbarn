@@ -153,23 +153,89 @@ func (s *Store) funnelSteps(ctx context.Context, funnelID string) ([]FunnelStep,
 	return steps, rows.Err()
 }
 
+// SegmentFilter filters funnel analysis by a field condition on the events (or joined sessions) table.
+type SegmentFilter struct {
+	// Field is the column to filter on: "device_type", "user_id_hash", "browser",
+	// "country_code", or the special value "session_returning".
+	Field string
+	// Op is the comparison operator: "eq", "neq", "is_null", "is_not_null".
+	Op string
+	// Value is the right-hand side for "eq" / "neq" operators.
+	Value string
+}
+
+// segmentClause returns the SQL WHERE fragment and whether a sessions JOIN is needed.
+func segmentClause(seg *SegmentFilter) (clause string, needSessionJoin bool) {
+	if seg == nil {
+		return "", false
+	}
+	if seg.Field == "session_returning" {
+		// Join sessions and filter by event_count.
+		if seg.Value == "true" {
+			return "s.event_count > 1", true
+		}
+		return "s.event_count = 1", true
+	}
+	col := "e." + seg.Field
+	switch seg.Op {
+	case "eq":
+		return fmt.Sprintf("%s = '%s'", col, escapeSQLLiteral(seg.Value)), false
+	case "neq":
+		return fmt.Sprintf("%s != '%s'", col, escapeSQLLiteral(seg.Value)), false
+	case "is_null":
+		return fmt.Sprintf("(%s IS NULL OR %s = '')", col, col), false
+	case "is_not_null":
+		return fmt.Sprintf("(%s IS NOT NULL AND %s != '')", col, col), false
+	}
+	return "", false
+}
+
+// escapeSQLLiteral performs minimal single-quote escaping for inline SQL literals.
+// Only used for known preset values (device type names, etc.) — not user-supplied strings.
+func escapeSQLLiteral(s string) string {
+	result := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\'' {
+			result = append(result, '\'', '\'')
+		} else {
+			result = append(result, s[i])
+		}
+	}
+	return string(result)
+}
+
 // AnalyzeFunnel computes conversion rates for each step of a funnel over a time range.
-// Uses a session-based approach: a session qualifies for step N only if it also
-// completed steps 0..N-1 in order (by occurred_at).
-func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time) ([]FunnelStepResult, error) {
+// An optional SegmentFilter restricts which events are counted.
+func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time, seg *SegmentFilter) ([]FunnelStepResult, error) {
 	if len(f.Steps) == 0 {
 		return nil, nil
 	}
 
-	// For each step, count sessions that have events with the required event name
-	// in the given time window. Step 0 is the entry count.
+	clause, needJoin := segmentClause(seg)
+
 	stepCounts := make([]int64, len(f.Steps))
 	for i, step := range f.Steps {
 		var n int64
-		const q = `
-			SELECT COUNT(DISTINCT session_id)
-			FROM events
-			WHERE project_id = ? AND name = ? AND occurred_at >= ? AND occurred_at <= ?`
+		var q string
+		if needJoin {
+			q = fmt.Sprintf(`
+				SELECT COUNT(DISTINCT e.session_id)
+				FROM events e
+				JOIN sessions s ON s.id = e.session_id
+				WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?
+				  AND %s`, clause)
+		} else if clause != "" {
+			q = fmt.Sprintf(`
+				SELECT COUNT(DISTINCT e.session_id)
+				FROM events e
+				WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?
+				  AND %s`, clause)
+		} else {
+			q = `
+				SELECT COUNT(DISTINCT session_id)
+				FROM events
+				WHERE project_id = ? AND name = ? AND occurred_at >= ? AND occurred_at <= ?`
+		}
 		if err := s.db.QueryRowContext(ctx, q, f.ProjectID, step.EventName, from, to).Scan(&n); err != nil {
 			return nil, fmt.Errorf("analyze step %d: %w", i, err)
 		}
@@ -195,4 +261,46 @@ func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time)
 	}
 
 	return results, nil
+}
+
+// FunnelSegments holds distinct values available for dynamic segment filtering.
+type FunnelSegments struct {
+	DeviceTypes  []string `json:"device_types"`
+	Browsers     []string `json:"browsers"`
+	Countries    []string `json:"countries"`
+}
+
+// FunnelSegmentData returns distinct field values present in the events for a project.
+func (s *Store) FunnelSegmentData(ctx context.Context, projectID string) (FunnelSegments, error) {
+	var out FunnelSegments
+
+	fetchDistinct := func(col string) ([]string, error) {
+		q := fmt.Sprintf(`SELECT DISTINCT %s FROM events WHERE project_id = ? AND %s IS NOT NULL AND %s != '' ORDER BY %s`, col, col, col, col)
+		rows, err := s.db.QueryContext(ctx, q, projectID)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var vals []string
+		for rows.Next() {
+			var v string
+			if err := rows.Scan(&v); err != nil {
+				return nil, err
+			}
+			vals = append(vals, v)
+		}
+		return vals, rows.Err()
+	}
+
+	var err error
+	if out.DeviceTypes, err = fetchDistinct("device_type"); err != nil {
+		return out, err
+	}
+	if out.Browsers, err = fetchDistinct("browser"); err != nil {
+		return out, err
+	}
+	if out.Countries, err = fetchDistinct("country_code"); err != nil {
+		return out, err
+	}
+	return out, nil
 }
