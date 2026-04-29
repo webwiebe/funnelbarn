@@ -189,6 +189,10 @@ export default function Settings() {
         @media (max-width: 640px) {
           .api-keys-table { display: none !important; }
           .api-keys-cards { display: block !important; }
+          .project-row { flex-wrap: wrap !important; }
+          .project-row input { width: 100% !important; flex: none !important; }
+          .project-row .project-actions { width: 100% !important; margin-top: 6px; }
+          .project-save-btn { flex: 1 !important; justify-content: center !important; }
         }
         @media (min-width: 641px) {
           .api-keys-table { display: block !important; }
@@ -211,7 +215,7 @@ export default function Settings() {
             <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>Edit your project names.</div>
           </div>
           {projects.map((p) => (
-            <div key={p.id} style={{
+            <div key={p.id} className="project-row" style={{
               padding: '1rem 1.5rem',
               borderBottom: `1px solid ${C.border}`,
               display: 'flex',
@@ -221,12 +225,14 @@ export default function Settings() {
               <input
                 value={editedNames[p.id] ?? p.name}
                 onChange={(e) => setEditedNames((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                style={{ ...inputStyle, flex: 1 }}
+                style={{ ...inputStyle, flex: 1, minWidth: 0 }}
                 onFocus={(e) => (e.target.style.borderColor = C.amber)}
                 onBlur={(e) => (e.target.style.borderColor = C.border)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSaveProject(p.id)}
               />
+              <div className="project-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button
+                className="project-save-btn"
                 onClick={() => handleSaveProject(p.id)}
                 disabled={savingProject === p.id}
                 style={{
@@ -298,6 +304,7 @@ export default function Settings() {
                   <Trash2 size={14} />
                 </button>
               )}
+              </div>
             </div>
           ))}
         </div>
