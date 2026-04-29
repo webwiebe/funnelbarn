@@ -307,6 +307,7 @@ export default function Funnels() {
   const [analysis, setAnalysis] = useState<FunnelAnalysis | null>(null)
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
+  const [showDetail, setShowDetail] = useState(false)
 
   useEffect(() => {
     if (!projectId) return
@@ -318,6 +319,7 @@ export default function Funnels() {
   const loadAnalysis = (funnel: Funnel) => {
     if (!projectId) return
     setSelected(funnel)
+    setShowDetail(true)
     setAnalysis(null)
     setAnalysisLoading(true)
     api.getFunnelAnalysis(projectId, funnel.id)
@@ -338,6 +340,18 @@ export default function Funnels() {
 
   return (
     <Shell projectId={projectId}>
+      <style>{`
+        @media (max-width: 767px) {
+          .funnels-layout { grid-template-columns: 1fr !important; }
+          .funnels-list.detail-open { display: none !important; }
+          .funnels-detail.no-selection { display: none !important; }
+          .back-btn { display: block !important; }
+        }
+        @media (min-width: 768px) {
+          .back-btn { display: none !important; }
+        }
+      `}</style>
+
       {showCreate && projectId && (
         <CreateFunnelModal
           projectId={projectId}
@@ -373,9 +387,9 @@ export default function Funnels() {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '1.5rem' }}>
+      <div className="funnels-layout" style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '1.5rem' }}>
         {/* Funnel list */}
-        <div>
+        <div className={`funnels-list${showDetail ? ' detail-open' : ''}`}>
           {funnels.length === 0 ? (
             <div style={{
               background: C.surface,
@@ -429,13 +443,29 @@ export default function Funnels() {
         </div>
 
         {/* Analysis panel */}
-        <div style={{
+        <div className={`funnels-detail${!selected ? ' no-selection' : ''}`} style={{
           background: C.surface,
           border: `1px solid ${C.border}`,
           borderRadius: 12,
           padding: '1.5rem',
           minHeight: 300,
         }}>
+          <button
+            className="back-btn"
+            onClick={() => setShowDetail(false)}
+            style={{
+              display: 'none',
+              background: 'none',
+              border: 'none',
+              color: C.amber,
+              cursor: 'pointer',
+              fontSize: 14,
+              fontWeight: 600,
+              padding: '0 0 1rem 0',
+            }}
+          >
+            ← Back
+          </button>
           {!selected && (
             <div style={{
               display: 'flex',

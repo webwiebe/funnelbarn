@@ -368,6 +368,7 @@ export default function ABTests() {
   const [tests, setTests] = useState<ABTest[]>([])
   const [selected, setSelected] = useState<ABTest | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [showDetail, setShowDetail] = useState(false)
 
   useEffect(() => {
     if (!projectId) return
@@ -388,6 +389,18 @@ export default function ABTests() {
 
   return (
     <Shell projectId={projectId}>
+      <style>{`
+        @media (max-width: 767px) {
+          .abtests-layout { grid-template-columns: 1fr !important; }
+          .abtests-list.detail-open { display: none !important; }
+          .abtests-detail.no-selection { display: none !important; }
+          .back-btn { display: block !important; }
+        }
+        @media (min-width: 768px) {
+          .back-btn { display: none !important; }
+        }
+      `}</style>
+
       {showCreate && (
         <CreateTestModal
           projectId={projectId}
@@ -396,6 +409,7 @@ export default function ABTests() {
             setTests((prev) => [...prev, t])
             setShowCreate(false)
             setSelected(t)
+            setShowDetail(true)
           }}
         />
       )}
@@ -423,9 +437,9 @@ export default function ABTests() {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '1.5rem' }}>
+      <div className="abtests-layout" style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '1.5rem' }}>
         {/* Test list */}
-        <div>
+        <div className={`abtests-list${showDetail ? ' detail-open' : ''}`}>
           {tests.length === 0 ? (
             <div style={{
               background: C.surface,
@@ -458,7 +472,7 @@ export default function ABTests() {
             tests.map((t) => (
               <div
                 key={t.id}
-                onClick={() => setSelected(t)}
+                onClick={() => { setSelected(t); setShowDetail(true) }}
                 style={{
                   padding: '0.875rem 1rem',
                   marginBottom: '0.5rem',
@@ -483,13 +497,29 @@ export default function ABTests() {
         </div>
 
         {/* Detail panel */}
-        <div style={{
+        <div className={`abtests-detail${!selected ? ' no-selection' : ''}`} style={{
           background: C.surface,
           border: `1px solid ${C.border}`,
           borderRadius: 12,
           padding: '1.5rem',
           minHeight: 300,
         }}>
+          <button
+            className="back-btn"
+            onClick={() => setShowDetail(false)}
+            style={{
+              display: 'none',
+              background: 'none',
+              border: 'none',
+              color: C.amber,
+              cursor: 'pointer',
+              fontSize: 14,
+              fontWeight: 600,
+              padding: '0 0 1rem 0',
+            }}
+          >
+            ← Back
+          </button>
           {!selected ? (
             <div style={{
               display: 'flex',
