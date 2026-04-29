@@ -688,6 +688,15 @@ export default function Funnels() {
         @media (min-width: 768px) {
           .back-btn { display: none !important; }
         }
+        .funnels-detail {
+          min-width: 0;
+          max-width: 100%;
+          box-sizing: border-box;
+        }
+        .funnels-detail > * {
+          max-width: 100%;
+          box-sizing: border-box;
+        }
       `}</style>
 
       {showCreate && projectId && (
@@ -787,6 +796,10 @@ export default function Funnels() {
           borderRadius: 12,
           padding: '1.5rem',
           minHeight: 300,
+          minWidth: 0,
+          overflow: 'hidden',
+          maxWidth: '100%',
+          boxSizing: 'border-box',
         }}>
           <button
             className="back-btn"
@@ -819,7 +832,7 @@ export default function Funnels() {
             </div>
           )}
           {selected && (
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: '1.25rem', maxWidth: '100%', boxSizing: 'border-box' }}>
               {PRESET_SEGMENTS.map((seg) => (
                 <button
                   key={seg.id}
