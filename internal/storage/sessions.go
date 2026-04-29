@@ -9,19 +9,19 @@ import (
 
 // Session represents an analytics session.
 type Session struct {
-	ID          string
-	ProjectID   string
-	FirstSeenAt time.Time
-	LastSeenAt  time.Time
-	EventCount  int
-	EntryURL    string
-	ExitURL     string
-	Referrer    string
-	UTMSource   string
-	UTMMedium   string
-	UTMCampaign string
-	DeviceType  string
-	CountryCode string
+	ID          string    `json:"id"`
+	ProjectID   string    `json:"project_id"`
+	FirstSeenAt time.Time `json:"first_seen_at"`
+	LastSeenAt  time.Time `json:"last_seen_at"`
+	EventCount  int       `json:"event_count"`
+	EntryURL    string    `json:"entry_url"`
+	ExitURL     string    `json:"exit_url"`
+	Referrer    string    `json:"referrer"`
+	UTMSource   string    `json:"utm_source"`
+	UTMMedium   string    `json:"utm_medium"`
+	UTMCampaign string    `json:"utm_campaign"`
+	DeviceType  string    `json:"device_type"`
+	CountryCode string    `json:"country_code"`
 }
 
 // UpsertSession inserts or updates a session record.

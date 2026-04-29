@@ -9,21 +9,21 @@ import (
 
 // Funnel is a multi-step conversion funnel.
 type Funnel struct {
-	ID          string
-	ProjectID   string
-	Name        string
-	Description string
-	Steps       []FunnelStep
-	CreatedAt   time.Time
+	ID          string       `json:"id"`
+	ProjectID   string       `json:"project_id"`
+	Name        string       `json:"name"`
+	Description string       `json:"description"`
+	Steps       []FunnelStep `json:"steps"`
+	CreatedAt   time.Time    `json:"created_at"`
 }
 
 // FunnelStep is one step in a funnel.
 type FunnelStep struct {
-	ID        string
-	FunnelID  string
-	StepOrder int
-	EventName string
-	Filters   []FunnelFilter
+	ID        string        `json:"id"`
+	FunnelID  string        `json:"funnel_id"`
+	StepOrder int           `json:"step_order"`
+	EventName string        `json:"event_name"`
+	Filters   []FunnelFilter `json:"filters"`
 }
 
 // FunnelFilter filters events at a funnel step by property value.
@@ -34,11 +34,11 @@ type FunnelFilter struct {
 
 // FunnelStepResult holds analysis results for one funnel step.
 type FunnelStepResult struct {
-	StepOrder  int
-	EventName  string
-	Count      int64
-	Conversion float64 // fraction of step 0 that reached this step
-	DropOff    float64 // fraction lost from previous step
+	StepOrder  int     `json:"step_order"`
+	EventName  string  `json:"event_name"`
+	Count      int64   `json:"count"`
+	Conversion float64 `json:"conversion"`
+	DropOff    float64 `json:"drop_off"`
 }
 
 // CreateFunnel inserts a funnel with its steps.

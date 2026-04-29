@@ -8,28 +8,28 @@ import (
 
 // Event represents a single analytics event.
 type Event struct {
-	ID             string
-	ProjectID      string
-	SessionID      string
-	UserIDHash     string
-	Name           string
-	URL            string
-	Referrer       string
-	ReferrerDomain string
-	UTMSource      string
-	UTMMedium      string
-	UTMCampaign    string
-	UTMTerm        string
-	UTMContent     string
-	Properties     string // JSON blob
-	UserAgent      string
-	Browser        string
-	OS             string
-	DeviceType     string
-	CountryCode    string
-	IngestID       string
-	OccurredAt     time.Time
-	CreatedAt      time.Time
+	ID             string    `json:"id"`
+	ProjectID      string    `json:"project_id"`
+	SessionID      string    `json:"session_id"`
+	UserIDHash     string    `json:"user_id_hash"`
+	Name           string    `json:"name"`
+	URL            string    `json:"url"`
+	Referrer       string    `json:"referrer"`
+	ReferrerDomain string    `json:"referrer_domain"`
+	UTMSource      string    `json:"utm_source"`
+	UTMMedium      string    `json:"utm_medium"`
+	UTMCampaign    string    `json:"utm_campaign"`
+	UTMTerm        string    `json:"utm_term"`
+	UTMContent     string    `json:"utm_content"`
+	Properties     string    `json:"properties"`
+	UserAgent      string    `json:"user_agent"`
+	Browser        string    `json:"browser"`
+	OS             string    `json:"os"`
+	DeviceType     string    `json:"device_type"`
+	CountryCode    string    `json:"country_code"`
+	IngestID       string    `json:"ingest_id"`
+	OccurredAt     time.Time `json:"occurred_at"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // InsertEvent writes a new event to the database.
@@ -120,8 +120,8 @@ func (s *Store) TopPages(ctx context.Context, projectID string, from, to time.Ti
 
 // PageStat is a page URL with view count.
 type PageStat struct {
-	URL   string
-	Views int64
+	URL   string `json:"url"`
+	Views int64  `json:"views"`
 }
 
 // TopReferrers returns the most common referrer domains.
@@ -155,8 +155,8 @@ func (s *Store) TopReferrers(ctx context.Context, projectID string, from, to tim
 
 // ReferrerStat is a referrer domain with visit count.
 type ReferrerStat struct {
-	Domain string
-	Visits int64
+	Domain string `json:"domain"`
+	Visits int64  `json:"visits"`
 }
 
 // EventTimeSeries returns hourly event counts for a project over a time range.
@@ -186,8 +186,8 @@ func (s *Store) EventTimeSeries(ctx context.Context, projectID string, from, to 
 
 // TimeSeriesPoint is a timestamp+count pair.
 type TimeSeriesPoint struct {
-	Time  string
-	Count int64
+	Time  string `json:"time"`
+	Count int64  `json:"count"`
 }
 
 func scanEvents(rows *sql.Rows) ([]Event, error) {
@@ -251,8 +251,8 @@ func (s *Store) TopUTMSources(ctx context.Context, projectID string, from, to ti
 
 // UTMStat is a UTM value with count.
 type UTMStat struct {
-	Value string
-	Count int64
+	Value string `json:"value"`
+	Count int64  `json:"count"`
 }
 
 // UniqueSessionCount returns distinct session IDs in a time range.
@@ -326,8 +326,8 @@ func (s *Store) TopBrowsers(ctx context.Context, projectID string, from, to time
 
 // BrowserStat is a browser name with count.
 type BrowserStat struct {
-	Browser string
-	Count   int64
+	Browser string `json:"browser"`
+	Count   int64  `json:"count"`
 }
 
 // TopDeviceTypes returns breakdown by device type.
@@ -357,8 +357,8 @@ func (s *Store) TopDeviceTypes(ctx context.Context, projectID string, from, to t
 
 // DeviceStat is a device type with count.
 type DeviceStat struct {
-	DeviceType string
-	Count      int64
+	DeviceType string `json:"device_type"`
+	Count      int64  `json:"count"`
 }
 
 // TopEventNames returns the most frequent event names.
@@ -392,8 +392,8 @@ func (s *Store) TopEventNames(ctx context.Context, projectID string, from, to ti
 
 // EventNameStat is an event name with count.
 type EventNameStat struct {
-	Name  string
-	Count int64
+	Name  string `json:"name"`
+	Count int64  `json:"count"`
 }
 
 // TopCountries returns breakdown by country code.
@@ -427,8 +427,8 @@ func (s *Store) TopCountries(ctx context.Context, projectID string, from, to tim
 
 // CountryStat is a country code with count.
 type CountryStat struct {
-	CountryCode string
-	Count       int64
+	CountryCode string `json:"country_code"`
+	Count       int64  `json:"count"`
 }
 
 // TopOSSystems returns breakdown by operating system.
@@ -462,8 +462,8 @@ func (s *Store) TopOSSystems(ctx context.Context, projectID string, from, to tim
 
 // OSStat is an OS name with count.
 type OSStat struct {
-	OS    string
-	Count int64
+	OS    string `json:"os"`
+	Count int64  `json:"count"`
 }
 
 // TopUTMCampaigns returns breakdown by UTM campaign.
