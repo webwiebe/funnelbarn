@@ -50,6 +50,7 @@ window.addEventListener('scroll', () => {
       border: '1px solid #2a2d3a',
       borderRadius: 10,
       overflow: 'hidden',
+      maxWidth: '100%',
     }}>
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -73,8 +74,10 @@ window.addEventListener('scroll', () => {
         fontSize: 12, lineHeight: 1.6,
         color: '#e2e8f0',
         overflowX: 'auto',
+        maxWidth: '100%',
         whiteSpace: 'pre',
         fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+        WebkitOverflowScrolling: 'touch' as any,
       }}>
         {snippet}
       </pre>
@@ -318,14 +321,14 @@ function FunnelDetail({ analysis, activeSegment }: { analysis: FunnelAnalysis; a
   if (!hasData) {
     return (
       <div>
-        <div style={{ padding: '2rem', textAlign: 'center', color: C.muted }}>
+        <div style={{ padding: '2rem', textAlign: 'center', color: C.muted, maxWidth: '100%', overflow: 'hidden' }}>
           <div style={{ fontSize: 40, marginBottom: 16 }}>📭</div>
-          <div style={{ fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 8 }}>
+          <div style={{ fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 8, wordBreak: 'break-word' }}>
             No data yet for "{analysis.funnel?.name}"
           </div>
-          <div style={{ fontSize: 14, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 14, lineHeight: 1.6, maxWidth: '100%', wordBreak: 'break-word' }}>
             Start sending events using your tracking snippet.<br />
-            This funnel tracks: {analysis.funnel?.steps?.map(s => s.event_name).join(' → ')}
+            This funnel tracks: {analysis.funnel?.steps?.map(s => s.event_name).filter(Boolean).join(' → ') || '(no steps defined)'}
           </div>
         </div>
         {analysis.funnel && <ImplementationSnippet funnel={analysis.funnel} />}
