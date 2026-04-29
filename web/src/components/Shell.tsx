@@ -1,6 +1,6 @@
-import { ReactNode, useRef, useState } from 'react'
+import { ReactNode, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { BarChart2, Layers, Radio, Settings, ChevronDown, LogOut, User, FlaskConical, Menu, X } from 'lucide-react'
+import { BarChart2, Layers, Radio, Settings, ChevronDown, LogOut, User, FlaskConical, MoreHorizontal } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { useProjects } from '../lib/projects'
 
@@ -26,9 +26,7 @@ export default function Shell({ children, projectId, onProjectChange }: ShellPro
   const location = useLocation()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const mobileMenuRef = useRef<HTMLDivElement>(null)
-
+  const [moreSheetOpen, setMoreSheetOpen] = useState(false)
   const currentProject = projects.find((p) => p.id === projectId) || projects[0]
 
   const handleLogout = async () => {
@@ -42,6 +40,14 @@ export default function Shell({ children, projectId, onProjectChange }: ShellPro
     { to: projectId ? `/abtests/${projectId}` : '/abtests', label: 'A/B Tests', icon: <FlaskConical size={16} /> },
     { to: projectId ? `/live/${projectId}` : '/live', label: 'Live', icon: <Radio size={16} /> },
     { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
+  ]
+
+  // Bottom tabs (excludes Settings — that goes in More sheet)
+  const bottomTabs = [
+    { to: projectId ? `/dashboard/${projectId}` : '/dashboard', label: 'Overview', icon: BarChart2 },
+    { to: projectId ? `/funnels/${projectId}` : '/funnels', label: 'Funnels', icon: Layers },
+    { to: projectId ? `/abtests/${projectId}` : '/abtests', label: 'A/B Tests', icon: FlaskConical },
+    { to: projectId ? `/live/${projectId}` : '/live', label: 'Live', icon: Radio },
   ]
 
   const isActive = (to: string) => {
@@ -75,8 +81,8 @@ export default function Shell({ children, projectId, onProjectChange }: ShellPro
           </span>
         </Link>
 
-        {/* Project switcher — hidden on mobile, use hamburger menu instead */}
-        <div style={{ position: 'relative', flexShrink: 0 }} className="project-switcher desktop-only">
+        {/* Desktop: project switcher */}
+        <div style={{ position: 'relative', flexShrink: 0 }} className="desktop-project-switcher">
           <button
             onClick={() => setDropdownOpen((v) => !v)}
             style={{
@@ -136,8 +142,71 @@ export default function Shell({ children, projectId, onProjectChange }: ShellPro
           )}
         </div>
 
-        {/* Nav links — hidden on mobile */}
-        <div className="nav-links" style={{ display: 'flex', gap: 4, flex: 1 }}>
+        {/* Mobile: compact project switcher (right side of top bar) */}
+        <div className="mobile-project-switcher" style={{ marginLeft: 'auto', position: 'relative' }}>
+          <button
+            onClick={() => setDropdownOpen((v) => !v)}
+            style={{
+              background: 'transparent',
+              border: `1px solid ${C.border}`,
+              borderRadius: 6,
+              color: C.muted,
+              padding: '0.3rem 0.55rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              fontSize: 12,
+              minHeight: 'unset',
+            }}
+          >
+            <span style={{ color: currentProject ? C.text : C.muted, maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {currentProject?.name ?? 'Select project'}
+            </span>
+            <ChevronDown size={12} color={C.muted} />
+          </button>
+          {dropdownOpen && (
+            <div style={{
+              position: 'absolute',
+              top: '110%',
+              right: 0,
+              background: C.surface,
+              border: `1px solid ${C.border}`,
+              borderRadius: 8,
+              minWidth: 180,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+              zIndex: 200,
+            }}>
+              {projects.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    setDropdownOpen(false)
+                    onProjectChange?.(p.id)
+                    navigate(`/dashboard/${p.id}`)
+                  }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    background: p.id === currentProject?.id ? '#2a2d3a' : 'transparent',
+                    border: 'none',
+                    color: C.text,
+                    padding: '0.6rem 1rem',
+                    cursor: 'pointer',
+                    fontSize: 14,
+                    minHeight: 'unset',
+                  }}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Desktop: Nav links */}
+        <div className="desktop-nav" style={{ display: 'flex', gap: 4, flex: 1 }}>
           {navLinks.map((link) => (
             <Link
               key={link.to}
@@ -164,10 +233,10 @@ export default function Shell({ children, projectId, onProjectChange }: ShellPro
           ))}
         </div>
 
-        {/* Right side — hidden on mobile except hamburger */}
-        <div className="nav-right" style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+        {/* Desktop: Right side user menu + live indicator */}
+        <div className="desktop-user-menu" style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
           {/* Live indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#10b981' }}>
+          <div className="desktop-live-indicator" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#10b981' }}>
             <span style={{
               display: 'inline-block',
               width: 8,
@@ -238,146 +307,202 @@ export default function Shell({ children, projectId, onProjectChange }: ShellPro
             )}
           </div>
         </div>
-
-        {/* Hamburger — mobile only */}
-        <button
-          className="hamburger"
-          onClick={() => setMobileMenuOpen((v) => !v)}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: C.text,
-            cursor: 'pointer',
-            padding: '0.35rem',
-            display: 'none',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginLeft: 'auto',
-            minHeight: 'unset',
-          }}
-          aria-label="Toggle menu"
-        >
-          {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
-        </button>
       </nav>
 
-      {/* Mobile slide-down menu */}
-      {mobileMenuOpen && (
-        <div
-          ref={mobileMenuRef}
-          style={{
-            position: 'fixed',
-            top: 56,
-            left: 0,
-            right: 0,
-            background: C.surface,
-            borderBottom: `1px solid ${C.border}`,
-            zIndex: 99,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-            padding: '0.5rem 0',
-          }}
-        >
-          {/* Project switcher in mobile menu */}
-          {projects.length > 0 && (
-            <>
-              <div style={{ padding: '0.5rem 1.25rem 0.25rem', fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                Project
-              </div>
-              {projects.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => {
-                    setMobileMenuOpen(false)
-                    onProjectChange?.(p.id)
-                    navigate(`/dashboard/${p.id}`)
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    width: '100%',
-                    textAlign: 'left',
-                    background: p.id === currentProject?.id ? 'rgba(245,158,11,0.08)' : 'transparent',
-                    border: 'none',
-                    color: p.id === currentProject?.id ? C.amber : C.text,
-                    padding: '0.6rem 1.25rem',
-                    cursor: 'pointer',
-                    fontSize: 14,
-                    fontWeight: p.id === currentProject?.id ? 600 : 400,
-                    borderLeft: `3px solid ${p.id === currentProject?.id ? C.amber : 'transparent'}`,
-                    minHeight: 'unset',
-                  }}
-                >
-                  {p.name}
-                </button>
-              ))}
-              <div style={{ borderTop: `1px solid ${C.border}`, margin: '0.5rem 0' }} />
-            </>
-          )}
-
-          {/* Nav links */}
-          {navLinks.map((link) => (
-            <Link
-              key={link.to}
-              to={link.to}
-              onClick={() => setMobileMenuOpen(false)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '0.75rem 1.25rem',
-                textDecoration: 'none',
-                fontSize: 15,
-                fontWeight: 500,
-                color: isActive(link.to) ? C.amber : C.text,
-                background: isActive(link.to) ? 'rgba(245,158,11,0.08)' : 'transparent',
-                borderLeft: `3px solid ${isActive(link.to) ? C.amber : 'transparent'}`,
-                minHeight: 'unset',
-              }}
-            >
-              {link.icon}
-              {link.label}
-            </Link>
-          ))}
-
-          {/* User + logout */}
-          <div style={{ borderTop: `1px solid ${C.border}`, margin: '0.5rem 0' }} />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 1.25rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, color: C.muted }}>
-              <User size={14} />
-              <span>{user?.username}</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 8, color: '#10b981', fontSize: 13 }}>
-                <span style={{ width: 7, height: 7, background: '#10b981', borderRadius: '50%', display: 'inline-block', animation: 'pulse 2s infinite' }} />
-                Live
-              </span>
-            </div>
-            <button
-              onClick={() => { setMobileMenuOpen(false); handleLogout() }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                background: 'transparent',
-                border: 'none',
-                color: '#ef4444',
-                cursor: 'pointer',
-                fontSize: 14,
-                minHeight: 'unset',
-                padding: '0.25rem 0.5rem',
-              }}
-            >
-              <LogOut size={14} />
-              Logout
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Content */}
-      <main style={{ width: '100%', boxSizing: 'border-box' }}>
+      <main className="shell-main" style={{ width: '100%', boxSizing: 'border-box' }}>
         <div style={{ maxWidth: 1280, margin: '0 auto', padding: '1.5rem 1rem', width: '100%', boxSizing: 'border-box' }}>
           {children}
         </div>
       </main>
+
+      {/* Mobile: Bottom tab bar */}
+      <nav className="bottom-tab-bar" style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        background: C.surface,
+        borderTop: `1px solid ${C.border}`,
+        display: 'none',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        zIndex: 100,
+      }}>
+        {bottomTabs.map((tab) => {
+          const active = isActive(tab.to)
+          const Icon = tab.icon
+          return (
+            <Link
+              key={tab.to}
+              to={tab.to}
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '8px 0',
+                gap: 3,
+                textDecoration: 'none',
+                color: active ? C.amber : C.muted,
+                fontSize: 10,
+                fontWeight: active ? 700 : 400,
+                transition: 'color 0.15s',
+              }}
+            >
+              <Icon size={20} />
+              <span>{tab.label}</span>
+            </Link>
+          )
+        })}
+
+        {/* More tab */}
+        <button
+          onClick={() => setMoreSheetOpen(true)}
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '8px 0',
+            gap: 3,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: C.muted,
+            fontSize: 10,
+            fontWeight: 400,
+            transition: 'color 0.15s',
+          }}
+        >
+          <MoreHorizontal size={20} />
+          <span>More</span>
+        </button>
+      </nav>
+
+      {/* Mobile: More sheet overlay */}
+      {moreSheetOpen && (
+        <>
+          {/* Dark overlay */}
+          <div
+            onClick={() => setMoreSheetOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.5)',
+              zIndex: 200,
+            }}
+          />
+
+          {/* Slide-up sheet */}
+          <div style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            background: C.surface,
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            borderTop: `1px solid ${C.border}`,
+            padding: '1rem 1.5rem',
+            paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))',
+            zIndex: 201,
+            animation: 'slideUp 0.2s ease-out',
+          }}>
+            {/* Drag handle */}
+            <div style={{
+              width: 36,
+              height: 4,
+              background: C.border,
+              borderRadius: 2,
+              margin: '0 auto 1.25rem',
+            }} />
+
+            {/* User info */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '0.5rem 0 1rem',
+              borderBottom: `1px solid ${C.border}`,
+              marginBottom: '0.75rem',
+            }}>
+              <div style={{
+                width: 32,
+                height: 32,
+                borderRadius: '50%',
+                background: C.bg,
+                border: `1px solid ${C.border}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <User size={15} color={C.muted} />
+              </div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{user?.username}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#10b981', marginTop: 2 }}>
+                  <span style={{
+                    width: 6,
+                    height: 6,
+                    background: '#10b981',
+                    borderRadius: '50%',
+                    display: 'inline-block',
+                    animation: 'pulse 2s infinite',
+                  }} />
+                  Live
+                </div>
+              </div>
+            </div>
+
+            {/* Settings link */}
+            <Link
+              to="/settings"
+              onClick={() => setMoreSheetOpen(false)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '0.75rem 0',
+                textDecoration: 'none',
+                color: C.text,
+                fontSize: 15,
+                fontWeight: 500,
+                borderBottom: `1px solid ${C.border}`,
+              }}
+            >
+              <Settings size={18} color={C.muted} />
+              Settings
+            </Link>
+
+            {/* Logout */}
+            <button
+              onClick={() => { setMoreSheetOpen(false); handleLogout() }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                width: '100%',
+                background: 'transparent',
+                border: 'none',
+                color: '#ef4444',
+                padding: '0.75rem 0',
+                cursor: 'pointer',
+                fontSize: 15,
+                fontWeight: 500,
+                marginTop: 0,
+                textAlign: 'left',
+                minHeight: 'unset',
+              }}
+            >
+              <LogOut size={18} />
+              Log out
+            </button>
+          </div>
+        </>
+      )}
 
       <style>{`
         @keyframes pulse {
@@ -385,19 +510,29 @@ export default function Shell({ children, projectId, onProjectChange }: ShellPro
           70% { box-shadow: 0 0 0 6px rgba(16,185,129,0); }
           100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
         }
-        /* Mobile: logo + hamburger only */
-        @media (max-width: 767px) {
-          .nav-links { display: none !important; }
-          .hamburger { display: flex !important; }
-          .nav-right { display: none !important; }
-          .desktop-only { display: none !important; }
+        @keyframes slideUp {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
         }
-        /* Desktop: full nav, no hamburger */
+
+        /* Mobile layout */
+        @media (max-width: 767px) {
+          .desktop-nav { display: none !important; }
+          .desktop-user-menu { display: none !important; }
+          .desktop-live-indicator { display: none !important; }
+          .desktop-project-switcher { display: none !important; }
+          .mobile-project-switcher { display: flex !important; }
+          .bottom-tab-bar { display: flex !important; }
+          .shell-main { padding-bottom: calc(70px + env(safe-area-inset-bottom)) !important; }
+        }
+
+        /* Desktop layout */
         @media (min-width: 768px) {
-          .hamburger { display: none !important; }
-          .nav-links { display: flex !important; }
-          .nav-right { display: flex !important; }
-          .desktop-only { display: block !important; }
+          .desktop-nav { display: flex !important; }
+          .desktop-user-menu { display: flex !important; }
+          .desktop-project-switcher { display: block !important; }
+          .mobile-project-switcher { display: none !important; }
+          .bottom-tab-bar { display: none !important; }
         }
       `}</style>
     </div>
