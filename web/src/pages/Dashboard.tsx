@@ -98,6 +98,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [range, setRange] = useState('7d')
+  const [topFunnelRate, setTopFunnelRate] = useState<number | null>(null)
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [creatingProject, setCreatingProject] = useState(false)
@@ -129,6 +130,24 @@ export default function Dashboard() {
       .catch((e: unknown) => setError(String(e)))
       .finally(() => setLoading(false))
   }, [projectId, range])
+
+  useEffect(() => {
+    if (!projectId) return
+    setTopFunnelRate(null)
+    api.listFunnels(projectId)
+      .then(async (d) => {
+        const funnels = d.funnels || []
+        if (funnels.length === 0) return
+        const analysis = await api.getFunnelAnalysis(projectId, funnels[0].id)
+        const steps = analysis.results || []
+        if (steps.length < 2) return
+        const first = steps[0]?.Count ?? 0
+        const last = steps[steps.length - 1]?.Count ?? 0
+        if (first === 0) return
+        setTopFunnelRate((last / first) * 100)
+      })
+      .catch(() => setTopFunnelRate(null))
+  }, [projectId])
 
   // Format time series for chart
   const chartData = data?.events_time_series?.map((pt) => ({
@@ -324,7 +343,7 @@ export default function Dashboard() {
         />
         <StatCard
           label="Top Funnel"
-          value={loading ? '—' : '—'}
+          value={loading ? '—' : topFunnelRate !== null ? `${topFunnelRate.toFixed(1)}%` : '—'}
           icon={<MousePointer size={18} />}
           loading={loading}
         />

@@ -356,8 +356,8 @@ function TestDetail({ test, projectId }: { test: ABTest; projectId: string }) {
         fontWeight: 600,
       }}>
         {analysis.significant
-          ? `✓ Significant result (${((analysis.confidence ?? 0) * 100).toFixed(1)}% confidence)`
-          : '⏳ Not yet significant — need more data'}
+          ? `✓ Significant (95% CI) — z = ${(analysis.z_score ?? 0).toFixed(2)}`
+          : `⏳ Not significant yet${analysis.z_score ? ` — z = ${analysis.z_score.toFixed(2)}` : ''}`}
       </div>
     </div>
   )

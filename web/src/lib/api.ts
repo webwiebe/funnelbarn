@@ -215,5 +215,5 @@ export interface ABTestAnalysis {
   variant_sample: number
   variant_conversions: number
   significant: boolean
-  confidence?: number
+  z_score?: number
 }

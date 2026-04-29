@@ -3,11 +3,33 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"math"
 	"net/http"
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 )
+
+// zTestTwoProportions performs a two-proportion z-test.
+// Returns the z-score and whether the result is significant at the 95% CI (|z| > 1.96).
+func zTestTwoProportions(n1, x1, n2, x2 int64) (zScore float64, significant bool) {
+	if n1 == 0 || n2 == 0 {
+		return 0, false
+	}
+	p1 := float64(x1) / float64(n1)
+	p2 := float64(x2) / float64(n2)
+	pPool := float64(x1+x2) / float64(n1+n2)
+	if pPool == 0 || pPool == 1 {
+		return 0, false
+	}
+	se := math.Sqrt(pPool * (1 - pPool) * (1/float64(n1) + 1/float64(n2)))
+	if se == 0 {
+		return 0, false
+	}
+	z := math.Abs((p1 - p2) / se)
+	// 95% CI: z > 1.96
+	return z, z > 1.96
+}
 
 // handleListABTests returns all A/B tests for a project.
 func (s *Server) handleListABTests(w http.ResponseWriter, r *http.Request) {
@@ -134,29 +156,8 @@ func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Simple significance check: require at least 100 samples per arm and
-	// a detectable difference (> 5% relative lift or a minimum absolute diff).
-	significant := false
-	confidence := 0.0
-	if controlSample >= 100 && variantSample >= 100 {
-		controlRate := float64(controlConversions) / float64(controlSample)
-		variantRate := float64(variantConversions) / float64(variantSample)
-		if controlRate > 0 {
-			relativeLift := (variantRate - controlRate) / controlRate
-			if relativeLift > 0.05 || relativeLift < -0.05 {
-				significant = true
-				// Heuristic confidence score: clamp relative lift to [0,1].
-				diff := relativeLift
-				if diff < 0 {
-					diff = -diff
-				}
-				confidence = diff / (diff + 0.1)
-				if confidence > 0.99 {
-					confidence = 0.99
-				}
-			}
-		}
-	}
+	// Two-proportion z-test for statistical significance.
+	zScore, significant := zTestTwoProportions(controlSample, controlConversions, variantSample, variantConversions)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"test":                 test,
@@ -165,7 +166,7 @@ func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 		"variant_sample":       variantSample,
 		"variant_conversions":  variantConversions,
 		"significant":          significant,
-		"confidence":           confidence,
+		"z_score":              zScore,
 		"from":                 from.Format(time.RFC3339),
 		"to":                   to.Format(time.RFC3339),
 	})
