@@ -1,8 +1,8 @@
-import { ReactNode, useEffect, useRef, useState } from 'react'
+import { ReactNode, useRef, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { BarChart2, Layers, Radio, Settings, ChevronDown, LogOut, User, FlaskConical, Menu, X } from 'lucide-react'
 import { useAuth } from '../lib/auth'
-import { api, Project } from '../lib/api'
+import { useProjects } from '../lib/projects'
 
 const C = {
   bg: '#0f1117',
@@ -21,19 +21,13 @@ interface ShellProps {
 
 export default function Shell({ children, projectId, onProjectChange }: ShellProps) {
   const { user, logout } = useAuth()
+  const { projects } = useProjects()
   const navigate = useNavigate()
   const location = useLocation()
-  const [projects, setProjects] = useState<Project[]>([])
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const mobileMenuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    api.listProjects()
-      .then((d) => setProjects(d.projects || []))
-      .catch(() => setProjects([]))
-  }, [])
 
   const currentProject = projects.find((p) => p.id === projectId) || projects[0]
 

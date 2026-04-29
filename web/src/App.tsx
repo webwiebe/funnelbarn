@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ReactNode, useState } from 'react'
 import { AuthProvider, useAuth } from './lib/auth'
+import { ProjectProvider, useProjects } from './lib/projects'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -76,6 +77,7 @@ function RootRedirect() {
 
 function AppRoutes() {
   const { user } = useAuth()
+  const { refetch } = useProjects()
   const [wizardDismissed, setWizardDismissed] = useState(false)
 
   // Show wizard if user is logged in but has no projects (has_projects === false)
@@ -84,7 +86,7 @@ function AppRoutes() {
   return (
     <>
       {showWizard && (
-        <FirstRunWizard onComplete={() => setWizardDismissed(true)} />
+        <FirstRunWizard onComplete={() => { refetch(); setWizardDismissed(true) }} />
       )}
       <Routes>
         <Route path="/" element={<RootRedirect />} />
@@ -134,7 +136,9 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <ProjectProvider>
+          <AppRoutes />
+        </ProjectProvider>
       </AuthProvider>
     </BrowserRouter>
   )

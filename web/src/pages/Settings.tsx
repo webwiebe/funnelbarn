@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Copy, Trash2, Plus, Check, Save } from 'lucide-react'
 import Shell from '../components/Shell'
-import { api, ApiKey, Project } from '../lib/api'
+import { api, ApiKey } from '../lib/api'
+import { useProjects } from '../lib/projects'
 
 const C = {
   bg: '#0f1117',
@@ -64,6 +65,7 @@ function ScopeBadge({ scope }: { scope: string }) {
 }
 
 export default function Settings() {
+  const { projects, refetch: refetchProjects } = useProjects()
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(true)
   const [newKeyName, setNewKeyName] = useState('')
@@ -72,8 +74,7 @@ export default function Settings() {
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Project editing
-  const [projects, setProjects] = useState<Project[]>([])
+  // Project editing — initialise from shared context
   const [editedNames, setEditedNames] = useState<Record<string, string>>({})
   const [savingProject, setSavingProject] = useState<string | null>(null)
   const [projectSaveMsg, setProjectSaveMsg] = useState<string | null>(null)
@@ -81,20 +82,18 @@ export default function Settings() {
   // Confirm delete
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
+  // Sync editedNames when context projects change
+  useEffect(() => {
+    const names: Record<string, string> = {}
+    for (const p of projects) names[p.id] = p.name
+    setEditedNames(names)
+  }, [projects])
+
   useEffect(() => {
     api.listApiKeys()
       .then((d) => setApiKeys(d.api_keys || []))
       .catch(() => setApiKeys([]))
       .finally(() => setLoading(false))
-
-    api.listProjects()
-      .then((d) => {
-        setProjects(d.projects || [])
-        const names: Record<string, string> = {}
-        for (const p of d.projects || []) names[p.id] = p.name
-        setEditedNames(names)
-      })
-      .catch(() => setProjects([]))
   }, [])
 
   const handleCreate = async () => {
@@ -136,7 +135,7 @@ export default function Settings() {
     setSavingProject(projectId)
     try {
       await api.updateProject(projectId, { name })
-      setProjects((prev) => prev.map((p) => p.id === projectId ? { ...p, name } : p))
+      refetchProjects()
       setProjectSaveMsg('Saved!')
       setTimeout(() => setProjectSaveMsg(null), 2000)
     } catch (e) {
