@@ -235,6 +235,23 @@ function CreateFunnelModal({
 }
 
 function FunnelDetail({ analysis, activeSegment }: { analysis: FunnelAnalysis; activeSegment: string }) {
+  const hasData = analysis.results && analysis.results.length > 0 && analysis.results[0]?.Count > 0
+
+  if (!hasData) {
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center', color: C.muted }}>
+        <div style={{ fontSize: 40, marginBottom: 16 }}>📭</div>
+        <div style={{ fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 8 }}>
+          No data yet for "{analysis.funnel?.name}"
+        </div>
+        <div style={{ fontSize: 14, lineHeight: 1.6 }}>
+          Start sending events using your tracking snippet.<br />
+          This funnel tracks: {analysis.results?.map(r => r.EventName).join(' → ')}
+        </div>
+      </div>
+    )
+  }
+
   const maxCount = Math.max(...(analysis.results?.map((r) => r.Count) ?? [1]))
   const segLabel = PRESET_SEGMENTS.find((s) => s.id === activeSegment)?.label ?? activeSegment
   const entryCount = analysis.results?.[0]?.Count ?? 0
@@ -329,6 +346,7 @@ export default function Funnels() {
   const [selected, setSelected] = useState<Funnel | null>(null)
   const [analysis, setAnalysis] = useState<FunnelAnalysis | null>(null)
   const [analysisLoading, setAnalysisLoading] = useState(false)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [showDetail, setShowDetail] = useState(false)
   const [activeSegment, setActiveSegment] = useState('all')
@@ -344,10 +362,14 @@ export default function Funnels() {
   useEffect(() => {
     if (!selected || !projectId) return
     setAnalysis(null)
+    setAnalysisError(null)
     setAnalysisLoading(true)
     api.getFunnelAnalysis(projectId, selected.id, activeSegment)
       .then(setAnalysis)
-      .catch(console.error)
+      .catch((e) => {
+        console.error(e)
+        setAnalysisError(String(e))
+      })
       .finally(() => setAnalysisLoading(false))
   }, [selected, projectId, activeSegment])
 
@@ -536,7 +558,19 @@ export default function Funnels() {
           {analysisLoading && (
             <div style={{ color: C.muted, padding: '2rem' }}>Loading analysis…</div>
           )}
-          {analysis && !analysisLoading && (
+          {analysisError && !analysisLoading && (
+            <div style={{
+              background: 'rgba(239,68,68,0.1)',
+              border: `1px solid rgba(239,68,68,0.3)`,
+              borderRadius: 8,
+              padding: '1rem 1.25rem',
+              color: C.error,
+              fontSize: 14,
+            }}>
+              Failed to load analysis: {analysisError}
+            </div>
+          )}
+          {analysis && !analysisLoading && !analysisError && (
             <FunnelDetail analysis={analysis} activeSegment={activeSegment} />
           )}
         </div>

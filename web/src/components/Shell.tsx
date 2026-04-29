@@ -112,7 +112,7 @@ export default function Shell({ children, projectId, onProjectChange }: ShellPro
               borderRadius: 8,
               minWidth: 180,
               boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-              zIndex: 200,
+              zIndex: 300,
             }}>
               {projects.map((p) => (
                 <button
@@ -175,7 +175,7 @@ export default function Shell({ children, projectId, onProjectChange }: ShellPro
               borderRadius: 8,
               minWidth: 180,
               boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-              zIndex: 200,
+              zIndex: 300,
             }}>
               {projects.map((p) => (
                 <button
