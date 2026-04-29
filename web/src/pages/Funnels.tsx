@@ -4,8 +4,12 @@ import { Plus, X, Layers } from 'lucide-react'
 import Shell from '../components/Shell'
 import { api, Funnel, FunnelAnalysis, FunnelStepInput } from '../lib/api'
 
+const LANGS = ['JS', 'React', 'Go', 'Python', 'Swift', 'Kotlin'] as const
+type Lang = typeof LANGS[number]
+
 function ImplementationSnippet({ funnel, apiKey }: { funnel: Funnel; apiKey?: string }) {
   const [copied, setCopied] = useState(false)
+  const [activeLang, setActiveLang] = useState<Lang>('JS')
   const steps = funnel.steps || []
 
   // Convert event_name to camelCase for the const key
@@ -19,39 +23,199 @@ function ImplementationSnippet({ funnel, apiKey }: { funnel: Funnel; apiKey?: st
     )
   }
 
-  const displayKey = apiKey ?? 'YOUR_INGEST_API_KEY'
+  const key = apiKey ?? 'YOUR_INGEST_API_KEY'
+  const constName = toCamelCase(funnel.name.replace(/\s+/g, '_')) + 'Funnel'
+  const constNameCapitalized = constName.charAt(0).toUpperCase() + constName.slice(1)
+  const stepEntries = steps.map(s => `  ${toCamelCase(s.event_name)}: '${s.event_name}'`).join(',\n')
+  const firstStep = steps[0]?.event_name || 'page_view'
+  const midStep = steps[1]?.event_name || 'button_click'
+  const lastStep = steps[steps.length - 1]?.event_name || 'conversion'
 
-  // Generate the JS snippet
-  const snippet = `<!-- 1. Add this to your <head> -->
+  const toGoExportedCase = (s: string) =>
+    s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^\w/, (c: string) => c.toUpperCase())
+
+  const getSnippet = (lang: Lang): string => {
+    switch (lang) {
+      case 'JS':
+        return `<!-- Add to <head> -->
 <script src="https://funnelbarn.wiebe.xyz/sdk.js"
-        data-api-key="${displayKey}"></script>
+        data-api-key="${key}"></script>
 
 <script>
-// 2. Define your funnel steps
-const ${toCamelCase(funnel.name.replace(/\s+/g, '_'))}Funnel = {
-${steps.map(s => `  ${toCamelCase(s.event_name)}: '${s.event_name}',`).join('\n')}
+// Funnel step constants
+const ${constName} = {
+${stepEntries}
 }
 
-// 3. Button click example
-document.querySelector('#your-cta-button').addEventListener('click', () => {
-  funnelbarn.track('${steps[1]?.event_name || steps[0]?.event_name || 'button_click'}')
+// Track page view on load
+funnelbarn.track(${constName}.${toCamelCase(firstStep)})
+
+// Button click example
+document.querySelector('#your-cta').addEventListener('click', () => {
+  funnelbarn.track(${constName}.${toCamelCase(midStep)})
 })
 
-// 4. Form submit example
+// Form submit example
 document.querySelector('form').addEventListener('submit', () => {
-  funnelbarn.track('${steps[steps.length - 1]?.event_name || 'form_submit'}')
+  funnelbarn.track(${constName}.${toCamelCase(lastStep)})
 })
 
-// 5. Scroll depth tracker (fires once at 50%)
-let _scrollTracked = false
+// Scroll depth (50%)
+let _scrolled = false
 window.addEventListener('scroll', () => {
   const pct = window.scrollY / (document.body.scrollHeight - window.innerHeight)
-  if (pct >= 0.5 && !_scrollTracked) {
-    _scrollTracked = true
-    funnelbarn.track('scroll_50_percent')
-  }
+  if (pct >= 0.5 && !_scrolled) { _scrolled = true; funnelbarn.track('scroll_50') }
 }, { passive: true })
 </script>`
+
+      case 'React':
+        return `import { useEffect } from 'react'
+
+// Funnel step constants
+const ${constName} = {
+${stepEntries}
+} as const
+
+type ${constNameCapitalized}Step = typeof ${constName}[keyof typeof ${constName}]
+
+// Tracking hook
+function useFunnelTrack() {
+  return (step: ${constNameCapitalized}Step, props?: Record<string, unknown>) => {
+    window.funnelbarn?.track(step, props)
+  }
+}
+
+// Usage in your component
+function YourComponent() {
+  const track = useFunnelTrack()
+
+  useEffect(() => {
+    track(${constName}.${toCamelCase(firstStep)})
+  }, [])
+
+  return (
+    <button onClick={() => track(${constName}.${toCamelCase(midStep)})}>
+      Continue
+    </button>
+  )
+}`
+
+      case 'Go':
+        return `package main
+
+import (
+    "github.com/wiebe-xyz/funnelbarn-go"
+)
+
+// Funnel step constants
+const (
+${steps.map(s => `    ${toGoExportedCase(s.event_name)}Step = "${s.event_name}"`).join('\n')}
+)
+
+func main() {
+    funnelbarn.Init(funnelbarn.Options{
+        APIKey:   "${key}",
+        Endpoint: "https://funnelbarn.wiebe.xyz",
+    })
+    defer funnelbarn.Shutdown(2 * time.Second)
+
+    // Track a funnel step
+    funnelbarn.Track("${firstStep}", map[string]any{
+        "user_id": "user_123",
+    })
+}`
+
+      case 'Python':
+        return `from funnelbarn import FunnelBarnClient
+
+# Funnel step constants
+class ${constNameCapitalized}:
+${steps.map(s => `    ${s.event_name.toUpperCase()} = "${s.event_name}"`).join('\n')}
+
+# Initialize client
+client = FunnelBarnClient(
+    api_key="${key}",
+    endpoint="https://funnelbarn.wiebe.xyz"
+)
+
+# Track a step
+client.track(${constNameCapitalized}.${firstStep.toUpperCase()})
+
+# With properties
+client.track(
+    ${constNameCapitalized}.${lastStep.toUpperCase().replace(/-/g, '_')},
+    properties={"user_id": "user_123", "plan": "pro"}
+)
+
+client.flush()`
+
+      case 'Swift':
+        return `import Foundation
+
+// Funnel step constants
+enum ${constNameCapitalized}Step: String {
+${steps.map(s => `    case ${toCamelCase(s.event_name)} = "${s.event_name}"`).join('\n')}
+}
+
+// Track a step
+func trackFunnelStep(_ step: ${constNameCapitalized}Step,
+                     properties: [String: Any] = [:]) {
+    var body: [String: Any] = ["name": step.rawValue]
+    body.merge(properties) { _, new in new }
+
+    var request = URLRequest(url: URL(string: "https://funnelbarn.wiebe.xyz/api/v1/events")!)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("${key}", forHTTPHeaderField: "X-FunnelBarn-Api-Key")
+    request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+    URLSession.shared.dataTask(with: request).resume()
+}
+
+// Usage
+trackFunnelStep(.${toCamelCase(firstStep)})
+trackFunnelStep(.${toCamelCase(lastStep)}, properties: ["user_id": "user_123"])`
+
+      case 'Kotlin':
+        return `import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+
+// Funnel step constants
+object ${constNameCapitalized} {
+${steps.map(s => `    const val ${s.event_name.toUpperCase()} = "${s.event_name}"`).join('\n')}
+}
+
+// FunnelBarn tracker
+class FunnelBarnTracker(private val apiKey: String) {
+    private val client = OkHttpClient()
+    private val JSON = "application/json".toMediaType()
+    private val endpoint = "https://funnelbarn.wiebe.xyz/api/v1/events"
+
+    fun track(eventName: String, properties: Map<String, Any> = emptyMap()) {
+        val body = JSONObject(mapOf("name" to eventName) + properties)
+        val request = Request.Builder()
+            .url(endpoint)
+            .addHeader("X-FunnelBarn-Api-Key", apiKey)
+            .post(body.toString().toRequestBody(JSON))
+            .build()
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {}
+            override fun onResponse(call: Call, response: Response) {}
+        })
+    }
+}
+
+// Usage
+val tracker = FunnelBarnTracker("${key}")
+tracker.track(${constNameCapitalized}.${firstStep.toUpperCase().replace(/-/g, '_')})
+tracker.track(${constNameCapitalized}.${lastStep.toUpperCase().replace(/-/g, '_')},
+    mapOf("user_id" to "user_123"))`
+    }
+  }
+
+  const snippet = getSnippet(activeLang)
 
   return (
     <div style={{
@@ -78,6 +242,22 @@ window.addEventListener('scroll', () => {
         >
           {copied ? '✓ Copied' : 'Copy'}
         </button>
+      </div>
+      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #2a2d3a', overflowX: 'auto' }}>
+        {LANGS.map(lang => (
+          <button key={lang} onClick={() => setActiveLang(lang)} style={{
+            padding: '0.5rem 0.875rem',
+            background: 'none',
+            border: 'none',
+            borderBottom: activeLang === lang ? '2px solid #f59e0b' : '2px solid transparent',
+            color: activeLang === lang ? '#f59e0b' : '#94a3b8',
+            cursor: 'pointer',
+            fontSize: 12,
+            fontWeight: activeLang === lang ? 700 : 400,
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+          }}>{lang}</button>
+        ))}
       </div>
       <pre style={{
         margin: 0, padding: '1rem',
