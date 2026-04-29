@@ -27,7 +27,7 @@ const RANGES = [
   { label: '30d', value: '30d' },
 ]
 
-function Skeleton({ width = '100%', height = 20 }: { width?: string | number; height?: number }) {
+function Skeleton({ width = '100%', height = 20 }: { width?: string | number; height?: number | string }) {
   return (
     <div style={{
       width,
@@ -166,6 +166,13 @@ export default function Dashboard() {
           0% { background-position: 200% 0; }
           100% { background-position: -200% 0; }
         }
+        @media (max-width: 640px) {
+          .stat-cards-grid { grid-template-columns: 1fr 1fr !important; }
+          .bottom-row-grid { grid-template-columns: 1fr !important; }
+        }
+        @media (max-width: 400px) {
+          .stat-cards-grid { grid-template-columns: 1fr !important; }
+        }
       `}</style>
 
       {/* Header */}
@@ -208,7 +215,7 @@ export default function Dashboard() {
       )}
 
       {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+      <div className="stat-cards-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
         <StatCard
           label="Total Events"
           value={loading ? '—' : (data?.total_events ?? 0).toLocaleString()}
@@ -248,14 +255,15 @@ export default function Dashboard() {
         marginBottom: '1.5rem',
       }}>
         <div style={{ fontSize: 15, fontWeight: 700, marginBottom: '1rem' }}>Events over time</div>
+        <div style={{ height: 'clamp(160px, 40vw, 240px)' }}>
         {loading ? (
-          <Skeleton height={200} />
+          <Skeleton height="100%" />
         ) : chartData.length === 0 ? (
-          <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.muted }}>
+          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.muted }}>
             No data for this period
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="amberGrad" x1="0" y1="0" x2="0" y2="1">
@@ -282,10 +290,11 @@ export default function Dashboard() {
             </AreaChart>
           </ResponsiveContainer>
         )}
+        </div>
       </div>
 
       {/* Bottom row: Top pages + Referrers */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+      <div className="bottom-row-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
         {/* Top pages */}
         <div style={{
           background: C.surface,
@@ -344,7 +353,7 @@ export default function Dashboard() {
           ) : referrerData.length === 0 ? (
             <div style={{ color: C.muted, fontSize: 14 }}>No referrer data</div>
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height={Math.min(220, window.innerWidth * 0.5) || 220}>
               <PieChart>
                 <Pie
                   data={referrerData}

@@ -104,13 +104,22 @@ export default function Landing() {
       background: C.bg,
       color: C.text,
       fontFamily: 'system-ui, -apple-system, sans-serif',
+      overflowX: 'hidden',
     }}>
+      <style>{`
+        @media (max-width: 640px) {
+          .features-grid { grid-template-columns: 1fr !important; }
+          .hero-section { padding: 4rem 1rem 3rem !important; }
+          .install-section { padding: 3rem 1rem !important; }
+          .features-section { padding: 3rem 1rem !important; }
+        }
+      `}</style>
       {/* Nav */}
       <nav style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '1rem 2rem',
+        padding: '1rem 1.25rem',
         borderBottom: `1px solid ${C.border}`,
         position: 'sticky',
         top: 0,
@@ -143,7 +152,7 @@ export default function Landing() {
       </nav>
 
       {/* Hero */}
-      <section style={{
+      <section className="hero-section" style={{
         position: 'relative',
         textAlign: 'center',
         padding: '6rem 2rem 5rem',
@@ -196,7 +205,7 @@ export default function Landing() {
           </h1>
 
           <p style={{
-            fontSize: 20,
+            fontSize: 'clamp(1rem, 3vw, 1.25rem)',
             color: C.muted,
             maxWidth: 520,
             margin: '0 auto 2.5rem',
@@ -242,7 +251,7 @@ export default function Landing() {
       </section>
 
       {/* Features */}
-      <section style={{ padding: '4rem 2rem', maxWidth: 1100, margin: '0 auto' }}>
+      <section className="features-section" style={{ padding: '4rem 2rem', maxWidth: 1100, margin: '0 auto' }}>
         <h2 style={{
           textAlign: 'center',
           fontSize: 32,
@@ -256,9 +265,9 @@ export default function Landing() {
           Powerful analytics without the complexity or the bill.
         </p>
 
-        <div style={{
+        <div className="features-grid" style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
           gap: '1.25rem',
         }}>
           {features.map((f) => (
@@ -283,7 +292,7 @@ export default function Landing() {
       </section>
 
       {/* Install */}
-      <section ref={installRef} style={{ padding: '4rem 2rem', maxWidth: 780, margin: '0 auto' }}>
+      <section ref={installRef} className="install-section" style={{ padding: '4rem 2rem', maxWidth: 780, margin: '0 auto' }}>
         <h2 style={{
           textAlign: 'center',
           fontSize: 32,

@@ -114,9 +114,11 @@ export default function FirstRunWizard({ onComplete }: FirstRunWizardProps) {
         background: C.surface,
         border: `1px solid ${C.border}`,
         borderRadius: 16,
-        padding: '2.5rem',
+        padding: '2rem 1.5rem',
         width: '100%',
-        maxWidth: 520,
+        maxWidth: 440,
+        maxHeight: 'calc(100vh - 32px)',
+        overflowY: 'auto',
         boxShadow: '0 30px 80px rgba(0,0,0,0.6)',
       }}>
         {/* Step dots */}

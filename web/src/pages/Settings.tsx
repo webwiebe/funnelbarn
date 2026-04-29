@@ -165,6 +165,16 @@ export default function Settings() {
 
   return (
     <Shell>
+      <style>{`
+        @media (max-width: 640px) {
+          .api-keys-table { display: none !important; }
+          .api-keys-cards { display: block !important; }
+        }
+        @media (min-width: 641px) {
+          .api-keys-table { display: block !important; }
+          .api-keys-cards { display: none !important; }
+        }
+      `}</style>
       <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.5px', marginBottom: '2rem' }}>Settings</h1>
 
       {/* Projects section */}
@@ -333,39 +343,114 @@ export default function Settings() {
             No API keys yet.
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                {['Name', 'Scope', 'Created', ''].map((h) => (
-                  <th key={h} style={{
-                    textAlign: 'left',
-                    padding: '0.75rem 1.5rem',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: C.muted,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                  }}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            {/* Desktop table */}
+            <div className="api-keys-table" style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                    {['Name', 'Scope', 'Created', ''].map((h) => (
+                      <th key={h} style={{
+                        textAlign: 'left',
+                        padding: '0.75rem 1.5rem',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: C.muted,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {apiKeys.map((key) => (
+                    <tr key={key.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                      <td style={{ padding: '0.875rem 1.5rem', fontSize: 14, color: C.text, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        {key.name}
+                      </td>
+                      <td style={{ padding: '0.875rem 1.5rem', whiteSpace: 'nowrap' }}>
+                        <ScopeBadge scope={key.scope} />
+                      </td>
+                      <td style={{ padding: '0.875rem 1.5rem', fontSize: 13, color: C.muted, whiteSpace: 'nowrap' }}>
+                        {new Date(key.created_at).toLocaleDateString()}
+                      </td>
+                      <td style={{ padding: '0.875rem 1.5rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        {deleteConfirm === key.id ? (
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                            <span style={{ fontSize: 12, color: C.error }}>Confirm?</span>
+                            <button
+                              onClick={() => handleDeleteKey(key.id)}
+                              style={{
+                                background: 'rgba(239,68,68,0.1)',
+                                border: `1px solid rgba(239,68,68,0.3)`,
+                                borderRadius: 6,
+                                color: C.error,
+                                cursor: 'pointer',
+                                padding: '0.25rem 0.6rem',
+                                fontSize: 12,
+                                fontWeight: 700,
+                                minHeight: 'unset',
+                              }}
+                            >
+                              Delete
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirm(null)}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: C.muted,
+                                cursor: 'pointer',
+                                fontSize: 12,
+                                minHeight: 'unset',
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleDeleteKey(key.id)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: C.muted,
+                              cursor: 'pointer',
+                              padding: 4,
+                              minHeight: 'unset',
+                            }}
+                            title="Delete key"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="api-keys-cards" style={{ display: 'none' }}>
               {apiKeys.map((key) => (
-                <tr key={key.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-                  <td style={{ padding: '0.875rem 1.5rem', fontSize: 14, color: C.text, fontWeight: 600 }}>
-                    {key.name}
-                  </td>
-                  <td style={{ padding: '0.875rem 1.5rem' }}>
+                <div key={key.id} style={{
+                  padding: '1rem 1.25rem',
+                  borderBottom: `1px solid ${C.border}`,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: C.text }}>{key.name}</span>
                     <ScopeBadge scope={key.scope} />
-                  </td>
-                  <td style={{ padding: '0.875rem 1.5rem', fontSize: 13, color: C.muted }}>
-                    {new Date(key.created_at).toLocaleDateString()}
-                  </td>
-                  <td style={{ padding: '0.875rem 1.5rem', textAlign: 'right' }}>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: C.muted }}>
+                      Created: {new Date(key.created_at).toLocaleDateString()}
+                    </span>
                     {deleteConfirm === key.id ? (
-                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                         <span style={{ fontSize: 12, color: C.error }}>Confirm?</span>
                         <button
                           onClick={() => handleDeleteKey(key.id)}
@@ -375,9 +460,10 @@ export default function Settings() {
                             borderRadius: 6,
                             color: C.error,
                             cursor: 'pointer',
-                            padding: '0.25rem 0.6rem',
+                            padding: '0.2rem 0.5rem',
                             fontSize: 12,
                             fontWeight: 700,
+                            minHeight: 'unset',
                           }}
                         >
                           Delete
@@ -390,6 +476,7 @@ export default function Settings() {
                             color: C.muted,
                             cursor: 'pointer',
                             fontSize: 12,
+                            minHeight: 'unset',
                           }}
                         >
                           Cancel
@@ -400,21 +487,27 @@ export default function Settings() {
                         onClick={() => handleDeleteKey(key.id)}
                         style={{
                           background: 'transparent',
-                          border: 'none',
-                          color: C.muted,
+                          border: `1px solid ${C.border}`,
+                          borderRadius: 6,
+                          color: C.error,
                           cursor: 'pointer',
-                          padding: 4,
+                          padding: '0.25rem 0.5rem',
+                          fontSize: 12,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          minHeight: 'unset',
                         }}
-                        title="Delete key"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={12} />
+                        Delete
                       </button>
                     )}
-                  </td>
-                </tr>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
 
         {/* Create form */}
