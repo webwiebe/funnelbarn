@@ -4,9 +4,10 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { Activity, Users, TrendingDown, MousePointer, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { Activity, Users, TrendingDown, MousePointer, ArrowUpRight, ArrowDownRight, X } from 'lucide-react'
 import Shell from '../components/Shell'
 import { api, DashboardData } from '../lib/api'
+import { useProjects } from '../lib/projects'
 
 const C = {
   bg: '#0f1117',
@@ -92,10 +93,32 @@ function StatCard({
 export default function Dashboard() {
   const { projectId } = useParams<{ projectId?: string }>()
   const navigate = useNavigate()
+  const { refetch: refetchProjects } = useProjects()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [range, setRange] = useState('7d')
+  const [showCreateProject, setShowCreateProject] = useState(false)
+  const [newProjectName, setNewProjectName] = useState('')
+  const [creatingProject, setCreatingProject] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+
+  const handleCreateProject = async () => {
+    if (!newProjectName.trim()) return
+    setCreatingProject(true)
+    setCreateError(null)
+    try {
+      const p = await api.createProject(newProjectName, '')
+      refetchProjects()
+      setShowCreateProject(false)
+      setNewProjectName('')
+      navigate(`/dashboard/${p.id}`)
+    } catch (e) {
+      setCreateError(String(e))
+    } finally {
+      setCreatingProject(false)
+    }
+  }
 
   useEffect(() => {
     if (!projectId) return
@@ -140,7 +163,7 @@ export default function Dashboard() {
           <div style={{ fontSize: 20, fontWeight: 700, color: C.text }}>No project selected</div>
           <div>Select a project from the dropdown above to view its dashboard.</div>
           <button
-            onClick={() => navigate('/settings')}
+            onClick={() => setShowCreateProject(true)}
             style={{
               background: C.amber,
               color: '#0f1117',
@@ -380,6 +403,53 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {showCreateProject && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 16, zIndex: 1000,
+        }}>
+          <div style={{
+            background: C.surface, borderRadius: 16, padding: '2rem',
+            width: '100%', maxWidth: 400, border: `1px solid ${C.border}`,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h2 style={{ margin: 0, fontSize: 20, color: C.text }}>New Project</h2>
+              <button onClick={() => setShowCreateProject(false)}
+                style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 4 }}>
+                <X size={20} />
+              </button>
+            </div>
+            <input
+              autoFocus
+              placeholder="My Awesome App"
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCreateProject()}
+              style={{
+                width: '100%', boxSizing: 'border-box',
+                background: C.bg, border: `1px solid ${C.border}`,
+                borderRadius: 8, padding: '0.65rem 0.875rem',
+                color: C.text, fontSize: 15, marginBottom: 12,
+              }}
+            />
+            {createError && <div style={{ color: C.error, fontSize: 13, marginBottom: 10 }}>{createError}</div>}
+            <button
+              onClick={handleCreateProject}
+              disabled={creatingProject || !newProjectName.trim()}
+              style={{
+                width: '100%', background: creatingProject ? '#78481a' : C.amber,
+                border: 'none', borderRadius: 8, color: '#0f1117',
+                padding: '0.7rem', fontWeight: 700, fontSize: 15,
+                cursor: creatingProject ? 'wait' : 'pointer',
+              }}
+            >
+              {creatingProject ? 'Creating…' : 'Create Project'}
+            </button>
+          </div>
+        </div>
+      )}
     </Shell>
   )
 }

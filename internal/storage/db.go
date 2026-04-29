@@ -82,10 +82,10 @@ func (s *Store) TouchAPIKey(ctx context.Context, keySHA256 string) error {
 
 // Project represents a tracked website or application.
 type Project struct {
-	ID        string
-	Name      string
-	Slug      string
-	CreatedAt time.Time
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Slug      string    `json:"slug"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // CreateProject inserts a new project.
@@ -192,12 +192,12 @@ func (s *Store) UserByUsername(ctx context.Context, username string) (User, erro
 
 // APIKey represents a stored API key.
 type APIKey struct {
-	ID        string
-	ProjectID string
-	Name      string
-	KeyHash   string
-	Scope     string
-	CreatedAt time.Time
+	ID        string    `json:"id"`
+	ProjectID string    `json:"project_id"`
+	Name      string    `json:"name"`
+	KeyHash   string    `json:"-"`
+	Scope     string    `json:"scope"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // CreateAPIKey inserts a new API key.
