@@ -328,11 +328,11 @@ func TestValidationErrors(t *testing.T) {
 	}, nil)
 	assertStatus(t, w, 422)
 
-	// Invalid API key scope → 400 (handler-layer validation)
+	// Invalid API key scope → 422 (handler-layer validation)
 	w = postJSON(t, srv, "/api/v1/apikeys", map[string]string{
 		"project_id": proj.ID, "name": "k", "scope": "invalid-scope",
 	}, nil)
-	assertStatus(t, w, 400)
+	assertStatus(t, w, 422)
 }
 
 // TestProjectValidationErrors covers project-level input validation.

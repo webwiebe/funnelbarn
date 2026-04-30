@@ -215,7 +215,10 @@ func run() error {
 		cfg.LoginRateBurst,
 		cfg.APIRatePerMinute,
 		cfg.APIRateBurst,
+		cfg.IngestRatePerMinute,
+		cfg.IngestRateBurst,
 		store,
+		Version,
 	)
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)
@@ -306,6 +309,7 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				slog.Error("worker read spool", "err", err)
 				continue
 			}
+			metrics.SpoolQueueDepth.Set(float64(len(entries)))
 
 			for _, entry := range entries {
 				record := entry.Record
@@ -337,8 +341,10 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				}
 
 				// Resolve project from the slug stored in the spool record.
+				// Each DB operation gets a 30s timeout so a stuck write can't block the worker.
+				opCtx, opCancel := context.WithTimeout(ctx, 30*time.Second)
 				if record.ProjectSlug != "" {
-					proj, err := store.EnsureProject(ctx, record.ProjectSlug)
+					proj, err := store.EnsureProject(opCtx, record.ProjectSlug)
 					if err == nil {
 						event.ProjectID = proj.ID
 					} else {
@@ -346,7 +352,8 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 					}
 				}
 
-				persistErr := worker.PersistEvent(ctx, store, event)
+				persistErr := worker.PersistEvent(opCtx, store, event)
+				opCancel()
 				if persistErr != nil {
 					retryCounts[record.IngestID]++
 					slog.Error("worker persist record",

@@ -37,10 +37,11 @@ type Server struct {
 	sessionSecret  string
 	publicURL      string
 	metricsToken   string
+	version        string
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
-	apiLimiter    *rateLimiter // 300 req/min, burst 60 — for all session-authenticated endpoints
+	apiLimiter    *rateLimiter // configurable — for all session-authenticated endpoints
 }
 
 // NewServer creates the API server and registers all routes.
@@ -61,11 +62,15 @@ func NewServer(
 	loginRateBurst float64,
 	apiRatePerMinute float64,
 	apiRateBurst float64,
+	ingestRatePerMinute float64,
+	ingestRateBurst float64,
 	db Pinger,
+	version string,
 ) *Server {
 	s := &Server{
 		mux:            http.NewServeMux(),
 		db:             db,
+		version:        version,
 		projects:       projects,
 		funnels:        funnels,
 		abtests:        abtests,
@@ -79,7 +84,7 @@ func NewServer(
 		sessionSecret:  sessionSecret,
 		publicURL:      publicURL,
 		loginLimiter:   newRateLimiter(loginRatePerMinute, loginRateBurst),
-		eventsLimiter:  newRateLimiter(500, 100),
+		eventsLimiter:  newRateLimiter(ingestRatePerMinute, ingestRateBurst),
 		apiLimiter:     newRateLimiter(apiRatePerMinute, apiRateBurst),
 	}
 	s.registerRoutes()
