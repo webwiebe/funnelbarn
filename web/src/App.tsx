@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ReactNode, useState } from 'react'
 import { AuthProvider, useAuth } from './lib/auth'
 import { ProjectProvider, useProjects } from './lib/projects'
-import Shell from './components/shell/Shell'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -79,12 +78,31 @@ function RootRedirect() {
 function DefaultProjectRoute({ base }: { base: string }) {
   const { projects, isLoading, defaultProjectId } = useProjects()
 
-  if (isLoading || projects.length === 0) {
+  if (isLoading) {
     return (
-      <Shell>
-        <div />
-      </Shell>
+      <div style={{
+        minHeight: '100vh',
+        background: '#0f1117',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        <div style={{
+          width: 32,
+          height: 32,
+          border: '3px solid #2a2d3a',
+          borderTopColor: '#f59e0b',
+          borderRadius: '50%',
+          animation: 'spin 0.7s linear infinite',
+        }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
     )
+  }
+
+  if (projects.length === 0) {
+    // No projects yet — render Dashboard which handles the empty/create-project state
+    return <Dashboard />
   }
 
   const target =
