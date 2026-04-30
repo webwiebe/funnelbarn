@@ -118,7 +118,7 @@ export const api = {
     request<void>(`/api/v1/apikeys/${keyId}`, { method: 'DELETE' }),
 
   // Project update
-  updateProject: (projectId: string, data: { name: string }) =>
+  updateProject: (projectId: string, data: { name: string; domain?: string }) =>
     request<Project>(`/api/v1/projects/${projectId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
