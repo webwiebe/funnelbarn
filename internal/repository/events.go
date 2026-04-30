@@ -1,4 +1,4 @@
-package storage
+package repository
 
 import (
 	"context"
@@ -188,36 +188,6 @@ func (s *Store) EventTimeSeries(ctx context.Context, projectID string, from, to 
 type TimeSeriesPoint struct {
 	Time  string `json:"time"`
 	Count int64  `json:"count"`
-}
-
-func scanEvents(rows *sql.Rows) ([]Event, error) {
-	var events []Event
-	for rows.Next() {
-		var e Event
-		if err := rows.Scan(
-			&e.ID, &e.ProjectID, &e.SessionID, &e.UserIDHash, &e.Name,
-			&e.URL, &e.Referrer, &e.ReferrerDomain,
-			&e.UTMSource, &e.UTMMedium, &e.UTMCampaign, &e.UTMTerm, &e.UTMContent,
-			&e.Properties, &e.UserAgent, &e.Browser, &e.OS, &e.DeviceType, &e.CountryCode,
-			&e.IngestID, &e.OccurredAt, &e.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		events = append(events, e)
-	}
-	return events, rows.Err()
-}
-
-func nullStr(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
-func newUUID() string {
-	// Fast UUID v4 using crypto/rand via the helper in helpers.go
-	return generateUUID()
 }
 
 // TopUTMSources returns the most common UTM sources.
@@ -622,4 +592,22 @@ func (s *Store) DailyUniqueSessions(ctx context.Context, projectID string, from,
 // TopOS is an alias for TopOSSystems kept for backward compatibility in tests.
 func (s *Store) TopOS(ctx context.Context, projectID string, from, to time.Time, limit int) ([]OSStat, error) {
 	return s.TopOSSystems(ctx, projectID, from, to, limit)
+}
+
+func scanEvents(rows *sql.Rows) ([]Event, error) {
+	var events []Event
+	for rows.Next() {
+		var e Event
+		if err := rows.Scan(
+			&e.ID, &e.ProjectID, &e.SessionID, &e.UserIDHash, &e.Name,
+			&e.URL, &e.Referrer, &e.ReferrerDomain,
+			&e.UTMSource, &e.UTMMedium, &e.UTMCampaign, &e.UTMTerm, &e.UTMContent,
+			&e.Properties, &e.UserAgent, &e.Browser, &e.OS, &e.DeviceType, &e.CountryCode,
+			&e.IngestID, &e.OccurredAt, &e.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	return events, rows.Err()
 }

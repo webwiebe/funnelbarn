@@ -1,15 +1,11 @@
-package storage
-
-// Schema is the complete SQLite DDL for FunnelBarn.
-// All tables use TEXT primary keys (UUID v4) except where noted.
-const Schema = `
+-- +goose Up
 CREATE TABLE IF NOT EXISTS projects (
     id         TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
     slug       TEXT UNIQUE NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'active',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
 
 CREATE TABLE IF NOT EXISTS api_keys (
     id          TEXT PRIMARY KEY,
@@ -111,10 +107,14 @@ CREATE TABLE IF NOT EXISTS ab_tests (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ab_tests_project ON ab_tests (project_id, created_at DESC);
-`
 
-// APIKeyScopeFull allows full API access.
-const APIKeyScopeFull = "full"
-
-// APIKeyScopeIngest allows only event ingest.
-const APIKeyScopeIngest = "ingest"
+-- +goose Down
+DROP TABLE IF EXISTS ab_tests;
+DROP TABLE IF EXISTS funnel_steps;
+DROP TABLE IF EXISTS funnels;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS sessions_http;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS api_keys;
+DROP TABLE IF EXISTS projects;
