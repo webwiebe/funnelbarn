@@ -1,9 +1,24 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 )
+
+// addPaginationHeaders sets a Link header for the next page when more results
+// may be available (i.e. the returned count equals the page limit).
+func addPaginationHeaders(w http.ResponseWriter, r *http.Request, limit, offset, count int) {
+	if count < limit {
+		return // no next page
+	}
+	nextOffset := offset + limit
+	q := r.URL.Query()
+	q.Set("offset", strconv.Itoa(nextOffset))
+	q.Set("limit", strconv.Itoa(limit))
+	next := r.URL.Path + "?" + q.Encode()
+	w.Header().Set("Link", fmt.Sprintf(`<%s>; rel="next"`, next))
+}
 
 // handleListEvents returns a paginated list of events for a project.
 func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
@@ -32,6 +47,7 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	addPaginationHeaders(w, r, limit, offset, len(events))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"events": events,
 		"limit":  limit,

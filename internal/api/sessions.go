@@ -47,6 +47,7 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	addPaginationHeaders(w, r, limit, offset, len(sessions))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"sessions": sessions,
 		"limit":    limit,

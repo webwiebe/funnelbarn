@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -57,6 +58,12 @@ func (s *Store) CreateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
 	const qf = `INSERT INTO funnels (id, project_id, name, description) VALUES (?, ?, ?, ?)`
 	if _, err := tx.ExecContext(ctx, qf, f.ID, f.ProjectID, f.Name, nullStr(f.Description)); err != nil {
 		return Funnel{}, fmt.Errorf("insert funnel: %w", err)
+	}
+
+	for i, step := range f.Steps {
+		if strings.TrimSpace(step.EventName) == "" {
+			return Funnel{}, fmt.Errorf("step %d: event_name is required", i+1)
+		}
 	}
 
 	const qs = `INSERT INTO funnel_steps (id, funnel_id, step_order, event_name, filters) VALUES (?, ?, ?, ?, ?)`
