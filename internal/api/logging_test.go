@@ -98,6 +98,28 @@ func TestRequestLoggerDoesNotLogPassword(t *testing.T) {
 	}
 }
 
+// TestRequestIDInContext_PropagatedToHandlers verifies that request_id set in
+// context is non-empty and has the expected format.
+func TestRequestIDInContext_PropagatedToHandlers(t *testing.T) {
+	// Verify that request_id set in context is non-empty
+	var capturedID string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedID = RequestIDFromContext(r.Context())
+		w.WriteHeader(200)
+	})
+	wrapped := requestLogger(handler)
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	wrapped.ServeHTTP(w, req)
+
+	if capturedID == "" {
+		t.Error("request_id was not propagated to handler context")
+	}
+	if len(capturedID) != 16 { // 8 bytes hex = 16 chars
+		t.Errorf("unexpected request_id length: %d (value: %s)", len(capturedID), capturedID)
+	}
+}
+
 // TestRequestIDPropagation verifies that the request_id is present in the
 // context after requestLogger runs and can be retrieved by handlers.
 func TestRequestIDPropagation(t *testing.T) {

@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,7 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
-	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -52,7 +49,7 @@ func main() {
 				fmt.Sprint(r), time.Now().UTC().Format(time.RFC3339))
 
 			// If BugBarn is configured, report the crash.
-			reportPanicToBugBarn(r)
+			bblog.ReportPanic(os.Getenv("FUNNELBARN_SELF_ENDPOINT"), os.Getenv("FUNNELBARN_SELF_API_KEY"), r)
 
 			os.Exit(2)
 		}
@@ -87,37 +84,6 @@ func buildLogger(cfg config.Config) *slog.Logger {
 	}
 
 	return slog.New(bblog.NewMultiHandler(handlers...))
-}
-
-// reportPanicToBugBarn reads BugBarn credentials directly from the environment
-// (since config/logger may not be initialized at panic time) and POSTs to the
-// BugBarn events API.
-func reportPanicToBugBarn(r any) {
-	endpoint := os.Getenv("FUNNELBARN_SELF_ENDPOINT")
-	apiKey := os.Getenv("FUNNELBARN_SELF_API_KEY")
-	if endpoint == "" || apiKey == "" {
-		return
-	}
-
-	body, _ := json.Marshal(map[string]any{
-		"event":   "panic",
-		"project": "funnelbarn",
-		"properties": map[string]any{
-			"panic": fmt.Sprint(r),
-			"stack": string(debug.Stack()),
-		},
-	})
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/api/v1/events", bytes.NewReader(body))
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-BugBarn-Api-Key", apiKey)
-	_, _ = http.DefaultClient.Do(req)
 }
 
 // run owns process wiring: opens storage, starts the worker, and serves the API.
