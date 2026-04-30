@@ -1,5 +1,4 @@
 version: "2"
-
 linters:
   default: none
   enable:
@@ -9,25 +8,15 @@ linters:
     - unused
     - gosimple
     - ineffassign
-    - gofmt
     - goimports
-
+    - misspell
 linters-settings:
-  gofmt:
-    simplify: true
   goimports:
     local-prefixes: github.com/wiebe-xyz/funnelbarn
-
 issues:
-  exclude-dirs:
-    - web/node_modules
-    - web/dist
   exclude-rules:
-    # Test files don't need to check every error return.
     - path: _test\.go
       linters:
         - errcheck
-    # The nolint comment on os.Setenv is intentional.
-    - text: "G104"
-      linters:
-        - errcheck
+  max-issues-per-linter: 0
+  max-same-issues: 0

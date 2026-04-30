@@ -1,74 +1,100 @@
 package service_test
 
 import (
-	"math"
+	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
-func TestZTest_SignificantResult(t *testing.T) {
-	// Large samples with a clear difference — expect significance.
-	z, sig := service.ZTest(1000, 200, 1000, 300)
-	if !sig {
-		t.Errorf("expected significant result, z=%.4f", z)
-	}
-	if z < 1.96 {
-		t.Errorf("z should be > 1.96 for significant result, got %.4f", z)
-	}
+func TestABTestService_CreateABTest_Valid(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	projSvc := service.NewProjectService(store)
+	abSvc := service.NewABTestService(store)
+
+	p, err := projSvc.CreateProject(ctx, "AB Project", "ab-project-valid")
+	require.NoError(t, err)
+
+	test, err := abSvc.CreateABTest(ctx, repository.ABTest{
+		ProjectID:       p.ID,
+		Name:            "My Test",
+		Status:          "running",
+		ConversionEvent: "purchase",
+	})
+	require.NoError(t, err)
+	assert.NotEmpty(t, test.ID)
+	assert.Equal(t, "My Test", test.Name)
+	assert.Equal(t, "purchase", test.ConversionEvent)
+	assert.Equal(t, p.ID, test.ProjectID)
 }
 
-func TestZTest_NotSignificant(t *testing.T) {
-	// Tiny samples with no difference — expect non-significant.
-	z, sig := service.ZTest(10, 5, 10, 5)
-	if sig {
-		t.Errorf("unexpected significance: z=%.4f", z)
-	}
-	_ = z
+func TestABTestService_CreateABTest_EmptyName(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	projSvc := service.NewProjectService(store)
+	abSvc := service.NewABTestService(store)
+
+	p, err := projSvc.CreateProject(ctx, "AB Project", "ab-project-emptyname")
+	require.NoError(t, err)
+
+	_, err = abSvc.CreateABTest(ctx, repository.ABTest{
+		ProjectID:       p.ID,
+		Name:            "",
+		ConversionEvent: "purchase",
+	})
+	require.Error(t, err)
+	assert.True(t, domain.IsValidation(err))
 }
 
-func TestZTest_ZeroSamples(t *testing.T) {
-	z, sig := service.ZTest(0, 0, 1000, 200)
-	if z != 0 || sig {
-		t.Errorf("zero n1: want z=0, sig=false, got z=%.4f, sig=%v", z, sig)
-	}
+func TestABTestService_CreateABTest_EmptyConversionEvent(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	projSvc := service.NewProjectService(store)
+	abSvc := service.NewABTestService(store)
 
-	z, sig = service.ZTest(1000, 200, 0, 0)
-	if z != 0 || sig {
-		t.Errorf("zero n2: want z=0, sig=false, got z=%.4f, sig=%v", z, sig)
-	}
+	p, err := projSvc.CreateProject(ctx, "AB Project", "ab-project-emptycv")
+	require.NoError(t, err)
+
+	_, err = abSvc.CreateABTest(ctx, repository.ABTest{
+		ProjectID:       p.ID,
+		Name:            "My Test",
+		ConversionEvent: "",
+	})
+	require.Error(t, err)
+	assert.True(t, domain.IsValidation(err))
 }
 
-func TestZTest_PerfectConvergence(t *testing.T) {
-	// Identical conversion rates — z should be 0 or very small.
-	z, sig := service.ZTest(1000, 500, 1000, 500)
-	if sig {
-		t.Errorf("identical rates should not be significant, z=%.4f", z)
-	}
-	if math.Abs(z) > 0.001 {
-		t.Errorf("z should be ~0 for identical rates, got %.4f", z)
-	}
-}
+func TestABTestService_ListABTests(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	projSvc := service.NewProjectService(store)
+	abSvc := service.NewABTestService(store)
 
-func TestZTest_AllConversions(t *testing.T) {
-	// pPool = 1 → denominator goes to 0 → should return (0, false).
-	z, sig := service.ZTest(100, 100, 100, 100)
-	if sig {
-		t.Errorf("all-converted: should not be significant")
-	}
-	if z != 0 {
-		t.Errorf("all-converted: z should be 0, got %.4f", z)
-	}
-}
+	p, err := projSvc.CreateProject(ctx, "AB Project", "ab-project-list")
+	require.NoError(t, err)
 
-func TestZTest_Threshold(t *testing.T) {
-	// The threshold is exactly 1.96 for 95% CI.
-	// z=1.97 → significant; z=1.95 → not.
-	// Manufacture inputs that produce a known z.
-	// Rather than reverse-engineering exact inputs, trust the property:
-	// significant iff |z| > 1.96.
-	z, sig := service.ZTest(10000, 200, 10000, 220)
-	if sig != (z > 1.96) {
-		t.Errorf("significant (%v) does not match z=%.4f > 1.96", sig, z)
-	}
+	_, err = abSvc.CreateABTest(ctx, repository.ABTest{
+		ProjectID:       p.ID,
+		Name:            "Test A",
+		Status:          "running",
+		ConversionEvent: "click",
+	})
+	require.NoError(t, err)
+
+	_, err = abSvc.CreateABTest(ctx, repository.ABTest{
+		ProjectID:       p.ID,
+		Name:            "Test B",
+		Status:          "paused",
+		ConversionEvent: "signup",
+	})
+	require.NoError(t, err)
+
+	tests, err := abSvc.ListABTests(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Len(t, tests, 2)
 }

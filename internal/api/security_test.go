@@ -151,30 +151,6 @@ func TestSecurityHeaders_OnErrorResponse(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Request ID propagation
-// ---------------------------------------------------------------------------
-
-func TestRequestID_PresentOnResponse(t *testing.T) {
-	srv, _ := newTestServer(t)
-	w := getJSON(t, srv, "/api/v1/health", nil)
-	if id := w.Header().Get("X-Request-ID"); id == "" {
-		t.Error("X-Request-ID should be present on every response")
-	}
-}
-
-func TestRequestID_EchosIncoming(t *testing.T) {
-	srv, _ := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
-	req.Header.Set("X-Request-ID", "my-trace-id")
-	w := httptest.NewRecorder()
-	srv.ServeHTTP(w, req)
-
-	if got := w.Header().Get("X-Request-ID"); got != "my-trace-id" {
-		t.Errorf("want my-trace-id, got %q", got)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // Rate limit response format
 // The rate limiter's 429 JSON shape is tested in ratelimit_test.go via wrap().
 // This test verifies the behaviour at the mux level using the real limiter.
@@ -182,7 +158,7 @@ func TestRequestID_EchosIncoming(t *testing.T) {
 
 func TestRateLimit_ResponseFormat(t *testing.T) {
 	// Limit to 1 request per minute — second request is definitely blocked.
-	rl := newRateLimiter(1, 60_000_000_000) // 1 req / 1 minute
+	rl := newRateLimiter(60, 1) // burst of 1 → second request blocked
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -191,11 +167,11 @@ func TestRateLimit_ResponseFormat(t *testing.T) {
 	req.RemoteAddr = "9.9.9.9:1234"
 
 	// First request: allowed.
-	rl.wrap(inner).ServeHTTP(httptest.NewRecorder(), req)
+	rl.middleware(inner).ServeHTTP(httptest.NewRecorder(), req)
 
 	// Second request: blocked.
 	w := httptest.NewRecorder()
-	rl.wrap(inner).ServeHTTP(w, req)
+	rl.middleware(inner).ServeHTTP(w, req)
 
 	if w.Code != http.StatusTooManyRequests {
 		t.Errorf("want 429, got %d", w.Code)

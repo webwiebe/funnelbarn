@@ -9,32 +9,12 @@ package api
 // - funnel analysis with all segment types (exercises segmentClause + escapeSQLLiteral)
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"golang.org/x/crypto/bcrypt"
 )
-
-// putJSON is a helper for PUT requests with a JSON body.
-func putJSON(t *testing.T, srv *Server, path string, body any, cookie *http.Cookie) *httptest.ResponseRecorder {
-	t.Helper()
-	b, err := json.Marshal(body)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	req := httptest.NewRequest(http.MethodPut, path, bytes.NewReader(b))
-	req.Header.Set("Content-Type", "application/json")
-	if cookie != nil {
-		req.AddCookie(cookie)
-	}
-	w := httptest.NewRecorder()
-	srv.ServeHTTP(w, req)
-	return w
-}
 
 // ---------------------------------------------------------------------------
 // 404 / not-found paths

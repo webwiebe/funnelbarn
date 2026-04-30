@@ -8,7 +8,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -27,6 +26,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
+	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
@@ -42,14 +42,48 @@ var (
 var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 func main() {
-	// Use structured JSON logging.
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	defer func() {
+		if r := recover(); r != nil {
+			// Use fmt.Fprintf to stderr since logger may not be available.
+			fmt.Fprintf(os.Stderr, `{"level":"ERROR","msg":"unhandled panic","panic":%q,"time":%q}`+"\n",
+				fmt.Sprint(r), time.Now().UTC().Format(time.RFC3339))
+
+			// If BugBarn is configured, report the crash.
+			bblog.ReportPanic(os.Getenv("FUNNELBARN_SELF_ENDPOINT"), os.Getenv("FUNNELBARN_SELF_API_KEY"), r)
+
+			os.Exit(2)
+		}
+	}()
+
+	// Use structured JSON logging to stderr by default.
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	})))
 
 	if err := run(); err != nil {
-		log.Fatal(err)
+		slog.Error("startup failed", "err", err)
+		os.Exit(1)
 	}
+}
+
+// buildLogger constructs a multi-sink slog.Logger based on the config.
+// It always writes JSON to stderr, and optionally fans out Warn+ to BugBarn.
+func buildLogger(cfg config.Config) *slog.Logger {
+	var handlers []slog.Handler
+
+	// Always: structured JSON to stderr.
+	jsonHandler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: cfg.LogLevel,
+	})
+	handlers = append(handlers, jsonHandler)
+
+	// Optional: BugBarn for Warn+ events.
+	if cfg.SelfEndpoint != "" && cfg.SelfAPIKey != "" {
+		bbHandler := bblog.NewHandler(jsonHandler)
+		handlers = append(handlers, bbHandler)
+	}
+
+	return slog.New(bblog.NewMultiHandler(handlers...))
 }
 
 // run owns process wiring: opens storage, starts the worker, and serves the API.
@@ -82,7 +116,7 @@ func run() error {
 	}
 	defer store.Close()
 
-	// Wire services. *repository.Store satisfies all port interfaces.
+	// Wire services.
 	projectsSvc := service.NewProjectService(store)
 	funnelsSvc := service.NewFunnelService(store)
 	abtestsSvc := service.NewABTestService(store)
@@ -99,9 +133,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Wire BugBarn self-reporting.
-	// The project key is configured via FUNNELBARN_SELF_API_KEY and the endpoint
-	// via FUNNELBARN_SELF_ENDPOINT (see .env.example for values).
+	// Wire BugBarn self-reporting and set up multi-sink logger.
 	selfReporting := cfg.SelfEndpoint != "" && cfg.SelfAPIKey != ""
 	if selfReporting {
 		bb.Init(bb.Options{
@@ -110,34 +142,13 @@ func run() error {
 			ProjectSlug: "funnelbarn",
 			Environment: cfg.SelfEnvironment,
 		})
-		// Rewire the global logger so Warn+ records are also captured by BugBarn.
-		baseHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
-		slog.SetDefault(slog.New(bblog.NewHandler(baseHandler)))
+		defer bb.Shutdown(2 * time.Second)
+	}
+	// Rewire the global logger with the appropriate sinks.
+	slog.SetDefault(buildLogger(cfg))
+	if selfReporting {
 		slog.Info("self-reporting enabled", "endpoint", cfg.SelfEndpoint)
 	}
-
-	// Ultimate panic / shutdown handler.
-	// Catches any unrecovered panic in the server goroutines, reports it to
-	// BugBarn, flushes the transport, and re-panics so the process exits with
-	// a non-zero status code. This must be deferred before any goroutines are
-	// started so that panics propagating out of run() are caught here.
-	defer func() {
-		if r := recover(); r != nil {
-			var panicErr error
-			switch v := r.(type) {
-			case error:
-				panicErr = v
-			default:
-				panicErr = fmt.Errorf("panic: %v", v)
-			}
-			slog.Error("unhandled panic", "err", panicErr)
-			if selfReporting {
-				bb.CaptureError(panicErr)
-				bb.Shutdown(3 * time.Second)
-			}
-			panic(r) // re-panic so the process exits with non-zero status
-		}
-	}()
 
 	go runBackgroundWorker(ctx, cfg, store)
 
@@ -166,10 +177,19 @@ func run() error {
 		cfg.AllowedOrigins,
 		cfg.SessionSecret,
 		cfg.PublicURL,
+		cfg.LoginRatePerMinute,
+		cfg.LoginRateBurst,
+		cfg.APIRatePerMinute,
+		cfg.APIRateBurst,
+		cfg.IngestRatePerMinute,
+		cfg.IngestRateBurst,
+		store,
+		Version,
 	)
+	if cfg.MetricsToken != "" {
+		apiServer.SetMetricsToken(cfg.MetricsToken)
+	}
 
-	// bb.RecoverMiddleware catches HTTP-handler panics and reports them to BugBarn
-	// before returning a 500 response, preventing the server from crashing.
 	var httpHandler http.Handler = apiServer
 	if selfReporting {
 		httpHandler = bb.RecoverMiddleware(httpHandler)
@@ -191,12 +211,7 @@ func run() error {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		shutdownErr := server.Shutdown(shutdownCtx)
-		// Flush BugBarn before process exit so no captured events are lost.
-		if selfReporting {
-			bb.Shutdown(2 * time.Second)
-		}
-		return shutdownErr
+		return server.Shutdown(shutdownCtx)
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
@@ -228,6 +243,9 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
+	purgeTicker := time.NewTicker(24 * time.Hour)
+	defer purgeTicker.Stop()
+
 	offset, err := spool.ReadCursor(cfg.SpoolDir)
 	if err != nil {
 		slog.Warn("worker: failed to read cursor, starting from 0", "err", err)
@@ -240,17 +258,29 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 		select {
 		case <-ctx.Done():
 			return
+		case <-purgeTicker.C:
+			if cfg.EventRetentionDays > 0 {
+				cutoff := time.Now().AddDate(0, 0, -cfg.EventRetentionDays)
+				n, err := store.PurgeOldEvents(ctx, cutoff)
+				if err != nil {
+					slog.Error("purge old events", "err", err)
+				} else if n > 0 {
+					slog.Info("purged old events", "count", n, "before", cutoff.Format(time.DateOnly))
+					metrics.EventsPurged.Add(float64(n))
+				}
+			}
 		case <-ticker.C:
 			entries, err := spool.ReadRecordsFrom(spool.Path(cfg.SpoolDir), offset)
 			if err != nil {
 				slog.Error("worker read spool", "err", err)
 				continue
 			}
+			metrics.SpoolQueueDepth.Set(float64(len(entries)))
 
 			for _, entry := range entries {
 				record := entry.Record
 
-				event, err := worker.ProcessRecord(record)
+				event, err := worker.SafeProcess(record)
 				if err != nil {
 					retryCounts[record.IngestID]++
 					slog.Error("worker process record",
@@ -266,6 +296,7 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 						if dlErr := spool.AppendDeadLetter(cfg.SpoolDir, record); dlErr != nil {
 							slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", dlErr)
 						}
+						metrics.EventErrors.Inc()
 						delete(retryCounts, record.IngestID)
 						offset = entry.EndOffset
 						if err := spool.WriteCursor(cfg.SpoolDir, offset); err != nil {
@@ -276,8 +307,10 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				}
 
 				// Resolve project from the slug stored in the spool record.
+				// Each DB operation gets a 30s timeout so a stuck write can't block the worker.
+				opCtx, opCancel := context.WithTimeout(ctx, 30*time.Second)
 				if record.ProjectSlug != "" {
-					proj, err := store.EnsureProject(ctx, record.ProjectSlug)
+					proj, err := store.EnsureProject(opCtx, record.ProjectSlug)
 					if err == nil {
 						event.ProjectID = proj.ID
 					} else {
@@ -285,7 +318,8 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 					}
 				}
 
-				persistErr := worker.PersistEvent(ctx, store, event)
+				persistErr := worker.PersistEvent(opCtx, store, event)
+				opCancel()
 				if persistErr != nil {
 					retryCounts[record.IngestID]++
 					slog.Error("worker persist record",
@@ -300,6 +334,7 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 						if dlErr := spool.AppendDeadLetter(cfg.SpoolDir, record); dlErr != nil {
 							slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", dlErr)
 						}
+						metrics.EventErrors.Inc()
 						delete(retryCounts, record.IngestID)
 						offset = entry.EndOffset
 						if err := spool.WriteCursor(cfg.SpoolDir, offset); err != nil {
@@ -309,6 +344,7 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 					break
 				}
 
+				metrics.EventsProcessed.Inc()
 				delete(retryCounts, record.IngestID)
 				offset = entry.EndOffset
 				if err := spool.WriteCursor(cfg.SpoolDir, offset); err != nil {
@@ -343,7 +379,7 @@ func runWorkerOnce(cfg config.Config) error {
 	processed := 0
 	ctx := context.Background()
 	for _, record := range records {
-		event, err := worker.ProcessRecord(record)
+		event, err := worker.SafeProcess(record)
 		if err != nil {
 			slog.Error("worker-once: process record", "ingest_id", record.IngestID, "err", err)
 			continue
@@ -505,9 +541,4 @@ func toSlugLocal(name string) string {
 	s = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
 	return s
-}
-
-// loadConfigFilesForCLI is a no-op placeholder; actual loading done in config.Load().
-func loadConfigFilesForCLI() {
-	// config.Load() calls loadConfigFiles internally.
 }

@@ -63,8 +63,8 @@ func TestHandleCreateABTest_MissingName(t *testing.T) {
 	w := postJSON(t, srv, "/api/v1/projects/"+p.ID+"/abtests", map[string]string{
 		"conversion_event": "click",
 	}, nil)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("want 400 for missing name, got %d", w.Code)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("want 422 for missing name, got %d", w.Code)
 	}
 }
 
@@ -76,8 +76,8 @@ func TestHandleCreateABTest_MissingConversionEvent(t *testing.T) {
 	w := postJSON(t, srv, "/api/v1/projects/"+p.ID+"/abtests", map[string]string{
 		"name": "Test",
 	}, nil)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("want 400 for missing conversion_event, got %d", w.Code)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("want 422 for missing conversion_event, got %d", w.Code)
 	}
 }
 

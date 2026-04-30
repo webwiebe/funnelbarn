@@ -1,11 +1,13 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"fmt"
 
 	"github.com/pressly/goose/v3"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/sqlcgen"
 	_ "modernc.org/sqlite"
 )
 
@@ -15,6 +17,7 @@ var migrations embed.FS
 // Store wraps a SQLite database connection.
 type Store struct {
 	db *sql.DB
+	q  *sqlcgen.Queries
 }
 
 // Open opens the SQLite database at path and runs goose migrations.
@@ -43,7 +46,7 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("goose up: %w", err)
 	}
 
-	return &Store{db: db}, nil
+	return &Store{db: db, q: sqlcgen.New(db)}, nil
 }
 
 // Close closes the underlying database connection.
@@ -52,4 +55,14 @@ func (s *Store) Close() error {
 		return nil
 	}
 	return s.db.Close()
+}
+
+// DB returns the underlying *sql.DB for use by other packages.
+func (s *Store) DB() *sql.DB {
+	return s.db
+}
+
+// Ping verifies the database connection is alive.
+func (s *Store) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
 }

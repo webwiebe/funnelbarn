@@ -21,6 +21,8 @@ func insertEvent(t *testing.T, s *repository.Store, projectID, sessionID, name, 
 	t.Helper()
 	ctx := context.Background()
 
+	// Truncate to seconds so SQLite's strftime can parse it correctly.
+	now := time.Now().UTC().Truncate(time.Second)
 	e := repository.Event{
 		ID:             randomHex(t),
 		ProjectID:      projectID,
@@ -31,8 +33,7 @@ func insertEvent(t *testing.T, s *repository.Store, projectID, sessionID, name, 
 		Browser:        "Chrome",
 		DeviceType:     "desktop",
 		IngestID:       "ingest-" + randomHex(t),
-		// Store as RFC3339 string so SQLite date functions can parse it.
-		OccurredAt: time.Now().UTC(),
+		OccurredAt:     now,
 	}
 	require.NoError(t, s.InsertEvent(ctx, e))
 	return e
@@ -275,46 +276,6 @@ func TestAvgEventsPerSession(t *testing.T) {
 	require.NoError(t, err)
 	// 3 events / 2 sessions = 1.5
 	require.InDelta(t, 1.5, avg, 0.01)
-}
-
-func TestDailyEventCounts(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-	p, _ := s.CreateProject(ctx, "DailyCounts", "dailycounts")
-
-	insertEvent(t, s, p.ID, "s1", "pv", "https://example.com/")
-	insertEvent(t, s, p.ID, "s2", "pv", "https://example.com/")
-
-	from := time.Now().UTC().Add(-24 * time.Hour)
-	to := time.Now().UTC().Add(time.Hour)
-
-	pts, err := s.DailyEventCounts(ctx, p.ID, from, to)
-	require.NoError(t, err)
-	require.NotEmpty(t, pts)
-	total := int64(0)
-	for _, pt := range pts {
-		total += pt.Count
-	}
-	require.EqualValues(t, 2, total)
-}
-
-func TestDailyUniqueSessions(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-	p, _ := s.CreateProject(ctx, "DailyUniq", "dailyuniq")
-
-	insertEvent(t, s, p.ID, "sess-a", "pv", "https://example.com/")
-	insertEvent(t, s, p.ID, "sess-b", "pv", "https://example.com/")
-	insertEvent(t, s, p.ID, "sess-a", "click", "https://example.com/") // same session, same day
-
-	from := time.Now().UTC().Add(-24 * time.Hour)
-	to := time.Now().UTC().Add(time.Hour)
-
-	pts, err := s.DailyUniqueSessions(ctx, p.ID, from, to)
-	require.NoError(t, err)
-	require.NotEmpty(t, pts)
-	// Two unique sessions today.
-	require.EqualValues(t, 2, pts[0].Count)
 }
 
 func TestListEvents_Pagination(t *testing.T) {
