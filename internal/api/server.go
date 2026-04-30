@@ -46,6 +46,8 @@ func NewServer(
 	allowedOrigins []string,
 	sessionSecret string,
 	publicURL string,
+	loginRatePerMinute float64,
+	loginRateBurst float64,
 ) *Server {
 	s := &Server{
 		mux:            http.NewServeMux(),
@@ -61,7 +63,7 @@ func NewServer(
 		allowedOrigins: allowedOrigins,
 		sessionSecret:  sessionSecret,
 		publicURL:      publicURL,
-		loginLimiter:   newRateLimiter(5, 5),
+		loginLimiter:   newRateLimiter(loginRatePerMinute, loginRateBurst),
 		eventsLimiter:  newRateLimiter(500, 100),
 	}
 	s.registerRoutes()

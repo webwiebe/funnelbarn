@@ -61,7 +61,7 @@ func newTestServer(t *testing.T) (*Server, *repository.Store) {
 		service.NewProjectService(store), service.NewFunnelService(store),
 		service.NewABTestService(store), service.NewEventService(store),
 		service.NewSessionService(store), service.NewAPIKeyService(store),
-		userAuth, sm, nil, "test-secret", "http://localhost")
+		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000)
 	return srv, store
 }
 
@@ -78,7 +78,7 @@ func newAuthedServer(t *testing.T) (*Server, *repository.Store) {
 		service.NewProjectService(store), service.NewFunnelService(store),
 		service.NewABTestService(store), service.NewEventService(store),
 		service.NewSessionService(store), service.NewAPIKeyService(store),
-		userAuth, sm, nil, "test-secret", "http://localhost")
+		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000)
 	return srv, store
 }
 

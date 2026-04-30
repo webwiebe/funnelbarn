@@ -31,6 +31,10 @@ spec:
               value: :8080
             - name: FUNNELBARN_PUBLIC_URL
               value: https://funnelbarn.test.wiebe.xyz
+            - name: FUNNELBARN_LOGIN_RATE_PER_MINUTE
+              value: "1000"
+            - name: FUNNELBARN_LOGIN_RATE_BURST
+              value: "1000"
             - name: FUNNELBARN_SPOOL_DIR
               value: /var/lib/funnelbarn/spool
             - name: FUNNELBARN_DB_PATH
