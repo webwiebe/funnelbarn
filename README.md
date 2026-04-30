@@ -119,6 +119,11 @@ funnelbarn user create --username admin --password yourpassword
 | `FUNNELBARN_PUBLIC_URL` | — | Public server URL |
 | `FUNNELBARN_SELF_ENDPOINT` | — | BugBarn endpoint for self-reporting |
 | `FUNNELBARN_SELF_API_KEY` | — | BugBarn API key for self-reporting |
+| `FUNNELBARN_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
+| `FUNNELBARN_LOGIN_RATE_PER_MINUTE` | `20` | Login endpoint rate limit (requests/min) |
+| `FUNNELBARN_LOGIN_RATE_BURST` | `20` | Login endpoint burst capacity |
+| `FUNNELBARN_METRICS_TOKEN` | — | Optional Bearer token to protect `/metrics` endpoint |
+| `FUNNELBARN_EVENT_RETENTION_DAYS` | `90` | Days to retain events (0 = disabled) |
 
 ## API Endpoints
 

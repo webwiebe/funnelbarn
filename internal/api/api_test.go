@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -61,7 +62,7 @@ func newTestServer(t *testing.T) (*Server, *repository.Store) {
 		service.NewProjectService(store), service.NewFunnelService(store),
 		service.NewABTestService(store), service.NewEventService(store),
 		service.NewSessionService(store), service.NewAPIKeyService(store),
-		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000)
+		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, store)
 	return srv, store
 }
 
@@ -78,7 +79,7 @@ func newAuthedServer(t *testing.T) (*Server, *repository.Store) {
 		service.NewProjectService(store), service.NewFunnelService(store),
 		service.NewABTestService(store), service.NewEventService(store),
 		service.NewSessionService(store), service.NewAPIKeyService(store),
-		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000)
+		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, store)
 	return srv, store
 }
 
@@ -144,6 +145,37 @@ func TestHandleHealth(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	if resp["status"] != "ok" {
 		t.Errorf("health status: want ok, got %v", resp["status"])
+	}
+}
+
+// failPinger is a Pinger that always returns an error.
+type failPinger struct{ err error }
+
+func (f *failPinger) Ping(_ context.Context) error { return f.err }
+
+func TestHandleHealth_DBDown(t *testing.T) {
+	store := openMemoryStore(t)
+	sp := newTestSpool(t)
+	ingestHandler := ingest.NewHandler(auth.New("test-key"), sp, 0)
+	sm := auth.NewSessionManager("test-secret", time.Hour)
+	userAuth, _ := auth.NewUserAuthenticator("", "", "")
+
+	brokenPinger := &failPinger{err: errors.New("connection refused")}
+
+	srv := NewServer(ingestHandler,
+		service.NewProjectService(store), service.NewFunnelService(store),
+		service.NewABTestService(store), service.NewEventService(store),
+		service.NewSessionService(store), service.NewAPIKeyService(store),
+		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, brokenPinger)
+
+	w := getJSON(t, srv, "/api/v1/health", nil)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("health DB down: expected 503, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["status"] != "unhealthy" {
+		t.Errorf("health status: want unhealthy, got %v", resp["status"])
 	}
 }
 

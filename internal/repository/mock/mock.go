@@ -567,3 +567,5 @@ func (s *Store) PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, er
 	s.events = kept
 	return deleted, nil
 }
+
+func (s *Store) Ping(_ context.Context) error { return nil }

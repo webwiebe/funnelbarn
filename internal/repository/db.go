@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"fmt"
@@ -57,4 +58,9 @@ func (s *Store) Close() error {
 // DB returns the underlying *sql.DB for use by other packages.
 func (s *Store) DB() *sql.DB {
 	return s.db
+}
+
+// Ping verifies the database connection is alive.
+func (s *Store) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
 }
