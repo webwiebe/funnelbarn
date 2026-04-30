@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/storage"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // handleUpdateFunnel updates a funnel's name and steps.
@@ -19,7 +19,7 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify funnel belongs to project.
-	existing, err := s.store.FunnelByID(r.Context(), funnelID)
+	existing, err := s.funnels.GetFunnel(r.Context(), funnelID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			jsonError(w, "funnel not found", http.StatusNotFound)
@@ -34,9 +34,9 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name        string               `json:"name"`
-		Description string               `json:"description"`
-		Steps       []storage.FunnelStep `json:"steps"`
+		Name        string                `json:"name"`
+		Description string                `json:"description"`
+		Steps       []repository.FunnelStep `json:"steps"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -51,7 +51,7 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	funnel := storage.Funnel{
+	funnel := repository.Funnel{
 		ID:          funnelID,
 		ProjectID:   projectID,
 		Name:        body.Name,
@@ -59,7 +59,7 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 		Steps:       body.Steps,
 	}
 
-	updated, err := s.store.UpdateFunnel(r.Context(), funnel)
+	updated, err := s.funnels.UpdateFunnel(r.Context(), funnel)
 	if err != nil {
 		jsonError(w, "failed to update funnel", http.StatusInternalServerError)
 		return
@@ -78,7 +78,7 @@ func (s *Server) handleDeleteFunnel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify funnel belongs to project.
-	existing, err := s.store.FunnelByID(r.Context(), funnelID)
+	existing, err := s.funnels.GetFunnel(r.Context(), funnelID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			jsonError(w, "funnel not found", http.StatusNotFound)
@@ -92,7 +92,7 @@ func (s *Server) handleDeleteFunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.store.DeleteFunnel(r.Context(), funnelID); err != nil {
+	if err := s.funnels.DeleteFunnel(r.Context(), funnelID); err != nil {
 		jsonError(w, "failed to delete funnel", http.StatusInternalServerError)
 		return
 	}
@@ -108,7 +108,7 @@ func (s *Server) handleListFunnels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	funnels, err := s.store.ListFunnels(r.Context(), projectID)
+	funnels, err := s.funnels.ListFunnels(r.Context(), projectID)
 	if err != nil {
 		jsonError(w, "failed to list funnels", http.StatusInternalServerError)
 		return
@@ -126,9 +126,9 @@ func (s *Server) handleCreateFunnel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name        string               `json:"name"`
-		Description string               `json:"description"`
-		Steps       []storage.FunnelStep `json:"steps"`
+		Name        string                `json:"name"`
+		Description string                `json:"description"`
+		Steps       []repository.FunnelStep `json:"steps"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -143,14 +143,14 @@ func (s *Server) handleCreateFunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	funnel := storage.Funnel{
+	funnel := repository.Funnel{
 		ProjectID:   projectID,
 		Name:        body.Name,
 		Description: body.Description,
 		Steps:       body.Steps,
 	}
 
-	created, err := s.store.CreateFunnel(r.Context(), funnel)
+	created, err := s.funnels.CreateFunnel(r.Context(), funnel)
 	if err != nil {
 		jsonError(w, "failed to create funnel", http.StatusInternalServerError)
 		return
@@ -161,22 +161,22 @@ func (s *Server) handleCreateFunnel(w http.ResponseWriter, r *http.Request) {
 
 // parseSegment maps a preset segment name to a SegmentFilter.
 // Returns nil when name is "all" or empty (no filter).
-func parseSegment(name string) *storage.SegmentFilter {
+func parseSegment(name string) *repository.SegmentFilter {
 	switch name {
 	case "logged_in":
-		return &storage.SegmentFilter{Field: "user_id_hash", Op: "is_not_null"}
+		return &repository.SegmentFilter{Field: "user_id_hash", Op: "is_not_null"}
 	case "not_logged_in":
-		return &storage.SegmentFilter{Field: "user_id_hash", Op: "is_null"}
+		return &repository.SegmentFilter{Field: "user_id_hash", Op: "is_null"}
 	case "mobile":
-		return &storage.SegmentFilter{Field: "device_type", Op: "eq", Value: "mobile"}
+		return &repository.SegmentFilter{Field: "device_type", Op: "eq", Value: "mobile"}
 	case "desktop":
-		return &storage.SegmentFilter{Field: "device_type", Op: "eq", Value: "desktop"}
+		return &repository.SegmentFilter{Field: "device_type", Op: "eq", Value: "desktop"}
 	case "tablet":
-		return &storage.SegmentFilter{Field: "device_type", Op: "eq", Value: "tablet"}
+		return &repository.SegmentFilter{Field: "device_type", Op: "eq", Value: "tablet"}
 	case "new_visitor":
-		return &storage.SegmentFilter{Field: "session_returning", Op: "eq", Value: "false"}
+		return &repository.SegmentFilter{Field: "session_returning", Op: "eq", Value: "false"}
 	case "returning":
-		return &storage.SegmentFilter{Field: "session_returning", Op: "eq", Value: "true"}
+		return &repository.SegmentFilter{Field: "session_returning", Op: "eq", Value: "true"}
 	default:
 		return nil
 	}
@@ -191,7 +191,7 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	funnel, err := s.store.FunnelByID(r.Context(), funnelID)
+	funnel, err := s.funnels.GetFunnel(r.Context(), funnelID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			jsonError(w, "funnel not found", http.StatusNotFound)
@@ -222,7 +222,7 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 	// Parse optional segment filter.
 	seg := parseSegment(r.URL.Query().Get("segment"))
 
-	results, err := s.store.AnalyzeFunnel(r.Context(), funnel, from, to, seg)
+	results, err := s.funnels.AnalyzeFunnel(r.Context(), funnel, from, to, seg)
 	if err != nil {
 		jsonError(w, "failed to analyze funnel", http.StatusInternalServerError)
 		return
@@ -246,7 +246,7 @@ func (s *Server) handleFunnelSegments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify funnel belongs to project.
-	funnel, err := s.store.FunnelByID(r.Context(), funnelID)
+	funnel, err := s.funnels.GetFunnel(r.Context(), funnelID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			jsonError(w, "funnel not found", http.StatusNotFound)
@@ -260,7 +260,7 @@ func (s *Server) handleFunnelSegments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	segs, err := s.store.FunnelSegmentData(r.Context(), projectID)
+	segs, err := s.funnels.FunnelSegmentData(r.Context(), projectID)
 	if err != nil {
 		jsonError(w, "failed to load segment data", http.StatusInternalServerError)
 		return

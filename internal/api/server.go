@@ -8,13 +8,18 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
-	"github.com/wiebe-xyz/funnelbarn/internal/storage"
+	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
 // Server is the main HTTP API server.
 type Server struct {
 	mux            *http.ServeMux
-	store          *storage.Store
+	projects       *service.ProjectService
+	funnels        *service.FunnelService
+	abtests        *service.ABTestService
+	events         *service.EventService
+	sessions       *service.SessionService
+	apikeys        *service.APIKeyService
 	ingest         *ingest.Handler
 	userAuth       *auth.UserAuthenticator
 	sessionManager *auth.SessionManager
@@ -26,7 +31,12 @@ type Server struct {
 // NewServer creates the API server and registers all routes.
 func NewServer(
 	ingestHandler *ingest.Handler,
-	store *storage.Store,
+	projects *service.ProjectService,
+	funnels *service.FunnelService,
+	abtests *service.ABTestService,
+	events *service.EventService,
+	sessions *service.SessionService,
+	apikeys *service.APIKeyService,
 	userAuth *auth.UserAuthenticator,
 	sessionManager *auth.SessionManager,
 	allowedOrigins []string,
@@ -35,7 +45,12 @@ func NewServer(
 ) *Server {
 	s := &Server{
 		mux:            http.NewServeMux(),
-		store:          store,
+		projects:       projects,
+		funnels:        funnels,
+		abtests:        abtests,
+		events:         events,
+		sessions:       sessions,
+		apikeys:        apikeys,
 		ingest:         ingestHandler,
 		userAuth:       userAuth,
 		sessionManager: sessionManager,

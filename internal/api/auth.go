@@ -14,7 +14,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
-	"github.com/wiebe-xyz/funnelbarn/internal/storage"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // handleLogin authenticates a user and sets a session cookie.
@@ -36,7 +36,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		// Fall back to DB user.
-		user, err := s.store.UserByUsername(r.Context(), body.Username)
+		user, err := s.projects.UserByUsername(r.Context(), body.Username)
 		if err != nil {
 			jsonError(w, "invalid credentials", http.StatusUnauthorized)
 			return
@@ -84,7 +84,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hasProjects, _ := s.store.HasProjects(r.Context())
+	hasProjects, _ := s.projects.HasProjects(r.Context())
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"username":     username,
@@ -94,7 +94,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 
 // handleListProjects lists all projects.
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
-	projects, err := s.store.ListProjects(r.Context())
+	projects, err := s.projects.ListProjects(r.Context())
 	if err != nil {
 		jsonError(w, "failed to list projects", http.StatusInternalServerError)
 		return
@@ -124,7 +124,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		body.Slug = toSlug(body.Name)
 	}
 
-	project, err := s.store.CreateProject(r.Context(), body.Name, body.Slug)
+	project, err := s.projects.CreateProject(r.Context(), body.Name, body.Slug)
 	if err != nil {
 		jsonError(w, "failed to create project", http.StatusInternalServerError)
 		return
@@ -138,12 +138,12 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
 
-	var keys []storage.APIKey
+	var keys []repository.APIKey
 	var err error
 	if projectID != "" {
-		keys, err = s.store.ListAPIKeys(r.Context(), projectID)
+		keys, err = s.apikeys.ListAPIKeys(r.Context(), projectID)
 	} else {
-		keys, err = s.store.ListAllAPIKeys(r.Context())
+		keys, err = s.apikeys.ListAllAPIKeys(r.Context())
 	}
 	if err != nil {
 		jsonError(w, "failed to list api keys", http.StatusInternalServerError)
@@ -193,7 +193,7 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	// If still empty, pick the first available project.
 	if body.ProjectID == "" {
-		projects, err := s.store.ListProjects(r.Context())
+		projects, err := s.projects.ListProjects(r.Context())
 		if err != nil || len(projects) == 0 {
 			jsonError(w, "no projects found — create a project first", http.StatusBadRequest)
 			return
@@ -206,15 +206,15 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Scope == "" {
-		body.Scope = storage.APIKeyScopeIngest
+		body.Scope = repository.APIKeyScopeIngest
 	}
-	if body.Scope != storage.APIKeyScopeFull && body.Scope != storage.APIKeyScopeIngest {
+	if body.Scope != repository.APIKeyScopeFull && body.Scope != repository.APIKeyScopeIngest {
 		jsonError(w, "scope must be 'full' or 'ingest'", http.StatusBadRequest)
 		return
 	}
 
 	// Verify project exists.
-	if _, err := s.store.ProjectByID(r.Context(), body.ProjectID); err != nil {
+	if _, err := s.projects.GetProject(r.Context(), body.ProjectID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			jsonError(w, "project not found", http.StatusNotFound)
 			return
@@ -233,14 +233,13 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	sum := sha256.Sum256([]byte(plaintext))
 	keySHA256 := hex.EncodeToString(sum[:])
 
-	key, err := s.store.CreateAPIKey(r.Context(), body.Name, body.ProjectID, keySHA256, body.Scope)
+	key, err := s.apikeys.CreateAPIKey(r.Context(), body.Name, body.ProjectID, keySHA256, body.Scope)
 	if err != nil {
 		jsonError(w, "failed to create api key", http.StatusInternalServerError)
 		return
 	}
 
 	// Return the plaintext key once — it won't be shown again.
-	// Response shape: { api_key: {...}, key: "<plaintext>" }
 	type safeKey struct {
 		ID        string `json:"id"`
 		Name      string `json:"name"`
@@ -265,7 +264,7 @@ func (s *Server) handleDeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "key id required", http.StatusBadRequest)
 		return
 	}
-	if err := s.store.DeleteAPIKey(r.Context(), keyID); err != nil {
+	if err := s.apikeys.DeleteAPIKey(r.Context(), keyID); err != nil {
 		jsonError(w, "failed to delete api key", http.StatusInternalServerError)
 		return
 	}
@@ -279,7 +278,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "project id required", http.StatusBadRequest)
 		return
 	}
-	if err := s.store.DeleteProject(r.Context(), projectID); err != nil {
+	if err := s.projects.DeleteProject(r.Context(), projectID); err != nil {
 		jsonError(w, "failed to delete project", http.StatusInternalServerError)
 		return
 	}
@@ -304,7 +303,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "name is required", http.StatusBadRequest)
 		return
 	}
-	project, err := s.store.UpdateProject(r.Context(), projectID, body.Name)
+	project, err := s.projects.UpdateProject(r.Context(), projectID, body.Name)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			jsonError(w, "project not found", http.StatusNotFound)
@@ -325,7 +324,7 @@ func (s *Server) handleApproveProject(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "project id required", http.StatusBadRequest)
 		return
 	}
-	project, err := s.store.ApproveProject(r.Context(), projectID)
+	project, err := s.projects.ApproveProject(r.Context(), projectID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			jsonError(w, "project not found", http.StatusNotFound)

@@ -27,8 +27,9 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
-	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 	"github.com/wiebe-xyz/funnelbarn/internal/worker"
 )
 
@@ -75,11 +76,19 @@ func run() error {
 		slog.Warn("FUNNELBARN_SESSION_SECRET is not set; sessions will not persist across restarts")
 	}
 
-	store, err := storage.Open(cfg.DBPath)
+	store, err := repository.Open(cfg.DBPath)
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)
 	}
 	defer store.Close()
+
+	// Wire services.
+	projectsSvc := service.NewProjectService(store)
+	funnelsSvc := service.NewFunnelService(store)
+	abtestsSvc := service.NewABTestService(store)
+	eventsSvc := service.NewEventService(store)
+	sessionsSvc := service.NewSessionService(store)
+	apikeysSvc := service.NewAPIKeyService(store)
 
 	eventSpool, err := spool.NewWithLimit(cfg.SpoolDir, cfg.MaxSpoolBytes)
 	if err != nil {
@@ -120,7 +129,20 @@ func run() error {
 	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.MaxBodyBytes)
 	go handler.Start(ctx)
 
-	apiServer := api.NewServer(handler, store, userAuth, sessionManager, cfg.AllowedOrigins, cfg.SessionSecret, cfg.PublicURL)
+	apiServer := api.NewServer(
+		handler,
+		projectsSvc,
+		funnelsSvc,
+		abtestsSvc,
+		eventsSvc,
+		sessionsSvc,
+		apikeysSvc,
+		userAuth,
+		sessionManager,
+		cfg.AllowedOrigins,
+		cfg.SessionSecret,
+		cfg.PublicURL,
+	)
 
 	var httpHandler http.Handler = apiServer
 	if selfReporting {
@@ -152,7 +174,7 @@ func run() error {
 	}
 }
 
-func newAPIAuthorizer(cfg config.Config, store *storage.Store) (*auth.Authorizer, error) {
+func newAPIAuthorizer(cfg config.Config, store *repository.Store) (*auth.Authorizer, error) {
 	var base *auth.Authorizer
 	var err error
 	if cfg.APIKeySHA256 != "" {
@@ -171,7 +193,7 @@ const (
 	workerRotateThreshold = 64 << 20 // 64 MiB
 )
 
-func runBackgroundWorker(ctx context.Context, cfg config.Config, store *storage.Store) {
+func runBackgroundWorker(ctx context.Context, cfg config.Config, store *repository.Store) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -276,7 +298,7 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *storage.
 
 // runWorkerOnce replays queued records into the persistent store.
 func runWorkerOnce(cfg config.Config) error {
-	store, err := storage.Open(cfg.DBPath)
+	store, err := repository.Open(cfg.DBPath)
 	if err != nil {
 		return err
 	}
@@ -337,7 +359,7 @@ func runUserCmd(cfg config.Config, args []string) error {
 		if err != nil {
 			return fmt.Errorf("hash password: %w", err)
 		}
-		store, err := storage.Open(cfg.DBPath)
+		store, err := repository.Open(cfg.DBPath)
 		if err != nil {
 			return err
 		}
@@ -375,7 +397,7 @@ func runProjectCmd(cfg config.Config, args []string) error {
 		if !slugPattern.MatchString(*slug) {
 			return fmt.Errorf("invalid slug %q: must be lowercase alphanumeric with hyphens", *slug)
 		}
-		store, err := storage.Open(cfg.DBPath)
+		store, err := repository.Open(cfg.DBPath)
 		if err != nil {
 			return err
 		}
@@ -401,7 +423,7 @@ func runAPIKeyCmd(cfg config.Config, args []string) error {
 		fs := flag.NewFlagSet("apikey create", flag.ContinueOnError)
 		projectSlug := fs.String("project", "default", "project slug")
 		name := fs.String("name", "", "key name/label")
-		scope := fs.String("scope", storage.APIKeyScopeFull, "key scope: full or ingest")
+		scope := fs.String("scope", repository.APIKeyScopeFull, "key scope: full or ingest")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -409,10 +431,10 @@ func runAPIKeyCmd(cfg config.Config, args []string) error {
 		if *name == "" {
 			return fmt.Errorf("--name is required")
 		}
-		if *scope != storage.APIKeyScopeFull && *scope != storage.APIKeyScopeIngest {
-			return fmt.Errorf("--scope must be %q or %q", storage.APIKeyScopeFull, storage.APIKeyScopeIngest)
+		if *scope != repository.APIKeyScopeFull && *scope != repository.APIKeyScopeIngest {
+			return fmt.Errorf("--scope must be %q or %q", repository.APIKeyScopeFull, repository.APIKeyScopeIngest)
 		}
-		store, err := storage.Open(cfg.DBPath)
+		store, err := repository.Open(cfg.DBPath)
 		if err != nil {
 			return err
 		}
