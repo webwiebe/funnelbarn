@@ -209,44 +209,44 @@ type SegmentFilter struct {
 	Value string
 }
 
-// segmentClause returns the SQL WHERE fragment and whether a sessions JOIN is needed.
-func segmentClause(seg *SegmentFilter) (clause string, needSessionJoin bool) {
+// segmentParam returns a SQL WHERE fragment with a placeholder and the value to bind,
+// plus whether a sessions JOIN is needed.
+// arg is nil when no bind parameter is needed for the clause (e.g. IS NULL checks).
+func segmentParam(seg *SegmentFilter) (clause string, arg any, needSessionJoin bool) {
 	if seg == nil {
-		return "", false
+		return "", nil, false
 	}
 	if seg.Field == "session_returning" {
-		// Join sessions and filter by event_count.
 		if seg.Value == "true" {
-			return "s.event_count > 1", true
+			return "s.event_count > 1", nil, true
 		}
-		return "s.event_count = 1", true
+		return "s.event_count = 1", nil, true
 	}
+
+	// Whitelist allowed field names to prevent column injection.
+	allowedFields := map[string]bool{
+		"device_type":  true,
+		"browser":      true,
+		"os":           true,
+		"country_code": true,
+		"user_id_hash": true,
+	}
+	if !allowedFields[seg.Field] {
+		return "", nil, false // silently ignore unknown fields
+	}
+
 	col := "e." + seg.Field
 	switch seg.Op {
 	case "eq":
-		return fmt.Sprintf("%s = '%s'", col, escapeSQLLiteral(seg.Value)), false
+		return col + " = ?", seg.Value, false
 	case "neq":
-		return fmt.Sprintf("%s != '%s'", col, escapeSQLLiteral(seg.Value)), false
+		return col + " != ?", seg.Value, false
 	case "is_null":
-		return fmt.Sprintf("(%s IS NULL OR %s = '')", col, col), false
+		return fmt.Sprintf("(%s IS NULL OR %s = '')", col, col), nil, false
 	case "is_not_null":
-		return fmt.Sprintf("(%s IS NOT NULL AND %s != '')", col, col), false
+		return fmt.Sprintf("(%s IS NOT NULL AND %s != '')", col, col), nil, false
 	}
-	return "", false
-}
-
-// escapeSQLLiteral performs minimal single-quote escaping for inline SQL literals.
-// Only used for known preset values (device type names, etc.) — not user-supplied strings.
-func escapeSQLLiteral(s string) string {
-	result := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\'' {
-			result = append(result, '\'', '\'')
-		} else {
-			result = append(result, s[i])
-		}
-	}
-	return string(result)
+	return "", nil, false
 }
 
 // AnalyzeFunnel computes conversion rates for each step of a funnel over a time range.
@@ -256,12 +256,13 @@ func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time,
 		return nil, nil
 	}
 
-	clause, needJoin := segmentClause(seg)
+	clause, segArg, needJoin := segmentParam(seg)
 
 	stepCounts := make([]int64, len(f.Steps))
 	for i, step := range f.Steps {
 		var n int64
 		var q string
+		var args []any
 		if needJoin {
 			q = fmt.Sprintf(`
 				SELECT COUNT(DISTINCT e.session_id)
@@ -269,19 +270,26 @@ func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time,
 				JOIN sessions s ON s.id = e.session_id
 				WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?
 				  AND %s`, clause)
+			args = []any{f.ProjectID, step.EventName, from, to}
 		} else if clause != "" {
 			q = fmt.Sprintf(`
 				SELECT COUNT(DISTINCT e.session_id)
 				FROM events e
 				WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?
 				  AND %s`, clause)
+			args = []any{f.ProjectID, step.EventName, from, to}
 		} else {
 			q = `
 				SELECT COUNT(DISTINCT session_id)
 				FROM events
 				WHERE project_id = ? AND name = ? AND occurred_at >= ? AND occurred_at <= ?`
+			args = []any{f.ProjectID, step.EventName, from, to}
 		}
-		if err := s.db.QueryRowContext(ctx, q, f.ProjectID, step.EventName, from, to).Scan(&n); err != nil {
+		// Append the segment bind parameter if the clause uses a placeholder.
+		if segArg != nil {
+			args = append(args, segArg)
+		}
+		if err := s.db.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
 			return nil, fmt.Errorf("analyze step %d: %w", i, err)
 		}
 		stepCounts[i] = n

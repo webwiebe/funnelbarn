@@ -23,11 +23,19 @@ func NewFunnelService(store repository.Querier) *FunnelService {
 }
 
 func (svc *FunnelService) CreateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error) {
+	if strings.TrimSpace(f.ProjectID) == "" {
+		return repository.Funnel{}, &domain.ValidationError{Field: "project_id", Message: "required"}
+	}
 	if strings.TrimSpace(f.Name) == "" {
 		return repository.Funnel{}, &domain.ValidationError{Field: "name", Message: "required"}
 	}
 	if len(f.Steps) == 0 {
 		return repository.Funnel{}, &domain.ValidationError{Field: "steps", Message: "at least one step required"}
+	}
+	for i, step := range f.Steps {
+		if strings.TrimSpace(step.EventName) == "" {
+			return repository.Funnel{}, &domain.ValidationError{Field: fmt.Sprintf("steps[%d].event_name", i), Message: "required"}
+		}
 	}
 	return svc.store.CreateFunnel(ctx, f)
 }
