@@ -11,14 +11,6 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
-func newTestEventSvc(t *testing.T) (*service.EventService, string) {
-	t.Helper()
-	store := newTestStore(t)
-	projSvc := service.NewProjectService(store)
-	p, err := projSvc.CreateProject(context.Background(), "Ev Project", "ev-project-"+t.Name())
-	require.NoError(t, err)
-	return service.NewEventService(store), p.ID
-}
 
 func TestEventService_InsertAndList(t *testing.T) {
 	ctx := context.Background()
