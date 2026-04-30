@@ -1,8 +1,8 @@
 import { ReactNode, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { BarChart2, Layers, Radio, Settings, ChevronDown, LogOut, User, FlaskConical, MoreHorizontal, Star } from 'lucide-react'
-import { useAuth } from '../lib/auth'
-import { useProjects } from '../lib/projects'
+import { useAuth } from '../../lib/auth'
+import { useProjects } from '../../lib/projects'
 
 const C = {
   bg: '#0f1117',

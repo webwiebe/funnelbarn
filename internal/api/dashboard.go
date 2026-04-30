@@ -38,73 +38,73 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	totalEvents, err := s.store.CountEvents(ctx, projectID, from, to)
+	totalEvents, err := s.events.CountEvents(ctx, projectID, from, to)
 	if err != nil {
 		jsonError(w, "failed to count events", http.StatusInternalServerError)
 		return
 	}
 
-	uniqueSessions, err := s.store.UniqueSessionCount(ctx, projectID, from, to)
+	uniqueSessions, err := s.events.UniqueSessionCount(ctx, projectID, from, to)
 	if err != nil {
 		jsonError(w, "failed to count sessions", http.StatusInternalServerError)
 		return
 	}
 
-	topPages, err := s.store.TopPages(ctx, projectID, from, to, 10)
+	topPages, err := s.events.TopPages(ctx, projectID, from, to, 10)
 	if err != nil {
 		jsonError(w, "failed to get top pages", http.StatusInternalServerError)
 		return
 	}
 
-	topReferrers, err := s.store.TopReferrers(ctx, projectID, from, to, 10)
+	topReferrers, err := s.events.TopReferrers(ctx, projectID, from, to, 10)
 	if err != nil {
 		jsonError(w, "failed to get top referrers", http.StatusInternalServerError)
 		return
 	}
 
-	timeSeries, err := s.store.DailyEventCounts(ctx, projectID, from, to)
+	timeSeries, err := s.events.DailyEventCounts(ctx, projectID, from, to)
 	if err != nil {
 		jsonError(w, "failed to get time series", http.StatusInternalServerError)
 		return
 	}
 
-	sessionTimeSeries, err := s.store.DailyUniqueSessions(ctx, projectID, from, to)
+	sessionTimeSeries, err := s.events.DailyUniqueSessions(ctx, projectID, from, to)
 	if err != nil {
 		jsonError(w, "failed to get session time series", http.StatusInternalServerError)
 		return
 	}
 
-	topBrowsers, err := s.store.TopBrowsers(ctx, projectID, from, to, 5)
+	topBrowsers, err := s.events.TopBrowsers(ctx, projectID, from, to, 5)
 	if err != nil {
 		jsonError(w, "failed to get browsers", http.StatusInternalServerError)
 		return
 	}
 
-	deviceTypes, err := s.store.TopDeviceTypes(ctx, projectID, from, to)
+	deviceTypes, err := s.events.TopDeviceTypes(ctx, projectID, from, to)
 	if err != nil {
 		jsonError(w, "failed to get device types", http.StatusInternalServerError)
 		return
 	}
 
-	topEventNames, err := s.store.TopEventNames(ctx, projectID, from, to, 10)
+	topEventNames, err := s.events.TopEventNames(ctx, projectID, from, to, 10)
 	if err != nil {
 		jsonError(w, "failed to get event names", http.StatusInternalServerError)
 		return
 	}
 
-	topUTMSources, err := s.store.TopUTMSources(ctx, projectID, from, to, 5)
+	topUTMSources, err := s.events.TopUTMSources(ctx, projectID, from, to, 5)
 	if err != nil {
 		jsonError(w, "failed to get utm sources", http.StatusInternalServerError)
 		return
 	}
 
-	bounceRate, err := s.store.BounceRate(ctx, projectID, from, to)
+	bounceRate, err := s.events.BounceRate(ctx, projectID, from, to)
 	if err != nil {
 		jsonError(w, "failed to compute bounce rate", http.StatusInternalServerError)
 		return
 	}
 
-	avgEventsPerSession, err := s.store.AvgEventsPerSession(ctx, projectID, from, to)
+	avgEventsPerSession, err := s.events.AvgEventsPerSession(ctx, projectID, from, to)
 	if err != nil {
 		jsonError(w, "failed to compute avg events per session", http.StatusInternalServerError)
 		return

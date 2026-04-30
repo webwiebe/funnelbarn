@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts'
 import { Radio } from 'lucide-react'
-import Shell from '../components/Shell'
+import Shell from '../components/shell/Shell'
 import { api } from '../lib/api'
 
 const C = {

@@ -26,7 +26,7 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	events, err := s.store.ListEvents(r.Context(), projectID, limit, offset)
+	events, err := s.events.ListEvents(r.Context(), projectID, limit, offset)
 	if err != nil {
 		jsonError(w, "failed to list events", http.StatusInternalServerError)
 		return

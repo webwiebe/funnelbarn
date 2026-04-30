@@ -1,0 +1,316 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+
+const content = `# FunnelBarn — LLM Context
+
+## What is FunnelBarn?
+
+FunnelBarn is a self-hosted web analytics and funnel tracking tool. It is designed for developers and teams who want full ownership of their analytics data without sending visitor information to third-party services.
+
+Key characteristics:
+- Single Go binary — no external runtime dependencies
+- SQLite storage — data lives on disk, no separate database server needed
+- Privacy-first — no cookies required, anonymous session fingerprinting server-side
+- Open source — MIT license, github.com/webwiebe/funnelbarn
+
+## Architecture
+
+Events flow through a non-blocking ingest pipeline:
+
+1. Client sends POST /api/v1/events with the API key header
+2. The server writes the raw event to a disk-based spool directory immediately (non-blocking)
+3. A background worker reads from the spool and processes events into SQLite
+4. The dashboard reads from SQLite for queries
+
+This spool pattern means ingest is always fast — even under load, events are accepted immediately and processed asynchronously. The same pattern is used by BugBarn.
+
+Components:
+- Ingest endpoint: POST /api/v1/events
+- Spool directory: configurable via FUNNELBARN_SPOOL_DIR (default: alongside DB)
+- Database: SQLite, path configurable via FUNNELBARN_DB_PATH
+- Dashboard: built-in web UI served on the same port
+
+## Installation
+
+### Docker (recommended)
+
+\`\`\`bash
+docker run -d \\
+  -e FUNNELBARN_API_KEY=secret \\
+  -e FUNNELBARN_ADMIN_USERNAME=admin \\
+  -e FUNNELBARN_ADMIN_PASSWORD=changeme \\
+  -p 8080:8080 \\
+  -v funnelbarn-data:/var/lib/funnelbarn \\
+  ghcr.io/webwiebe/funnelbarn/service:latest
+\`\`\`
+
+### Homebrew (macOS)
+
+\`\`\`bash
+brew tap webwiebe/funnelbarn
+brew install funnelbarn
+funnelbarn
+\`\`\`
+
+### APT (Debian/Ubuntu)
+
+\`\`\`bash
+curl -fsSL https://webwiebe.nl/apt/install.sh | sudo bash
+sudo apt install funnelbarn
+\`\`\`
+
+## Configuration
+
+All configuration is via environment variables prefixed with FUNNELBARN_:
+
+| Variable                    | Default              | Description                                          |
+|-----------------------------|----------------------|------------------------------------------------------|
+| FUNNELBARN_PORT             | 8080                 | HTTP server port                                     |
+| FUNNELBARN_DB_PATH          | /var/lib/funnelbarn  | Directory for SQLite database file                   |
+| FUNNELBARN_SPOOL_DIR        | alongside DB         | Directory for the event spool (non-blocking ingest)  |
+| FUNNELBARN_API_KEY          | (required)           | API key for event ingest (full or ingest scope)      |
+| FUNNELBARN_ADMIN_USERNAME   | admin                | Dashboard admin username                             |
+| FUNNELBARN_ADMIN_PASSWORD   | (required)           | Dashboard admin password                             |
+| FUNNELBARN_SESSION_SECRET   | (required)           | Secret for signing dashboard sessions                |
+| FUNNELBARN_SESSION_TTL      | 24h                  | Dashboard session TTL                                |
+| FUNNELBARN_CORS_ORIGINS     | *                    | Comma-separated allowed CORS origins for ingest      |
+
+API key scopes:
+- "full" — ingest events + access dashboard API
+- "ingest" — ingest events only (for embedding in public-facing SDKs)
+
+## HTTP API
+
+### Ingest an event
+
+POST /api/v1/events
+
+Headers:
+  x-funnelbarn-api-key: <your-api-key>
+  Content-Type: application/json
+
+Request body fields:
+  name        string    (required) Event name, e.g. "page_view", "signup", "purchase"
+  url         string    Page URL where the event occurred
+  referrer    string    HTTP referrer
+  session_id  string    Client-provided session ID (optional, auto-managed by SDK)
+  user_id     string    User identifier — hashed server-side, never stored raw
+  user_agent  string    Browser/client user agent string
+  timestamp   string    ISO 8601 timestamp (server time used if omitted)
+  properties  object    Arbitrary JSON key-value pairs for custom event data
+  utm_source  string    UTM source (also extracted automatically from url)
+  utm_medium  string    UTM medium
+  utm_campaign string   UTM campaign
+  utm_term    string    UTM term
+  utm_content string    UTM content
+
+Example:
+\`\`\`bash
+curl -X POST http://localhost:8080/api/v1/events \\
+  -H "x-funnelbarn-api-key: secret" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "name": "page_view",
+    "url": "https://example.com/pricing",
+    "referrer": "https://google.com",
+    "properties": { "plan": "pro" }
+  }'
+\`\`\`
+
+## JavaScript SDK — Browser
+
+The browser SDK auto-tracks page views, manages sessions, and provides a custom event API.
+
+\`\`\`html
+<script>
+  window.funnelbarn = {
+    host: 'https://your-funnelbarn-host.example.com',
+    apiKey: 'your-ingest-api-key',
+  };
+</script>
+<script src="https://your-funnelbarn-host.example.com/sdk/funnelbarn.js" async></script>
+\`\`\`
+
+After loading, the SDK automatically fires a page_view event. It manages session IDs via localStorage and flushes events asynchronously so it never blocks rendering.
+
+Custom events:
+\`\`\`javascript
+// Track a custom event
+funnelbarn.track('signup', { plan: 'pro', source: 'hero_cta' });
+
+// Identify a user (ID is hashed server-side, never stored raw)
+funnelbarn.identify('user-123');
+\`\`\`
+
+## JavaScript SDK — Node.js (server-side)
+
+\`\`\`javascript
+import { FunnelBarn } from '@funnelbarn/node';
+
+const fb = new FunnelBarn({
+  host: 'https://your-funnelbarn-host.example.com',
+  apiKey: 'your-api-key',
+});
+
+// Track a page view
+await fb.page({ url: 'https://example.com/dashboard', userId: 'user-123' });
+
+// Track a custom event
+await fb.track('purchase', {
+  userId: 'user-123',
+  properties: { amount: 49.99, plan: 'pro' },
+});
+\`\`\`
+
+The Node.js SDK buffers events and flushes them in the background, so tracking calls are non-blocking.
+
+## Python SDK
+
+\`\`\`python
+from funnelbarn import FunnelBarn
+
+fb = FunnelBarn(
+    host="https://your-funnelbarn-host.example.com",
+    api_key="your-api-key",
+)
+
+# Track a page view
+fb.page(url="https://example.com/dashboard", user_id="user-123")
+
+# Track a custom event
+fb.track("purchase", user_id="user-123", properties={"amount": 49.99, "plan": "pro"})
+
+# Identify a user
+fb.identify("user-123", traits={"email": "user@example.com"})
+\`\`\`
+
+The Python SDK uses an async background worker to flush events, so calls return immediately.
+
+## Sessions
+
+Sessions are constructed server-side from:
+- IP address
+- User-Agent string
+
+This fingerprint is used to group events into sessions without setting any cookies on the client. The raw IP and User-Agent are not stored permanently — only the derived session ID.
+
+Session data includes:
+- First seen / last seen timestamps
+- Entry URL and exit URL
+- Referrer
+- UTM parameters
+- Device type (desktop / mobile / tablet)
+- Event count
+
+Session TTL is configurable (default 30 minutes of inactivity).
+
+## Dashboard Metrics
+
+The dashboard provides:
+- Time-series charts: event counts and session counts over 24h / 7d / 30d
+- Top pages by event count
+- Top referrers
+- UTM attribution: top sources, mediums, campaigns, terms, content
+- Device type distribution (desktop / mobile / tablet)
+- Live event feed (real-time stream of incoming events)
+
+## Funnel Analysis
+
+Define a funnel as an ordered list of steps. Each step specifies:
+- Event name to match
+- Optional property filters (key = value conditions)
+
+FunnelBarn computes:
+- Number of sessions entering each step
+- Conversion rate from step N to step N+1
+- Drop-off percentage at each step
+
+Funnels can be segmented by:
+- Browser
+- Device type (desktop / mobile / tablet)
+- OS
+- UTM source
+
+## A/B Tests
+
+Define an A/B test by specifying:
+- Control group: event property filter identifying the control cohort
+- Variant group: event property filter identifying the variant cohort
+- Conversion event: event name that counts as a conversion
+
+FunnelBarn computes:
+- Sample size per group
+- Conversion count per group
+- Conversion rate per group
+
+No statistical significance calculation is built in — raw numbers are provided for you to interpret.
+
+## Multi-project Support
+
+One FunnelBarn instance can manage multiple projects. Each project has its own:
+- API key (ingest scope or full scope)
+- Dashboard view
+- Funnels and A/B tests
+
+Events are routed to projects based on the API key used during ingest.
+`.trim();
+---
+<BaseLayout
+  title="FunnelBarn — LLM Context"
+  description="Comprehensive context about FunnelBarn for use with LLMs. Covers architecture, installation, configuration, SDKs, and API."
+>
+  <Nav />
+  <main class="max-w-3xl mx-auto px-6 py-16">
+    <div class="mb-8 flex items-start justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-bold font-mono mb-2" style="color: #e2e8f0;">LLM Context</h1>
+        <p class="text-sm" style="color: #8b95a1;">
+          Paste this into any LLM to get accurate, grounded answers about FunnelBarn.
+        </p>
+      </div>
+      <button
+        id="copy-btn"
+        class="flex-shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors"
+        style="background-color: #161625; color: #e2e8f0; border: 1px solid #1e1e35; cursor: pointer;"
+      >
+        <svg id="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+        </svg>
+        <span id="copy-label">Copy</span>
+      </button>
+    </div>
+
+    <div
+      id="llm-content"
+      class="rounded-lg overflow-x-auto text-xs leading-relaxed"
+      style="background-color: #0a0a14; border: 1px solid #1e1e35; padding: 1.5rem 2rem; color: #cbd5e0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;"
+    >{content}</div>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<script>
+  const btn = document.getElementById('copy-btn');
+  const label = document.getElementById('copy-label');
+  const icon = document.getElementById('copy-icon');
+  const contentEl = document.getElementById('llm-content');
+
+  if (btn && label && contentEl) {
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(contentEl.textContent ?? '');
+        label.textContent = 'Copied!';
+        icon.innerHTML = '<polyline points="20 6 9 17 4 12"/>';
+        setTimeout(() => {
+          label.textContent = 'Copy';
+          icon.innerHTML = '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>';
+        }, 2000);
+      } catch (_e) {
+        label.textContent = 'Failed';
+      }
+    });
+  }
+</script>

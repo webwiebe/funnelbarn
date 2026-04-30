@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { StepResult } from '../lib/api'
+import { StepResult } from '../../lib/api'
 
 const C = {
   bg: '#0f1117',

@@ -1,8 +1,7 @@
-package storage
+package repository
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -97,8 +96,6 @@ func (s *Store) ListABTests(ctx context.Context, projectID string) ([]ABTest, er
 }
 
 // AnalyzeABTest counts control vs variant totals and conversions over a time window.
-// The filter JSON encodes an ABTestFilter {property, value} matched against
-// event properties (JSON blob) or top-level columns.
 func (s *Store) AnalyzeABTest(ctx context.Context, t ABTest, from, to time.Time) ([]ABTestResult, error) {
 	type arm struct {
 		name   string
@@ -118,13 +115,11 @@ func (s *Store) AnalyzeABTest(ctx context.Context, t ABTest, from, to time.Time)
 			}
 		}
 
-		// Count sessions that fired any event matching the filter.
 		total, err := s.countSessionsWithFilter(ctx, t.ProjectID, f, from, to)
 		if err != nil {
 			return nil, fmt.Errorf("count %s total: %w", a.name, err)
 		}
 
-		// Count sessions matching the filter AND that also fired the conversion event.
 		conversions, err := s.countConversionsWithFilter(ctx, t.ProjectID, f, t.ConversionEvent, from, to)
 		if err != nil {
 			return nil, fmt.Errorf("count %s conversions: %w", a.name, err)
@@ -146,14 +141,12 @@ func (s *Store) AnalyzeABTest(ctx context.Context, t ABTest, from, to time.Time)
 }
 
 // countSessionsWithFilter counts distinct sessions where any event matches the filter.
-// When the filter is empty (zero-value), all sessions in the window are counted.
 func (s *Store) countSessionsWithFilter(ctx context.Context, projectID string, f ABTestFilter, from, to time.Time) (int64, error) {
 	if f.Property == "" {
 		const q = `SELECT COUNT(DISTINCT session_id) FROM events WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?`
 		var n int64
 		return n, s.db.QueryRowContext(ctx, q, projectID, from, to).Scan(&n)
 	}
-	// Match against properties JSON blob using json_extract.
 	const q = `
 		SELECT COUNT(DISTINCT session_id) FROM events
 		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?
@@ -171,7 +164,6 @@ func (s *Store) countConversionsWithFilter(ctx context.Context, projectID string
 		var n int64
 		return n, s.db.QueryRowContext(ctx, q, projectID, conversionEvent, from, to).Scan(&n)
 	}
-	// Sessions that have a filter-matching event AND a conversion event.
 	const q = `
 		SELECT COUNT(DISTINCT e1.session_id)
 		FROM events e1
@@ -190,12 +182,3 @@ func (s *Store) countConversionsWithFilter(ctx context.Context, projectID string
 	return n, err
 }
 
-// HasProjects returns true if at least one project exists in the database.
-func (s *Store) HasProjects(ctx context.Context) (bool, error) {
-	var n int64
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM projects`).Scan(&n)
-	if err != nil && err != sql.ErrNoRows {
-		return false, err
-	}
-	return n > 0, nil
-}

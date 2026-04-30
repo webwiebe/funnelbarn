@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api, Project, ApiKey } from '../lib/api'
+import { api, Project, ApiKey } from '../../lib/api'
 import { Check, Copy } from 'lucide-react'
 
 const C = {
