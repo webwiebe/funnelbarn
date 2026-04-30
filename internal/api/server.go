@@ -2,12 +2,15 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
@@ -15,12 +18,12 @@ import (
 // Server is the main HTTP API server.
 type Server struct {
 	mux            *http.ServeMux
-	projects       *service.ProjectService
-	funnels        *service.FunnelService
-	abtests        *service.ABTestService
-	events         *service.EventService
-	sessions       *service.SessionService
-	apikeys        *service.APIKeyService
+	projects       service.Projects
+	funnels        service.Funnels
+	abtests        service.ABTests
+	events         service.Events
+	sessions       service.Sessions
+	apikeys        service.APIKeys
 	ingest         *ingest.Handler
 	userAuth       *auth.UserAuthenticator
 	sessionManager *auth.SessionManager
@@ -30,17 +33,18 @@ type Server struct {
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
+	apiLimiter    *rateLimiter // 300 req/min, burst 60 — for all session-authenticated endpoints
 }
 
 // NewServer creates the API server and registers all routes.
 func NewServer(
 	ingestHandler *ingest.Handler,
-	projects *service.ProjectService,
-	funnels *service.FunnelService,
-	abtests *service.ABTestService,
-	events *service.EventService,
-	sessions *service.SessionService,
-	apikeys *service.APIKeyService,
+	projects service.Projects,
+	funnels service.Funnels,
+	abtests service.ABTests,
+	events service.Events,
+	sessions service.Sessions,
+	apikeys service.APIKeys,
 	userAuth *auth.UserAuthenticator,
 	sessionManager *auth.SessionManager,
 	allowedOrigins []string,
@@ -65,6 +69,7 @@ func NewServer(
 		publicURL:      publicURL,
 		loginLimiter:   newRateLimiter(loginRatePerMinute, loginRateBurst),
 		eventsLimiter:  newRateLimiter(500, 100),
+		apiLimiter:     newRateLimiter(300, 60),
 	}
 	s.registerRoutes()
 	return s
@@ -158,10 +163,19 @@ func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 }
 
 // requireSession wraps a handler to enforce session cookie authentication.
+// It also applies the apiLimiter rate limit for authenticated endpoints.
 func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.sessionManager == nil || !s.userAuth.Enabled() {
-			// No auth configured — allow through.
+			// No auth configured — apply rate limit and allow through.
+			ip, _, err := net.SplitHostPort(r.RemoteAddr)
+			if err != nil {
+				ip = r.RemoteAddr
+			}
+			if !s.apiLimiter.allow(ip) {
+				jsonError(w, "too many requests", http.StatusTooManyRequests)
+				return
+			}
 			next(w, r)
 			return
 		}
@@ -178,8 +192,38 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			ip = r.RemoteAddr
+		}
+		if !s.apiLimiter.allow(ip) {
+			jsonError(w, "too many requests", http.StatusTooManyRequests)
+			return
+		}
+
 		slog.Debug("session valid", "username", username)
 		next(w, r)
+	}
+}
+
+// mapServiceError maps domain/service errors to appropriate HTTP status codes.
+// It never leaks internal error details to the client.
+func mapServiceError(w http.ResponseWriter, err error, op string) {
+	switch {
+	case domain.IsNotFound(err):
+		jsonError(w, "not found", http.StatusNotFound)
+	case domain.IsConflict(err):
+		jsonError(w, "already exists", http.StatusConflict)
+	case domain.IsValidation(err):
+		var ve *domain.ValidationError
+		if errors.As(err, &ve) {
+			jsonError(w, ve.Error(), http.StatusUnprocessableEntity)
+		} else {
+			jsonError(w, "invalid request", http.StatusUnprocessableEntity)
+		}
+	default:
+		slog.Error("unexpected service error", "op", op, "err", err)
+		jsonError(w, "internal server error", http.StatusInternalServerError)
 	}
 }
 

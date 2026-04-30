@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"strings"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
@@ -18,6 +20,12 @@ func NewABTestService(store *repository.Store) *ABTestService {
 }
 
 func (svc *ABTestService) CreateABTest(ctx context.Context, t repository.ABTest) (repository.ABTest, error) {
+	if strings.TrimSpace(t.Name) == "" {
+		return repository.ABTest{}, &domain.ValidationError{Field: "name", Message: "required"}
+	}
+	if strings.TrimSpace(t.ConversionEvent) == "" {
+		return repository.ABTest{}, &domain.ValidationError{Field: "conversion_event", Message: "required"}
+	}
 	return svc.store.CreateABTest(ctx, t)
 }
 

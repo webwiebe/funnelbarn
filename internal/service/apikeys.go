@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"strings"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
@@ -17,6 +19,12 @@ func NewAPIKeyService(store *repository.Store) *APIKeyService {
 }
 
 func (svc *APIKeyService) CreateAPIKey(ctx context.Context, name, projectID, keySHA256, scope string) (repository.APIKey, error) {
+	if strings.TrimSpace(name) == "" {
+		return repository.APIKey{}, &domain.ValidationError{Field: "name", Message: "required"}
+	}
+	if strings.TrimSpace(scope) == "" {
+		return repository.APIKey{}, &domain.ValidationError{Field: "scope", Message: "required"}
+	}
 	return svc.store.CreateAPIKey(ctx, name, projectID, keySHA256, scope)
 }
 

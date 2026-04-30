@@ -1,8 +1,6 @@
 package api
 
 import (
-	"database/sql"
-	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -22,11 +20,7 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 	// Verify funnel belongs to project.
 	existing, err := s.funnels.GetFunnel(r.Context(), funnelID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			jsonError(w, "funnel not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to load funnel", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleUpdateFunnel.getFunnel")
 		return
 	}
 	if existing.ProjectID != projectID {
@@ -35,8 +29,8 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name        string                `json:"name"`
-		Description string                `json:"description"`
+		Name        string                  `json:"name"`
+		Description string                  `json:"description"`
 		Steps       []repository.FunnelStep `json:"steps"`
 	}
 	if err := readJSON(r, &body); err != nil {
@@ -62,7 +56,7 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := s.funnels.UpdateFunnel(r.Context(), funnel)
 	if err != nil {
-		jsonError(w, "failed to update funnel", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleUpdateFunnel")
 		return
 	}
 
@@ -81,11 +75,7 @@ func (s *Server) handleDeleteFunnel(w http.ResponseWriter, r *http.Request) {
 	// Verify funnel belongs to project.
 	existing, err := s.funnels.GetFunnel(r.Context(), funnelID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			jsonError(w, "funnel not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to load funnel", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleDeleteFunnel.getFunnel")
 		return
 	}
 	if existing.ProjectID != projectID {
@@ -94,7 +84,7 @@ func (s *Server) handleDeleteFunnel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.funnels.DeleteFunnel(r.Context(), funnelID); err != nil {
-		jsonError(w, "failed to delete funnel", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleDeleteFunnel")
 		return
 	}
 
@@ -111,7 +101,7 @@ func (s *Server) handleListFunnels(w http.ResponseWriter, r *http.Request) {
 
 	funnels, err := s.funnels.ListFunnels(r.Context(), projectID)
 	if err != nil {
-		jsonError(w, "failed to list funnels", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleListFunnels")
 		return
 	}
 
@@ -127,20 +117,12 @@ func (s *Server) handleCreateFunnel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name        string                `json:"name"`
-		Description string                `json:"description"`
+		Name        string                  `json:"name"`
+		Description string                  `json:"description"`
 		Steps       []repository.FunnelStep `json:"steps"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-	if body.Name == "" {
-		jsonError(w, "name is required", http.StatusBadRequest)
-		return
-	}
-	if len(body.Steps) == 0 {
-		jsonError(w, "at least one step is required", http.StatusBadRequest)
 		return
 	}
 
@@ -153,7 +135,7 @@ func (s *Server) handleCreateFunnel(w http.ResponseWriter, r *http.Request) {
 
 	created, err := s.funnels.CreateFunnel(r.Context(), funnel)
 	if err != nil {
-		jsonError(w, "failed to create funnel", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleCreateFunnel")
 		return
 	}
 
@@ -195,11 +177,7 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 
 	funnel, err := s.funnels.GetFunnel(r.Context(), funnelID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			jsonError(w, "funnel not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to load funnel", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleFunnelAnalysis.getFunnel")
 		return
 	}
 	if funnel.ProjectID != projectID {
@@ -226,7 +204,7 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 
 	results, err := s.funnels.AnalyzeFunnel(r.Context(), funnel, from, to, seg)
 	if err != nil {
-		jsonError(w, "failed to analyze funnel", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleFunnelAnalysis")
 		return
 	}
 
@@ -250,11 +228,7 @@ func (s *Server) handleFunnelSegments(w http.ResponseWriter, r *http.Request) {
 	// Verify funnel belongs to project.
 	funnel, err := s.funnels.GetFunnel(r.Context(), funnelID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			jsonError(w, "funnel not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to load funnel", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleFunnelSegments.getFunnel")
 		return
 	}
 	if funnel.ProjectID != projectID {
@@ -264,7 +238,7 @@ func (s *Server) handleFunnelSegments(w http.ResponseWriter, r *http.Request) {
 
 	segs, err := s.funnels.FunnelSegmentData(r.Context(), projectID)
 	if err != nil {
-		jsonError(w, "failed to load segment data", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleFunnelSegments")
 		return
 	}
 

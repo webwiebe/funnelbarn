@@ -1,8 +1,6 @@
 package api
 
 import (
-	"database/sql"
-	"errors"
 	"log/slog"
 	"math"
 	"net/http"
@@ -42,7 +40,7 @@ func (s *Server) handleListABTests(w http.ResponseWriter, r *http.Request) {
 
 	tests, err := s.abtests.ListABTests(r.Context(), projectID)
 	if err != nil {
-		jsonError(w, "failed to list a/b tests", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleListABTests")
 		return
 	}
 	if tests == nil {
@@ -69,14 +67,6 @@ func (s *Server) handleCreateABTest(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if body.Name == "" {
-		jsonError(w, "name is required", http.StatusBadRequest)
-		return
-	}
-	if body.ConversionEvent == "" {
-		jsonError(w, "conversion_event is required", http.StatusBadRequest)
-		return
-	}
 
 	test, err := s.abtests.CreateABTest(r.Context(), repository.ABTest{
 		ProjectID:       projectID,
@@ -87,7 +77,7 @@ func (s *Server) handleCreateABTest(w http.ResponseWriter, r *http.Request) {
 		ConversionEvent: body.ConversionEvent,
 	})
 	if err != nil {
-		jsonError(w, "failed to create a/b test", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleCreateABTest")
 		return
 	}
 	slog.DebugContext(r.Context(), "ab test created", "test_id", test.ID, "project_id", projectID, "request_id", RequestIDFromContext(r.Context()))
@@ -105,11 +95,7 @@ func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 
 	test, err := s.abtests.GetABTest(r.Context(), testID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			jsonError(w, "a/b test not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to load a/b test", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleABTestAnalysis.getABTest")
 		return
 	}
 	if test.ProjectID != projectID {
@@ -141,7 +127,7 @@ func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 
 	results, err := s.abtests.AnalyzeABTest(r.Context(), test, from, to)
 	if err != nil {
-		jsonError(w, "failed to analyze a/b test", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleABTestAnalysis")
 		return
 	}
 
