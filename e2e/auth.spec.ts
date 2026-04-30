@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 
 test.describe('auth', () => {
   test('landing page shows hero text when logged out', async ({ page }) => {
+    await page.context().clearCookies()
     await page.goto('/')
     await expect(page.getByText('Own Your')).toBeVisible()
     await expect(page.getByText('Analytics')).toBeVisible()
