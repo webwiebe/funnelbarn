@@ -1,92 +1,22 @@
 ---
-// FunnelBarn documentation landing page
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Nav from '../components/Nav.astro';
+import Hero from '../components/Hero.astro';
+import Features from '../components/Features.astro';
+import Install from '../components/Install.astro';
+import HowItWorks from '../components/HowItWorks.astro';
+import Footer from '../components/Footer.astro';
 ---
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FunnelBarn — Self-hosted Web Analytics</title>
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 0; padding: 0; color: #111; }
-    .hero { background: #1e1b4b; color: white; padding: 5rem 2rem; text-align: center; }
-    .hero h1 { font-size: 3rem; margin: 0 0 1rem; }
-    .hero p { font-size: 1.25rem; color: #c7d2fe; max-width: 600px; margin: 0 auto 2rem; }
-    .cta { display: inline-block; background: #4f46e5; color: white; padding: 0.75rem 2rem; border-radius: 6px; text-decoration: none; font-weight: 600; }
-    .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; padding: 4rem 2rem; max-width: 1000px; margin: 0 auto; }
-    .feature h3 { margin: 0 0 0.5rem; }
-    .feature p { color: #6b7280; }
-    .quickstart { padding: 4rem 2rem; max-width: 800px; margin: 0 auto; }
-    pre { background: #1e1b4b; color: #e0e7ff; padding: 1.5rem; border-radius: 8px; overflow-x: auto; }
-  </style>
-</head>
-<body>
-
-<div class="hero">
-  <h1>FunnelBarn</h1>
-  <p>Self-hosted web analytics and funnel tracking. Own your data. No third-party tracking. Single binary.</p>
-  <a class="cta" href="https://github.com/wiebe-xyz/funnelbarn">Get Started on GitHub</a>
-</div>
-
-<div class="features">
-  <div class="feature">
-    <h3>Privacy-First</h3>
-    <p>No cross-site tracking. No cookies required. All data stays on your server. GDPR-friendly by design.</p>
-  </div>
-  <div class="feature">
-    <h3>Single Binary</h3>
-    <p>One Go binary, SQLite storage. No databases to provision, no containers required to get started.</p>
-  </div>
-  <div class="feature">
-    <h3>Funnel Analysis</h3>
-    <p>Define multi-step funnels and see conversion rates, drop-off percentages, and session journeys.</p>
-  </div>
-  <div class="feature">
-    <h3>Event Tracking</h3>
-    <p>Track pageviews and custom events. Rich properties, UTM attribution, and device detection included.</p>
-  </div>
-  <div class="feature">
-    <h3>Session Intelligence</h3>
-    <p>Anonymous session fingerprinting without cookies. Understands entry/exit pages and referrers.</p>
-  </div>
-  <div class="feature">
-    <h3>SDKs Included</h3>
-    <p>JavaScript, Go, and Python SDKs. Integrate in minutes. Queues events locally and flushes async.</p>
-  </div>
-</div>
-
-<div class="quickstart">
-  <h2>Quick Start</h2>
-  <h3>Docker</h3>
-  <pre><code>docker run -d \
-  -e FUNNELBARN_API_KEY=my-secret-key \
-  -e FUNNELBARN_ADMIN_USERNAME=admin \
-  -e FUNNELBARN_ADMIN_PASSWORD=changeme \
-  -p 8080:8080 \
-  -v funnelbarn-data:/var/lib/funnelbarn \
-  ghcr.io/webwiebe/funnelbarn/service:latest</code></pre>
-
-  <h3>Homebrew (macOS)</h3>
-  <pre><code>brew tap webwiebe/funnelbarn
-brew install funnelbarn
-funnelbarn</code></pre>
-
-  <h3>APT (Debian/Ubuntu)</h3>
-  <pre><code>curl -fsSL https://webwiebe.nl/apt/funnelbarn-archive-keyring.gpg | sudo tee /etc/apt/keyrings/funnelbarn.gpg > /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/funnelbarn.gpg] https://webwiebe.nl/apt/ stable main" | sudo tee /etc/apt/sources.list.d/funnelbarn.list
-sudo apt update && sudo apt install funnelbarn</code></pre>
-
-  <h3>Track your first event</h3>
-  <pre><code>curl -X POST http://localhost:8080/api/v1/events \
-  -H "x-funnelbarn-api-key: my-secret-key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "page_view",
-    "url": "https://example.com/pricing",
-    "referrer": "https://google.com"
-  }'</code></pre>
-</div>
-
-</body>
-</html>
+<BaseLayout
+  title="FunnelBarn — Self-hosted web analytics"
+  description="Web analytics and funnel tracking that lives on your infrastructure. Self-hosted, privacy-first, no cookies, your data stays on your servers."
+>
+  <Nav />
+  <main>
+    <Hero />
+    <Features />
+    <Install />
+    <HowItWorks />
+  </main>
+  <Footer />
+</BaseLayout>
