@@ -76,6 +76,7 @@ export default function Settings() {
 
   // Project editing — initialise from shared context
   const [editedNames, setEditedNames] = useState<Record<string, string>>({})
+  const [editedDomains, setEditedDomains] = useState<Record<string, string>>({})
   const [savingProject, setSavingProject] = useState<string | null>(null)
   const [projectSaveMsg, setProjectSaveMsg] = useState<string | null>(null)
 
@@ -168,9 +169,10 @@ export default function Settings() {
   const handleSaveProject = async (projectId: string) => {
     const name = editedNames[projectId]?.trim()
     if (!name) return
+    const domain = editedDomains[projectId]?.trim() ?? ''
     setSavingProject(projectId)
     try {
-      await api.updateProject(projectId, { name })
+      await api.updateProject(projectId, { name, domain })
       refetchProjects()
       setProjectSaveMsg('Saved!')
       setTimeout(() => setProjectSaveMsg(null), 2000)
@@ -344,7 +346,7 @@ export default function Settings() {
         }}>
           <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${C.border}` }}>
             <div style={{ fontWeight: 700, fontSize: 15 }}>Projects</div>
-            <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>Edit your project names.</div>
+            <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>Edit project names and domains.</div>
           </div>
           {activeProjects.map((p) => (
             <div key={p.id} className="project-row" style={{
@@ -355,14 +357,26 @@ export default function Settings() {
               alignItems: 'center',
               gap: 12,
             }}>
-              <input
-                value={editedNames[p.id] ?? p.name}
-                onChange={(e) => setEditedNames((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                style={{ ...inputStyle, flex: 1, minWidth: 0 }}
-                onFocus={(e) => (e.target.style.borderColor = C.amber)}
-                onBlur={(e) => (e.target.style.borderColor = C.border)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSaveProject(p.id)}
-              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 0 }}>
+                <input
+                  value={editedNames[p.id] ?? p.name}
+                  onChange={(e) => setEditedNames((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                  placeholder="Project name"
+                  style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }}
+                  onFocus={(e) => (e.target.style.borderColor = C.amber)}
+                  onBlur={(e) => (e.target.style.borderColor = C.border)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveProject(p.id)}
+                />
+                <input
+                  value={editedDomains[p.id] ?? (p.domain ?? '')}
+                  onChange={(e) => setEditedDomains((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                  placeholder="Domain (e.g. example.com)"
+                  style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }}
+                  onFocus={(e) => (e.target.style.borderColor = C.amber)}
+                  onBlur={(e) => (e.target.style.borderColor = C.border)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveProject(p.id)}
+                />
+              </div>
               <div className="project-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <button
                   className="project-save-btn"
