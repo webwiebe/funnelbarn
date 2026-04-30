@@ -1,6 +1,6 @@
 import { ReactNode, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { BarChart2, Layers, Radio, Settings, ChevronDown, LogOut, User, FlaskConical, MoreHorizontal } from 'lucide-react'
+import { BarChart2, Layers, Radio, Settings, ChevronDown, LogOut, User, FlaskConical, MoreHorizontal, Star } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { useProjects } from '../../lib/projects'
 
@@ -21,13 +21,14 @@ interface ShellProps {
 
 export default function Shell({ children, projectId, onProjectChange }: ShellProps) {
   const { user, logout } = useAuth()
-  const { projects } = useProjects()
+  const { projects, defaultProjectId, setDefaultProjectId } = useProjects()
   const navigate = useNavigate()
   const location = useLocation()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [moreSheetOpen, setMoreSheetOpen] = useState(false)
-  const currentProject = projects.find((p) => p.id === projectId) || projects[0]
+  const effectiveId = projectId ?? (defaultProjectId && projects.some(p => p.id === defaultProjectId) ? defaultProjectId : projects[0]?.id)
+  const currentProject = projects.find((p) => p.id === effectiveId) ?? projects[0]
 
   const handleLogout = async () => {
     await logout()
@@ -71,7 +72,6 @@ export default function Shell({ children, projectId, onProjectChange }: ShellPro
         gap: 8,
         width: '100%',
         boxSizing: 'border-box',
-        overflow: 'hidden',
       }}>
         {/* Logo */}
         <Link to="/dashboard" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8, marginRight: 8, flexShrink: 0 }}>
@@ -110,34 +110,63 @@ export default function Shell({ children, projectId, onProjectChange }: ShellPro
               background: C.surface,
               border: `1px solid ${C.border}`,
               borderRadius: 8,
-              minWidth: 180,
+              minWidth: 200,
               boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
               zIndex: 300,
             }}>
-              {projects.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => {
-                    setDropdownOpen(false)
-                    onProjectChange?.(p.id)
-                    navigate(`/dashboard/${p.id}`)
-                  }}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    textAlign: 'left',
-                    background: p.id === currentProject?.id ? '#2a2d3a' : 'transparent',
-                    border: 'none',
-                    color: C.text,
-                    padding: '0.6rem 1rem',
-                    cursor: 'pointer',
-                    fontSize: 14,
-                    minHeight: 'unset',
-                  }}
-                >
-                  {p.name}
-                </button>
-              ))}
+              {projects.map((p) => {
+                const isDefault = p.id === defaultProjectId
+                return (
+                  <div
+                    key={p.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      background: p.id === currentProject?.id ? '#2a2d3a' : 'transparent',
+                    }}
+                  >
+                    <button
+                      onClick={() => {
+                        setDropdownOpen(false)
+                        onProjectChange?.(p.id)
+                        navigate(`/dashboard/${p.id}`)
+                      }}
+                      style={{
+                        flex: 1,
+                        textAlign: 'left',
+                        background: 'transparent',
+                        border: 'none',
+                        color: C.text,
+                        padding: '0.6rem 1rem',
+                        cursor: 'pointer',
+                        fontSize: 14,
+                        minHeight: 'unset',
+                      }}
+                    >
+                      {p.name}
+                    </button>
+                    {projects.length > 1 && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDefaultProjectId(p.id) }}
+                        title={isDefault ? 'Default project' : 'Set as default'}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '0.6rem 0.75rem 0.6rem 0',
+                          color: isDefault ? C.amber : C.muted,
+                          display: 'flex',
+                          alignItems: 'center',
+                          minHeight: 'unset',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <Star size={13} fill={isDefault ? C.amber : 'none'} />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
@@ -173,34 +202,63 @@ export default function Shell({ children, projectId, onProjectChange }: ShellPro
               background: C.surface,
               border: `1px solid ${C.border}`,
               borderRadius: 8,
-              minWidth: 180,
+              minWidth: 200,
               boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
               zIndex: 300,
             }}>
-              {projects.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => {
-                    setDropdownOpen(false)
-                    onProjectChange?.(p.id)
-                    navigate(`/dashboard/${p.id}`)
-                  }}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    textAlign: 'left',
-                    background: p.id === currentProject?.id ? '#2a2d3a' : 'transparent',
-                    border: 'none',
-                    color: C.text,
-                    padding: '0.6rem 1rem',
-                    cursor: 'pointer',
-                    fontSize: 14,
-                    minHeight: 'unset',
-                  }}
-                >
-                  {p.name}
-                </button>
-              ))}
+              {projects.map((p) => {
+                const isDefault = p.id === defaultProjectId
+                return (
+                  <div
+                    key={p.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      background: p.id === currentProject?.id ? '#2a2d3a' : 'transparent',
+                    }}
+                  >
+                    <button
+                      onClick={() => {
+                        setDropdownOpen(false)
+                        onProjectChange?.(p.id)
+                        navigate(`/dashboard/${p.id}`)
+                      }}
+                      style={{
+                        flex: 1,
+                        textAlign: 'left',
+                        background: 'transparent',
+                        border: 'none',
+                        color: C.text,
+                        padding: '0.6rem 1rem',
+                        cursor: 'pointer',
+                        fontSize: 14,
+                        minHeight: 'unset',
+                      }}
+                    >
+                      {p.name}
+                    </button>
+                    {projects.length > 1 && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDefaultProjectId(p.id) }}
+                        title={isDefault ? 'Default project' : 'Set as default'}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '0.6rem 0.75rem 0.6rem 0',
+                          color: isDefault ? C.amber : C.muted,
+                          display: 'flex',
+                          alignItems: 'center',
+                          minHeight: 'unset',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <Star size={13} fill={isDefault ? C.amber : 'none'} />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
