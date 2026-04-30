@@ -563,8 +563,3 @@ func toSlugLocal(name string) string {
 	s = strings.Trim(s, "-")
 	return s
 }
-
-// loadConfigFilesForCLI is a no-op placeholder; actual loading done in config.Load().
-func loadConfigFilesForCLI() {
-	// config.Load() calls loadConfigFiles internally.
-}
