@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"net"
 	"net/http"
 	"strings"
 
@@ -60,6 +59,8 @@ func NewServer(
 	publicURL string,
 	loginRatePerMinute float64,
 	loginRateBurst float64,
+	apiRatePerMinute float64,
+	apiRateBurst float64,
 	db Pinger,
 ) *Server {
 	s := &Server{
@@ -79,7 +80,7 @@ func NewServer(
 		publicURL:      publicURL,
 		loginLimiter:   newRateLimiter(loginRatePerMinute, loginRateBurst),
 		eventsLimiter:  newRateLimiter(500, 100),
-		apiLimiter:     newRateLimiter(300, 60),
+		apiLimiter:     newRateLimiter(apiRatePerMinute, apiRateBurst),
 	}
 	s.registerRoutes()
 	return s
@@ -209,11 +210,7 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.sessionManager == nil || !s.userAuth.Enabled() {
 			// No auth configured — apply rate limit and allow through.
-			ip, _, err := net.SplitHostPort(r.RemoteAddr)
-			if err != nil {
-				ip = r.RemoteAddr
-			}
-			if !s.apiLimiter.allow(ip) {
+			if !s.apiLimiter.allow(clientIP(r)) {
 				jsonError(w, "too many requests", http.StatusTooManyRequests)
 				return
 			}
@@ -233,11 +230,7 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			ip = r.RemoteAddr
-		}
-		if !s.apiLimiter.allow(ip) {
+		if !s.apiLimiter.allow(clientIP(r)) {
 			jsonError(w, "too many requests", http.StatusTooManyRequests)
 			return
 		}

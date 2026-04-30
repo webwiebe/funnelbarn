@@ -32,6 +32,8 @@ type Config struct {
 	EventRetentionDays  int // 0 = disabled; default 90
 	LoginRatePerMinute  float64
 	LoginRateBurst      float64
+	APIRatePerMinute    float64
+	APIRateBurst        float64
 	MetricsToken        string
 	LogLevel            slog.Level
 }
@@ -100,6 +102,20 @@ func Load() Config {
 	if raw := os.Getenv("FUNNELBARN_LOGIN_RATE_BURST"); raw != "" {
 		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
 			cfg.LoginRateBurst = parsed
+		}
+	}
+
+	// API rate limit — default 300/min burst 60.
+	cfg.APIRatePerMinute = 300
+	cfg.APIRateBurst = 60
+	if raw := os.Getenv("FUNNELBARN_API_RATE_PER_MINUTE"); raw != "" {
+		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
+			cfg.APIRatePerMinute = parsed
+		}
+	}
+	if raw := os.Getenv("FUNNELBARN_API_RATE_BURST"); raw != "" {
+		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
+			cfg.APIRateBurst = parsed
 		}
 	}
 
