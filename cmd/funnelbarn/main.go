@@ -213,6 +213,8 @@ func run() error {
 		cfg.PublicURL,
 		cfg.LoginRatePerMinute,
 		cfg.LoginRateBurst,
+		cfg.APIRatePerMinute,
+		cfg.APIRateBurst,
 		store,
 	)
 	if cfg.MetricsToken != "" {

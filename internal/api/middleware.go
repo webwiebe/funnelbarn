@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -108,13 +109,34 @@ func (rl *rateLimiter) allow(ip string) bool {
 	return true
 }
 
+// clientIP extracts the real client IP address from the request.
+// It respects X-Forwarded-For when present (for reverse-proxy deployments),
+// taking the first IP in the chain. Falls back to RemoteAddr.
+func clientIP(r *http.Request) string {
+	// Respect X-Forwarded-For from trusted proxies (single hop).
+	// In production, a reverse proxy (Traefik/nginx) sets this.
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// Take the first IP in the chain.
+		if idx := strings.IndexByte(xff, ','); idx >= 0 {
+			xff = strings.TrimSpace(xff[:idx])
+		} else {
+			xff = strings.TrimSpace(xff)
+		}
+		if xff != "" {
+			return xff
+		}
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return ip
+}
+
 // middleware returns an http.Handler that enforces the rate limit.
 func (rl *rateLimiter) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			ip = r.RemoteAddr
-		}
+		ip := clientIP(r)
 
 		if !rl.allow(ip) {
 			retryAfter := int(60.0 / rl.rate)
