@@ -168,6 +168,18 @@ func PersistEvent(ctx context.Context, store *repository.Store, event repository
 	return nil
 }
 
+// SafeProcess wraps ProcessRecord with a panic recovery so that a panicking
+// record does not crash the background worker goroutine.
+func SafeProcess(rec spool.Record) (event repository.Event, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			slog.Error("worker panic", "ingest_id", rec.IngestID, "panic", fmt.Sprint(p))
+			err = fmt.Errorf("worker panic: %v", p)
+		}
+	}()
+	return ProcessRecord(rec)
+}
+
 func coalesce(vals ...string) string {
 	for _, v := range vals {
 		if v != "" {

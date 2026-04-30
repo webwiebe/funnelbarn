@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -156,6 +157,7 @@ func (s *Server) handleCreateFunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.DebugContext(r.Context(), "funnel created", "funnel_id", created.ID, "project_id", projectID, "request_id", RequestIDFromContext(r.Context()))
 	writeJSON(w, http.StatusCreated, created)
 }
 

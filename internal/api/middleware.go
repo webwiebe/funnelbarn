@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -13,6 +14,22 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 )
+
+// --------------------------------------------------------------------------
+// Request ID context propagation
+// --------------------------------------------------------------------------
+
+type contextKey string
+
+const requestIDKey contextKey = "request_id"
+
+// RequestIDFromContext retrieves the request ID from the context.
+func RequestIDFromContext(ctx context.Context) string {
+	if id, ok := ctx.Value(requestIDKey).(string); ok {
+		return id
+	}
+	return ""
+}
 
 // --------------------------------------------------------------------------
 // Security Headers Middleware
@@ -141,6 +158,16 @@ func requestLogger(next http.Handler) http.Handler {
 		_, _ = rand.Read(buf[:])
 		requestID := hex.EncodeToString(buf[:])
 
+		// Propagate request ID through context so downstream handlers can use it.
+		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+		r = r.WithContext(ctx)
+
+		// Truncate user agent to 128 chars.
+		ua := r.UserAgent()
+		if len(ua) > 128 {
+			ua = ua[:128]
+		}
+
 		rw := &responseWriter{ResponseWriter: w, status: 0}
 		next.ServeHTTP(rw, r)
 
@@ -150,13 +177,15 @@ func requestLogger(next http.Handler) http.Handler {
 		}
 
 		elapsed := time.Since(start)
-		slog.Info("request",
+		slog.InfoContext(ctx, "request",
+			"request_id", requestID,
 			"method", r.Method,
 			"path", r.URL.Path,
+			"query", r.URL.RawQuery,
 			"status", status,
 			"latency_ms", elapsed.Milliseconds(),
-			"request_id", requestID,
 			"remote_addr", r.RemoteAddr,
+			"user_agent", ua,
 		)
 
 		statusStr := strconv.Itoa(status)

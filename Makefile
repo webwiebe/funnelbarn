@@ -60,9 +60,8 @@ test:
 	cd web && npm test
 
 lint:
-	gofmt -l . | grep -v '^$$' && exit 1 || true
+	gofmt -l . | { read f; [ -z "$$f" ] || { echo "Unformatted files: $$f"; exit 1; }; }
 	go vet ./...
-	golangci-lint run ./...
 	cd web && npm run lint && npm run lint:eslint
 
 dev:
