@@ -405,8 +405,6 @@ export default function Shell({ children, projectId, projectName }: ShellProps) 
           .desktop-nav { display: none !important; }
           .desktop-user-menu { display: none !important; }
           .desktop-live-indicator { display: none !important; }
-          .desktop-project-switcher { display: none !important; }
-          .mobile-project-switcher { display: flex !important; }
           .bottom-tab-bar { display: flex !important; }
           .shell-main { padding-bottom: calc(70px + env(safe-area-inset-bottom)) !important; }
         }
@@ -415,8 +413,6 @@ export default function Shell({ children, projectId, projectName }: ShellProps) 
         @media (min-width: 768px) {
           .desktop-nav { display: flex !important; }
           .desktop-user-menu { display: flex !important; }
-          .desktop-project-switcher { display: block !important; }
-          .mobile-project-switcher { display: none !important; }
           .bottom-tab-bar { display: none !important; }
         }
       `}</style>
