@@ -122,14 +122,20 @@ funnelbarn user create --username admin --password yourpassword
 | `FUNNELBARN_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 | `FUNNELBARN_LOGIN_RATE_PER_MINUTE` | `20` | Login endpoint rate limit (requests/min) |
 | `FUNNELBARN_LOGIN_RATE_BURST` | `20` | Login endpoint burst capacity |
+| `FUNNELBARN_API_RATE_PER_MINUTE` | `300` | Rate limit for authenticated API endpoints (requests/min) |
+| `FUNNELBARN_API_RATE_BURST` | `60` | Authenticated API burst capacity |
+| `FUNNELBARN_INGEST_RATE_PER_MINUTE` | `500` | Ingest endpoint rate limit (requests/min) |
+| `FUNNELBARN_INGEST_RATE_BURST` | `100` | Ingest endpoint burst capacity |
 | `FUNNELBARN_METRICS_TOKEN` | — | Optional Bearer token to protect `/metrics` endpoint |
 | `FUNNELBARN_EVENT_RETENTION_DAYS` | `90` | Days to retain events (0 = disabled) |
 
 ## API Endpoints
 
+Authentication: session cookie (obtained via `POST /api/v1/login`) or API key (`X-Api-Key` header). All project-scoped routes are under `/api/v1/projects/{id}/`. `/api/v1/health` returns DB connectivity status and server version.
+
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET` | `/api/v1/health` | — | Health check |
+| `GET` | `/api/v1/health` | — | Health check + version |
 | `POST` | `/api/v1/events` | API key | Ingest event |
 | `POST` | `/api/v1/login` | — | Dashboard login |
 | `POST` | `/api/v1/logout` | Session | Logout |
@@ -146,6 +152,24 @@ funnelbarn user create --username admin --password yourpassword
 | `POST` | `/api/v1/apikeys` | Session | Create API key |
 
 ## Architecture
+
+FunnelBarn uses a layered structure with clear separation of concerns:
+
+```
+HTTP handler → service (business logic, validation) → repository (SQL via sqlc) → SQLite
+```
+
+Key packages:
+
+- `internal/api/` — HTTP handlers only; maps service errors to HTTP status codes
+- `internal/service/` — business logic, input validation, domain error wrapping
+- `internal/repository/` — data access; uses sqlc-generated type-safe query methods
+- `internal/domain/` — domain errors (`ErrNotFound`, `ErrConflict`, `ErrValidation`)
+- `internal/worker/` — background spool processor
+- `internal/spool/` — durable NDJSON event queue
+- `internal/ingest/` — event ingestion handler
+
+### Ingest pipeline
 
 FunnelBarn uses a durable spool pattern for high-throughput ingest:
 
@@ -164,14 +188,31 @@ SDK/Browser → POST /api/v1/events
 
 The HTTP handler never writes to the database. Events are appended to a durable NDJSON spool file and processed asynchronously. This keeps ingest latency below 1ms regardless of database pressure.
 
+## Security
+
+- Rate limiting on login, ingest, and authenticated API endpoints (configurable via env vars above)
+- Security headers applied automatically: `X-Frame-Options`, `Content-Security-Policy`, `HSTS`, etc.
+- `/metrics` endpoint can be protected with `FUNNELBARN_METRICS_TOKEN` (Bearer token)
+- Input validation at the service layer; errors map to appropriate HTTP codes (404/409/422)
+- No sensitive fields (password hashes, API key hashes) are included in API responses
+
 ## Development
 
 ```bash
 # Install dependencies
 make setup
 
-# Run all tests
+# Run all tests (Go + frontend)
 make test
+
+# Go tests only (~70% coverage on core packages)
+go test ./...
+
+# Frontend tests only (60 Vitest tests)
+cd web && npm test
+
+# Lint (golangci-lint + go vet + frontend lint)
+make lint
 
 # Build binary
 make build
