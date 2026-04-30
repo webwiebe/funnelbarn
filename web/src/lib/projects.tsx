@@ -35,3 +35,16 @@ export function useProjects(): ProjectContextValue {
   if (!ctx) throw new Error('useProjects must be used inside ProjectProvider')
   return ctx
 }
+
+const DEFAULT_PROJECT_KEY = 'funnelbarn_default_project'
+
+export function useEffectiveProjectId(urlProjectId?: string): string | undefined {
+  const { projects } = useProjects()
+
+  if (urlProjectId) return urlProjectId
+
+  const stored = localStorage.getItem(DEFAULT_PROJECT_KEY)
+  if (stored && projects.some((p) => p.id === stored)) return stored
+
+  return projects[0]?.id
+}

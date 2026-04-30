@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Copy, Trash2, Plus, Check, Save, CheckCircle, Link } from 'lucide-react'
-import Shell from '../components/Shell'
+import Shell from '../components/shell/Shell'
 import { api, ApiKey } from '../lib/api'
 import { useProjects } from '../lib/projects'
 

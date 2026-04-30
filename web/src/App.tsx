@@ -9,7 +9,7 @@ import Funnels from './pages/Funnels'
 import Live from './pages/Live'
 import Settings from './pages/Settings'
 import ABTests from './pages/ABTests'
-import FirstRunWizard from './components/FirstRunWizard'
+import FirstRunWizard from './components/wizards/FirstRunWizard'
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth()

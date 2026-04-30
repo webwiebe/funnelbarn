@@ -5,7 +5,7 @@ import {
   PieChart, Pie, Cell, Legend,
 } from 'recharts'
 import { Activity, Users, TrendingDown, MousePointer, ArrowUpRight, ArrowDownRight, X, Plus } from 'lucide-react'
-import Shell from '../components/Shell'
+import Shell from '../components/shell/Shell'
 import { api, DashboardData } from '../lib/api'
 import { useProjects } from '../lib/projects'
 

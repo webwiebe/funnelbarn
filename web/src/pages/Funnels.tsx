@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Plus, X, Layers, Pencil, Trash2 } from 'lucide-react'
-import Shell from '../components/Shell'
+import Shell from '../components/shell/Shell'
 import { api, Funnel, FunnelAnalysis, FunnelStepInput } from '../lib/api'
 
 const LANGS = ['JS', 'React', 'Go', 'Python', 'Swift', 'Kotlin'] as const
