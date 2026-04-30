@@ -95,3 +95,23 @@ func TestValidationError_Unwrap(t *testing.T) {
 		t.Error("expected ValidationError to unwrap to ErrValidation")
 	}
 }
+
+func TestWrappedErrors(t *testing.T) {
+	// Test that wrapping domain errors preserves Is() behaviour
+	wrapped := fmt.Errorf("op failed: %w", domain.ErrNotFound)
+	if !domain.IsNotFound(wrapped) {
+		t.Error("wrapped ErrNotFound not detected by IsNotFound")
+	}
+
+	wrapped2 := fmt.Errorf("op: %w", domain.ErrConflict)
+	if !domain.IsConflict(wrapped2) {
+		t.Error("wrapped ErrConflict not detected by IsConflict")
+	}
+}
+
+func TestValidationError_FieldEmpty(t *testing.T) {
+	err := &domain.ValidationError{Message: "required"}
+	if err.Error() != "required" {
+		t.Errorf("want 'required', got %q", err.Error())
+	}
+}

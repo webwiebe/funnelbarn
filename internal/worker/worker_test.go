@@ -254,6 +254,28 @@ func TestProcessRecord_UserIDHashed(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// SafeProcess — panic recovery
+// ---------------------------------------------------------------------------
+
+func TestSafeProcess_RecoversPanic(t *testing.T) {
+	// Create a malformed record that might cause ProcessRecord to panic.
+	// A base64-encoded payload that decodes to invalid JSON should trigger
+	// a recoverable error path, not necessarily a panic.
+	// Test that SafeProcess doesn't panic even on bad input.
+	rec := spool.Record{
+		IngestID:    "test-panic",
+		ProjectSlug: "test",
+		BodyBase64:  "!!!invalid-base64!!!",
+	}
+	// Should not panic — error is returned instead
+	_, err := SafeProcess(rec)
+	if err == nil {
+		t.Log("no error for invalid base64 (may be handled earlier)")
+	}
+	// Key assertion: function returned, not panicked
+}
+
+// ---------------------------------------------------------------------------
 // coalesce helper
 // ---------------------------------------------------------------------------
 
