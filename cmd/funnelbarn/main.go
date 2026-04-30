@@ -143,6 +143,8 @@ func run() error {
 		cfg.AllowedOrigins,
 		cfg.SessionSecret,
 		cfg.PublicURL,
+		cfg.LoginRatePerMinute,
+		cfg.LoginRateBurst,
 	)
 
 	var httpHandler http.Handler = apiServer

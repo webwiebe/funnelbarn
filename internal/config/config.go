@@ -29,6 +29,8 @@ type Config struct {
 	SelfAPIKey          string
 	SelfEnvironment     string
 	EventRetentionDays  int // 0 = disabled; default 90
+	LoginRatePerMinute  float64
+	LoginRateBurst      float64
 }
 
 // Load reads config from config files and environment variables.
@@ -80,6 +82,21 @@ func Load() Config {
 	if raw := os.Getenv("FUNNELBARN_EVENT_RETENTION_DAYS"); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
 			cfg.EventRetentionDays = parsed
+		}
+	}
+
+	// Login rate limit — default 20/min burst 20.
+	// Set higher (e.g. 1000) in test environments to avoid blocking E2E suites.
+	cfg.LoginRatePerMinute = 20
+	cfg.LoginRateBurst = 20
+	if raw := os.Getenv("FUNNELBARN_LOGIN_RATE_PER_MINUTE"); raw != "" {
+		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
+			cfg.LoginRatePerMinute = parsed
+		}
+	}
+	if raw := os.Getenv("FUNNELBARN_LOGIN_RATE_BURST"); raw != "" {
+		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
+			cfg.LoginRateBurst = parsed
 		}
 	}
 
