@@ -1,0 +1,18 @@
+version: "2"
+sql:
+  - engine: "sqlite"
+    queries: "queries/"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "sqlcgen"
+        out: "sqlcgen/"
+        emit_json_tags: true
+        emit_interface: false
+        emit_exact_table_names: false
+        sql_package: "database/sql"
+        overrides:
+          - db_type: "DATETIME"
+            go_type: "time.Time"
+          - db_type: "datetime"
+            go_type: "time.Time"
