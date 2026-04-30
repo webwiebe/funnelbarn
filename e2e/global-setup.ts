@@ -9,24 +9,19 @@ export default async function globalSetup(config: FullConfig) {
 
   const clusterIP = process.env.E2E_CLUSTER_IP || ''
   const originalHostname = new URL(baseURL).hostname
-  const apiBaseURL = clusterIP
-    ? baseURL.replace(/^(https?:\/\/)[^/:]+/, `$1${clusterIP}`)
-    : baseURL
 
-  const browser = await chromium.launch()
+  // Use --host-resolver-rules to point the hostname at the cluster IP without
+  // touching the Host header (which is a restricted header Chromium refuses to set).
+  const browser = await chromium.launch({
+    args: clusterIP ? [`--host-resolver-rules=MAP ${originalHostname} ${clusterIP}`] : [],
+  })
   const context = await browser.newContext({
-    baseURL: apiBaseURL,
+    baseURL,
     ignoreHTTPSErrors: true,
-    extraHTTPHeaders: clusterIP ? { host: originalHostname } : {},
   })
   const page = await context.newPage()
 
-  // Navigate to login page and authenticate
-  const loginURL = clusterIP
-    ? apiBaseURL + '/login'
-    : baseURL + '/login'
-
-  await page.goto(loginURL)
+  await page.goto(baseURL + '/login')
   await page.getByLabel('Username').fill('wiebe')
   await page.getByLabel('Password').fill('wiebe')
   await page.getByRole('button', { name: /sign in/i }).click()
