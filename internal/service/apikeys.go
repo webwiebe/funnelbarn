@@ -22,8 +22,11 @@ func (svc *APIKeyService) CreateAPIKey(ctx context.Context, name, projectID, key
 	if strings.TrimSpace(name) == "" {
 		return repository.APIKey{}, &domain.ValidationError{Field: "name", Message: "required"}
 	}
-	if strings.TrimSpace(scope) == "" {
-		return repository.APIKey{}, &domain.ValidationError{Field: "scope", Message: "required"}
+	if strings.TrimSpace(projectID) == "" {
+		return repository.APIKey{}, &domain.ValidationError{Field: "project_id", Message: "required"}
+	}
+	if scope != repository.APIKeyScopeFull && scope != repository.APIKeyScopeIngest {
+		return repository.APIKey{}, &domain.ValidationError{Field: "scope", Message: "must be \"full\" or \"ingest\""}
 	}
 	return svc.store.CreateAPIKey(ctx, name, projectID, keySHA256, scope)
 }

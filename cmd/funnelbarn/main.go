@@ -214,6 +214,9 @@ func run() error {
 		cfg.LoginRatePerMinute,
 		cfg.LoginRateBurst,
 	)
+	if cfg.MetricsToken != "" {
+		apiServer.SetMetricsToken(cfg.MetricsToken)
+	}
 
 	var httpHandler http.Handler = apiServer
 	if selfReporting {

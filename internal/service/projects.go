@@ -65,6 +65,9 @@ func (svc *ProjectService) GetProjectBySlug(ctx context.Context, slug string) (r
 }
 
 func (svc *ProjectService) UpdateProject(ctx context.Context, id, name string) (repository.Project, error) {
+	if strings.TrimSpace(name) == "" {
+		return repository.Project{}, &domain.ValidationError{Field: "name", Message: "required"}
+	}
 	p, err := svc.store.UpdateProject(ctx, id, name)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -76,10 +79,16 @@ func (svc *ProjectService) UpdateProject(ctx context.Context, id, name string) (
 }
 
 func (svc *ProjectService) DeleteProject(ctx context.Context, id string) error {
+	if strings.TrimSpace(id) == "" {
+		return fmt.Errorf("%w: project id required", domain.ErrNotFound)
+	}
 	return svc.store.DeleteProject(ctx, id)
 }
 
 func (svc *ProjectService) ApproveProject(ctx context.Context, id string) (repository.Project, error) {
+	if strings.TrimSpace(id) == "" {
+		return repository.Project{}, fmt.Errorf("%w: project id required", domain.ErrNotFound)
+	}
 	p, err := svc.store.ApproveProject(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

@@ -241,6 +241,73 @@ func TestSecurityHeaders_Present(t *testing.T) {
 // 8. Ingest endpoint requires valid API key
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// 9. /metrics endpoint — token protection
+// ---------------------------------------------------------------------------
+
+// TestMetricsEndpoint_OpenWhenNoToken verifies /metrics is accessible when no token configured.
+func TestMetricsEndpoint_OpenWhenNoToken(t *testing.T) {
+	srv, _ := newTestServer(t) // no metricsToken
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("metrics no token: expected 200, got %d", w.Code)
+	}
+}
+
+// TestMetricsEndpoint_RequiresToken verifies /metrics returns 401 when a token is
+// configured and the request carries no (or an incorrect) Authorization header.
+func TestMetricsEndpoint_RequiresToken(t *testing.T) {
+	srv, _ := newTestServer(t)
+	srv.SetMetricsToken("secret-token")
+
+	// No Authorization header → 401.
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("metrics no header: expected 401, got %d", w.Code)
+	}
+
+	// Wrong token → 401.
+	req2 := httptest.NewRequest("GET", "/metrics", nil)
+	req2.Header.Set("Authorization", "Bearer wrong-token")
+	w2 := httptest.NewRecorder()
+	srv.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusUnauthorized {
+		t.Errorf("metrics wrong token: expected 401, got %d", w2.Code)
+	}
+
+	// Correct token → 200.
+	req3 := httptest.NewRequest("GET", "/metrics", nil)
+	req3.Header.Set("Authorization", "Bearer secret-token")
+	w3 := httptest.NewRecorder()
+	srv.ServeHTTP(w3, req3)
+	if w3.Code != http.StatusOK {
+		t.Errorf("metrics correct token: expected 200, got %d", w3.Code)
+	}
+}
+
+// TestBodySizeLimit_NonIngestRoute verifies that non-ingest routes reject bodies
+// larger than 256 KiB.
+func TestBodySizeLimit_NonIngestRoute(t *testing.T) {
+	srv, _ := newTestServer(t)
+	// Build a body larger than 256 KiB.
+	large := make([]byte, (256<<10)+1)
+	for i := range large {
+		large[i] = 'x'
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", bytes.NewReader(large))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	// Expect either 400 (invalid JSON after truncation) or 413 (too large), not 500.
+	if w.Code == http.StatusInternalServerError {
+		t.Errorf("oversized body on non-ingest route: expected 400 or 413, got 500")
+	}
+}
+
 func TestIngest_NoAPIKey_Returns401(t *testing.T) {
 	srv, _ := newTestServer(t)
 	body := `{"event":"pageview","url":"https://example.com","project":"test"}`

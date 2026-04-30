@@ -31,6 +31,7 @@ type Config struct {
 	EventRetentionDays  int // 0 = disabled; default 90
 	LoginRatePerMinute  float64
 	LoginRateBurst      float64
+	MetricsToken        string
 }
 
 // Load reads config from config files and environment variables.
@@ -99,6 +100,8 @@ func Load() Config {
 			cfg.LoginRateBurst = parsed
 		}
 	}
+
+	cfg.MetricsToken = os.Getenv("FUNNELBARN_METRICS_TOKEN")
 
 	return cfg
 }

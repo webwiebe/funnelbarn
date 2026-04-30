@@ -30,6 +30,7 @@ type Server struct {
 	allowedOrigins []string
 	sessionSecret  string
 	publicURL      string
+	metricsToken   string
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
@@ -76,8 +77,8 @@ func NewServer(
 }
 
 func (s *Server) registerRoutes() {
-	// Metrics (no auth required)
-	s.mux.Handle("GET /metrics", promhttp.Handler())
+	// Metrics — open when no token configured, bearer-protected otherwise.
+	s.mux.Handle("GET /metrics", s.metricsHandler())
 
 	// Public
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
@@ -134,8 +135,39 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	// Apply a reasonable body limit to all routes (ingest has its own per-handler limit).
+	if r.Body != nil && r.URL.Path != "/api/v1/events" {
+		r.Body = http.MaxBytesReader(w, r.Body, 256<<10) // 256 KiB
+	}
 	// Apply middleware: requestLogger (innermost) → securityHeaders → dispatch.
 	requestLogger(securityHeaders(s.mux)).ServeHTTP(w, r)
+}
+
+// SetMetricsToken configures a bearer token required to access /metrics.
+// Call this after NewServer; an empty string means open access (backwards compatible).
+func (s *Server) SetMetricsToken(token string) {
+	s.metricsToken = token
+	// Re-register the metrics route with the updated token.
+	s.mux = http.NewServeMux()
+	s.registerRoutes()
+}
+
+// metricsHandler returns the Prometheus metrics handler, optionally
+// protected by a bearer token when metricsToken is non-empty.
+func (s *Server) metricsHandler() http.Handler {
+	promH := promhttp.Handler()
+	if s.metricsToken == "" {
+		return promH // no token configured — open access (backwards compatible)
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer "+s.metricsToken {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="metrics"`)
+			jsonError(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		promH.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
