@@ -72,6 +72,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Publish to npm
+        if: ${{ env.NODE_AUTH_TOKEN != '' }}
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -91,6 +92,7 @@ jobs:
       - run: pip install build twine
       - run: python -m build
       - name: Publish to PyPI
+        if: ${{ env.TWINE_PASSWORD != '' }}
         run: twine upload dist/*
         env:
           TWINE_USERNAME: __token__
