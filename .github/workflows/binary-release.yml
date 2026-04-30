@@ -56,6 +56,44 @@ jobs:
           git tag -a "${NEW_VERSION}" -m "Release ${NEW_VERSION}"
           git push origin "${NEW_VERSION}"
 
+  publish-npm:
+    needs: [tag]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/js
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      - run: npm run build
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-pypi:
+    needs: [tag]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install build twine
+      - run: python -m build
+      - name: Publish to PyPI
+        run: twine upload dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+
   upload-source-maps:
     name: Build Web UI and Upload Source Maps to BugBarn
     runs-on: ubuntu-latest
@@ -69,6 +107,13 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
+
+      - name: Install SDK dependencies and build IIFE bundle
+        run: |
+          npm ci --prefix sdks/js
+          npm run build:iife --prefix sdks/js
+          mkdir -p web/public/sdk
+          cp sdks/js/dist/iife/funnelbarn.js web/public/sdk/funnelbarn.js
 
       - name: Install web dependencies
         run: npm ci --prefix web
