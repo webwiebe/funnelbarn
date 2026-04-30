@@ -35,7 +35,11 @@ type ABTestResult struct {
 
 // CreateABTest inserts a new A/B test.
 func (s *Store) CreateABTest(ctx context.Context, t ABTest) (ABTest, error) {
-	t.ID = generateUUID()
+	var err error
+	t.ID, err = generateUUID()
+	if err != nil {
+		return ABTest{}, fmt.Errorf("generate uuid: %w", err)
+	}
 	const q = `
 		INSERT INTO ab_tests (id, project_id, name, status, control_filter, variant_filter, conversion_event)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`

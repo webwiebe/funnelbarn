@@ -611,3 +611,12 @@ func scanEvents(rows *sql.Rows) ([]Event, error) {
 	}
 	return events, rows.Err()
 }
+
+// PurgeOldEvents deletes events older than the given cutoff time and returns the number deleted.
+func (s *Store) PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM events WHERE occurred_at < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}

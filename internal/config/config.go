@@ -28,6 +28,7 @@ type Config struct {
 	SelfEndpoint        string
 	SelfAPIKey          string
 	SelfEnvironment     string
+	EventRetentionDays  int // 0 = disabled; default 90
 }
 
 // Load reads config from config files and environment variables.
@@ -73,6 +74,12 @@ func Load() Config {
 	if raw := os.Getenv("FUNNELBARN_SESSION_TTL_SECONDS"); raw != "" {
 		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
 			cfg.SessionTTL = time.Duration(parsed) * time.Second
+		}
+	}
+	cfg.EventRetentionDays = 90
+	if raw := os.Getenv("FUNNELBARN_EVENT_RETENTION_DAYS"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
+			cfg.EventRetentionDays = parsed
 		}
 	}
 

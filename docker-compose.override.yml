@@ -1,0 +1,6 @@
+services:
+  service:
+    user: root
+    environment:
+      FUNNELBARN_DB_PATH: /tmp/funnelbarn.db
+      FUNNELBARN_SPOOL_DIR: /tmp/funnelbarn-spool

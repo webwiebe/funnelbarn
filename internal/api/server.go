@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -26,6 +27,9 @@ type Server struct {
 	allowedOrigins []string
 	sessionSecret  string
 	publicURL      string
+
+	loginLimiter  *rateLimiter
+	eventsLimiter *rateLimiter
 }
 
 // NewServer creates the API server and registers all routes.
@@ -57,21 +61,26 @@ func NewServer(
 		allowedOrigins: allowedOrigins,
 		sessionSecret:  sessionSecret,
 		publicURL:      publicURL,
+		loginLimiter:   newRateLimiter(5, 5),
+		eventsLimiter:  newRateLimiter(500, 100),
 	}
 	s.registerRoutes()
 	return s
 }
 
 func (s *Server) registerRoutes() {
+	// Metrics (no auth required)
+	s.mux.Handle("GET /metrics", promhttp.Handler())
+
 	// Public
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/v1/setup/{slug}", s.handleSetup)
 
 	// Ingest (API key required)
-	s.mux.Handle("POST /api/v1/events", s.ingest)
+	s.mux.Handle("POST /api/v1/events", s.eventsLimiter.middleware(s.ingest))
 
 	// Auth
-	s.mux.HandleFunc("POST /api/v1/login", s.handleLogin)
+	s.mux.Handle("POST /api/v1/login", s.loginLimiter.middleware(http.HandlerFunc(s.handleLogin)))
 	s.mux.HandleFunc("POST /api/v1/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /api/v1/me", s.requireSession(s.handleMe))
 
@@ -118,7 +127,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	s.mux.ServeHTTP(w, r)
+	// Apply middleware: requestLogger (innermost) → securityHeaders → dispatch.
+	requestLogger(securityHeaders(s.mux)).ServeHTTP(w, r)
 }
 
 func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {

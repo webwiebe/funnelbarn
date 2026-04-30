@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 )
 
@@ -73,6 +74,7 @@ func (h *Handler) Start(ctx context.Context) {
 			}
 		case <-ticker.C:
 			flush()
+			metrics.IngestQueueDepth.Set(float64(len(h.queue)))
 		case <-ctx.Done():
 			// Drain whatever is left before exiting.
 			for {
@@ -156,6 +158,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	select {
 	case h.queue <- record:
+		metrics.EventsIngested.Inc()
 	default:
 		w.Header().Set("Retry-After", "1")
 		http.Error(w, "ingest queue full", http.StatusTooManyRequests)
