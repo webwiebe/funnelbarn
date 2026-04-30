@@ -43,7 +43,11 @@ type FunnelStepResult struct {
 
 // CreateFunnel inserts a funnel with its steps.
 func (s *Store) CreateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
-	f.ID = generateUUID()
+	var err error
+	f.ID, err = generateUUID()
+	if err != nil {
+		return Funnel{}, fmt.Errorf("generate uuid: %w", err)
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Funnel{}, err
@@ -57,7 +61,10 @@ func (s *Store) CreateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
 
 	const qs = `INSERT INTO funnel_steps (id, funnel_id, step_order, event_name, filters) VALUES (?, ?, ?, ?, ?)`
 	for i := range f.Steps {
-		f.Steps[i].ID = generateUUID()
+		f.Steps[i].ID, err = generateUUID()
+		if err != nil {
+			return Funnel{}, fmt.Errorf("generate uuid: %w", err)
+		}
 		f.Steps[i].FunnelID = f.ID
 		f.Steps[i].StepOrder = i + 1
 
@@ -140,7 +147,10 @@ func (s *Store) UpdateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
 
 	const qs = `INSERT INTO funnel_steps (id, funnel_id, step_order, event_name, filters) VALUES (?, ?, ?, ?, ?)`
 	for i := range f.Steps {
-		f.Steps[i].ID = generateUUID()
+		f.Steps[i].ID, err = generateUUID()
+		if err != nil {
+			return Funnel{}, fmt.Errorf("generate uuid: %w", err)
+		}
 		f.Steps[i].FunnelID = f.ID
 		f.Steps[i].StepOrder = i + 1
 

@@ -91,12 +91,14 @@ spec:
               port: 8080
             initialDelaySeconds: 20
             periodSeconds: 20
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /api/v1/health
               port: 8080
             initialDelaySeconds: 10
             periodSeconds: 10
+            failureThreshold: 3
           volumeMounts:
             - name: funnelbarn-data
               mountPath: /var/lib/funnelbarn

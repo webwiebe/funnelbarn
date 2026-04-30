@@ -116,7 +116,10 @@ type Project struct {
 
 // CreateProject inserts a new project.
 func (s *Store) CreateProject(ctx context.Context, name, slug string) (Project, error) {
-	id := newUUID()
+	id, err := newUUID()
+	if err != nil {
+		return Project{}, fmt.Errorf("generate uuid: %w", err)
+	}
 	const q = `INSERT INTO projects (id, name, slug) VALUES (?, ?, ?)`
 	if _, err := s.db.ExecContext(ctx, q, id, name, slug); err != nil {
 		return Project{}, fmt.Errorf("create project: %w", err)
@@ -160,7 +163,10 @@ func (s *Store) EnsureProjectPending(ctx context.Context, name, slug string) (Pr
 	if err != sql.ErrNoRows {
 		return Project{}, err
 	}
-	id := newUUID()
+	id, err := newUUID()
+	if err != nil {
+		return Project{}, fmt.Errorf("generate uuid: %w", err)
+	}
 	const q = `INSERT INTO projects (id, name, slug, status) VALUES (?, ?, ?, 'pending')`
 	if _, err := s.db.ExecContext(ctx, q, id, name, slug); err != nil {
 		return Project{}, fmt.Errorf("create pending project: %w", err)
@@ -185,7 +191,11 @@ func (s *Store) EnsureSetupAPIKey(ctx context.Context, projectID, keySHA256 stri
 		INSERT INTO api_keys (id, project_id, name, key_hash, scope)
 		VALUES (?, ?, 'setup', ?, 'ingest')
 		ON CONFLICT(key_hash) DO NOTHING`
-	_, err := s.db.ExecContext(ctx, q, newUUID(), projectID, keySHA256)
+	id, err := newUUID()
+	if err != nil {
+		return fmt.Errorf("generate uuid: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx, q, id, projectID, keySHA256)
 	return err
 }
 
@@ -236,7 +246,11 @@ func (s *Store) UpsertUser(ctx context.Context, username, passwordHash string) e
 		INSERT INTO users (id, username, password_hash)
 		VALUES (?, ?, ?)
 		ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash`
-	_, err := s.db.ExecContext(ctx, q, newUUID(), username, passwordHash)
+	id, err := newUUID()
+	if err != nil {
+		return fmt.Errorf("generate uuid: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx, q, id, username, passwordHash)
 	return err
 }
 
@@ -267,14 +281,17 @@ type APIKey struct {
 
 // CreateAPIKey inserts a new API key.
 func (s *Store) CreateAPIKey(ctx context.Context, name, projectID, keySHA256, scope string) (APIKey, error) {
-	id := newUUID()
+	id, err := newUUID()
+	if err != nil {
+		return APIKey{}, fmt.Errorf("generate uuid: %w", err)
+	}
 	const q = `INSERT INTO api_keys (id, project_id, name, key_hash, scope) VALUES (?, ?, ?, ?, ?)`
 	if _, err := s.db.ExecContext(ctx, q, id, projectID, name, keySHA256, scope); err != nil {
 		return APIKey{}, fmt.Errorf("create api key: %w", err)
 	}
 	var k APIKey
 	const sel = `SELECT id, project_id, name, key_hash, scope, created_at FROM api_keys WHERE id = ?`
-	err := s.db.QueryRowContext(ctx, sel, id).Scan(&k.ID, &k.ProjectID, &k.Name, &k.KeyHash, &k.Scope, &k.CreatedAt)
+	err = s.db.QueryRowContext(ctx, sel, id).Scan(&k.ID, &k.ProjectID, &k.Name, &k.KeyHash, &k.Scope, &k.CreatedAt)
 	return k, err
 }
 
@@ -319,6 +336,18 @@ func (s *Store) UpdateProject(ctx context.Context, id, name string) (Project, er
 		return Project{}, fmt.Errorf("update project: %w", err)
 	}
 	return s.ProjectByID(ctx, id)
+}
+
+// PurgeOldEvents deletes events with occurred_at before the given cutoff and returns the count deleted.
+func (s *Store) PurgeOldEvents(ctx context.Context, before time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM events WHERE occurred_at < ?`,
+		before.UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // ListAllAPIKeys returns all API keys across all projects, ordered by creation time.

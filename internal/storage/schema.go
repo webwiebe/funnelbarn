@@ -111,6 +111,13 @@ CREATE TABLE IF NOT EXISTS ab_tests (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ab_tests_project ON ab_tests (project_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version     INTEGER PRIMARY KEY,
+    applied_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+INSERT OR IGNORE INTO schema_migrations (version) VALUES (1);
 `
 
 // APIKeyScopeFull allows full API access.

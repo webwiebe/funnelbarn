@@ -215,8 +215,7 @@ func nullStr(s string) interface{} {
 	return s
 }
 
-func newUUID() string {
-	// Fast UUID v4 using crypto/rand via the helper in helpers.go
+func newUUID() (string, error) {
 	return generateUUID()
 }
 

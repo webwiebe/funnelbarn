@@ -27,6 +27,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
+	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 	"github.com/wiebe-xyz/funnelbarn/internal/worker"
@@ -175,6 +176,9 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *storage.
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
+	purgeTicker := time.NewTicker(24 * time.Hour)
+	defer purgeTicker.Stop()
+
 	offset, err := spool.ReadCursor(cfg.SpoolDir)
 	if err != nil {
 		slog.Warn("worker: failed to read cursor, starting from 0", "err", err)
@@ -187,6 +191,17 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *storage.
 		select {
 		case <-ctx.Done():
 			return
+		case <-purgeTicker.C:
+			if cfg.EventRetentionDays > 0 {
+				cutoff := time.Now().AddDate(0, 0, -cfg.EventRetentionDays)
+				n, err := store.PurgeOldEvents(ctx, cutoff)
+				if err != nil {
+					slog.Error("purge old events", "err", err)
+				} else if n > 0 {
+					slog.Info("purged old events", "count", n, "before", cutoff.Format(time.DateOnly))
+					metrics.EventsPurged.Add(float64(n))
+				}
+			}
 		case <-ticker.C:
 			entries, err := spool.ReadRecordsFrom(spool.Path(cfg.SpoolDir), offset)
 			if err != nil {
@@ -213,6 +228,7 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *storage.
 						if dlErr := spool.AppendDeadLetter(cfg.SpoolDir, record); dlErr != nil {
 							slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", dlErr)
 						}
+						metrics.EventErrors.Inc()
 						delete(retryCounts, record.IngestID)
 						offset = entry.EndOffset
 						if err := spool.WriteCursor(cfg.SpoolDir, offset); err != nil {
@@ -247,6 +263,7 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *storage.
 						if dlErr := spool.AppendDeadLetter(cfg.SpoolDir, record); dlErr != nil {
 							slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", dlErr)
 						}
+						metrics.EventErrors.Inc()
 						delete(retryCounts, record.IngestID)
 						offset = entry.EndOffset
 						if err := spool.WriteCursor(cfg.SpoolDir, offset); err != nil {
@@ -256,6 +273,7 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *storage.
 					break
 				}
 
+				metrics.EventsProcessed.Inc()
 				delete(retryCounts, record.IngestID)
 				offset = entry.EndOffset
 				if err := spool.WriteCursor(cfg.SpoolDir, offset); err != nil {

@@ -90,8 +90,13 @@ func ProcessRecord(record spool.Record) (storage.Event, error) {
 		deviceType = uaInfo.DeviceType
 	}
 
+	eventID, err := generateUUIDLocal()
+	if err != nil {
+		return storage.Event{}, fmt.Errorf("generate uuid: %w", err)
+	}
+
 	event := storage.Event{
-		ID:             generateUUIDLocal(),
+		ID:             eventID,
 		SessionID:      sessionID,
 		UserIDHash:     userIDHash,
 		Name:           payload.Name,
