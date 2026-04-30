@@ -44,4 +44,9 @@ var (
 		Name: "funnelbarn_events_purged_total",
 		Help: "Total old events deleted by the retention purge job.",
 	})
+
+	SpoolQueueDepth = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "funnelbarn_spool_queue_depth",
+		Help: "Approximate number of unprocessed event records in the spool.",
+	})
 )

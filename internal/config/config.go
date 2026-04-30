@@ -36,6 +36,8 @@ type Config struct {
 	APIRateBurst        float64
 	MetricsToken        string
 	LogLevel            slog.Level
+	IngestRatePerMinute float64
+	IngestRateBurst     float64
 }
 
 // Load reads config from config files and environment variables.
@@ -120,6 +122,20 @@ func Load() Config {
 	}
 
 	cfg.MetricsToken = os.Getenv("FUNNELBARN_METRICS_TOKEN")
+
+	// Ingest rate limit — default 500/min burst 100.
+	cfg.IngestRatePerMinute = 500
+	cfg.IngestRateBurst = 100
+	if raw := os.Getenv("FUNNELBARN_INGEST_RATE_PER_MINUTE"); raw != "" {
+		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
+			cfg.IngestRatePerMinute = parsed
+		}
+	}
+	if raw := os.Getenv("FUNNELBARN_INGEST_RATE_BURST"); raw != "" {
+		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
+			cfg.IngestRateBurst = parsed
+		}
+	}
 
 	cfg.LogLevel = slog.LevelInfo
 	if raw := os.Getenv("FUNNELBARN_LOG_LEVEL"); raw != "" {
