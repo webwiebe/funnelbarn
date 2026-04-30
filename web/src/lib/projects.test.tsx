@@ -63,7 +63,7 @@ const projectB: Project = { id: 'proj-b', name: 'Beta', slug: 'beta', status: 'a
 
 describe('useEffectiveProjectId', () => {
   beforeEach(() => {
-    store['funnelbarn_default_project'] && delete store['funnelbarn_default_project']
+    delete store['funnelbarn_default_project']
     vi.clearAllMocks()
   })
 
