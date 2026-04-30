@@ -10,11 +10,11 @@ import (
 
 // APIKeyService handles API key business logic.
 type APIKeyService struct {
-	store *repository.Store
+	store repository.Querier
 }
 
 // NewAPIKeyService creates a new APIKeyService.
-func NewAPIKeyService(store *repository.Store) *APIKeyService {
+func NewAPIKeyService(store repository.Querier) *APIKeyService {
 	return &APIKeyService{store: store}
 }
 

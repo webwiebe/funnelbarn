@@ -11,11 +11,11 @@ import (
 
 // ABTestService handles A/B test business logic.
 type ABTestService struct {
-	store *repository.Store
+	store repository.Querier
 }
 
 // NewABTestService creates a new ABTestService.
-func NewABTestService(store *repository.Store) *ABTestService {
+func NewABTestService(store repository.Querier) *ABTestService {
 	return &ABTestService{store: store}
 }
 

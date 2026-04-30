@@ -8,11 +8,11 @@ import (
 
 // SessionService handles session business logic.
 type SessionService struct {
-	store *repository.Store
+	store repository.Querier
 }
 
 // NewSessionService creates a new SessionService.
-func NewSessionService(store *repository.Store) *SessionService {
+func NewSessionService(store repository.Querier) *SessionService {
 	return &SessionService{store: store}
 }
 
