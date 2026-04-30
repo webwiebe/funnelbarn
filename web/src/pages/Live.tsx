@@ -4,6 +4,8 @@ import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts'
 import { Radio } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api } from '../lib/api'
+import { useProjects } from '../lib/projects'
+import { Skeleton } from '../components/ui/Skeleton'
 
 const C = {
   bg: '#0f1117',
@@ -39,9 +41,11 @@ function timeAgo(ts: string): string {
 
 export default function Live() {
   const { projectId } = useParams<{ projectId?: string }>()
+  const { projects } = useProjects()
   const [events, setEvents] = useState<LiveEvent[]>([])
   const [sparkData, setSparkData] = useState<SparkPoint[]>([])
   const [activeSessions, setActiveSessions] = useState(0)
+  const [sessionsLoading, setSessionsLoading] = useState(true)
   const [connected, setConnected] = useState(false)
   const eventRef = useRef<LiveEvent[]>([])
   const counterRef = useRef(0)
@@ -126,13 +130,14 @@ export default function Live() {
   // Poll active sessions from the backend every 30 seconds
   useEffect(() => {
     if (!projectId) return
-    const poll = () => {
+    const poll = (isFirst = false) => {
       api.getActiveSessions(projectId)
         .then((d) => setActiveSessions(d.active_sessions))
         .catch(() => {}) // silent fail — keep last known value
+        .finally(() => { if (isFirst) setSessionsLoading(false) })
     }
-    poll() // immediate first fetch
-    const interval = setInterval(poll, 30_000)
+    poll(true) // immediate first fetch
+    const interval = setInterval(() => poll(false), 30_000)
     return () => clearInterval(interval)
   }, [projectId])
 
@@ -146,8 +151,10 @@ export default function Live() {
     )
   }
 
+  const projectName = projects.find((p) => p.id === projectId)?.name
+
   return (
-    <Shell projectId={projectId}>
+    <Shell projectId={projectId} projectName={projectName}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.5rem' }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.5px', margin: 0 }}>Live</h1>
         <div style={{
@@ -179,16 +186,22 @@ export default function Live() {
           <div style={{ fontSize: 13, color: C.muted, fontWeight: 500, marginBottom: 12 }}>
             Active sessions
           </div>
-          <div style={{
-            fontSize: 72,
-            fontWeight: 900,
-            letterSpacing: '-3px',
-            color: C.success,
-            lineHeight: 1,
-            marginBottom: 8,
-          }}>
-            {activeSessions}
-          </div>
+          {sessionsLoading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
+              <Skeleton height={72} width={80} />
+            </div>
+          ) : (
+            <div style={{
+              fontSize: 72,
+              fontWeight: 900,
+              letterSpacing: '-3px',
+              color: C.success,
+              lineHeight: 1,
+              marginBottom: 8,
+            }}>
+              {activeSessions}
+            </div>
+          )}
           <div style={{ fontSize: 13, color: C.muted }}>active in last 5 min</div>
         </div>
 

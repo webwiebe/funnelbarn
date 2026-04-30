@@ -15,9 +15,10 @@ const C = {
 interface ShellProps {
   children: ReactNode
   projectId?: string
+  projectName?: string  // display name for current project
 }
 
-export default function Shell({ children, projectId }: ShellProps) {
+export default function Shell({ children, projectId, projectName }: ShellProps) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
@@ -75,6 +76,19 @@ export default function Shell({ children, projectId }: ShellProps) {
           </span>
         </Link>
 
+
+        {/* Project name badge */}
+        {projectName && (
+          <span style={{
+            fontSize: 12, color: '#94a3b8', background: '#1a1d27',
+            border: '1px solid #2a2d3a', borderRadius: 4,
+            padding: '0.2rem 0.5rem', marginRight: 8, flexShrink: 0,
+            maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {projectName}
+          </span>
+        )}
 
         {/* Desktop: Nav links */}
         <div className="desktop-nav" style={{ display: 'flex', gap: 4, flex: 1 }}>

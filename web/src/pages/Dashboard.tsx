@@ -334,8 +334,10 @@ export default function Dashboard() {
     )
   }
 
+  const projectName = projects.find((p) => p.id === projectId)?.name
+
   return (
-    <Shell projectId={projectId}>
+    <Shell projectId={projectId} projectName={projectName}>
       <style>{`
         @keyframes shimmer {
           0% { background-position: 200% 0; }

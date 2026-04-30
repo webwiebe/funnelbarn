@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { FlaskConical, Plus, X } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api, ABTest, ABTestAnalysis } from '../lib/api'
+import { useProjects } from '../lib/projects'
 
 const C = {
   bg: '#0f1117',
@@ -365,6 +366,7 @@ function TestDetail({ test, projectId }: { test: ABTest; projectId: string }) {
 
 export default function ABTests() {
   const { projectId } = useParams<{ projectId?: string }>()
+  const { projects } = useProjects()
   const [tests, setTests] = useState<ABTest[]>([])
   const [selected, setSelected] = useState<ABTest | null>(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -387,8 +389,10 @@ export default function ABTests() {
     )
   }
 
+  const projectName = projects.find((p) => p.id === projectId)?.name
+
   return (
-    <Shell projectId={projectId}>
+    <Shell projectId={projectId} projectName={projectName}>
       <style>{`
         @media (max-width: 767px) {
           .abtests-layout { grid-template-columns: 1fr !important; }

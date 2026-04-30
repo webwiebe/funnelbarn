@@ -21,10 +21,10 @@ vi.mock('react-router-dom', async (importOriginal) => {
   return { ...actual, useNavigate: () => mockNavigate }
 })
 
-function renderShell(ui: ReactNode = <div>child content</div>, projectId?: string) {
+function renderShell(ui: ReactNode = <div>child content</div>, projectId?: string, projectName?: string) {
   return render(
     <MemoryRouter initialEntries={['/dashboard']}>
-      <Shell projectId={projectId}>{ui}</Shell>
+      <Shell projectId={projectId} projectName={projectName}>{ui}</Shell>
     </MemoryRouter>,
   )
 }
@@ -47,6 +47,11 @@ describe('Shell', () => {
     renderShell(undefined, 'proj-123')
     const hrefs = screen.getAllByRole('link').map((l) => l.getAttribute('href') ?? '')
     expect(hrefs.some((h) => h.includes('proj-123'))).toBe(true)
+  })
+
+  it('shows project name badge when projectName provided', () => {
+    renderShell(undefined, 'proj-123', 'My Project')
+    expect(screen.getByText('My Project')).toBeInTheDocument()
   })
 
   it('shows the logged-in username', () => {
