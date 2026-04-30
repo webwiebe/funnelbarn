@@ -1,76 +1,71 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
-	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
+	"github.com/wiebe-xyz/funnelbarn/internal/middleware"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
-
-// Pinger is satisfied by any type with a Ping method (e.g. *repository.Store).
-type Pinger interface {
-	Ping(ctx context.Context) error
-}
 
 // Server is the main HTTP API server.
 type Server struct {
 	mux            *http.ServeMux
-	db             Pinger
-	projects       service.Projects
-	funnels        service.Funnels
-	abtests        service.ABTests
-	events         service.Events
-	sessions       service.Sessions
-	apikeys        service.APIKeys
+	projects       *service.ProjectService
+	funnels        *service.FunnelService
+	abtests        *service.ABTestService
+	events         *service.EventService
+	sessions       *service.SessionService
+	apikeys        *service.APIKeyService
 	ingest         *ingest.Handler
 	userAuth       *auth.UserAuthenticator
 	sessionManager *auth.SessionManager
 	allowedOrigins []string
 	sessionSecret  string
 	publicURL      string
-	metricsToken   string
-	version        string
+	ingestLimiter  *rateLimiter
+}
 
-	loginLimiter  *rateLimiter
-	eventsLimiter *rateLimiter
-	apiLimiter    *rateLimiter // configurable — for all session-authenticated endpoints
+// responseWriter wraps http.ResponseWriter to capture the status code for logging.
+type responseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.status = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	if rw.status == 0 {
+		rw.status = http.StatusOK
+	}
+	return rw.ResponseWriter.Write(b)
 }
 
 // NewServer creates the API server and registers all routes.
 func NewServer(
 	ingestHandler *ingest.Handler,
-	projects service.Projects,
-	funnels service.Funnels,
-	abtests service.ABTests,
-	events service.Events,
-	sessions service.Sessions,
-	apikeys service.APIKeys,
+	projects *service.ProjectService,
+	funnels *service.FunnelService,
+	abtests *service.ABTestService,
+	events *service.EventService,
+	sessions *service.SessionService,
+	apikeys *service.APIKeyService,
 	userAuth *auth.UserAuthenticator,
 	sessionManager *auth.SessionManager,
 	allowedOrigins []string,
 	sessionSecret string,
 	publicURL string,
-	loginRatePerMinute float64,
-	loginRateBurst float64,
-	apiRatePerMinute float64,
-	apiRateBurst float64,
-	ingestRatePerMinute float64,
-	ingestRateBurst float64,
-	db Pinger,
-	version string,
 ) *Server {
 	s := &Server{
 		mux:            http.NewServeMux(),
-		db:             db,
-		version:        version,
 		projects:       projects,
 		funnels:        funnels,
 		abtests:        abtests,
@@ -83,27 +78,22 @@ func NewServer(
 		allowedOrigins: allowedOrigins,
 		sessionSecret:  sessionSecret,
 		publicURL:      publicURL,
-		loginLimiter:   newRateLimiter(loginRatePerMinute, loginRateBurst),
-		eventsLimiter:  newRateLimiter(ingestRatePerMinute, ingestRateBurst),
-		apiLimiter:     newRateLimiter(apiRatePerMinute, apiRateBurst),
+		ingestLimiter:  newRateLimiter(300, time.Minute),
 	}
 	s.registerRoutes()
 	return s
 }
 
 func (s *Server) registerRoutes() {
-	// Metrics — open when no token configured, bearer-protected otherwise.
-	s.mux.Handle("GET /metrics", s.metricsHandler())
-
 	// Public
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/v1/setup/{slug}", s.handleSetup)
 
-	// Ingest (API key required)
-	s.mux.Handle("POST /api/v1/events", s.eventsLimiter.middleware(s.ingest))
+	// Ingest (API key required, rate limited)
+	s.mux.Handle("POST /api/v1/events", s.ingestLimiter.wrap(s.ingest))
 
 	// Auth
-	s.mux.Handle("POST /api/v1/login", s.loginLimiter.middleware(http.HandlerFunc(s.handleLogin)))
+	s.mux.HandleFunc("POST /api/v1/login", s.handleLogin)
 	s.mux.HandleFunc("POST /api/v1/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /api/v1/me", s.requireSession(s.handleMe))
 
@@ -143,46 +133,39 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/approve", s.requireSession(s.handleApproveProject))
 }
 
-// ServeHTTP adds CORS headers and dispatches to the router.
+// ServeHTTP adds security/CORS headers, attaches a request ID, logs requests,
+// and dispatches to the router.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Attach request ID first so it is available to all downstream handlers.
+	middleware.RequestID(http.HandlerFunc(s.dispatch)).ServeHTTP(w, r)
+}
+
+// dispatch is the inner handler called after the request ID is attached.
+func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	s.setSecurityHeaders(w)
 	s.setCORSHeaders(w, r)
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	// Apply a reasonable body limit to all routes (ingest has its own per-handler limit).
-	if r.Body != nil && r.URL.Path != "/api/v1/events" {
-		r.Body = http.MaxBytesReader(w, r.Body, 256<<10) // 256 KiB
-	}
-	// Apply middleware: requestLogger (innermost) → securityHeaders → dispatch.
-	requestLogger(securityHeaders(s.mux)).ServeHTTP(w, r)
+	rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+	s.mux.ServeHTTP(rw, r)
+	slog.Info("request",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"status", rw.status,
+		"ip", clientIP(r),
+		"request_id", middleware.FromContext(r.Context()),
+		"duration_ms", time.Since(start).Milliseconds(),
+	)
 }
 
-// SetMetricsToken configures a bearer token required to access /metrics.
-// Call this after NewServer; an empty string means open access (backwards compatible).
-func (s *Server) SetMetricsToken(token string) {
-	s.metricsToken = token
-	// Re-register the metrics route with the updated token.
-	s.mux = http.NewServeMux()
-	s.registerRoutes()
-}
-
-// metricsHandler returns the Prometheus metrics handler, optionally
-// protected by a bearer token when metricsToken is non-empty.
-func (s *Server) metricsHandler() http.Handler {
-	promH := promhttp.Handler()
-	if s.metricsToken == "" {
-		return promH // no token configured — open access (backwards compatible)
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auth := r.Header.Get("Authorization")
-		if auth != "Bearer "+s.metricsToken {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="metrics"`)
-			jsonError(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		promH.ServeHTTP(w, r)
-	})
+func (s *Server) setSecurityHeaders(w http.ResponseWriter) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'")
 }
 
 func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
@@ -210,15 +193,10 @@ func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 }
 
 // requireSession wraps a handler to enforce session cookie authentication.
-// It also applies the apiLimiter rate limit for authenticated endpoints.
 func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.sessionManager == nil || !s.userAuth.Enabled() {
-			// No auth configured — apply rate limit and allow through.
-			if !s.apiLimiter.allow(clientIP(r)) {
-				jsonError(w, "too many requests", http.StatusTooManyRequests)
-				return
-			}
+			// No auth configured — allow through.
 			next(w, r)
 			return
 		}
@@ -235,34 +213,8 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		if !s.apiLimiter.allow(clientIP(r)) {
-			jsonError(w, "too many requests", http.StatusTooManyRequests)
-			return
-		}
-
 		slog.Debug("session valid", "username", username)
 		next(w, r)
-	}
-}
-
-// mapServiceError maps domain/service errors to appropriate HTTP status codes.
-// It never leaks internal error details to the client.
-func mapServiceError(w http.ResponseWriter, err error, op string) {
-	switch {
-	case domain.IsNotFound(err):
-		jsonError(w, "not found", http.StatusNotFound)
-	case domain.IsConflict(err):
-		jsonError(w, "already exists", http.StatusConflict)
-	case domain.IsValidation(err):
-		var ve *domain.ValidationError
-		if errors.As(err, &ve) {
-			jsonError(w, ve.Error(), http.StatusUnprocessableEntity)
-		} else {
-			jsonError(w, "invalid request", http.StatusUnprocessableEntity)
-		}
-	default:
-		slog.Error("unexpected service error", "op", op, "err", err)
-		jsonError(w, "internal server error", http.StatusInternalServerError)
 	}
 }
 

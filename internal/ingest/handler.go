@@ -107,7 +107,7 @@ func (h *Handler) APIKeyProjectScope(r *http.Request) (projectID string, scope s
 // ServeHTTP handles POST /api/v1/events.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.auth == nil || h.spool == nil {
-		http.Error(w, "ingest unavailable", http.StatusServiceUnavailable)
+		jsonErr(w, "ingest unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -115,13 +115,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 	default:
 		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		jsonErr(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	projectID, _, ok := h.APIKeyProjectScope(r)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		jsonErr(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -131,10 +131,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			jsonErr(w, "request body too large", http.StatusRequestEntityTooLarge)
 			return
 		}
-		http.Error(w, "unable to read request body", http.StatusBadRequest)
+		jsonErr(w, "unable to read request body", http.StatusBadRequest)
 		return
 	}
 
@@ -161,7 +161,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		metrics.EventsIngested.Inc()
 	default:
 		w.Header().Set("Retry-After", "1")
-		http.Error(w, "ingest queue full", http.StatusTooManyRequests)
+		jsonErr(w, "ingest queue full", http.StatusTooManyRequests)
 		return
 	}
 
@@ -173,6 +173,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"accepted": true,
 		"ingestId": ingestID,
 	})
+}
+
+func jsonErr(w http.ResponseWriter, msg string, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
 func generateIngestID() string {

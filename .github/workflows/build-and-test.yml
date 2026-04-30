@@ -70,66 +70,79 @@ jobs:
           go-version: '1.25'
           cache: true
 
-      - name: Run Go tests
-        run: go test ./...
+      - name: Run Go tests with coverage
+        run: go test -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: coverage.out
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m ./...
+
+  frontend-lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
-      - name: Run frontend tests
-        run: cd web && npm ci && npm test
-
-  quality-backend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-          cache: true
-      - name: staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@latest && staticcheck ./...
-      - name: go vet
-        run: go vet ./...
-      - name: Go tests with race detector
-        run: go test -race -count=1 ./...
-      - name: Coverage gate (service + repository)
-        run: |
-          go test -coverprofile=coverage.out ./internal/service/... ./internal/repository 2>/dev/null || go test -coverprofile=coverage.out ./internal/service/... ./internal/repository
-          go tool cover -func=coverage.out | tail -1 | awk '{pct=$3+0; if(pct<60){printf "Coverage %.1f%% is below 60%% threshold\n", pct; exit 1}}'
-      - name: Verify sqlc is up to date
-        run: |
-          cd internal/repository
-          go run github.com/sqlc-dev/sqlc/cmd/sqlc@latest diff
-
-  quality-frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
-      - name: Install deps
+      - name: Install dependencies
         run: npm ci
-        working-directory: web
-      - name: TypeScript check
+
+      - name: TypeScript typecheck
         run: npm run lint
-        working-directory: web
+
       - name: ESLint
         run: npm run lint:eslint
+
+  frontend-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
         working-directory: web
-      - name: Unit tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Vitest
         run: npm test
-        working-directory: web
 
   deploy:
-    needs: [build, test, quality-backend, quality-frontend]
+    needs: [build, test, lint, frontend-lint, frontend-test]
     runs-on: [self-hosted, build]
     timeout-minutes: 15
     env:

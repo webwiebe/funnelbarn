@@ -1,46 +1,25 @@
 package api
 
 import (
-	"log/slog"
-	"math"
 	"net/http"
-	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/apierr"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/service"
+	"github.com/wiebe-xyz/funnelbarn/internal/timerange"
 )
-
-// zTestTwoProportions performs a two-proportion z-test.
-// Returns the z-score and whether the result is significant at the 95% CI (|z| > 1.96).
-func zTestTwoProportions(n1, x1, n2, x2 int64) (zScore float64, significant bool) {
-	if n1 == 0 || n2 == 0 {
-		return 0, false
-	}
-	p1 := float64(x1) / float64(n1)
-	p2 := float64(x2) / float64(n2)
-	pPool := float64(x1+x2) / float64(n1+n2)
-	if pPool == 0 || pPool == 1 {
-		return 0, false
-	}
-	se := math.Sqrt(pPool * (1 - pPool) * (1/float64(n1) + 1/float64(n2)))
-	if se == 0 {
-		return 0, false
-	}
-	z := math.Abs((p1 - p2) / se)
-	// 95% CI: z > 1.96
-	return z, z > 1.96
-}
 
 // handleListABTests returns all A/B tests for a project.
 func (s *Server) handleListABTests(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		jsonError(w, "project id required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("project id required"))
 		return
 	}
 
 	tests, err := s.abtests.ListABTests(r.Context(), projectID)
 	if err != nil {
-		mapServiceError(w, err, "handleListABTests")
+		apierr.WriteHTTP(w, apierr.MapDB(err, "failed to list a/b tests"))
 		return
 	}
 	if tests == nil {
@@ -53,7 +32,7 @@ func (s *Server) handleListABTests(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateABTest(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		jsonError(w, "project id required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("project id required"))
 		return
 	}
 
@@ -64,7 +43,15 @@ func (s *Server) handleCreateABTest(w http.ResponseWriter, r *http.Request) {
 		ConversionEvent string `json:"conversion_event"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("invalid request body"))
+		return
+	}
+	if body.Name == "" {
+		apierr.WriteHTTP(w, apierr.BadRequest("name is required"))
+		return
+	}
+	if body.ConversionEvent == "" {
+		apierr.WriteHTTP(w, apierr.BadRequest("conversion_event is required"))
 		return
 	}
 
@@ -77,75 +64,53 @@ func (s *Server) handleCreateABTest(w http.ResponseWriter, r *http.Request) {
 		ConversionEvent: body.ConversionEvent,
 	})
 	if err != nil {
-		mapServiceError(w, err, "handleCreateABTest")
+		apierr.WriteHTTP(w, apierr.Internal())
 		return
 	}
-	slog.DebugContext(r.Context(), "ab test created", "test_id", test.ID, "project_id", projectID, "request_id", RequestIDFromContext(r.Context()))
 	writeJSON(w, http.StatusCreated, test)
 }
 
-// handleABTestAnalysis computes variant conversion rates for an A/B test.
+// handleABTestAnalysis computes variant conversion rates and statistical significance.
 func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	testID := r.PathValue("abid")
 	if projectID == "" || testID == "" {
-		jsonError(w, "project id and ab test id required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("project id and ab test id required"))
 		return
 	}
 
 	test, err := s.abtests.GetABTest(r.Context(), testID)
 	if err != nil {
-		mapServiceError(w, err, "handleABTestAnalysis.getABTest")
+		apierr.WriteHTTP(w, apierr.MapDB(err, "a/b test not found"))
 		return
 	}
 	if test.ProjectID != projectID {
-		jsonError(w, "a/b test not found", http.StatusNotFound)
+		apierr.WriteHTTP(w, apierr.NotFound("a/b test not found"))
 		return
 	}
 
-	// Parse time range (default: last 30 days).
-	to := time.Now().UTC()
-	from := to.AddDate(0, 0, -30)
-	switch r.URL.Query().Get("range") {
-	case "24h":
-		from = to.Add(-24 * time.Hour)
-	case "7d":
-		from = to.AddDate(0, 0, -7)
-	case "30d":
-		from = to.AddDate(0, 0, -30)
-	}
-	if v := r.URL.Query().Get("from"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			from = t
-		}
-	}
-	if v := r.URL.Query().Get("to"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			to = t
-		}
-	}
+	tr := timerange.Parse(r.URL.Query())
 
-	results, err := s.abtests.AnalyzeABTest(r.Context(), test, from, to)
+	results, err := s.abtests.AnalyzeABTest(r.Context(), test, tr.From, tr.To)
 	if err != nil {
-		mapServiceError(w, err, "handleABTestAnalysis")
+		apierr.WriteHTTP(w, apierr.Internal())
 		return
 	}
 
-	// Map results into the flat shape the UI expects.
 	var controlSample, controlConversions, variantSample, variantConversions int64
-	for _, r := range results {
-		switch r.Variant {
+	for _, res := range results {
+		switch res.Variant {
 		case "control":
-			controlSample = r.Total
-			controlConversions = r.Conversions
+			controlSample = res.Total
+			controlConversions = res.Conversions
 		case "variant":
-			variantSample = r.Total
-			variantConversions = r.Conversions
+			variantSample = res.Total
+			variantConversions = res.Conversions
 		}
 	}
 
-	// Two-proportion z-test for statistical significance.
-	zScore, significant := zTestTwoProportions(controlSample, controlConversions, variantSample, variantConversions)
+	// Statistical significance lives in the service layer.
+	zScore, significant := service.ZTest(controlSample, controlConversions, variantSample, variantConversions)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"test":                test,
@@ -155,7 +120,7 @@ func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 		"variant_conversions": variantConversions,
 		"significant":         significant,
 		"z_score":             zScore,
-		"from":                from.Format(time.RFC3339),
-		"to":                  to.Format(time.RFC3339),
+		"from":                tr.From.Format("2006-01-02T15:04:05Z07:00"),
+		"to":                  tr.To.Format("2006-01-02T15:04:05Z07:00"),
 	})
 }
