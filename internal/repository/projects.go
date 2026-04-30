@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/sqlcgen"
 )
 
 // APIKeyScopeFull allows full API access.
@@ -25,8 +27,7 @@ type Project struct {
 // CreateProject inserts a new project.
 func (s *Store) CreateProject(ctx context.Context, name, slug string) (Project, error) {
 	id := newUUID()
-	const q = `INSERT INTO projects (id, name, slug) VALUES (?, ?, ?)`
-	if _, err := s.db.ExecContext(ctx, q, id, name, slug); err != nil {
+	if err := s.q.InsertProject(ctx, sqlcgen.InsertProjectParams{ID: id, Name: name, Slug: slug}); err != nil {
 		return Project{}, fmt.Errorf("create project: %w", err)
 	}
 	return s.ProjectByID(ctx, id)
@@ -34,16 +35,20 @@ func (s *Store) CreateProject(ctx context.Context, name, slug string) (Project, 
 
 // ProjectByID fetches a project by its ID.
 func (s *Store) ProjectByID(ctx context.Context, id string) (Project, error) {
-	const q = `SELECT id, name, slug, status, created_at FROM projects WHERE id = ?`
-	row := s.db.QueryRowContext(ctx, q, id)
-	return scanProject(row)
+	p, err := s.q.GetProjectByID(ctx, id)
+	if err != nil {
+		return Project{}, err
+	}
+	return projectFromGen(p), nil
 }
 
 // ProjectBySlug fetches a project by its slug.
 func (s *Store) ProjectBySlug(ctx context.Context, slug string) (Project, error) {
-	const q = `SELECT id, name, slug, status, created_at FROM projects WHERE slug = ?`
-	row := s.db.QueryRowContext(ctx, q, slug)
-	return scanProject(row)
+	p, err := s.q.GetProjectBySlug(ctx, slug)
+	if err != nil {
+		return Project{}, err
+	}
+	return projectFromGen(p), nil
 }
 
 // EnsureProject fetches a project by slug, creating it if absent.
@@ -69,8 +74,7 @@ func (s *Store) EnsureProjectPending(ctx context.Context, name, slug string) (Pr
 		return Project{}, err
 	}
 	id := newUUID()
-	const q = `INSERT INTO projects (id, name, slug, status) VALUES (?, ?, ?, 'pending')`
-	if _, err := s.db.ExecContext(ctx, q, id, name, slug); err != nil {
+	if err := s.q.InsertProjectPending(ctx, sqlcgen.InsertProjectPendingParams{ID: id, Name: name, Slug: slug}); err != nil {
 		return Project{}, fmt.Errorf("create pending project: %w", err)
 	}
 	return s.ProjectByID(ctx, id)
@@ -78,8 +82,7 @@ func (s *Store) EnsureProjectPending(ctx context.Context, name, slug string) (Pr
 
 // ApproveProject sets status='active' for a project and returns the updated project.
 func (s *Store) ApproveProject(ctx context.Context, id string) (Project, error) {
-	const q = `UPDATE projects SET status = 'active' WHERE id = ?`
-	if _, err := s.db.ExecContext(ctx, q, id); err != nil {
+	if err := s.q.ApproveProject(ctx, id); err != nil {
 		return Project{}, fmt.Errorf("approve project: %w", err)
 	}
 	return s.ProjectByID(ctx, id)
@@ -87,35 +90,25 @@ func (s *Store) ApproveProject(ctx context.Context, id string) (Project, error) 
 
 // ListProjects returns all projects.
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
-	const q = `SELECT id, name, slug, status, created_at FROM projects ORDER BY name`
-	rows, err := s.db.QueryContext(ctx, q)
+	rows, err := s.q.ListProjects(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	projects := make([]Project, 0)
-	for rows.Next() {
-		var p Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.CreatedAt); err != nil {
-			return nil, err
-		}
-		projects = append(projects, p)
+	projects := make([]Project, 0, len(rows))
+	for _, p := range rows {
+		projects = append(projects, projectFromGen(p))
 	}
-	return projects, rows.Err()
+	return projects, nil
 }
 
 // DeleteProject removes a project and all related data (cascades via FK constraints).
 func (s *Store) DeleteProject(ctx context.Context, id string) error {
-	const q = `DELETE FROM projects WHERE id = ?`
-	_, err := s.db.ExecContext(ctx, q, id)
-	return err
+	return s.q.DeleteProject(ctx, id)
 }
 
 // UpdateProject updates a project's name.
 func (s *Store) UpdateProject(ctx context.Context, id, name string) (Project, error) {
-	const q = `UPDATE projects SET name = ? WHERE id = ?`
-	if _, err := s.db.ExecContext(ctx, q, name, id); err != nil {
+	if err := s.q.UpdateProjectName(ctx, sqlcgen.UpdateProjectNameParams{Name: name, ID: id}); err != nil {
 		return Project{}, fmt.Errorf("update project: %w", err)
 	}
 	return s.ProjectByID(ctx, id)
@@ -123,19 +116,19 @@ func (s *Store) UpdateProject(ctx context.Context, id, name string) (Project, er
 
 // HasProjects returns true if at least one project exists in the database.
 func (s *Store) HasProjects(ctx context.Context) (bool, error) {
-	var n int64
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM projects`).Scan(&n)
-	if err != nil && err != sql.ErrNoRows {
+	n, err := s.q.CountProjects(ctx)
+	if err != nil {
 		return false, err
 	}
 	return n > 0, nil
 }
 
-func scanProject(row *sql.Row) (Project, error) {
-	var p Project
-	err := row.Scan(&p.ID, &p.Name, &p.Slug, &p.Status, &p.CreatedAt)
-	if err != nil {
-		return Project{}, err
+func projectFromGen(p sqlcgen.Project) Project {
+	return Project{
+		ID:        p.ID,
+		Name:      p.Name,
+		Slug:      p.Slug,
+		Status:    p.Status,
+		CreatedAt: p.CreatedAt,
 	}
-	return p, nil
 }
