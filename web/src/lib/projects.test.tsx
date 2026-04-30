@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import { ProjectProvider, useEffectiveProjectId } from './projects'
+import { render, screen, waitFor, act } from '@testing-library/react'
+import { ProjectProvider, useEffectiveProjectId, useProjects } from './projects'
 import type { Project } from './api'
 
 // ---------------------------------------------------------------------------
@@ -93,5 +93,48 @@ describe('useEffectiveProjectId', () => {
   it('returns undefined when the project list is empty', async () => {
     renderWithProjects([])
     await waitFor(() => expect(screen.getByTestId('result').textContent).toBe('undefined'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// setDefaultProjectId tests
+// ---------------------------------------------------------------------------
+
+function DefaultIdConsumer({ onReady }: { onReady?: (fn: (id: string) => void) => void }) {
+  const { defaultProjectId, setDefaultProjectId } = useProjects()
+  if (onReady) onReady(setDefaultProjectId)
+  return <div data-testid="default-id">{defaultProjectId ?? 'null'}</div>
+}
+
+describe('setDefaultProjectId', () => {
+  beforeEach(() => {
+    delete store['funnelbarn_default_project']
+    vi.clearAllMocks()
+  })
+
+  it('persists to localStorage', async () => {
+    mockListProjects.mockResolvedValue({ projects: [projectA, projectB] })
+    let setter: ((id: string) => void) | undefined
+    render(
+      <ProjectProvider>
+        <DefaultIdConsumer onReady={(fn) => { setter = fn }} />
+      </ProjectProvider>
+    )
+    await waitFor(() => expect(screen.getByTestId('default-id')).toBeInTheDocument())
+    act(() => { setter!('proj-b') })
+    expect(store['funnelbarn_default_project']).toBe('proj-b')
+  })
+
+  it('updates defaultProjectId in context', async () => {
+    mockListProjects.mockResolvedValue({ projects: [projectA, projectB] })
+    let setter: ((id: string) => void) | undefined
+    render(
+      <ProjectProvider>
+        <DefaultIdConsumer onReady={(fn) => { setter = fn }} />
+      </ProjectProvider>
+    )
+    await waitFor(() => expect(screen.getByTestId('default-id')).toBeInTheDocument())
+    act(() => { setter!('proj-b') })
+    await waitFor(() => expect(screen.getByTestId('default-id').textContent).toBe('proj-b'))
   })
 })
