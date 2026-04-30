@@ -99,7 +99,7 @@ jobs:
         run: go test -race -count=1 ./...
       - name: Coverage gate (service + repository)
         run: |
-          go test -coverprofile=coverage.out ./internal/service/... ./internal/repository/... 2>/dev/null || go test -coverprofile=coverage.out ./internal/service/... ./internal/repository/...
+          go test -coverprofile=coverage.out ./internal/service/... ./internal/repository 2>/dev/null || go test -coverprofile=coverage.out ./internal/service/... ./internal/repository
           go tool cover -func=coverage.out | tail -1 | awk '{pct=$3+0; if(pct<60){printf "Coverage %.1f%% is below 60%% threshold\n", pct; exit 1}}'
       - name: Verify sqlc is up to date
         run: |
