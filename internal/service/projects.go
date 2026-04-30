@@ -5,11 +5,28 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
+
+// reNonSlug matches any character that is not a lowercase letter, digit, or hyphen.
+var reNonSlug = regexp.MustCompile(`[^a-z0-9-]+`)
+
+// normalizeSlug converts s to a lowercase, hyphen-separated slug.
+func normalizeSlug(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.ReplaceAll(s, " ", "-")
+	s = reNonSlug.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	// Collapse consecutive hyphens.
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	return s
+}
 
 // ProjectService handles project business logic.
 type ProjectService struct {
@@ -25,10 +42,11 @@ func (svc *ProjectService) CreateProject(ctx context.Context, name, slug string)
 	if strings.TrimSpace(name) == "" {
 		return repository.Project{}, &domain.ValidationError{Field: "name", Message: "required"}
 	}
-	if strings.TrimSpace(slug) == "" {
+	slug = normalizeSlug(slug)
+	if slug == "" {
 		return repository.Project{}, &domain.ValidationError{Field: "slug", Message: "required"}
 	}
-	p, err := svc.store.CreateProject(ctx, strings.TrimSpace(name), strings.TrimSpace(slug))
+	p, err := svc.store.CreateProject(ctx, strings.TrimSpace(name), slug)
 	if err != nil {
 		if isUniqueConstraint(err) {
 			return repository.Project{}, fmt.Errorf("%w: slug %q", domain.ErrConflict, slug)

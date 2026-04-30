@@ -105,7 +105,10 @@ func (s *Server) handleListFunnels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"funnels": funnels})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"funnels":     funnels,
+		"total_count": len(funnels),
+	})
 }
 
 // handleCreateFunnel creates a new funnel with steps.

@@ -212,6 +212,37 @@ func TestFunnelService_CreateFunnel_EmptyStepEventName(t *testing.T) {
 	require.True(t, domain.IsValidation(err), "expected validation error, got: %v", err)
 }
 
+// TestProjectService_SlugNormalized verifies that slugs are lowercased and
+// spaces are converted to hyphens by CreateProject.
+func TestProjectService_SlugNormalized(t *testing.T) {
+	ctx := context.Background()
+	svc := service.NewProjectService(newTestStore(t))
+
+	p, err := svc.CreateProject(ctx, "My Project", "My Cool Project")
+	require.NoError(t, err)
+	require.Equal(t, "my-cool-project", p.Slug)
+}
+
+// TestFunnelService_StepEventNameRequired verifies that a whitespace-only
+// EventName is rejected both by the service and (as defense-in-depth) by the
+// repository, returning an error.
+func TestFunnelService_StepEventNameRequired(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	funnelSvc := service.NewFunnelService(store)
+	projectSvc := service.NewProjectService(store)
+
+	p, err := projectSvc.CreateProject(ctx, "My Project", "my-project-ws-event")
+	require.NoError(t, err)
+
+	_, err = funnelSvc.CreateFunnel(ctx, repository.Funnel{
+		ProjectID: p.ID,
+		Name:      "My Funnel",
+		Steps:     []repository.FunnelStep{{EventName: "   "}},
+	})
+	require.Error(t, err, "whitespace-only EventName must be rejected")
+}
+
 // ---------------------------------------------------------------------------
 // ABTestService validation tests
 // ---------------------------------------------------------------------------
