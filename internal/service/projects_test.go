@@ -4,7 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
@@ -108,4 +110,41 @@ func TestProjectService_EnsureSetupAPIKey(t *testing.T) {
 	// Calling again should be idempotent.
 	err = svc.EnsureSetupAPIKey(ctx, p.ID, hash)
 	require.NoError(t, err)
+}
+
+func TestProjectService_GetProject_NotFound_Extended(t *testing.T) {
+	ctx := context.Background()
+	svc := service.NewProjectService(newTestStore(t))
+
+	_, err := svc.GetProject(ctx, "nonexistent-id")
+	require.Error(t, err)
+	assert.True(t, domain.IsNotFound(err))
+}
+
+func TestProjectService_UpdateProject_Extended(t *testing.T) {
+	ctx := context.Background()
+	svc := service.NewProjectService(newTestStore(t))
+
+	p, err := svc.CreateProject(ctx, "Original Name", "update-slug")
+	require.NoError(t, err)
+
+	updated, err := svc.UpdateProject(ctx, p.ID, "Updated Name")
+	require.NoError(t, err)
+	assert.Equal(t, "Updated Name", updated.Name)
+	assert.Equal(t, "update-slug", updated.Slug)
+}
+
+func TestProjectService_DeleteProject_Extended(t *testing.T) {
+	ctx := context.Background()
+	svc := service.NewProjectService(newTestStore(t))
+
+	p, err := svc.CreateProject(ctx, "To Delete", "to-delete")
+	require.NoError(t, err)
+
+	err = svc.DeleteProject(ctx, p.ID)
+	require.NoError(t, err)
+
+	projects, err := svc.ListProjects(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, projects)
 }

@@ -9,11 +9,11 @@ import (
 
 // EventService handles event business logic.
 type EventService struct {
-	store *repository.Store
+	store repository.Querier
 }
 
 // NewEventService creates a new EventService.
-func NewEventService(store *repository.Store) *EventService {
+func NewEventService(store repository.Querier) *EventService {
 	return &EventService{store: store}
 }
 

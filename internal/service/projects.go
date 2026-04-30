@@ -13,11 +13,11 @@ import (
 
 // ProjectService handles project business logic.
 type ProjectService struct {
-	store *repository.Store
+	store repository.Querier
 }
 
 // NewProjectService creates a new ProjectService.
-func NewProjectService(store *repository.Store) *ProjectService {
+func NewProjectService(store repository.Querier) *ProjectService {
 	return &ProjectService{store: store}
 }
 

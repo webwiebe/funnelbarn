@@ -14,11 +14,11 @@ import (
 
 // FunnelService handles funnel business logic.
 type FunnelService struct {
-	store *repository.Store
+	store repository.Querier
 }
 
 // NewFunnelService creates a new FunnelService.
-func NewFunnelService(store *repository.Store) *FunnelService {
+func NewFunnelService(store repository.Querier) *FunnelService {
 	return &FunnelService{store: store}
 }
 
