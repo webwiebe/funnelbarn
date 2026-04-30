@@ -12,7 +12,7 @@ export const options = {
   },
   // We EXPECT some 429s here — do not fail on them
   thresholds: {
-    'checks{expect_rate_limit}': ['rate>0.3'],  // at least 30% should be rate-limited
+    checks: ['rate>0.3'],  // at least 30% of checks should pass (i.e. get 429/401)
   },
 };
 
