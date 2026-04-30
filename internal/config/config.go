@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -32,6 +33,7 @@ type Config struct {
 	LoginRatePerMinute  float64
 	LoginRateBurst      float64
 	MetricsToken        string
+	LogLevel            slog.Level
 }
 
 // Load reads config from config files and environment variables.
@@ -102,6 +104,18 @@ func Load() Config {
 	}
 
 	cfg.MetricsToken = os.Getenv("FUNNELBARN_METRICS_TOKEN")
+
+	cfg.LogLevel = slog.LevelInfo
+	if raw := os.Getenv("FUNNELBARN_LOG_LEVEL"); raw != "" {
+		switch strings.ToLower(raw) {
+		case "debug":
+			cfg.LogLevel = slog.LevelDebug
+		case "warn", "warning":
+			cfg.LogLevel = slog.LevelWarn
+		case "error":
+			cfg.LogLevel = slog.LevelError
+		}
+	}
 
 	return cfg
 }

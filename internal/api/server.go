@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -15,9 +16,15 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
+// Pinger is satisfied by any type with a Ping method (e.g. *repository.Store).
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
 // Server is the main HTTP API server.
 type Server struct {
 	mux            *http.ServeMux
+	db             Pinger
 	projects       service.Projects
 	funnels        service.Funnels
 	abtests        service.ABTests
@@ -53,9 +60,11 @@ func NewServer(
 	publicURL string,
 	loginRatePerMinute float64,
 	loginRateBurst float64,
+	db Pinger,
 ) *Server {
 	s := &Server{
 		mux:            http.NewServeMux(),
+		db:             db,
 		projects:       projects,
 		funnels:        funnels,
 		abtests:        abtests,

@@ -76,7 +76,7 @@ func buildLogger(cfg config.Config) *slog.Logger {
 
 	// Always: structured JSON to stderr.
 	jsonHandler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: cfg.LogLevel,
 	})
 	handlers = append(handlers, jsonHandler)
 
@@ -213,6 +213,7 @@ func run() error {
 		cfg.PublicURL,
 		cfg.LoginRatePerMinute,
 		cfg.LoginRateBurst,
+		store,
 	)
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)

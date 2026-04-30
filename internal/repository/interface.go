@@ -8,6 +8,9 @@ import (
 // Querier is the interface implemented by *Store.
 // It enables service-layer tests to use test doubles instead of a real SQLite instance.
 type Querier interface {
+	// Ping verifies the database connection is alive.
+	Ping(ctx context.Context) error
+
 	// Projects
 	CreateProject(ctx context.Context, name, slug string) (Project, error)
 	ProjectByID(ctx context.Context, id string) (Project, error)
