@@ -56,41 +56,14 @@ build:
 	done
 
 test:
-	@set -eu; \
-	for dir in $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
-	for mod in $$(find . $(FIND_PRUNE) -name go.mod -print 2>/dev/null); do \
-		dir=$$(dirname "$$mod"); \
-		if find "$$dir" -name '*.go' -print -quit | grep -q .; then \
-			echo "[test] go $$dir"; \
-			(cd "$$dir" && go test ./...); \
-		fi; \
-	done; \
-	for pkg in $$(find . $(FIND_PRUNE) -name package.json -print 2>/dev/null); do \
-		dir=$$(dirname "$$pkg"); \
-		echo "[test] node $$dir"; \
-		(cd "$$dir" && npm run test --if-present); \
-	done
+	go test -race -count=1 ./...
+	cd web && npm test
 
 lint:
-	@set -eu; \
-	for dir in $(GOCACHE) $(GOMODCACHE); do mkdir -p "$$dir"; done; \
-	for mod in $$(find . $(FIND_PRUNE) -name go.mod -print 2>/dev/null); do \
-		dir=$$(dirname "$$mod"); \
-		if find "$$dir" -name '*.go' -print -quit | grep -q .; then \
-			echo "[lint] go $$dir"; \
-			(cd "$$dir" && go vet ./...); \
-			formatted=$$(cd "$$dir" && find . $(FIND_PRUNE) -name '*.go' -print0 | xargs -0 gofmt -l); \
-			if [ -n "$$formatted" ]; then \
-				printf '%s\n' "$$formatted"; \
-				exit 1; \
-			fi; \
-		fi; \
-	done; \
-	for pkg in $$(find . $(FIND_PRUNE) -name package.json -print 2>/dev/null); do \
-		dir=$$(dirname "$$pkg"); \
-		echo "[lint] node $$dir"; \
-		(cd "$$dir" && npm run lint --if-present); \
-	done
+	gofmt -l . | grep -v '^$$' && exit 1 || true
+	go vet ./...
+	golangci-lint run ./...
+	cd web && npm run lint && npm run lint:eslint
 
 dev:
 	@set -eu; \
