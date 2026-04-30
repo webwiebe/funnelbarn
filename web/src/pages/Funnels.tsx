@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { Plus, X, Layers, Pencil, Trash2 } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api, Funnel, FunnelAnalysis, FunnelStepInput } from '../lib/api'
+import { useProjects } from '../lib/projects'
 
 const LANGS = ['JS', 'React', 'Go', 'Python', 'Swift', 'Kotlin'] as const
 type Lang = typeof LANGS[number]
@@ -826,6 +827,7 @@ function FunnelDetail({ analysis, activeSegment, apiKey }: { analysis: FunnelAna
 
 export default function Funnels() {
   const { projectId } = useParams<{ projectId?: string }>()
+  const { projects } = useProjects()
   const [funnels, setFunnels] = useState<Funnel[]>([])
   const [selected, setSelected] = useState<Funnel | null>(null)
   const [analysis, setAnalysis] = useState<FunnelAnalysis | null>(null)
@@ -904,8 +906,10 @@ export default function Funnels() {
     )
   }
 
+  const projectName = projects.find((p) => p.id === projectId)?.name
+
   return (
-    <Shell projectId={projectId}>
+    <Shell projectId={projectId} projectName={projectName}>
       <style>{`
         @media (max-width: 767px) {
           .funnels-layout { grid-template-columns: 1fr !important; }
