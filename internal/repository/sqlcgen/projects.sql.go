@@ -18,34 +18,15 @@ func (q *Queries) ApproveProject(ctx context.Context, id string) error {
 	return err
 }
 
-const createProject = `-- name: CreateProject :exec
-INSERT INTO projects (id, name, slug) VALUES (?, ?, ?)
+const countProjects = `-- name: CountProjects :one
+SELECT COUNT(*) FROM projects
 `
 
-type CreateProjectParams struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Slug string `json:"slug"`
-}
-
-func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) error {
-	_, err := q.db.ExecContext(ctx, createProject, arg.ID, arg.Name, arg.Slug)
-	return err
-}
-
-const createProjectPending = `-- name: CreateProjectPending :exec
-INSERT INTO projects (id, name, slug, status) VALUES (?, ?, ?, 'pending')
-`
-
-type CreateProjectPendingParams struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Slug string `json:"slug"`
-}
-
-func (q *Queries) CreateProjectPending(ctx context.Context, arg CreateProjectPendingParams) error {
-	_, err := q.db.ExecContext(ctx, createProjectPending, arg.ID, arg.Name, arg.Slug)
-	return err
+func (q *Queries) CountProjects(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countProjects)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const deleteProject = `-- name: DeleteProject :exec
@@ -91,15 +72,34 @@ func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (Project, e
 	return i, err
 }
 
-const hasProjects = `-- name: HasProjects :one
-SELECT COUNT(*) FROM projects
+const insertProject = `-- name: InsertProject :exec
+INSERT INTO projects (id, name, slug) VALUES (?, ?, ?)
 `
 
-func (q *Queries) HasProjects(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, hasProjects)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+type InsertProjectParams struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) error {
+	_, err := q.db.ExecContext(ctx, insertProject, arg.ID, arg.Name, arg.Slug)
+	return err
+}
+
+const insertProjectPending = `-- name: InsertProjectPending :exec
+INSERT INTO projects (id, name, slug, status) VALUES (?, ?, ?, 'pending')
+`
+
+type InsertProjectPendingParams struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+func (q *Queries) InsertProjectPending(ctx context.Context, arg InsertProjectPendingParams) error {
+	_, err := q.db.ExecContext(ctx, insertProjectPending, arg.ID, arg.Name, arg.Slug)
+	return err
 }
 
 const listProjects = `-- name: ListProjects :many

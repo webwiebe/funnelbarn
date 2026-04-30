@@ -1,6 +1,5 @@
--- name: CreateAPIKey :exec
-INSERT INTO api_keys (id, project_id, name, key_hash, scope)
-VALUES (?, ?, ?, ?, ?);
+-- name: InsertAPIKey :exec
+INSERT INTO api_keys (id, project_id, name, key_hash, scope) VALUES (?, ?, ?, ?, ?);
 
 -- name: GetAPIKeyByID :one
 SELECT id, project_id, name, key_hash, scope, last_used_at, created_at
@@ -18,8 +17,7 @@ FROM api_keys ORDER BY created_at;
 DELETE FROM api_keys WHERE id = ?;
 
 -- name: LookupAPIKeyBySHA256 :one
-SELECT project_id, scope FROM api_keys
-WHERE key_hash = ? LIMIT 1;
+SELECT project_id, scope FROM api_keys WHERE key_hash = ? LIMIT 1;
 
 -- name: TouchAPIKey :exec
 UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key_hash = ?;
