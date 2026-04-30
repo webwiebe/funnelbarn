@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 
@@ -47,7 +49,11 @@ func (svc *ABTestService) ListABTests(ctx context.Context, projectID string) ([]
 }
 
 func (svc *ABTestService) GetABTest(ctx context.Context, id string) (repository.ABTest, error) {
-	return svc.store.ABTestByID(ctx, id)
+	t, err := svc.store.ABTestByID(ctx, id)
+	if err == sql.ErrNoRows {
+		return repository.ABTest{}, fmt.Errorf("%w: ab test %s", domain.ErrNotFound, id)
+	}
+	return t, err
 }
 
 func (svc *ABTestService) AnalyzeABTest(ctx context.Context, t repository.ABTest, from, to time.Time) ([]repository.ABTestResult, error) {

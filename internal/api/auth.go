@@ -200,16 +200,8 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		body.ProjectID = projects[0].ID
 	}
 
-	if body.Name == "" {
-		jsonError(w, "name is required", http.StatusBadRequest)
-		return
-	}
 	if body.Scope == "" {
 		body.Scope = repository.APIKeyScopeIngest
-	}
-	if body.Scope != repository.APIKeyScopeFull && body.Scope != repository.APIKeyScopeIngest {
-		jsonError(w, "scope must be 'full' or 'ingest'", http.StatusBadRequest)
-		return
 	}
 
 	// Verify project exists.

@@ -66,7 +66,7 @@ func (s *Store) ABTestByID(ctx context.Context, id string) (ABTest, error) {
 		&t.ConversionEvent, &t.CreatedAt,
 	)
 	if err != nil {
-		return ABTest{}, err
+		return ABTest{}, err // sql.ErrNoRows propagated to caller; service wraps as domain.ErrNotFound
 	}
 	return t, nil
 }
