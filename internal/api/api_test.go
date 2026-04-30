@@ -226,9 +226,10 @@ func TestHandleCreateProject(t *testing.T) {
 
 func TestHandleCreateProject_MissingName(t *testing.T) {
 	srv, _ := newTestServer(t)
+	// Empty name should now return 422 Unprocessable Entity (service-layer validation).
 	w := postJSON(t, srv, "/api/v1/projects", map[string]string{"slug": "test"}, nil)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422, got %d (body: %s)", w.Code, w.Body.String())
 	}
 }
 
@@ -492,6 +493,57 @@ func TestJSONError_Format(t *testing.T) {
 	}
 }
 
+
+// ---------------------------------------------------------------------------
+// Domain error mapping
+// ---------------------------------------------------------------------------
+
+func TestHandleCreateProject_EmptyName_Returns422(t *testing.T) {
+	srv, _ := newTestServer(t)
+	// Sending an empty name should return 422 via service-layer validation.
+	w := postJSON(t, srv, "/api/v1/projects", map[string]string{"name": "", "slug": "my-slug"}, nil)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 for empty name, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleCreateProject_DuplicateSlug_Returns409(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	// Create the first project successfully.
+	w1 := postJSON(t, srv, "/api/v1/projects", map[string]string{
+		"name": "First Project",
+		"slug": "dup-slug",
+	}, nil)
+	if w1.Code != http.StatusCreated {
+		t.Fatalf("first create: expected 201, got %d (body: %s)", w1.Code, w1.Body.String())
+	}
+
+	// Creating with the same slug should return 409 Conflict.
+	w2 := postJSON(t, srv, "/api/v1/projects", map[string]string{
+		"name": "Second Project",
+		"slug": "dup-slug",
+	}, nil)
+	if w2.Code != http.StatusConflict {
+		t.Errorf("duplicate slug: expected 409, got %d (body: %s)", w2.Code, w2.Body.String())
+	}
+}
+
+func TestHandleGetProject_UnknownID_Returns404(t *testing.T) {
+	srv, _ := newTestServer(t)
+	// Use a non-existent project ID in a project-scoped route.
+	w := getJSON(t, srv, "/api/v1/projects/nonexistent-id/sessions", nil)
+	// The endpoint returns 200 with empty sessions (it doesn't look up the project).
+	// Use the funnels endpoint which calls GetFunnel internally on a specific funnel ID.
+	// Instead, test via the approve endpoint which calls GetProject.
+	_ = w
+
+	// POST approve on a non-existent project ID.
+	wa := postJSON(t, srv, "/api/v1/projects/nonexistent-id/approve", nil, nil)
+	if wa.Code != http.StatusNotFound {
+		t.Errorf("unknown project approve: expected 404, got %d (body: %s)", wa.Code, wa.Body.String())
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Active session count

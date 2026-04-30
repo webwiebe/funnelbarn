@@ -3,9 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -99,7 +97,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	projects, err := s.projects.ListProjects(r.Context())
 	if err != nil {
-		jsonError(w, "failed to list projects", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleListProjects")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"projects": projects})
@@ -116,20 +114,17 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if body.Name == "" {
-		jsonError(w, "name is required", http.StatusBadRequest)
-		return
-	}
+	// Derive slug from domain or name if not provided; service validates emptiness.
 	if body.Slug == "" && body.Domain != "" {
 		body.Slug = toSlug(body.Domain)
 	}
-	if body.Slug == "" {
+	if body.Slug == "" && body.Name != "" {
 		body.Slug = toSlug(body.Name)
 	}
 
 	project, err := s.projects.CreateProject(r.Context(), body.Name, body.Slug)
 	if err != nil {
-		jsonError(w, "failed to create project", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleCreateProject")
 		return
 	}
 	slog.DebugContext(r.Context(), "project created", "project_id", project.ID, "request_id", RequestIDFromContext(r.Context()))
@@ -150,7 +145,7 @@ func (s *Server) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		keys, err = s.apikeys.ListAllAPIKeys(r.Context())
 	}
 	if err != nil {
-		jsonError(w, "failed to list api keys", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleListAPIKeys")
 		return
 	}
 
@@ -219,11 +214,7 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	// Verify project exists.
 	if _, err := s.projects.GetProject(r.Context(), body.ProjectID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			jsonError(w, "project not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to look up project", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleCreateAPIKey.getProject")
 		return
 	}
 
@@ -239,7 +230,7 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	key, err := s.apikeys.CreateAPIKey(r.Context(), body.Name, body.ProjectID, keySHA256, body.Scope)
 	if err != nil {
-		jsonError(w, "failed to create api key", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleCreateAPIKey")
 		return
 	}
 
@@ -269,7 +260,7 @@ func (s *Server) handleDeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.apikeys.DeleteAPIKey(r.Context(), keyID); err != nil {
-		jsonError(w, "failed to delete api key", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleDeleteAPIKey")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -283,7 +274,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.projects.DeleteProject(r.Context(), projectID); err != nil {
-		jsonError(w, "failed to delete project", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleDeleteProject")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -309,11 +300,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	project, err := s.projects.UpdateProject(r.Context(), projectID, body.Name)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			jsonError(w, "project not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to update project", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleUpdateProject")
 		return
 	}
 	writeJSON(w, http.StatusOK, project)
@@ -330,11 +317,7 @@ func (s *Server) handleApproveProject(w http.ResponseWriter, r *http.Request) {
 	}
 	project, err := s.projects.ApproveProject(r.Context(), projectID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			jsonError(w, "project not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to approve project", http.StatusInternalServerError)
+		mapServiceError(w, err, "handleApproveProject")
 		return
 	}
 	writeJSON(w, http.StatusOK, project)

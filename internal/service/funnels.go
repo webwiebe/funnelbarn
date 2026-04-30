@@ -2,8 +2,13 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"strings"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
@@ -18,6 +23,12 @@ func NewFunnelService(store *repository.Store) *FunnelService {
 }
 
 func (svc *FunnelService) CreateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error) {
+	if strings.TrimSpace(f.Name) == "" {
+		return repository.Funnel{}, &domain.ValidationError{Field: "name", Message: "required"}
+	}
+	if len(f.Steps) == 0 {
+		return repository.Funnel{}, &domain.ValidationError{Field: "steps", Message: "at least one step required"}
+	}
 	return svc.store.CreateFunnel(ctx, f)
 }
 
@@ -26,7 +37,14 @@ func (svc *FunnelService) ListFunnels(ctx context.Context, projectID string) ([]
 }
 
 func (svc *FunnelService) GetFunnel(ctx context.Context, id string) (repository.Funnel, error) {
-	return svc.store.FunnelByID(ctx, id)
+	f, err := svc.store.FunnelByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return repository.Funnel{}, fmt.Errorf("%w: funnel %s", domain.ErrNotFound, id)
+		}
+		return repository.Funnel{}, err
+	}
+	return f, nil
 }
 
 func (svc *FunnelService) UpdateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error) {
