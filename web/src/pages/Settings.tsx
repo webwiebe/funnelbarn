@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Copy, Trash2, Plus, Check, Save, CheckCircle, Link } from 'lucide-react'
+import { Trash2, Plus, Save, CheckCircle, Link } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api, ApiKey } from '../lib/api'
 import { useProjects } from '../lib/projects'
+import { CopyButton } from '../components/ui/CopyButton'
 
 const C = {
   bg: '#0f1117',
@@ -13,38 +14,6 @@ const C = {
   muted: '#94a3b8',
   error: '#ef4444',
   success: '#10b981',
-}
-
-function CopyButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false)
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(value)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  return (
-    <button
-      onClick={handleCopy}
-      style={{
-        background: copied ? 'rgba(16,185,129,0.1)' : C.bg,
-        border: `1px solid ${copied ? 'rgba(16,185,129,0.4)' : C.border}`,
-        borderRadius: 7,
-        color: copied ? C.success : C.muted,
-        padding: '0.4rem 0.75rem',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 5,
-        fontSize: 13,
-        transition: 'all 0.2s',
-      }}
-    >
-      {copied ? <Check size={13} /> : <Copy size={13} />}
-      {copied ? 'Copied!' : 'Copy'}
-    </button>
-  )
 }
 
 function ScopeBadge({ scope }: { scope: string }) {
@@ -572,8 +541,16 @@ export default function Settings() {
         {loading ? (
           <div style={{ padding: '2rem', color: C.muted, fontSize: 14 }}>Loading…</div>
         ) : apiKeys.length === 0 ? (
-          <div style={{ padding: '2rem', color: C.muted, fontSize: 14, textAlign: 'center' }}>
-            No API keys yet.
+          <div style={{
+            margin: '1.5rem',
+            textAlign: 'center',
+            padding: '2rem',
+            color: C.muted,
+            border: `1px dashed ${C.border}`,
+            borderRadius: 8,
+            fontSize: 14,
+          }}>
+            No API keys yet. Create one below to start sending events.
           </div>
         ) : (
           <>
@@ -819,6 +796,48 @@ export default function Settings() {
               <Plus size={14} />
               {creating ? 'Creating…' : 'Create'}
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Event retention info */}
+      <div style={{
+        background: C.surface,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        overflow: 'hidden',
+        marginBottom: '2rem',
+      }}>
+        <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>Data Retention</div>
+          <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
+            How long raw event data is kept before being purged.
+          </div>
+        </div>
+        <div style={{ padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            background: 'rgba(245,158,11,0.08)',
+            border: `1px solid rgba(245,158,11,0.2)`,
+            borderRadius: 8,
+            padding: '0.75rem 1rem',
+            flex: 1,
+          }}>
+            <div style={{ fontSize: 14, color: C.text, fontWeight: 600, marginBottom: 4 }}>
+              Event retention: 90 days
+            </div>
+            <div style={{ fontSize: 12, color: C.muted }}>
+              Configured via{' '}
+              <code style={{
+                fontFamily: '"SF Mono", "Fira Code", monospace',
+                color: C.amber,
+                background: 'rgba(245,158,11,0.08)',
+                padding: '0.1rem 0.3rem',
+                borderRadius: 3,
+              }}>
+                FUNNELBARN_EVENT_RETENTION_DAYS
+              </code>
+              {' '}on the server. Events older than this window are automatically deleted.
+            </div>
           </div>
         </div>
       </div>
