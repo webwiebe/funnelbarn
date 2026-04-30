@@ -62,7 +62,7 @@ func newTestServer(t *testing.T) (*Server, *repository.Store) {
 		service.NewProjectService(store), service.NewFunnelService(store),
 		service.NewABTestService(store), service.NewEventService(store),
 		service.NewSessionService(store), service.NewAPIKeyService(store),
-		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, store)
+		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, 1000, 1000, "test", store)
 	return srv, store
 }
 
@@ -79,7 +79,7 @@ func newAuthedServer(t *testing.T) (*Server, *repository.Store) {
 		service.NewProjectService(store), service.NewFunnelService(store),
 		service.NewABTestService(store), service.NewEventService(store),
 		service.NewSessionService(store), service.NewAPIKeyService(store),
-		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, store)
+		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, 1000, 1000, "test", store)
 	return srv, store
 }
 
@@ -148,6 +148,19 @@ func TestHandleHealth(t *testing.T) {
 	}
 }
 
+func TestHandleHealth_IncludesVersion(t *testing.T) {
+	srv, _ := newTestServer(t) // passes "test" as version
+	w := getJSON(t, srv, "/api/v1/health", nil)
+	if w.Code != http.StatusOK {
+		t.Errorf("health: expected 200, got %d", w.Code)
+	}
+	var resp map[string]any
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["version"] == nil {
+		t.Error("health response missing version field")
+	}
+}
+
 // failPinger is a Pinger that always returns an error.
 type failPinger struct{ err error }
 
@@ -166,7 +179,7 @@ func TestHandleHealth_DBDown(t *testing.T) {
 		service.NewProjectService(store), service.NewFunnelService(store),
 		service.NewABTestService(store), service.NewEventService(store),
 		service.NewSessionService(store), service.NewAPIKeyService(store),
-		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, brokenPinger)
+		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, 1000, 1000, "test", brokenPinger)
 
 	w := getJSON(t, srv, "/api/v1/health", nil)
 	if w.Code != http.StatusServiceUnavailable {

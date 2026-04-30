@@ -32,6 +32,8 @@ type Config struct {
 	EventRetentionDays  int // 0 = disabled; default 90
 	LoginRatePerMinute  float64
 	LoginRateBurst      float64
+	IngestRatePerMinute float64 // default 500
+	IngestRateBurst     float64 // default 100
 	MetricsToken        string
 	LogLevel            slog.Level
 }
@@ -100,6 +102,20 @@ func Load() Config {
 	if raw := os.Getenv("FUNNELBARN_LOGIN_RATE_BURST"); raw != "" {
 		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
 			cfg.LoginRateBurst = parsed
+		}
+	}
+
+	// Ingest rate limit — default 500/min burst 100.
+	cfg.IngestRatePerMinute = 500
+	cfg.IngestRateBurst = 100
+	if raw := os.Getenv("FUNNELBARN_INGEST_RATE_PER_MINUTE"); raw != "" {
+		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
+			cfg.IngestRatePerMinute = parsed
+		}
+	}
+	if raw := os.Getenv("FUNNELBARN_INGEST_RATE_BURST"); raw != "" {
+		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
+			cfg.IngestRateBurst = parsed
 		}
 	}
 

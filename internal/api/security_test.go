@@ -78,6 +78,7 @@ func TestLoginRateLimit_Enforced(t *testing.T) {
 		service.NewSessionService(store), service.NewAPIKeyService(store),
 		userAuth, sm, nil, "secret", "http://localhost",
 		1, 1, // loginRatePerMinute=1, loginRateBurst=1
+		1000, 1000, "test",
 		store,
 	)
 
@@ -195,7 +196,7 @@ func TestCORS_AllowedOriginOnly(t *testing.T) {
 		service.NewProjectService(store), service.NewFunnelService(store),
 		service.NewABTestService(store), service.NewEventService(store),
 		service.NewSessionService(store), service.NewAPIKeyService(store),
-		ua, sm, []string{"https://allowed.example.com"}, "s", "", 1000, 1000, store)
+		ua, sm, []string{"https://allowed.example.com"}, "s", "", 1000, 1000, 1000, 1000, "test", store)
 
 	// Allowed origin gets ACAO header
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)

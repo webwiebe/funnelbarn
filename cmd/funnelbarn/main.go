@@ -213,6 +213,9 @@ func run() error {
 		cfg.PublicURL,
 		cfg.LoginRatePerMinute,
 		cfg.LoginRateBurst,
+		cfg.IngestRatePerMinute,
+		cfg.IngestRateBurst,
+		Version,
 		store,
 	)
 	if cfg.MetricsToken != "" {
@@ -334,17 +337,22 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 					break
 				}
 
+				// Wrap each DB operation in a per-record timeout to prevent a
+				// single slow write from blocking the worker indefinitely.
+				opCtx, opCancel := context.WithTimeout(ctx, 30*time.Second)
+
 				// Resolve project from the slug stored in the spool record.
 				if record.ProjectSlug != "" {
-					proj, err := store.EnsureProject(ctx, record.ProjectSlug)
-					if err == nil {
+					proj, projErr := store.EnsureProject(opCtx, record.ProjectSlug)
+					if projErr == nil {
 						event.ProjectID = proj.ID
 					} else {
-						slog.Warn("worker ensure project", "slug", record.ProjectSlug, "err", err)
+						slog.Warn("worker ensure project", "slug", record.ProjectSlug, "err", projErr)
 					}
 				}
 
-				persistErr := worker.PersistEvent(ctx, store, event)
+				persistErr := worker.PersistEvent(opCtx, store, event)
+				opCancel()
 				if persistErr != nil {
 					retryCounts[record.IngestID]++
 					slog.Error("worker persist record",
@@ -376,6 +384,8 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 					slog.Error("worker write cursor", "err", err)
 				}
 			}
+
+			metrics.SpoolQueueDepth.Set(float64(len(entries)))
 
 			if err := spool.RotateIfExceedsPath(cfg.SpoolDir, workerRotateThreshold); err != nil {
 				slog.Error("worker rotate spool", "err", err)

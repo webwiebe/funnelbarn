@@ -38,6 +38,7 @@ type Server struct {
 	sessionSecret  string
 	publicURL      string
 	metricsToken   string
+	version        string
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
@@ -60,6 +61,9 @@ func NewServer(
 	publicURL string,
 	loginRatePerMinute float64,
 	loginRateBurst float64,
+	ingestRatePerMinute float64,
+	ingestRateBurst float64,
+	version string,
 	db Pinger,
 ) *Server {
 	s := &Server{
@@ -77,8 +81,9 @@ func NewServer(
 		allowedOrigins: allowedOrigins,
 		sessionSecret:  sessionSecret,
 		publicURL:      publicURL,
+		version:        version,
 		loginLimiter:   newRateLimiter(loginRatePerMinute, loginRateBurst),
-		eventsLimiter:  newRateLimiter(500, 100),
+		eventsLimiter:  newRateLimiter(ingestRatePerMinute, ingestRateBurst),
 		apiLimiter:     newRateLimiter(300, 60),
 	}
 	s.registerRoutes()
