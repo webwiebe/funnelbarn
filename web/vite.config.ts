@@ -11,6 +11,9 @@ export default defineConfig({
       // Inject the build revision into the service worker so each deploy busts the cache
       injectRegister: 'auto',
       workbox: {
+        // Take control immediately on activation so updates go live without waiting for tab close
+        skipWaiting: true,
+        clientsClaim: true,
         // Cache JS/CSS assets aggressively (content-hashed)
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         // Network-first for API calls — never cache

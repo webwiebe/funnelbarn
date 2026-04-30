@@ -311,7 +311,7 @@ export default function Dashboard() {
           }}>
             <Activity size={48} opacity={0.3} />
             <div style={{ fontSize: 20, fontWeight: 700, color: C.text }}>No project selected</div>
-            <div>Select a project from the dropdown above to view its dashboard.</div>
+            <div>Select a project below or create your first one.</div>
             <button
               onClick={() => setShowCreateProject(true)}
               style={{

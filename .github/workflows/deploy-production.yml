@@ -33,6 +33,8 @@ jobs:
   preflight:
     runs-on: [self-hosted, build]
     timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
     env:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -44,21 +46,31 @@ jobs:
             exit 1
           fi
 
-      - name: Verify image exists in GHCR
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version tag to SHA and verify images in GHCR
+        id: resolve
         run: |
           set -euo pipefail
           VERSION="${{ github.event.inputs.production_version }}"
+          # Resolve version tag to the commit SHA (images are tagged by SHA in testing CI)
+          SHA=$(git rev-list -n1 "${VERSION}" 2>/dev/null) || \
+            { echo "ERROR: Tag ${VERSION} not found in repo"; exit 1; }
+          echo "Resolved ${VERSION} -> ${SHA}"
           DOCKER_CONFIG_DIR="${RUNNER_TEMP}/docker-config-${GITHUB_RUN_ID}"
           mkdir -p "$DOCKER_CONFIG_DIR"
           printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' \
             "$(printf '%s:%s' '${{ github.actor }}' '${{ secrets.GITHUB_TOKEN }}' | base64)" \
             > "$DOCKER_CONFIG_DIR/config.json"
           export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"
-          docker manifest inspect "${SERVICE_IMAGE}:${VERSION}" > /dev/null || \
-            { echo "ERROR: ${SERVICE_IMAGE}:${VERSION} not found in GHCR"; exit 1; }
-          docker manifest inspect "${WEB_IMAGE}:${VERSION}" > /dev/null || \
-            { echo "ERROR: ${WEB_IMAGE}:${VERSION} not found in GHCR"; exit 1; }
-          echo "Images verified for ${VERSION}"
+          docker manifest inspect "${SERVICE_IMAGE}:${SHA}" > /dev/null || \
+            { echo "ERROR: ${SERVICE_IMAGE}:${SHA} not found in GHCR (for ${VERSION})"; exit 1; }
+          docker manifest inspect "${WEB_IMAGE}:${SHA}" > /dev/null || \
+            { echo "ERROR: ${WEB_IMAGE}:${SHA} not found in GHCR (for ${VERSION})"; exit 1; }
+          echo "Images verified for ${VERSION} (${SHA})"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: preflight
@@ -108,14 +120,14 @@ jobs:
       - name: Apply manifests and roll out
         run: |
           set -euo pipefail
-          VERSION="${{ github.event.inputs.production_version }}"
+          SHA="${{ needs.preflight.outputs.sha }}"
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
             set -euo pipefail
             kubectl apply -k /tmp/funnelbarn-deploy/deploy/k8s/production
             kubectl -n ${NAMESPACE} set image deployment/funnelbarn \
-              funnelbarn=${SERVICE_IMAGE}:${VERSION}
+              funnelbarn=${SERVICE_IMAGE}:${SHA}
             kubectl -n ${NAMESPACE} set image deployment/funnelbarn-web \
-              funnelbarn-web=${WEB_IMAGE}:${VERSION}
+              funnelbarn-web=${WEB_IMAGE}:${SHA}
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=180s
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=180s
           "
