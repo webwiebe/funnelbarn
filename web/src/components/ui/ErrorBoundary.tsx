@@ -23,9 +23,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidUpdate(_prevProps: Props, prevState: State) {
-    // After a pendingReset, clear the flag so children are rendered on the next update
     if (prevState.pendingReset && this.state.pendingReset && !this.state.hasError) {
-      // eslint-disable-next-line react/no-did-update-set-state
       this.setState({ pendingReset: false })
     }
   }
