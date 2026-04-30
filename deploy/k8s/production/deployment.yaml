@@ -33,8 +33,6 @@ spec:
               value: :8080
             - name: FUNNELBARN_PUBLIC_URL
               value: https://funnelbarn.wiebe.xyz
-            - name: FUNNELBARN_SELF_ENDPOINT
-              value: https://bugbarn.wiebe.xyz
             - name: FUNNELBARN_SPOOL_DIR
               value: /var/lib/funnelbarn/spool
             - name: FUNNELBARN_DB_PATH
@@ -46,11 +44,6 @@ spec:
             - name: LITESTREAM_REPLICA_PATH
               value: production/funnelbarn.db
             - name: FUNNELBARN_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: funnelbarn-secrets
-                  key: FUNNELBARN_API_KEY
-            - name: FUNNELBARN_SELF_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: funnelbarn-secrets
