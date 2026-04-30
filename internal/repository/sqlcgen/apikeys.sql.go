@@ -9,30 +9,6 @@ import (
 	"context"
 )
 
-const createAPIKey = `-- name: CreateAPIKey :exec
-INSERT INTO api_keys (id, project_id, name, key_hash, scope)
-VALUES (?, ?, ?, ?, ?)
-`
-
-type CreateAPIKeyParams struct {
-	ID        string `json:"id"`
-	ProjectID string `json:"project_id"`
-	Name      string `json:"name"`
-	KeyHash   string `json:"key_hash"`
-	Scope     string `json:"scope"`
-}
-
-func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) error {
-	_, err := q.db.ExecContext(ctx, createAPIKey,
-		arg.ID,
-		arg.ProjectID,
-		arg.Name,
-		arg.KeyHash,
-		arg.Scope,
-	)
-	return err
-}
-
 const deleteAPIKey = `-- name: DeleteAPIKey :exec
 DELETE FROM api_keys WHERE id = ?
 `
@@ -77,6 +53,29 @@ func (q *Queries) GetAPIKeyByID(ctx context.Context, id string) (ApiKey, error) 
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const insertAPIKey = `-- name: InsertAPIKey :exec
+INSERT INTO api_keys (id, project_id, name, key_hash, scope) VALUES (?, ?, ?, ?, ?)
+`
+
+type InsertAPIKeyParams struct {
+	ID        string `json:"id"`
+	ProjectID string `json:"project_id"`
+	Name      string `json:"name"`
+	KeyHash   string `json:"key_hash"`
+	Scope     string `json:"scope"`
+}
+
+func (q *Queries) InsertAPIKey(ctx context.Context, arg InsertAPIKeyParams) error {
+	_, err := q.db.ExecContext(ctx, insertAPIKey,
+		arg.ID,
+		arg.ProjectID,
+		arg.Name,
+		arg.KeyHash,
+		arg.Scope,
+	)
+	return err
 }
 
 const listAPIKeysByProject = `-- name: ListAPIKeysByProject :many
@@ -152,8 +151,7 @@ func (q *Queries) ListAllAPIKeys(ctx context.Context) ([]ApiKey, error) {
 }
 
 const lookupAPIKeyBySHA256 = `-- name: LookupAPIKeyBySHA256 :one
-SELECT project_id, scope FROM api_keys
-WHERE key_hash = ? LIMIT 1
+SELECT project_id, scope FROM api_keys WHERE key_hash = ? LIMIT 1
 `
 
 type LookupAPIKeyBySHA256Row struct {

@@ -11,6 +11,7 @@ import Live from './pages/Live'
 import Settings from './pages/Settings'
 import ABTests from './pages/ABTests'
 import FirstRunWizard from './components/wizards/FirstRunWizard'
+import { ErrorBoundary } from './components/ui/ErrorBoundary'
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth()
@@ -154,13 +155,15 @@ function AppRoutes() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <ProjectProvider>
-          <AppRoutes />
-        </ProjectProvider>
-      </AuthProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <ProjectProvider>
+            <AppRoutes />
+          </ProjectProvider>
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   )
 }
 

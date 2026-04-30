@@ -4,10 +4,6 @@ import { MemoryRouter } from 'react-router-dom'
 import Shell from './Shell'
 import type { ReactNode } from 'react'
 
-// ---------------------------------------------------------------------------
-// Mocks
-// ---------------------------------------------------------------------------
-
 const mockLogout = vi.fn()
 const mockNavigate = vi.fn()
 
@@ -22,15 +18,8 @@ vi.mock('../../lib/auth', () => ({
 
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>()
-  return {
-    ...actual,
-    useNavigate: () => mockNavigate,
-  }
+  return { ...actual, useNavigate: () => mockNavigate }
 })
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function renderShell(ui: ReactNode = <div>child content</div>, projectId?: string) {
   return render(
@@ -40,14 +29,8 @@ function renderShell(ui: ReactNode = <div>child content</div>, projectId?: strin
   )
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 describe('Shell', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
+  beforeEach(() => { vi.clearAllMocks() })
 
   it('renders its children', () => {
     renderShell(<p>Hello world</p>)
@@ -62,9 +45,7 @@ describe('Shell', () => {
 
   it('uses projectId in nav link hrefs when provided', () => {
     renderShell(undefined, 'proj-123')
-    // Nav links should include the projectId segment
-    const links = screen.getAllByRole('link')
-    const hrefs = links.map((l) => l.getAttribute('href') ?? '')
+    const hrefs = screen.getAllByRole('link').map((l) => l.getAttribute('href') ?? '')
     expect(hrefs.some((h) => h.includes('proj-123'))).toBe(true)
   })
 
