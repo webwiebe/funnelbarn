@@ -115,8 +115,17 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 	return event, nil
 }
 
+// EventPersister is the narrow repository interface PersistEvent requires.
+// *repository.Store satisfies this interface. Defining it here allows the
+// worker to be tested without a real database.
+type EventPersister interface {
+	GetEventByIngestID(ctx context.Context, ingestID string) (*repository.Event, error)
+	InsertEvent(ctx context.Context, e repository.Event) error
+	UpsertSession(ctx context.Context, sess repository.Session) error
+}
+
 // PersistEvent stores an event and upserts the associated session.
-func PersistEvent(ctx context.Context, store *repository.Store, event repository.Event) error {
+func PersistEvent(ctx context.Context, store EventPersister, event repository.Event) error {
 	// Check idempotency: skip if already stored.
 	existing, err := store.GetEventByIngestID(ctx, event.IngestID)
 	if err != nil {

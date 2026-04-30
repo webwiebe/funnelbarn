@@ -1,0 +1,68 @@
+---
+---
+<section id="install" style="border-top: 1px solid #1e1e35;">
+  <div class="max-w-5xl mx-auto px-6 py-24">
+    <h2 class="text-xl font-semibold mb-2 font-mono" style="color: #e2e8f0;">
+      <span style="color: #6366f1;">#</span> Install
+    </h2>
+    <p class="text-sm mb-10" style="color: #8b95a1;">Pick the method that fits your setup.</p>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Docker -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+            <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+          </svg>
+          <span class="text-xs font-mono font-semibold uppercase tracking-wider" style="color: #8b95a1;">Docker</span>
+        </div>
+        <pre class="rounded-lg overflow-x-auto text-xs leading-relaxed" style="background-color: #0a0a14; border: 1px solid #1e1e35; padding: 1.25rem 1.5rem; color: #cbd5e0; white-space: pre;">docker run -d \
+  -e FUNNELBARN_API_KEY=secret \
+  -e FUNNELBARN_ADMIN_USERNAME=admin \
+  -e FUNNELBARN_ADMIN_PASSWORD=changeme \
+  -p 8080:8080 \
+  -v funnelbarn-data:/var/lib/funnelbarn \
+  ghcr.io/webwiebe/funnelbarn/service:latest</pre>
+      </div>
+
+      <!-- Homebrew -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+          <span class="text-xs font-mono font-semibold uppercase tracking-wider" style="color: #8b95a1;">Homebrew</span>
+        </div>
+        <pre class="rounded-lg overflow-x-auto text-xs leading-relaxed" style="background-color: #0a0a14; border: 1px solid #1e1e35; padding: 1.25rem 1.5rem; color: #cbd5e0; white-space: pre;">brew tap webwiebe/funnelbarn
+brew install funnelbarn
+funnelbarn</pre>
+      </div>
+
+      <!-- APT -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+            <line x1="8" y1="21" x2="16" y2="21"/>
+            <line x1="12" y1="17" x2="12" y2="21"/>
+          </svg>
+          <span class="text-xs font-mono font-semibold uppercase tracking-wider" style="color: #8b95a1;">APT (Debian/Ubuntu)</span>
+        </div>
+        <pre class="rounded-lg overflow-x-auto text-xs leading-relaxed" style="background-color: #0a0a14; border: 1px solid #1e1e35; padding: 1.25rem 1.5rem; color: #cbd5e0; white-space: pre;">curl -fsSL \
+  https://webwiebe.nl/apt/install.sh \
+  | sudo bash
+sudo apt install funnelbarn</pre>
+      </div>
+
+    </div>
+
+    <p class="mt-8 text-sm" style="color: #8b95a1;">
+      Then open <span class="font-mono" style="color: #cbd5e0;">http://localhost:8080</span> and log in with your admin credentials.
+      Set <span class="font-mono" style="color: #cbd5e0;">FUNNELBARN_PORT</span> to change the default port.
+    </p>
+  </div>
+</section>

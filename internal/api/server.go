@@ -5,9 +5,11 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
+	"github.com/wiebe-xyz/funnelbarn/internal/middleware"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -26,6 +28,25 @@ type Server struct {
 	allowedOrigins []string
 	sessionSecret  string
 	publicURL      string
+	ingestLimiter  *rateLimiter
+}
+
+// responseWriter wraps http.ResponseWriter to capture the status code for logging.
+type responseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.status = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	if rw.status == 0 {
+		rw.status = http.StatusOK
+	}
+	return rw.ResponseWriter.Write(b)
 }
 
 // NewServer creates the API server and registers all routes.
@@ -57,6 +78,7 @@ func NewServer(
 		allowedOrigins: allowedOrigins,
 		sessionSecret:  sessionSecret,
 		publicURL:      publicURL,
+		ingestLimiter:  newRateLimiter(300, time.Minute),
 	}
 	s.registerRoutes()
 	return s
@@ -67,8 +89,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/v1/setup/{slug}", s.handleSetup)
 
-	// Ingest (API key required)
-	s.mux.Handle("POST /api/v1/events", s.ingest)
+	// Ingest (API key required, rate limited)
+	s.mux.Handle("POST /api/v1/events", s.ingestLimiter.wrap(s.ingest))
 
 	// Auth
 	s.mux.HandleFunc("POST /api/v1/login", s.handleLogin)
@@ -111,14 +133,39 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/approve", s.requireSession(s.handleApproveProject))
 }
 
-// ServeHTTP adds CORS headers and dispatches to the router.
+// ServeHTTP adds security/CORS headers, attaches a request ID, logs requests,
+// and dispatches to the router.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Attach request ID first so it is available to all downstream handlers.
+	middleware.RequestID(http.HandlerFunc(s.dispatch)).ServeHTTP(w, r)
+}
+
+// dispatch is the inner handler called after the request ID is attached.
+func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	s.setSecurityHeaders(w)
 	s.setCORSHeaders(w, r)
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	s.mux.ServeHTTP(w, r)
+	rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+	s.mux.ServeHTTP(rw, r)
+	slog.Info("request",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"status", rw.status,
+		"ip", clientIP(r),
+		"request_id", middleware.FromContext(r.Context()),
+		"duration_ms", time.Since(start).Milliseconds(),
+	)
+}
+
+func (s *Server) setSecurityHeaders(w http.ResponseWriter) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'")
 }
 
 func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {

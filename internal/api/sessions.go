@@ -3,18 +3,20 @@ package api
 import (
 	"net/http"
 	"strconv"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/apierr"
 )
 
 // handleActiveSessionCount returns the number of sessions active in the last 5 minutes.
 func (s *Server) handleActiveSessionCount(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		jsonError(w, "project id required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("project id required"))
 		return
 	}
 	count, err := s.sessions.ActiveSessionCount(r.Context(), projectID, 5)
 	if err != nil {
-		jsonError(w, "failed to count sessions", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.Internal())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"active_sessions": count, "window_minutes": 5})
@@ -24,7 +26,7 @@ func (s *Server) handleActiveSessionCount(w http.ResponseWriter, r *http.Request
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		jsonError(w, "project id required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("project id required"))
 		return
 	}
 
@@ -43,7 +45,7 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 
 	sessions, err := s.sessions.ListSessions(r.Context(), projectID, limit, offset)
 	if err != nil {
-		jsonError(w, "failed to list sessions", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.Internal())
 		return
 	}
 

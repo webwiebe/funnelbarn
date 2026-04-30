@@ -3,13 +3,15 @@ package api
 import (
 	"net/http"
 	"strconv"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/apierr"
 )
 
 // handleListEvents returns a paginated list of events for a project.
 func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		jsonError(w, "project id required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("project id required"))
 		return
 	}
 
@@ -28,7 +30,7 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 
 	events, err := s.events.ListEvents(r.Context(), projectID, limit, offset)
 	if err != nil {
-		jsonError(w, "failed to list events", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.Internal())
 		return
 	}
 
