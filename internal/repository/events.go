@@ -159,31 +159,6 @@ type ReferrerStat struct {
 	Visits int64  `json:"visits"`
 }
 
-// EventTimeSeries returns hourly event counts for a project over a time range.
-func (s *Store) EventTimeSeries(ctx context.Context, projectID string, from, to time.Time) ([]TimeSeriesPoint, error) {
-	const q = `
-		SELECT strftime('%Y-%m-%dT%H:00:00Z', occurred_at) as hour, COUNT(*) as count
-		FROM events
-		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?
-		GROUP BY hour
-		ORDER BY hour`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var series []TimeSeriesPoint
-	for rows.Next() {
-		var p TimeSeriesPoint
-		if err := rows.Scan(&p.Time, &p.Count); err != nil {
-			return nil, err
-		}
-		series = append(series, p)
-	}
-	return series, rows.Err()
-}
-
 // TimeSeriesPoint is a timestamp+count pair.
 type TimeSeriesPoint struct {
 	Time  string `json:"time"`
@@ -233,14 +208,6 @@ func (s *Store) UniqueSessionCount(ctx context.Context, projectID string, from, 
 		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?`
 	var n int64
 	err := s.db.QueryRowContext(ctx, q, projectID, from, to).Scan(&n)
-	return n, err
-}
-
-// CountNewEvents returns new event count since a given time.
-func (s *Store) CountNewEvents(ctx context.Context, projectID string, since time.Time) (int64, error) {
-	const q = `SELECT COUNT(*) FROM events WHERE project_id = ? AND occurred_at >= ?`
-	var n int64
-	err := s.db.QueryRowContext(ctx, q, projectID, since).Scan(&n)
 	return n, err
 }
 
@@ -366,138 +333,10 @@ type EventNameStat struct {
 	Count int64  `json:"count"`
 }
 
-// TopCountries returns breakdown by country code.
-func (s *Store) TopCountries(ctx context.Context, projectID string, from, to time.Time, limit int) ([]CountryStat, error) {
-	if limit <= 0 {
-		limit = 10
-	}
-	const q = `
-		SELECT COALESCE(country_code, 'unknown'), COUNT(*) as count
-		FROM events
-		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ? AND country_code != ''
-		GROUP BY country_code
-		ORDER BY count DESC
-		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var stats []CountryStat
-	for rows.Next() {
-		var cs CountryStat
-		if err := rows.Scan(&cs.CountryCode, &cs.Count); err != nil {
-			return nil, err
-		}
-		stats = append(stats, cs)
-	}
-	return stats, rows.Err()
-}
-
-// CountryStat is a country code with count.
-type CountryStat struct {
-	CountryCode string `json:"country_code"`
-	Count       int64  `json:"count"`
-}
-
-// TopOSSystems returns breakdown by operating system.
-func (s *Store) TopOSSystems(ctx context.Context, projectID string, from, to time.Time, limit int) ([]OSStat, error) {
-	if limit <= 0 {
-		limit = 10
-	}
-	const q = `
-		SELECT COALESCE(os, '(unknown)'), COUNT(*) as count
-		FROM events
-		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?
-		GROUP BY os
-		ORDER BY count DESC
-		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var stats []OSStat
-	for rows.Next() {
-		var os OSStat
-		if err := rows.Scan(&os.OS, &os.Count); err != nil {
-			return nil, err
-		}
-		stats = append(stats, os)
-	}
-	return stats, rows.Err()
-}
-
-// OSStat is an OS name with count.
-type OSStat struct {
-	OS    string `json:"os"`
-	Count int64  `json:"count"`
-}
-
-// TopUTMCampaigns returns breakdown by UTM campaign.
-func (s *Store) TopUTMCampaigns(ctx context.Context, projectID string, from, to time.Time, limit int) ([]UTMStat, error) {
-	if limit <= 0 {
-		limit = 10
-	}
-	const q = `
-		SELECT COALESCE(utm_campaign, '(none)'), COUNT(*) as count
-		FROM events
-		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ? AND utm_campaign != ''
-		GROUP BY utm_campaign
-		ORDER BY count DESC
-		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var stats []UTMStat
-	for rows.Next() {
-		var us UTMStat
-		if err := rows.Scan(&us.Value, &us.Count); err != nil {
-			return nil, err
-		}
-		stats = append(stats, us)
-	}
-	return stats, rows.Err()
-}
-
-// TopUTMMediums returns breakdown by UTM medium.
-func (s *Store) TopUTMMediums(ctx context.Context, projectID string, from, to time.Time, limit int) ([]UTMStat, error) {
-	if limit <= 0 {
-		limit = 10
-	}
-	const q = `
-		SELECT COALESCE(utm_medium, '(none)'), COUNT(*) as count
-		FROM events
-		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ? AND utm_medium != ''
-		GROUP BY utm_medium
-		ORDER BY count DESC
-		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var stats []UTMStat
-	for rows.Next() {
-		var us UTMStat
-		if err := rows.Scan(&us.Value, &us.Count); err != nil {
-			return nil, err
-		}
-		stats = append(stats, us)
-	}
-	return stats, rows.Err()
-}
-
 // DailyEventCounts returns daily event counts for a project over a time range.
 func (s *Store) DailyEventCounts(ctx context.Context, projectID string, from, to time.Time) ([]TimeSeriesPoint, error) {
 	const q = `
-		SELECT strftime('%Y-%m-%d', occurred_at) as day, COUNT(*) as count
+		SELECT SUBSTR(occurred_at, 1, 10) as day, COUNT(*) as count
 		FROM events
 		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?
 		GROUP BY day
@@ -567,7 +406,7 @@ func (s *Store) AvgEventsPerSession(ctx context.Context, projectID string, from,
 // DailyUniqueSessions returns daily unique session counts.
 func (s *Store) DailyUniqueSessions(ctx context.Context, projectID string, from, to time.Time) ([]TimeSeriesPoint, error) {
 	const q = `
-		SELECT strftime('%Y-%m-%d', occurred_at) as day, COUNT(DISTINCT session_id) as count
+		SELECT SUBSTR(occurred_at, 1, 10) as day, COUNT(DISTINCT session_id) as count
 		FROM events
 		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?
 		GROUP BY day
@@ -587,11 +426,6 @@ func (s *Store) DailyUniqueSessions(ctx context.Context, projectID string, from,
 		series = append(series, p)
 	}
 	return series, rows.Err()
-}
-
-// TopOS is an alias for TopOSSystems kept for backward compatibility in tests.
-func (s *Store) TopOS(ctx context.Context, projectID string, from, to time.Time, limit int) ([]OSStat, error) {
-	return s.TopOSSystems(ctx, projectID, from, to, limit)
 }
 
 func scanEvents(rows *sql.Rows) ([]Event, error) {

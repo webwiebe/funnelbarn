@@ -82,7 +82,7 @@ func run() error {
 	}
 	defer store.Close()
 
-	// Wire services.
+	// Wire services. *repository.Store satisfies all port interfaces.
 	projectsSvc := service.NewProjectService(store)
 	funnelsSvc := service.NewFunnelService(store)
 	abtestsSvc := service.NewABTestService(store)
@@ -100,6 +100,8 @@ func run() error {
 	defer stop()
 
 	// Wire BugBarn self-reporting.
+	// The project key is configured via FUNNELBARN_SELF_API_KEY and the endpoint
+	// via FUNNELBARN_SELF_ENDPOINT (see .env.example for values).
 	selfReporting := cfg.SelfEndpoint != "" && cfg.SelfAPIKey != ""
 	if selfReporting {
 		bb.Init(bb.Options{
@@ -112,8 +114,30 @@ func run() error {
 		baseHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
 		slog.SetDefault(slog.New(bblog.NewHandler(baseHandler)))
 		slog.Info("self-reporting enabled", "endpoint", cfg.SelfEndpoint)
-		defer bb.Shutdown(2 * time.Second)
 	}
+
+	// Ultimate panic / shutdown handler.
+	// Catches any unrecovered panic in the server goroutines, reports it to
+	// BugBarn, flushes the transport, and re-panics so the process exits with
+	// a non-zero status code. This must be deferred before any goroutines are
+	// started so that panics propagating out of run() are caught here.
+	defer func() {
+		if r := recover(); r != nil {
+			var panicErr error
+			switch v := r.(type) {
+			case error:
+				panicErr = v
+			default:
+				panicErr = fmt.Errorf("panic: %v", v)
+			}
+			slog.Error("unhandled panic", "err", panicErr)
+			if selfReporting {
+				bb.CaptureError(panicErr)
+				bb.Shutdown(3 * time.Second)
+			}
+			panic(r) // re-panic so the process exits with non-zero status
+		}
+	}()
 
 	go runBackgroundWorker(ctx, cfg, store)
 
@@ -144,6 +168,8 @@ func run() error {
 		cfg.PublicURL,
 	)
 
+	// bb.RecoverMiddleware catches HTTP-handler panics and reports them to BugBarn
+	// before returning a 500 response, preventing the server from crashing.
 	var httpHandler http.Handler = apiServer
 	if selfReporting {
 		httpHandler = bb.RecoverMiddleware(httpHandler)
@@ -165,7 +191,12 @@ func run() error {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		return server.Shutdown(shutdownCtx)
+		shutdownErr := server.Shutdown(shutdownCtx)
+		// Flush BugBarn before process exit so no captured events are lost.
+		if selfReporting {
+			bb.Shutdown(2 * time.Second)
+		}
+		return shutdownErr
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil

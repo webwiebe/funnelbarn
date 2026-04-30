@@ -3,9 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -13,6 +11,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/apierr"
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
@@ -215,11 +214,7 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	// Verify project exists.
 	if _, err := s.projects.GetProject(r.Context(), body.ProjectID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			jsonError(w, "project not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to look up project", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.MapDB(err, "project not found"))
 		return
 	}
 
@@ -305,11 +300,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	project, err := s.projects.UpdateProject(r.Context(), projectID, body.Name)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			jsonError(w, "project not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to update project", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.MapDB(err, "project not found"))
 		return
 	}
 	writeJSON(w, http.StatusOK, project)
@@ -326,11 +317,7 @@ func (s *Server) handleApproveProject(w http.ResponseWriter, r *http.Request) {
 	}
 	project, err := s.projects.ApproveProject(r.Context(), projectID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			jsonError(w, "project not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to approve project", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.MapDB(err, "project not found"))
 		return
 	}
 	writeJSON(w, http.StatusOK, project)

@@ -1,12 +1,12 @@
 package api
 
 import (
-	"database/sql"
-	"errors"
 	"net/http"
-	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/apierr"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/service"
+	"github.com/wiebe-xyz/funnelbarn/internal/timerange"
 )
 
 // handleUpdateFunnel updates a funnel's name and steps.
@@ -14,54 +14,47 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	funnelID := r.PathValue("fid")
 	if projectID == "" || funnelID == "" {
-		jsonError(w, "project id and funnel id required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("project id and funnel id required"))
 		return
 	}
 
-	// Verify funnel belongs to project.
 	existing, err := s.funnels.GetFunnel(r.Context(), funnelID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			jsonError(w, "funnel not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to load funnel", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.MapDB(err, "funnel not found"))
 		return
 	}
 	if existing.ProjectID != projectID {
-		jsonError(w, "funnel not found", http.StatusNotFound)
+		apierr.WriteHTTP(w, apierr.NotFound("funnel not found"))
 		return
 	}
 
 	var body struct {
-		Name        string                `json:"name"`
-		Description string                `json:"description"`
+		Name        string                  `json:"name"`
+		Description string                  `json:"description"`
 		Steps       []repository.FunnelStep `json:"steps"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("invalid request body"))
 		return
 	}
 	if body.Name == "" {
-		jsonError(w, "name is required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("name is required"))
 		return
 	}
 	if len(body.Steps) == 0 {
-		jsonError(w, "at least one step is required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("at least one step is required"))
 		return
 	}
 
-	funnel := repository.Funnel{
+	updated, err := s.funnels.UpdateFunnel(r.Context(), repository.Funnel{
 		ID:          funnelID,
 		ProjectID:   projectID,
 		Name:        body.Name,
 		Description: body.Description,
 		Steps:       body.Steps,
-	}
-
-	updated, err := s.funnels.UpdateFunnel(r.Context(), funnel)
+	})
 	if err != nil {
-		jsonError(w, "failed to update funnel", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.Internal())
 		return
 	}
 
@@ -73,27 +66,22 @@ func (s *Server) handleDeleteFunnel(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	funnelID := r.PathValue("fid")
 	if projectID == "" || funnelID == "" {
-		jsonError(w, "project id and funnel id required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("project id and funnel id required"))
 		return
 	}
 
-	// Verify funnel belongs to project.
 	existing, err := s.funnels.GetFunnel(r.Context(), funnelID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			jsonError(w, "funnel not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to load funnel", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.MapDB(err, "funnel not found"))
 		return
 	}
 	if existing.ProjectID != projectID {
-		jsonError(w, "funnel not found", http.StatusNotFound)
+		apierr.WriteHTTP(w, apierr.NotFound("funnel not found"))
 		return
 	}
 
 	if err := s.funnels.DeleteFunnel(r.Context(), funnelID); err != nil {
-		jsonError(w, "failed to delete funnel", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.Internal())
 		return
 	}
 
@@ -104,13 +92,13 @@ func (s *Server) handleDeleteFunnel(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListFunnels(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		jsonError(w, "project id required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("project id required"))
 		return
 	}
 
 	funnels, err := s.funnels.ListFunnels(r.Context(), projectID)
 	if err != nil {
-		jsonError(w, "failed to list funnels", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.Internal())
 		return
 	}
 
@@ -121,65 +109,40 @@ func (s *Server) handleListFunnels(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateFunnel(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		jsonError(w, "project id required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("project id required"))
 		return
 	}
 
 	var body struct {
-		Name        string                `json:"name"`
-		Description string                `json:"description"`
+		Name        string                  `json:"name"`
+		Description string                  `json:"description"`
 		Steps       []repository.FunnelStep `json:"steps"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("invalid request body"))
 		return
 	}
 	if body.Name == "" {
-		jsonError(w, "name is required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("name is required"))
 		return
 	}
 	if len(body.Steps) == 0 {
-		jsonError(w, "at least one step is required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("at least one step is required"))
 		return
 	}
 
-	funnel := repository.Funnel{
+	created, err := s.funnels.CreateFunnel(r.Context(), repository.Funnel{
 		ProjectID:   projectID,
 		Name:        body.Name,
 		Description: body.Description,
 		Steps:       body.Steps,
-	}
-
-	created, err := s.funnels.CreateFunnel(r.Context(), funnel)
+	})
 	if err != nil {
-		jsonError(w, "failed to create funnel", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.Internal())
 		return
 	}
 
 	writeJSON(w, http.StatusCreated, created)
-}
-
-// parseSegment maps a preset segment name to a SegmentFilter.
-// Returns nil when name is "all" or empty (no filter).
-func parseSegment(name string) *repository.SegmentFilter {
-	switch name {
-	case "logged_in":
-		return &repository.SegmentFilter{Field: "user_id_hash", Op: "is_not_null"}
-	case "not_logged_in":
-		return &repository.SegmentFilter{Field: "user_id_hash", Op: "is_null"}
-	case "mobile":
-		return &repository.SegmentFilter{Field: "device_type", Op: "eq", Value: "mobile"}
-	case "desktop":
-		return &repository.SegmentFilter{Field: "device_type", Op: "eq", Value: "desktop"}
-	case "tablet":
-		return &repository.SegmentFilter{Field: "device_type", Op: "eq", Value: "tablet"}
-	case "new_visitor":
-		return &repository.SegmentFilter{Field: "session_returning", Op: "eq", Value: "false"}
-	case "returning":
-		return &repository.SegmentFilter{Field: "session_returning", Op: "eq", Value: "true"}
-	default:
-		return nil
-	}
 }
 
 // handleFunnelAnalysis runs funnel analysis and returns step conversion rates.
@@ -187,52 +150,34 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	funnelID := r.PathValue("fid")
 	if projectID == "" || funnelID == "" {
-		jsonError(w, "project id and funnel id required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("project id and funnel id required"))
 		return
 	}
 
 	funnel, err := s.funnels.GetFunnel(r.Context(), funnelID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			jsonError(w, "funnel not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to load funnel", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.MapDB(err, "funnel not found"))
 		return
 	}
 	if funnel.ProjectID != projectID {
-		jsonError(w, "funnel not found", http.StatusNotFound)
+		apierr.WriteHTTP(w, apierr.NotFound("funnel not found"))
 		return
 	}
 
-	// Parse time range from query params (default: last 30 days).
-	to := time.Now().UTC()
-	from := to.AddDate(0, 0, -30)
-	if v := r.URL.Query().Get("from"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			from = t
-		}
-	}
-	if v := r.URL.Query().Get("to"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			to = t
-		}
-	}
+	tr := timerange.Parse(r.URL.Query())
+	seg := service.ParseSegment(r.URL.Query().Get("segment"))
 
-	// Parse optional segment filter.
-	seg := parseSegment(r.URL.Query().Get("segment"))
-
-	results, err := s.funnels.AnalyzeFunnel(r.Context(), funnel, from, to, seg)
+	results, err := s.funnels.AnalyzeFunnel(r.Context(), funnel, tr.From, tr.To, seg)
 	if err != nil {
-		jsonError(w, "failed to analyze funnel", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.Internal())
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"funnel":  funnel,
 		"results": results,
-		"from":    from.Format(time.RFC3339),
-		"to":      to.Format(time.RFC3339),
+		"from":    tr.From.Format("2006-01-02T15:04:05Z07:00"),
+		"to":      tr.To.Format("2006-01-02T15:04:05Z07:00"),
 	})
 }
 
@@ -241,28 +186,23 @@ func (s *Server) handleFunnelSegments(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	funnelID := r.PathValue("fid")
 	if projectID == "" || funnelID == "" {
-		jsonError(w, "project id and funnel id required", http.StatusBadRequest)
+		apierr.WriteHTTP(w, apierr.BadRequest("project id and funnel id required"))
 		return
 	}
 
-	// Verify funnel belongs to project.
 	funnel, err := s.funnels.GetFunnel(r.Context(), funnelID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			jsonError(w, "funnel not found", http.StatusNotFound)
-			return
-		}
-		jsonError(w, "failed to load funnel", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.MapDB(err, "funnel not found"))
 		return
 	}
 	if funnel.ProjectID != projectID {
-		jsonError(w, "funnel not found", http.StatusNotFound)
+		apierr.WriteHTTP(w, apierr.NotFound("funnel not found"))
 		return
 	}
 
 	segs, err := s.funnels.FunnelSegmentData(r.Context(), projectID)
 	if err != nil {
-		jsonError(w, "failed to load segment data", http.StatusInternalServerError)
+		apierr.WriteHTTP(w, apierr.Internal())
 		return
 	}
 
