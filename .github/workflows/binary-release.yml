@@ -58,8 +58,9 @@ jobs:
 
   publish-npm:
     needs: [tag]
-    if: ${{ secrets.NPM_TOKEN != '' }}
     runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     defaults:
       run:
         working-directory: sdks/js
@@ -72,15 +73,16 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Publish to npm
-        if: ${{ env.NODE_AUTH_TOKEN != '' }}
+        if: env.NPM_TOKEN != ''
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-pypi:
     needs: [tag]
-    if: ${{ secrets.PYPI_TOKEN != '' }}
     runs-on: ubuntu-latest
+    env:
+      PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
     defaults:
       run:
         working-directory: sdks/python
@@ -92,7 +94,7 @@ jobs:
       - run: pip install build twine
       - run: python -m build
       - name: Publish to PyPI
-        if: ${{ env.TWINE_PASSWORD != '' }}
+        if: env.PYPI_TOKEN != ''
         run: twine upload dist/*
         env:
           TWINE_USERNAME: __token__
