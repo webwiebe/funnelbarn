@@ -1,34 +1,25 @@
 import { test, expect } from '@playwright/test'
 
-async function loginAndNavigateToDashboard(page: import('@playwright/test').Page) {
-  // Login via browser
-  await page.goto('/login')
-  await page.getByLabel('Username').fill('wiebe')
-  await page.getByLabel('Password').fill('wiebe')
-  await page.getByRole('button', { name: /sign in/i }).click()
-  await expect(page).toHaveURL(/\/dashboard/)
-
-  // Fetch the first project ID from within the browser context (cookies are set)
+async function navigateToDashboard(page: import('@playwright/test').Page) {
+  // storageState provides auth; just navigate to dashboard
   const projectId = await page.evaluate(async () => {
     try {
       const res = await fetch('/api/v1/projects')
       const data = await res.json()
       const projects = data.projects ?? []
-      if (projects.length === 0) return null
-      return projects[0].ID ?? projects[0].id ?? null
-    } catch {
-      return null
-    }
+      return projects.length > 0 ? (projects[0].ID ?? projects[0].id ?? null) : null
+    } catch { return null }
   })
-
   if (projectId) {
     await page.goto(`/dashboard/${projectId}`)
+  } else {
+    await page.goto('/dashboard')
   }
 }
 
 test.describe('dashboard', () => {
   test('shows stat cards after login', async ({ page }) => {
-    await loginAndNavigateToDashboard(page)
+    await navigateToDashboard(page)
     // Expect the overview heading
     await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible()
     // Expect at least the stat card labels
@@ -38,7 +29,7 @@ test.describe('dashboard', () => {
   })
 
   test('time range buttons are visible', async ({ page }) => {
-    await loginAndNavigateToDashboard(page)
+    await navigateToDashboard(page)
     await expect(page.getByRole('button', { name: '24h' })).toBeVisible()
     await expect(page.getByRole('button', { name: '7d' })).toBeVisible()
     await expect(page.getByRole('button', { name: '30d' })).toBeVisible()

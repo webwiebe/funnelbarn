@@ -30,6 +30,10 @@ const apiBaseURL = clusterIP
 export default defineConfig({
   testDir: './e2e',
   timeout: 30000,
+  globalSetup: isCIEnv ? './e2e/global-setup.ts' : undefined,
+  ...(isCIEnv ? {
+    workers: 2,  // limit parallelism in CI to stay within rate limits
+  } : {}),
   use: {
     baseURL: apiBaseURL,
     ignoreHTTPSErrors: true,
@@ -55,6 +59,7 @@ export default defineConfig({
         baseURL: E2E_BASE_URL,
         extraHTTPHeaders: {},
         ignoreHTTPSErrors: true,
+        storageState: isCIEnv ? 'e2e/.auth/user.json' : undefined,
         launchOptions: {
           args: chromiumArgs,
         },

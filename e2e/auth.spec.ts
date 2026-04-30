@@ -8,6 +8,8 @@ test.describe('auth', () => {
   })
 
   test('login and redirect to dashboard', async ({ page }) => {
+    // Clear storage state to simulate logged-out user
+    await page.context().clearCookies()
     await page.goto('/login')
     await page.getByLabel('Username').fill('wiebe')
     await page.getByLabel('Password').fill('wiebe')
@@ -16,7 +18,8 @@ test.describe('auth', () => {
   })
 
   test('logout redirects to landing', async ({ page }) => {
-    // Login first
+    // Clear storage state to simulate logged-out user, then log in
+    await page.context().clearCookies()
     await page.goto('/login')
     await page.getByLabel('Username').fill('wiebe')
     await page.getByLabel('Password').fill('wiebe')
