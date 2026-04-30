@@ -1,6 +1,6 @@
 {
   "name": "@funnelbarn/js",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Browser + Node.js SDK for FunnelBarn analytics",
   "type": "module",
   "main": "./dist/cjs/index.js",
@@ -18,14 +18,18 @@
     "README.md"
   ],
   "scripts": {
-    "build": "npm run clean && npm run build:esm && npm run build:cjs",
+    "build": "npm run clean && npm run build:esm && npm run build:cjs && npm run build:iife",
     "build:cjs": "tsc -p tsconfig.cjs.json",
     "build:esm": "tsc -p tsconfig.esm.json",
+    "build:iife": "rollup -c rollup.iife.config.mjs",
     "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
     "test": "npm run build && node --test test/sdk.test.mjs"
   },
   "devDependencies": {
+    "@rollup/plugin-typescript": "^12.0.0",
     "@types/node": "^22.0.0",
+    "rollup": "^4.0.0",
+    "tslib": "^2.8.0",
     "typescript": "^5.8.3"
   },
   "engines": {

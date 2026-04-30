@@ -20,6 +20,17 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:type" content="website" />
+    <script
+      src="https://funnelbarn.wiebe.xyz/sdk.js"
+      data-api-key="fc65701346b18aa3122fb31d9a5a85ff5d5d6825b1e1c3a806a06d953eca73b6"
+      defer
+    ></script>
+    <script>
+      document.addEventListener('click', (e) => {
+        const el = (e.target as Element).closest('[data-track]') as HTMLElement | null;
+        if (el) window.funnelbarn?.track(el.dataset.track!);
+      });
+    </script>
   </head>
   <body class="antialiased" style="background-color: #0f0f1a; color: #e2e8f0;">
     <slot />
