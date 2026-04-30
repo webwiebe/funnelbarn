@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/session"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
-	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 )
 
 // EventPayload is the JSON body accepted by POST /api/v1/events.
@@ -31,21 +31,21 @@ type EventPayload struct {
 	Timestamp   time.Time      `json:"timestamp"`
 }
 
-// ProcessRecord decodes and enriches a spool record into a storage.Event.
+// ProcessRecord decodes and enriches a spool record into a repository.Event.
 // It does not touch the database.
-func ProcessRecord(record spool.Record) (storage.Event, error) {
+func ProcessRecord(record spool.Record) (repository.Event, error) {
 	body, err := base64.StdEncoding.DecodeString(record.BodyBase64)
 	if err != nil {
-		return storage.Event{}, fmt.Errorf("decode body: %w", err)
+		return repository.Event{}, fmt.Errorf("decode body: %w", err)
 	}
 
 	var payload EventPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return storage.Event{}, fmt.Errorf("unmarshal payload: %w", err)
+		return repository.Event{}, fmt.Errorf("unmarshal payload: %w", err)
 	}
 
 	if payload.Name == "" {
-		return storage.Event{}, fmt.Errorf("event name is required")
+		return repository.Event{}, fmt.Errorf("event name is required")
 	}
 
 	occurredAt := payload.Timestamp
@@ -92,10 +92,10 @@ func ProcessRecord(record spool.Record) (storage.Event, error) {
 
 	eventID, err := generateUUIDLocal()
 	if err != nil {
-		return storage.Event{}, fmt.Errorf("generate uuid: %w", err)
+		return repository.Event{}, fmt.Errorf("generate uuid: %w", err)
 	}
 
-	event := storage.Event{
+	event := repository.Event{
 		ID:             eventID,
 		SessionID:      sessionID,
 		UserIDHash:     userIDHash,
@@ -121,7 +121,7 @@ func ProcessRecord(record spool.Record) (storage.Event, error) {
 }
 
 // PersistEvent stores an event and upserts the associated session.
-func PersistEvent(ctx context.Context, store *storage.Store, event storage.Event) error {
+func PersistEvent(ctx context.Context, store *repository.Store, event repository.Event) error {
 	// Check idempotency: skip if already stored.
 	existing, err := store.GetEventByIngestID(ctx, event.IngestID)
 	if err != nil {
@@ -146,7 +146,7 @@ func PersistEvent(ctx context.Context, store *storage.Store, event storage.Event
 	)
 
 	// Upsert session.
-	sess := storage.Session{
+	sess := repository.Session{
 		ID:          event.SessionID,
 		ProjectID:   event.ProjectID,
 		FirstSeenAt: event.OccurredAt,

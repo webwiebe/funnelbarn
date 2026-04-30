@@ -44,7 +44,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Ensure project exists (pending if new).
-	project, err := s.store.EnsureProjectPending(ctx, slug, slug)
+	project, err := s.projects.EnsureProjectPending(ctx, slug, slug)
 	if err != nil {
 		slog.Error("setup: ensure project", "slug", slug, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -55,7 +55,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	plaintext, keySHA256 := setupKey(s.sessionSecret, slug)
 
 	// Upsert the setup key so it is valid for ingest.
-	if err := s.store.EnsureSetupAPIKey(ctx, project.ID, keySHA256); err != nil {
+	if err := s.projects.EnsureSetupAPIKey(ctx, project.ID, keySHA256); err != nil {
 		slog.Error("setup: ensure api key", "project_id", project.ID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return

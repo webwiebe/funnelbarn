@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { FlaskConical, Plus, X } from 'lucide-react'
-import Shell from '../components/Shell'
+import Shell from '../components/shell/Shell'
 import { api, ABTest, ABTestAnalysis } from '../lib/api'
 
 const C = {

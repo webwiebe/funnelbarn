@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/storage"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // zTestTwoProportions performs a two-proportion z-test.
@@ -39,13 +39,13 @@ func (s *Server) handleListABTests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tests, err := s.store.ListABTests(r.Context(), projectID)
+	tests, err := s.abtests.ListABTests(r.Context(), projectID)
 	if err != nil {
 		jsonError(w, "failed to list a/b tests", http.StatusInternalServerError)
 		return
 	}
 	if tests == nil {
-		tests = []storage.ABTest{}
+		tests = []repository.ABTest{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tests": tests})
 }
@@ -77,7 +77,7 @@ func (s *Server) handleCreateABTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	test, err := s.store.CreateABTest(r.Context(), storage.ABTest{
+	test, err := s.abtests.CreateABTest(r.Context(), repository.ABTest{
 		ProjectID:       projectID,
 		Name:            body.Name,
 		Status:          "running",
@@ -101,7 +101,7 @@ func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	test, err := s.store.ABTestByID(r.Context(), testID)
+	test, err := s.abtests.GetABTest(r.Context(), testID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			jsonError(w, "a/b test not found", http.StatusNotFound)
@@ -137,7 +137,7 @@ func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	results, err := s.store.AnalyzeABTest(r.Context(), test, from, to)
+	results, err := s.abtests.AnalyzeABTest(r.Context(), test, from, to)
 	if err != nil {
 		jsonError(w, "failed to analyze a/b test", http.StatusInternalServerError)
 		return
@@ -160,14 +160,14 @@ func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 	zScore, significant := zTestTwoProportions(controlSample, controlConversions, variantSample, variantConversions)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"test":                 test,
-		"control_sample":       controlSample,
-		"control_conversions":  controlConversions,
-		"variant_sample":       variantSample,
-		"variant_conversions":  variantConversions,
-		"significant":          significant,
-		"z_score":              zScore,
-		"from":                 from.Format(time.RFC3339),
-		"to":                   to.Format(time.RFC3339),
+		"test":                test,
+		"control_sample":      controlSample,
+		"control_conversions": controlConversions,
+		"variant_sample":      variantSample,
+		"variant_conversions": variantConversions,
+		"significant":         significant,
+		"z_score":             zScore,
+		"from":                from.Format(time.RFC3339),
+		"to":                  to.Format(time.RFC3339),
 	})
 }

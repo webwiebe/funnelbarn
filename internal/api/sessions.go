@@ -12,7 +12,7 @@ func (s *Server) handleActiveSessionCount(w http.ResponseWriter, r *http.Request
 		jsonError(w, "project id required", http.StatusBadRequest)
 		return
 	}
-	count, err := s.store.ActiveSessionCount(r.Context(), projectID, 5)
+	count, err := s.sessions.ActiveSessionCount(r.Context(), projectID, 5)
 	if err != nil {
 		jsonError(w, "failed to count sessions", http.StatusInternalServerError)
 		return
@@ -41,7 +41,7 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	sessions, err := s.store.ListSessions(r.Context(), projectID, limit, offset)
+	sessions, err := s.sessions.ListSessions(r.Context(), projectID, limit, offset)
 	if err != nil {
 		jsonError(w, "failed to list sessions", http.StatusInternalServerError)
 		return

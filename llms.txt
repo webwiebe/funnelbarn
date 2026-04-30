@@ -1,0 +1,234 @@
+# FunnelBarn
+
+> Self-hosted web analytics and conversion funnel tracking. Single Go binary. SQLite. Privacy-first.
+
+FunnelBarn replaces Mixpanel, Amplitude, or Fathom for teams who want to own their analytics data. Deploy one binary, point a domain at it, and keep everything on your own server.
+
+- GitHub: https://github.com/wiebe-xyz/funnelbarn
+- Docs / marketing: https://funnelbarn.webwiebe.nl
+
+## Architecture
+
+FunnelBarn uses a durable spool pattern for high-throughput, low-latency event ingestion:
+
+```
+SDK / Browser  →  POST /api/v1/events
+                         │
+                         ▼
+                  In-memory queue (32 k cap)
+                         │  5 ms batch flush
+                         ▼
+                  NDJSON spool file (append-only, on disk)
+                         │  Background worker (1 s tick)
+                         ▼
+                  SQLite database
+```
+
+Key components:
+- **ingest** (`internal/ingest/`) — HTTP handler; enqueues events; never touches SQLite directly
+- **spool** (`internal/spool/`) — flushes in-memory queue to NDJSON file every 5 ms
+- **worker** (`internal/worker/`) — reads spool, enriches (geo/UA), writes to SQLite
+- **api** (`internal/api/`) — REST API for the dashboard SPA; session-cookie auth
+- **web** (`web/`) — React + Vite SPA (dashboard)
+- **site** (`site/`) — Astro marketing site
+
+## Install
+
+### Docker
+
+```bash
+docker run -d \
+  --name funnelbarn \
+  -e FUNNELBARN_API_KEY=your-secret-ingest-key \
+  -e FUNNELBARN_ADMIN_USERNAME=admin \
+  -e FUNNELBARN_ADMIN_PASSWORD=changeme \
+  -p 8080:8080 \
+  -v funnelbarn-data:/var/lib/funnelbarn \
+  ghcr.io/webwiebe/funnelbarn/service:latest
+```
+
+### Docker Compose
+
+```bash
+git clone https://github.com/wiebe-xyz/funnelbarn
+cd funnelbarn
+FUNNELBARN_API_KEY=secret docker compose up
+```
+
+### Homebrew (macOS)
+
+```bash
+brew tap webwiebe/funnelbarn
+brew install funnelbarn
+```
+
+### APT (Debian / Ubuntu)
+
+```bash
+curl -fsSL https://webwiebe.nl/apt/funnelbarn-archive-keyring.gpg \
+  | sudo tee /etc/apt/keyrings/funnelbarn.gpg > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/funnelbarn.gpg] https://webwiebe.nl/apt/ stable main" \
+  | sudo tee /etc/apt/sources.list.d/funnelbarn.list
+sudo apt update && sudo apt install funnelbarn
+```
+
+### systemd
+
+After installation the package ships a unit file at `/lib/systemd/system/funnelbarn.service`. Configure via `/etc/funnelbarn/funnelbarn.conf` (KEY=VALUE format), then:
+
+```bash
+sudo systemctl enable --now funnelbarn
+```
+
+## Configuration (FUNNELBARN_* env vars)
+
+Config is read from environment variables and optionally from `/etc/funnelbarn/funnelbarn.conf` or `~/.config/funnelbarn/funnelbarn.conf` (KEY=VALUE). Env vars always win.
+
+| Variable | Default | Description |
+|---|---|---|
+| `FUNNELBARN_ADDR` | `:8080` | HTTP listen address |
+| `FUNNELBARN_API_KEY` | — | Master ingest API key (plaintext) |
+| `FUNNELBARN_API_KEY_SHA256` | — | Alternative pre-hashed ingest key |
+| `FUNNELBARN_DB_PATH` | `.data/funnelbarn.db` | SQLite database path |
+| `FUNNELBARN_SPOOL_DIR` | `.data/spool` | Event spool directory |
+| `FUNNELBARN_MAX_BODY_BYTES` | `1048576` | Max request body size (1 MiB) |
+| `FUNNELBARN_MAX_SPOOL_BYTES` | unlimited | Spool directory size cap |
+| `FUNNELBARN_ADMIN_USERNAME` | — | Admin username for dashboard login |
+| `FUNNELBARN_ADMIN_PASSWORD` | — | Admin password (plaintext) |
+| `FUNNELBARN_ADMIN_PASSWORD_BCRYPT` | — | Admin password (bcrypt hash) |
+| `FUNNELBARN_SESSION_SECRET` | random | HMAC secret for session tokens |
+| `FUNNELBARN_SESSION_TTL_SECONDS` | `43200` | Session TTL in seconds (default 12 h) |
+| `FUNNELBARN_ALLOWED_ORIGINS` | — | CORS allowed origins, comma-separated |
+| `FUNNELBARN_PUBLIC_URL` | — | Public server URL (used for self-links) |
+| `FUNNELBARN_SELF_ENDPOINT` | — | BugBarn endpoint for self-error-reporting |
+| `FUNNELBARN_SELF_API_KEY` | — | BugBarn API key for self-error-reporting |
+| `FUNNELBARN_ENVIRONMENT` | `production` | Deployment environment label |
+
+## JavaScript SDK
+
+```bash
+npm install @funnelbarn/js
+```
+
+```html
+<script type="module">
+  import { FunnelBarnClient } from '@funnelbarn/js';
+
+  const analytics = new FunnelBarnClient({
+    apiKey: 'your-ingest-key',
+    endpoint: 'https://funnelbarn.yourdomain.com',
+    projectName: 'my-website',
+  });
+
+  analytics.page();                           // auto-detect URL + referrer
+  analytics.track('signup', { plan: 'pro' }); // custom event
+  analytics.identify('user_123');             // associate events with a user
+  await analytics.flush();                    // force-send queued events
+</script>
+```
+
+**Options:** `apiKey` (required), `endpoint` (required), `projectName`, `flushInterval` (ms, default 5000), `sessionTimeout` (ms, default 1 800 000).
+
+## Python SDK
+
+```bash
+pip install funnelbarn
+```
+
+```python
+from funnelbarn import FunnelBarnClient
+
+analytics = FunnelBarnClient(
+    api_key="your-ingest-key",
+    endpoint="https://funnelbarn.yourdomain.com",
+    project_name="my-app",
+)
+
+analytics.page("https://example.com/pricing", referrer="https://google.com")
+analytics.track("signup", {"plan": "pro"})
+analytics.identify("user_123")
+analytics.shutdown()  # flush + stop background worker
+```
+
+## HTTP API Reference
+
+All endpoints are under `/api/v1`. Events ingest uses an API key header; dashboard endpoints use a session cookie set by `/api/v1/login`.
+
+### Health
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/health` | — | Health check — returns `{"ok":true}` |
+
+### Event Ingestion
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/v1/events` | `x-funnelbarn-api-key` header | Ingest one event |
+
+**Request body:**
+
+```json
+{
+  "name": "page_view",
+  "url": "https://example.com/pricing",
+  "referrer": "https://google.com",
+  "utm_source": "newsletter",
+  "utm_medium": "email",
+  "properties": { "plan": "pro" }
+}
+```
+
+### Authentication
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/v1/login` | — | Login; sets `funnelbarn_session` cookie |
+| `POST` | `/api/v1/logout` | Session | Logout |
+| `GET` | `/api/v1/me` | Session | Current user info |
+
+### Projects
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/projects` | Session | List all projects |
+| `POST` | `/api/v1/projects` | Session | Create project |
+| `PUT` | `/api/v1/projects/{id}` | Session | Update project |
+| `DELETE` | `/api/v1/projects/{id}` | Session | Delete project |
+| `POST` | `/api/v1/projects/{id}/approve` | Session | Approve pending project |
+
+### Dashboard & Events
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/projects/{id}/dashboard` | Session | Time-series stats, top pages, referrers, UTM |
+| `GET` | `/api/v1/projects/{id}/events` | Session | Paginated raw events |
+| `GET` | `/api/v1/projects/{id}/sessions` | Session | Paginated sessions |
+| `GET` | `/api/v1/projects/{id}/sessions/active` | Session | Active session count |
+
+### Funnels
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/projects/{id}/funnels` | Session | List funnels |
+| `POST` | `/api/v1/projects/{id}/funnels` | Session | Create funnel |
+| `PUT` | `/api/v1/projects/{id}/funnels/{fid}` | Session | Update funnel |
+| `DELETE` | `/api/v1/projects/{id}/funnels/{fid}` | Session | Delete funnel |
+| `GET` | `/api/v1/projects/{id}/funnels/{fid}/analysis` | Session | Funnel conversion analysis |
+| `GET` | `/api/v1/projects/{id}/funnels/{fid}/segments` | Session | Funnel segment breakdown |
+
+### A/B Tests
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/projects/{id}/abtests` | Session | List A/B tests |
+| `POST` | `/api/v1/projects/{id}/abtests` | Session | Create A/B test |
+| `GET` | `/api/v1/projects/{id}/abtests/{abid}/analysis` | Session | A/B test results (z-test, significance) |
+
+### API Keys
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/apikeys` | Session | List API keys |
+| `POST` | `/api/v1/apikeys` | Session | Create API key |
+| `DELETE` | `/api/v1/apikeys/{kid}` | Session | Delete API key |

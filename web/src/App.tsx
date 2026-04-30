@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ReactNode, useState } from 'react'
 import { AuthProvider, useAuth } from './lib/auth'
 import { ProjectProvider, useProjects } from './lib/projects'
+import Shell from './components/Shell'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -9,7 +10,7 @@ import Funnels from './pages/Funnels'
 import Live from './pages/Live'
 import Settings from './pages/Settings'
 import ABTests from './pages/ABTests'
-import FirstRunWizard from './components/FirstRunWizard'
+import FirstRunWizard from './components/wizards/FirstRunWizard'
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth()
@@ -75,6 +76,25 @@ function RootRedirect() {
   return <Landing />
 }
 
+function DefaultProjectRoute({ base }: { base: string }) {
+  const { projects, isLoading, defaultProjectId } = useProjects()
+
+  if (isLoading || projects.length === 0) {
+    return (
+      <Shell>
+        <div />
+      </Shell>
+    )
+  }
+
+  const target =
+    defaultProjectId && projects.some((p) => p.id === defaultProjectId)
+      ? defaultProjectId
+      : projects[0].id
+
+  return <Navigate to={`${base}/${target}`} replace />
+}
+
 function AppRoutes() {
   const { user } = useAuth()
   const { refetch } = useProjects()
@@ -93,7 +113,7 @@ function AppRoutes() {
         <Route path="/login" element={<Login />} />
         <Route
           path="/dashboard"
-          element={<ProtectedRoute><Dashboard /></ProtectedRoute>}
+          element={<ProtectedRoute><DefaultProjectRoute base="/dashboard" /></ProtectedRoute>}
         />
         <Route
           path="/dashboard/:projectId"
@@ -101,7 +121,7 @@ function AppRoutes() {
         />
         <Route
           path="/funnels"
-          element={<ProtectedRoute><Funnels /></ProtectedRoute>}
+          element={<ProtectedRoute><DefaultProjectRoute base="/funnels" /></ProtectedRoute>}
         />
         <Route
           path="/funnels/:projectId"
@@ -109,7 +129,7 @@ function AppRoutes() {
         />
         <Route
           path="/abtests"
-          element={<ProtectedRoute><ABTests /></ProtectedRoute>}
+          element={<ProtectedRoute><DefaultProjectRoute base="/abtests" /></ProtectedRoute>}
         />
         <Route
           path="/abtests/:projectId"
@@ -117,7 +137,7 @@ function AppRoutes() {
         />
         <Route
           path="/live"
-          element={<ProtectedRoute><Live /></ProtectedRoute>}
+          element={<ProtectedRoute><DefaultProjectRoute base="/live" /></ProtectedRoute>}
         />
         <Route
           path="/live/:projectId"

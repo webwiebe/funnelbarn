@@ -83,8 +83,15 @@ export default defineConfig({
   ],
   test: {
     globals: true,
-    environment: 'happy-dom',
-    setupFiles: ['./src/setupTests.ts'],
+    environment: 'jsdom',
+    setupFiles: ['./src/test-setup.ts'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      thresholds: {
+        lines: 70,
+      },
+    },
   },
   build: {
     sourcemap: true,

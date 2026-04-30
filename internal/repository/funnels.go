@@ -1,4 +1,4 @@
-package storage
+package repository
 
 import (
 	"context"
@@ -310,9 +310,9 @@ func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time,
 
 // FunnelSegments holds distinct values available for dynamic segment filtering.
 type FunnelSegments struct {
-	DeviceTypes  []string `json:"device_types"`
-	Browsers     []string `json:"browsers"`
-	Countries    []string `json:"countries"`
+	DeviceTypes []string `json:"device_types"`
+	Browsers    []string `json:"browsers"`
+	Countries   []string `json:"countries"`
 }
 
 // FunnelSegmentData returns distinct field values present in the events for a project.
