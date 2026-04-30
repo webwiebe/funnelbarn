@@ -1,19 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -43,14 +45,79 @@ var (
 var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 func main() {
-	// Use structured JSON logging.
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	defer func() {
+		if r := recover(); r != nil {
+			// Use fmt.Fprintf to stderr since logger may not be available.
+			fmt.Fprintf(os.Stderr, `{"level":"ERROR","msg":"unhandled panic","panic":%q,"time":%q}`+"\n",
+				fmt.Sprint(r), time.Now().UTC().Format(time.RFC3339))
+
+			// If BugBarn is configured, report the crash.
+			reportPanicToBugBarn(r)
+
+			os.Exit(2)
+		}
+	}()
+
+	// Use structured JSON logging to stderr by default.
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	})))
 
 	if err := run(); err != nil {
-		log.Fatal(err)
+		slog.Error("startup failed", "err", err)
+		os.Exit(1)
 	}
+}
+
+// buildLogger constructs a multi-sink slog.Logger based on the config.
+// It always writes JSON to stderr, and optionally fans out Warn+ to BugBarn.
+func buildLogger(cfg config.Config) *slog.Logger {
+	var handlers []slog.Handler
+
+	// Always: structured JSON to stderr.
+	jsonHandler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})
+	handlers = append(handlers, jsonHandler)
+
+	// Optional: BugBarn for Warn+ events.
+	if cfg.SelfEndpoint != "" && cfg.SelfAPIKey != "" {
+		bbHandler := bblog.NewHandler(jsonHandler)
+		handlers = append(handlers, bbHandler)
+	}
+
+	return slog.New(bblog.NewMultiHandler(handlers...))
+}
+
+// reportPanicToBugBarn reads BugBarn credentials directly from the environment
+// (since config/logger may not be initialized at panic time) and POSTs to the
+// BugBarn events API.
+func reportPanicToBugBarn(r any) {
+	endpoint := os.Getenv("FUNNELBARN_SELF_ENDPOINT")
+	apiKey := os.Getenv("FUNNELBARN_SELF_API_KEY")
+	if endpoint == "" || apiKey == "" {
+		return
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"event":   "panic",
+		"project": "funnelbarn",
+		"properties": map[string]any{
+			"panic": fmt.Sprint(r),
+			"stack": string(debug.Stack()),
+		},
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/api/v1/events", bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-BugBarn-Api-Key", apiKey)
+	_, _ = http.DefaultClient.Do(req)
 }
 
 // run owns process wiring: opens storage, starts the worker, and serves the API.
@@ -100,7 +167,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Wire BugBarn self-reporting.
+	// Wire BugBarn self-reporting and set up multi-sink logger.
 	selfReporting := cfg.SelfEndpoint != "" && cfg.SelfAPIKey != ""
 	if selfReporting {
 		bb.Init(bb.Options{
@@ -109,11 +176,12 @@ func run() error {
 			ProjectSlug: "funnelbarn",
 			Environment: cfg.SelfEnvironment,
 		})
-		// Rewire the global logger so Warn+ records are also captured by BugBarn.
-		baseHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
-		slog.SetDefault(slog.New(bblog.NewHandler(baseHandler)))
-		slog.Info("self-reporting enabled", "endpoint", cfg.SelfEndpoint)
 		defer bb.Shutdown(2 * time.Second)
+	}
+	// Rewire the global logger with the appropriate sinks.
+	slog.SetDefault(buildLogger(cfg))
+	if selfReporting {
+		slog.Info("self-reporting enabled", "endpoint", cfg.SelfEndpoint)
 	}
 
 	go runBackgroundWorker(ctx, cfg, store)
@@ -236,7 +304,7 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 			for _, entry := range entries {
 				record := entry.Record
 
-				event, err := worker.ProcessRecord(record)
+				event, err := worker.SafeProcess(record)
 				if err != nil {
 					retryCounts[record.IngestID]++
 					slog.Error("worker process record",
@@ -332,7 +400,7 @@ func runWorkerOnce(cfg config.Config) error {
 	processed := 0
 	ctx := context.Background()
 	for _, record := range records {
-		event, err := worker.ProcessRecord(record)
+		event, err := worker.SafeProcess(record)
 		if err != nil {
 			slog.Error("worker-once: process record", "ingest_id", record.IngestID, "err", err)
 			continue

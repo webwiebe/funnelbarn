@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -57,6 +58,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	http.SetCookie(w, auth.SessionCookie(token, expires, secure))
 	http.SetCookie(w, auth.CSRFCookie(token, expires, secure))
+
+	slog.DebugContext(r.Context(), "user login", "username", body.Username, "request_id", RequestIDFromContext(r.Context()))
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"username": body.Username,
@@ -129,6 +132,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "failed to create project", http.StatusInternalServerError)
 		return
 	}
+	slog.DebugContext(r.Context(), "project created", "project_id", project.ID, "request_id", RequestIDFromContext(r.Context()))
 	writeJSON(w, http.StatusCreated, project)
 }
 

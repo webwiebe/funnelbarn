@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"log/slog"
 	"math"
 	"net/http"
 	"time"
@@ -89,6 +90,7 @@ func (s *Server) handleCreateABTest(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "failed to create a/b test", http.StatusInternalServerError)
 		return
 	}
+	slog.DebugContext(r.Context(), "ab test created", "test_id", test.ID, "project_id", projectID, "request_id", RequestIDFromContext(r.Context()))
 	writeJSON(w, http.StatusCreated, test)
 }
 
