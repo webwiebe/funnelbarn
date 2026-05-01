@@ -1,4 +1,5 @@
 import { Component, ErrorInfo, ReactNode } from 'react'
+import { reportError } from '../../lib/bugbarn'
 
 interface Props {
   children: ReactNode
@@ -20,6 +21,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Unhandled render error:', error, info.componentStack)
+    reportError(error, {
+      source: 'ErrorBoundary',
+      componentStack: info.componentStack ?? '',
+    })
   }
 
   componentDidUpdate(_prevProps: Props, prevState: State) {

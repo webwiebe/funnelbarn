@@ -50,6 +50,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	token, expires, err := s.sessionManager.Create(body.Username)
 	if err != nil {
+		slog.Error("failed to create session", "error", err, "handled", false)
 		jsonError(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}
@@ -85,7 +86,12 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hasProjects, _ := s.projects.HasProjects(r.Context())
+	hasProjects, err := s.projects.HasProjects(r.Context())
+	if err != nil {
+		slog.Error("failed to check project existence", "error", err, "handled", false)
+		// Non-fatal: return false so the UI can show first-run guidance.
+		hasProjects = false
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"username":     username,
@@ -213,6 +219,7 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	// Generate random key.
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {
+		slog.Error("failed to generate api key random bytes", "error", err, "handled", false)
 		jsonError(w, "failed to generate key", http.StatusInternalServerError)
 		return
 	}

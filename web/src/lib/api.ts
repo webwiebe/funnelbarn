@@ -1,4 +1,5 @@
-// Typed API client with 401 interceptor
+// Typed API client with 401 interceptor and BugBarn 5xx reporting
+import { reportError } from './bugbarn'
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -30,7 +31,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     } catch {
       // ignore parse errors
     }
-    throw new ApiError(res.status, msg)
+    const apiErr = new ApiError(res.status, msg)
+    // Report unexpected server errors (5xx) to BugBarn.
+    if (res.status >= 500) {
+      reportError(apiErr, {
+        source: 'api.request',
+        path,
+        status: res.status,
+      })
+    }
+    throw apiErr
   }
 
   const text = await res.text()
