@@ -9,7 +9,7 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		BugbarnEndpoint  string `json:"bugbarn_endpoint"`
 		BugbarnIngestKey string `json:"bugbarn_ingest_key"`
 	}
-	s.writeJSON(w, http.StatusOK, response{
+	writeJSON(w, http.StatusOK, response{
 		BugbarnEndpoint:  s.bugbarnEndpoint,
 		BugbarnIngestKey: s.bugbarnIngestKey,
 	})
