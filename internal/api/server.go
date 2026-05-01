@@ -247,13 +247,18 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 
 // mapServiceError maps domain/service errors to appropriate HTTP status codes.
 // It never leaks internal error details to the client.
+// Expected errors (not-found, conflict, validation) are logged at Warn level with handled=true.
+// Unexpected errors are logged at Error level with handled=false.
 func mapServiceError(w http.ResponseWriter, err error, op string) {
 	switch {
 	case domain.IsNotFound(err):
+		slog.Warn("service error: not found", "op", op, "error", err, "handled", true)
 		jsonError(w, "not found", http.StatusNotFound)
 	case domain.IsConflict(err):
+		slog.Warn("service error: conflict", "op", op, "error", err, "handled", true)
 		jsonError(w, "already exists", http.StatusConflict)
 	case domain.IsValidation(err):
+		slog.Warn("service error: validation", "op", op, "error", err, "handled", true)
 		var ve *domain.ValidationError
 		if errors.As(err, &ve) {
 			jsonError(w, ve.Error(), http.StatusUnprocessableEntity)
@@ -261,7 +266,7 @@ func mapServiceError(w http.ResponseWriter, err error, op string) {
 			jsonError(w, "invalid request", http.StatusUnprocessableEntity)
 		}
 	default:
-		slog.Error("unexpected service error", "op", op, "err", err)
+		slog.Error("unexpected service error", "op", op, "error", err, "handled", false)
 		jsonError(w, "internal server error", http.StatusInternalServerError)
 	}
 }
