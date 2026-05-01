@@ -185,6 +185,8 @@ func run() error {
 		cfg.IngestRateBurst,
 		store,
 		Version,
+		cfg.SelfEndpoint,
+		cfg.SelfAPIKey,
 	)
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)
