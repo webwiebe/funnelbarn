@@ -8,6 +8,7 @@ import { Activity, Users, TrendingDown, MousePointer, ArrowUpRight, ArrowDownRig
 import Shell from '../components/shell/Shell'
 import { api, DashboardData } from '../lib/api'
 import { useProjects } from '../lib/projects'
+import { ProjectPicker } from '../components/ui/ProjectPicker'
 
 const C = {
   bg: '#0f1117',
@@ -350,11 +351,19 @@ export default function Dashboard() {
         @media (max-width: 400px) {
           .stat-cards-grid { grid-template-columns: 1fr !important; }
         }
+        /* Project picker below heading: always visible (top nav badge shown on desktop too) */
+        .mobile-project-picker { display: block; }
       `}</style>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.5px', margin: 0 }}>Overview</h1>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.5px', margin: 0 }}>Overview</h1>
+          {/* Project picker — visible on mobile (desktop uses top nav badge) */}
+          <div className="mobile-project-picker">
+            <ProjectPicker projects={projects} base="dashboard" variant="badge" />
+          </div>
+        </div>
         <div style={{ display: 'flex', gap: 4, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 4 }}>
           {RANGES.map((r) => (
             <button

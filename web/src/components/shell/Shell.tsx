@@ -2,6 +2,9 @@ import { ReactNode, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { BarChart2, Layers, Radio, Settings, LogOut, User, FlaskConical, MoreHorizontal } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
+import { useProjects } from '../../lib/projects'
+import { ProjectPicker } from '../ui/ProjectPicker'
+import type { Project } from '../../lib/api'
 
 const C = {
   bg: '#0f1117',
@@ -15,15 +18,24 @@ const C = {
 interface ShellProps {
   children: ReactNode
   projectId?: string
-  projectName?: string  // display name for current project
+  projectName?: string  // display name for current project (optional, derived from context if omitted)
+  /** Override the list of projects shown in the picker (defaults to context). */
+  projects?: Project[]
 }
 
-export default function Shell({ children, projectId, projectName }: ShellProps) {
+export default function Shell({ children, projectId, projectName, projects: projectsProp }: ShellProps) {
   const { user, logout } = useAuth()
+  const { projects: ctxProjects } = useProjects()
   const navigate = useNavigate()
   const location = useLocation()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [moreSheetOpen, setMoreSheetOpen] = useState(false)
+
+  const projects = projectsProp ?? ctxProjects
+
+  // Derive display name from context if not explicitly provided
+  const resolvedProjectName =
+    projectName ?? (projectId ? projects.find((p) => p.id === projectId)?.name : undefined)
 
   const handleLogout = async () => {
     await logout()
@@ -77,8 +89,18 @@ export default function Shell({ children, projectId, projectName }: ShellProps) 
         </Link>
 
 
-        {/* Project name badge */}
-        {projectName && (
+        {/* Project picker badge (desktop top nav) */}
+        {projects.length > 0 && projectId && (
+          <div style={{ marginRight: 8 }}>
+            <ProjectPicker
+              projects={projects}
+              base={location.pathname.split('/')[1] || 'dashboard'}
+              variant="badge"
+            />
+          </div>
+        )}
+        {/* Fallback static badge when no projects loaded yet but name is known */}
+        {projects.length === 0 && resolvedProjectName && (
           <span style={{
             fontSize: 12, color: '#94a3b8', background: '#1a1d27',
             border: '1px solid #2a2d3a', borderRadius: 4,
@@ -86,7 +108,7 @@ export default function Shell({ children, projectId, projectName }: ShellProps) 
             maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
           }}>
-            {projectName}
+            {resolvedProjectName}
           </span>
         )}
 
@@ -341,6 +363,18 @@ export default function Shell({ children, projectId, projectName }: ShellProps) 
                 </div>
               </div>
             </div>
+
+            {/* Project picker — only when there are projects to switch between */}
+            {projects.length > 0 && projectId && (
+              <div style={{ marginBottom: '0.75rem' }}>
+                <ProjectPicker
+                  projects={projects}
+                  base={location.pathname.split('/')[1] || 'dashboard'}
+                  variant="full"
+                  onSelect={() => setMoreSheetOpen(false)}
+                />
+              </div>
+            )}
 
             {/* Settings link */}
             <Link
