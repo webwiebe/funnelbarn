@@ -1,50 +1,58 @@
 // BugBarn error reporting utility.
-// Reads VITE_BUGBARN_ENDPOINT and VITE_BUGBARN_INGEST_KEY at build time.
-// Falls back to console.error only when env vars are not configured.
+// Config is fetched from /api/v1/client-config at runtime so the Docker image
+// is environment-agnostic. Falls back to console.error only when unconfigured.
 
-const endpoint = import.meta.env.VITE_BUGBARN_ENDPOINT as string | undefined
-const ingestKey = import.meta.env.VITE_BUGBARN_INGEST_KEY as string | undefined
+interface ClientConfig {
+  bugbarn_endpoint: string
+  bugbarn_ingest_key: string
+}
 
-const configured = Boolean(endpoint && ingestKey)
+let endpoint = ''
+let ingestKey = ''
+let initialized = false
+
+async function loadConfig(): Promise<void> {
+  if (initialized) return
+  initialized = true
+  try {
+    const res = await fetch('/api/v1/client-config')
+    if (!res.ok) return
+    const cfg: ClientConfig = await res.json()
+    endpoint = cfg.bugbarn_endpoint ?? ''
+    ingestKey = cfg.bugbarn_ingest_key ?? ''
+  } catch {
+    // Config fetch failed — reporting falls back to console.error.
+  }
+}
+
+// Kick off config fetch immediately so it's ready before the first error.
+loadConfig()
 
 export interface BugBarnPayload {
   name: string
   properties: Record<string, unknown>
 }
 
-/**
- * Report an error to BugBarn. If the env vars are not set, falls back to
- * console.error so local development is unaffected.
- */
 export function reportToBugBarn(payload: BugBarnPayload): void {
-  if (!configured) {
+  if (!endpoint || !ingestKey) {
     console.error('[BugBarn not configured]', payload.name, payload.properties)
     return
   }
-
-  // Fire-and-forget: never let reporting itself throw.
   try {
     fetch(`${endpoint}/api/v1/ingest`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-BugBarn-Api-Key': ingestKey!,
+        'X-BugBarn-Api-Key': ingestKey,
       },
       body: JSON.stringify(payload),
-      // keepalive so the request survives page unload (e.g. for onerror)
       keepalive: true,
-    }).catch(() => {
-      // Silently swallow — we must never throw from error reporting.
-    })
+    }).catch(() => {})
   } catch {
-    // Defensive: JSON.stringify can theoretically throw for circular refs.
+    // Never throw from error reporting.
   }
 }
 
-/**
- * Convenience wrapper that extracts message and stack from an Error (or any
- * thrown value) and sends it to BugBarn.
- */
 export function reportError(
   error: unknown,
   context: Record<string, unknown> = {},
@@ -56,7 +64,7 @@ export function reportError(
     properties: {
       message,
       stack,
-      url: window.location.href,
+      url: typeof window !== 'undefined' ? window.location.href : '',
       ...context,
     },
   })

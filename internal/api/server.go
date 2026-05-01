@@ -33,11 +33,13 @@ type Server struct {
 	ingest         *ingest.Handler
 	userAuth       *auth.UserAuthenticator
 	sessionManager *auth.SessionManager
-	allowedOrigins []string
-	sessionSecret  string
-	publicURL      string
-	metricsToken   string
-	version        string
+	allowedOrigins     []string
+	sessionSecret      string
+	publicURL          string
+	metricsToken       string
+	version            string
+	bugbarnEndpoint    string
+	bugbarnIngestKey   string
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
@@ -66,26 +68,30 @@ func NewServer(
 	ingestRateBurst float64,
 	db Pinger,
 	version string,
+	bugbarnEndpoint string,
+	bugbarnIngestKey string,
 ) *Server {
 	s := &Server{
-		mux:            http.NewServeMux(),
-		db:             db,
-		version:        version,
-		projects:       projects,
-		funnels:        funnels,
-		abtests:        abtests,
-		events:         events,
-		sessions:       sessions,
-		apikeys:        apikeys,
-		ingest:         ingestHandler,
-		userAuth:       userAuth,
-		sessionManager: sessionManager,
-		allowedOrigins: allowedOrigins,
-		sessionSecret:  sessionSecret,
-		publicURL:      publicURL,
-		loginLimiter:   newRateLimiter(loginRatePerMinute, loginRateBurst),
-		eventsLimiter:  newRateLimiter(ingestRatePerMinute, ingestRateBurst),
-		apiLimiter:     newRateLimiter(apiRatePerMinute, apiRateBurst),
+		mux:              http.NewServeMux(),
+		db:               db,
+		version:          version,
+		projects:         projects,
+		funnels:          funnels,
+		abtests:          abtests,
+		events:           events,
+		sessions:         sessions,
+		apikeys:          apikeys,
+		ingest:           ingestHandler,
+		userAuth:         userAuth,
+		sessionManager:   sessionManager,
+		allowedOrigins:   allowedOrigins,
+		sessionSecret:    sessionSecret,
+		publicURL:        publicURL,
+		bugbarnEndpoint:  bugbarnEndpoint,
+		bugbarnIngestKey: bugbarnIngestKey,
+		loginLimiter:     newRateLimiter(loginRatePerMinute, loginRateBurst),
+		eventsLimiter:    newRateLimiter(ingestRatePerMinute, ingestRateBurst),
+		apiLimiter:       newRateLimiter(apiRatePerMinute, apiRateBurst),
 	}
 	s.registerRoutes()
 	return s
@@ -98,6 +104,7 @@ func (s *Server) registerRoutes() {
 	// Public
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/v1/setup/{slug}", s.handleSetup)
+	s.mux.HandleFunc("GET /api/v1/client-config", s.handleClientConfig)
 
 	// Ingest (API key required)
 	s.mux.Handle("POST /api/v1/events", s.eventsLimiter.middleware(s.ingest))
