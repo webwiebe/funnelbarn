@@ -198,8 +198,8 @@ jobs:
               funnelbarn=${SERVICE_IMAGE}:${{ github.sha }}
             kubectl -n ${NAMESPACE} set image deployment/funnelbarn-web \
               funnelbarn-web=${WEB_IMAGE}:${{ github.sha }}
-            kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=180s
-            kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=180s
+            kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=360s
+            kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=360s
           "
 
       - name: Post release marker to BugBarn
@@ -279,8 +279,8 @@ jobs:
               funnelbarn=${SERVICE_IMAGE}:${{ github.sha }}
             kubectl -n ${NAMESPACE} set image deployment/funnelbarn-web \
               funnelbarn-web=${WEB_IMAGE}:${{ github.sha }}
-            kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=180s
-            kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=180s
+            kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=360s
+            kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=360s
           "
 
       - name: Post release marker to BugBarn
