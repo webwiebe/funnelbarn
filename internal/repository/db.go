@@ -46,7 +46,52 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("goose up: %w", err)
 	}
 
+	// Backfill columns added to the schema after the initial migration was applied.
+	// Safe to run on any DB regardless of how old it is.
+	if err := ensureColumns(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("ensure columns: %w", err)
+	}
+
 	return &Store{db: db, q: sqlcgen.New(db)}, nil
+}
+
+// ensureColumns adds any columns that may be missing on databases older than
+// the migration that introduced them. Uses IF NOT EXISTS semantics via PRAGMA.
+func ensureColumns(db *sql.DB) error {
+	type colCheck struct{ table, column, def string }
+	checks := []colCheck{
+		{"projects", "status", "TEXT NOT NULL DEFAULT 'active'"},
+	}
+	for _, c := range checks {
+		rows, err := db.Query(`PRAGMA table_info(` + c.table + `)`)
+		if err != nil {
+			return err
+		}
+		found := false
+		for rows.Next() {
+			var cid int
+			var name, typ string
+			var notNull int
+			var dflt sql.NullString
+			var pk int
+			if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+				rows.Close()
+				return err
+			}
+			if name == c.column {
+				found = true
+				break
+			}
+		}
+		rows.Close()
+		if !found {
+			if _, err := db.Exec(`ALTER TABLE ` + c.table + ` ADD COLUMN ` + c.column + ` ` + c.def); err != nil {
+				return fmt.Errorf("add column %s.%s: %w", c.table, c.column, err)
+			}
+		}
+	}
+	return nil
 }
 
 // Close closes the underlying database connection.
