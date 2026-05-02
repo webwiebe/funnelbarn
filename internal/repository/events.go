@@ -162,7 +162,7 @@ type ReferrerStat struct {
 // EventTimeSeries returns hourly event counts for a project over a time range.
 func (s *Store) EventTimeSeries(ctx context.Context, projectID string, from, to time.Time) ([]TimeSeriesPoint, error) {
 	const q = `
-		SELECT strftime('%Y-%m-%dT%H:00:00Z', occurred_at) as hour, COUNT(*) as count
+		SELECT substr(occurred_at, 1, 13) || ':00:00Z' as hour, COUNT(*) as count
 		FROM events
 		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?
 		GROUP BY hour
@@ -497,7 +497,7 @@ func (s *Store) TopUTMMediums(ctx context.Context, projectID string, from, to ti
 // DailyEventCounts returns daily event counts for a project over a time range.
 func (s *Store) DailyEventCounts(ctx context.Context, projectID string, from, to time.Time) ([]TimeSeriesPoint, error) {
 	const q = `
-		SELECT strftime('%Y-%m-%d', occurred_at) as day, COUNT(*) as count
+		SELECT substr(occurred_at, 1, 10) as day, COUNT(*) as count
 		FROM events
 		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?
 		GROUP BY day
@@ -567,7 +567,7 @@ func (s *Store) AvgEventsPerSession(ctx context.Context, projectID string, from,
 // DailyUniqueSessions returns daily unique session counts.
 func (s *Store) DailyUniqueSessions(ctx context.Context, projectID string, from, to time.Time) ([]TimeSeriesPoint, error) {
 	const q = `
-		SELECT strftime('%Y-%m-%d', occurred_at) as day, COUNT(DISTINCT session_id) as count
+		SELECT substr(occurred_at, 1, 10) as day, COUNT(DISTINCT session_id) as count
 		FROM events
 		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?
 		GROUP BY day
