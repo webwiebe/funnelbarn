@@ -88,6 +88,7 @@ func (s *Server) handleDeleteFunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.InfoContext(r.Context(), "funnel deleted", "funnel_id", funnelID, "project_id", projectID, "request_id", RequestIDFromContext(r.Context()))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -142,7 +143,7 @@ func (s *Server) handleCreateFunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.DebugContext(r.Context(), "funnel created", "funnel_id", created.ID, "project_id", projectID, "request_id", RequestIDFromContext(r.Context()))
+	slog.InfoContext(r.Context(), "funnel created", "funnel_id", created.ID, "project_id", projectID, "request_id", RequestIDFromContext(r.Context()))
 	writeJSON(w, http.StatusCreated, created)
 }
 

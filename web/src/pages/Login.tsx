@@ -2,6 +2,7 @@ import { useState, FormEvent } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { ApiError } from '../lib/api'
+import { trackEvent } from '../lib/analytics'
 
 const C = {
   bg: '#0f1117',
@@ -31,11 +32,14 @@ export default function Login() {
     setSubmitting(true)
     try {
       await login(username, password)
+      trackEvent('login', { method: 'password' })
       navigate('/dashboard', { replace: true })
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
+        trackEvent('login_failed', { reason: 'invalid_credentials' })
         setError('Invalid username or password')
       } else {
+        trackEvent('login_failed', { reason: 'error' })
         setError('Something went wrong. Please try again.')
       }
     } finally {

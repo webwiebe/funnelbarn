@@ -4,6 +4,8 @@ import { FlaskConical, Plus, X } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api, ABTest, ABTestAnalysis } from '../lib/api'
 import { useProjects } from '../lib/projects'
+import { trackEvent } from '../lib/analytics'
+import { reportError } from '../lib/bugbarn'
 
 const C = {
   bg: '#0f1117',
@@ -71,6 +73,7 @@ function CreateTestModal({
         control_filter: { property: controlProp, value: controlVal },
         variant_filter: { property: variantProp, value: variantVal },
       })
+      trackEvent('abtest_created', { test_name: name })
       onCreated(t)
     } catch (e) {
       setError(String(e))
@@ -311,7 +314,7 @@ function TestDetail({ test, projectId }: { test: ABTest; projectId: string }) {
   useEffect(() => {
     api.getABTestAnalysis(projectId, test.id)
       .then(setAnalysis)
-      .catch(console.error)
+      .catch((e) => { console.error(e); reportError(e, { source: 'ABTests' }) })
       .finally(() => setLoading(false))
   }, [projectId, test.id])
 
@@ -376,7 +379,7 @@ export default function ABTests() {
     if (!projectId) return
     api.getABTests(projectId)
       .then((d) => setTests(d.tests || []))
-      .catch(console.error)
+      .catch((e) => { console.error(e); reportError(e, { source: 'ABTests' }) })
   }, [projectId])
 
   if (!projectId) {

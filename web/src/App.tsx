@@ -1,5 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { ReactNode, useState } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { ReactNode, useEffect, useState } from 'react'
 import { AuthProvider, useAuth } from './lib/auth'
 import { ProjectProvider, useProjects } from './lib/projects'
 import Landing from './pages/Landing'
@@ -11,6 +11,7 @@ import Settings from './pages/Settings'
 import ABTests from './pages/ABTests'
 import FirstRunWizard from './components/wizards/FirstRunWizard'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
+import { trackPageView } from './lib/analytics'
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth()
@@ -114,6 +115,14 @@ function DefaultProjectRoute({ base }: { base: string }) {
   return <Navigate to={`${base}/${target}`} replace />
 }
 
+function PageTracker() {
+  const location = useLocation()
+  useEffect(() => {
+    trackPageView()
+  }, [location.pathname])
+  return null
+}
+
 function AppRoutes() {
   const { user } = useAuth()
   const { refetch } = useProjects()
@@ -124,6 +133,7 @@ function AppRoutes() {
 
   return (
     <>
+      <PageTracker />
       {showWizard && (
         <FirstRunWizard onComplete={() => { refetch(); setWizardDismissed(true) }} />
       )}

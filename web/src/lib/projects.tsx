@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react'
 import { api, Project } from './api'
+import { reportError } from './bugbarn'
 
 const STORAGE_KEY = 'funnelbarn_default_project'
 
@@ -29,7 +30,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setIsLoading(true)
     api.listProjects()
       .then((d) => setProjects(d.projects || []))
-      .catch(() => setProjects([]))
+      .catch((e) => { reportError(e, { source: 'ProjectProvider.listProjects' }); setProjects([]) })
       .finally(() => setIsLoading(false))
   }, [])
 

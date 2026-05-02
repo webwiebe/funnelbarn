@@ -4,6 +4,8 @@ import { Plus, X, Layers, Pencil, Trash2 } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api, Funnel, FunnelAnalysis, FunnelStepInput } from '../lib/api'
 import { useProjects } from '../lib/projects'
+import { trackEvent } from '../lib/analytics'
+import { reportError } from '../lib/bugbarn'
 
 const LANGS = ['JS', 'React', 'Go', 'Python', 'Swift', 'Kotlin'] as const
 type Lang = typeof LANGS[number]
@@ -330,6 +332,7 @@ function CreateFunnelModal({
     setError(null)
     try {
       const f = await api.createFunnel(projectId, name, steps)
+      trackEvent('funnel_created', { funnel_name: name, step_count: steps.length })
       onCreated(f)
     } catch (e) {
       setError(String(e))
@@ -853,7 +856,7 @@ export default function Funnels() {
     if (!projectId) return
     api.listFunnels(projectId)
       .then((d) => setFunnels(d.funnels || []))
-      .catch(console.error)
+      .catch((e) => { console.error(e); reportError(e, { source: 'Funnels.listFunnels' }) })
   }, [projectId])
 
   // Re-fetch analysis whenever selected funnel or active segment changes.
@@ -866,6 +869,7 @@ export default function Funnels() {
       .then(setAnalysis)
       .catch((e) => {
         console.error(e)
+        reportError(e, { source: 'Funnels.getFunnelAnalysis' })
         setAnalysisError(String(e))
       })
       .finally(() => setAnalysisLoading(false))
@@ -873,6 +877,7 @@ export default function Funnels() {
 
   const loadAnalysis = (funnel: Funnel) => {
     if (!projectId) return
+    trackEvent('funnel_viewed', { funnel_name: funnel.name })
     setSelected(funnel)
     setShowDetail(true)
     // Analysis will be fetched by the effect above.
@@ -890,6 +895,7 @@ export default function Funnels() {
       setShowDetail(false)
     } catch (e) {
       console.error(e)
+      reportError(e, { source: 'Funnels.deleteFunnel' })
       alert('Failed to delete funnel: ' + String(e))
     } finally {
       setDeleting(false)

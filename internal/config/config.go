@@ -29,6 +29,8 @@ type Config struct {
 	SelfEndpoint        string
 	SelfAPIKey          string
 	SelfEnvironment     string
+	DogfoodAPIKey       string
+	DogfoodProject      string
 	EventRetentionDays  int // 0 = disabled; default 90
 	LoginRatePerMinute  float64
 	LoginRateBurst      float64
@@ -61,6 +63,8 @@ func Load() Config {
 		SelfEndpoint:        os.Getenv("FUNNELBARN_SELF_ENDPOINT"),
 		SelfAPIKey:          os.Getenv("FUNNELBARN_SELF_API_KEY"),
 		SelfEnvironment:     getenv("FUNNELBARN_ENVIRONMENT", "production"),
+		DogfoodAPIKey:       os.Getenv("FUNNELBARN_DOGFOOD_API_KEY"),
+		DogfoodProject:      getenv("FUNNELBARN_DOGFOOD_PROJECT", "funnelbarn"),
 	}
 
 	if raw := os.Getenv("FUNNELBARN_ALLOWED_ORIGINS"); raw != "" {

@@ -30,6 +30,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// Try env-var user auth.
 	if s.userAuth.Enabled() {
 		if !s.userAuth.Valid(body.Username, body.Password) {
+			slog.WarnContext(r.Context(), "login failed", "username", body.Username, "reason", "invalid_credentials", "request_id", RequestIDFromContext(r.Context()))
 			jsonError(w, "invalid credentials", http.StatusUnauthorized)
 			return
 		}
@@ -37,10 +38,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// Fall back to DB user.
 		user, err := s.projects.UserByUsername(r.Context(), body.Username)
 		if err != nil {
+			slog.WarnContext(r.Context(), "login failed", "username", body.Username, "reason", "user_not_found", "request_id", RequestIDFromContext(r.Context()))
 			jsonError(w, "invalid credentials", http.StatusUnauthorized)
 			return
 		}
 		if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(body.Password)) != nil {
+			slog.WarnContext(r.Context(), "login failed", "username", body.Username, "reason", "wrong_password", "request_id", RequestIDFromContext(r.Context()))
 			jsonError(w, "invalid credentials", http.StatusUnauthorized)
 			return
 		}
@@ -58,7 +61,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, auth.SessionCookie(token, expires, secure))
 	http.SetCookie(w, auth.CSRFCookie(token, expires, secure))
 
-	slog.DebugContext(r.Context(), "user login", "username", body.Username, "request_id", RequestIDFromContext(r.Context()))
+	slog.InfoContext(r.Context(), "user login", "username", body.Username, "request_id", RequestIDFromContext(r.Context()))
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"username": body.Username,
@@ -133,7 +136,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		mapServiceError(w, err, "handleCreateProject")
 		return
 	}
-	slog.DebugContext(r.Context(), "project created", "project_id", project.ID, "request_id", RequestIDFromContext(r.Context()))
+	slog.InfoContext(r.Context(), "project created", "project_id", project.ID, "name", body.Name, "request_id", RequestIDFromContext(r.Context()))
 	writeJSON(w, http.StatusCreated, project)
 }
 
@@ -240,6 +243,7 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		Scope     string `json:"scope"`
 		CreatedAt string `json:"created_at"`
 	}
+	slog.InfoContext(r.Context(), "api key created", "key_id", key.ID, "name", body.Name, "scope", body.Scope, "project_id", body.ProjectID, "request_id", RequestIDFromContext(r.Context()))
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"api_key": safeKey{
 			ID:        key.ID,
@@ -262,6 +266,7 @@ func (s *Server) handleDeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 		mapServiceError(w, err, "handleDeleteAPIKey")
 		return
 	}
+	slog.InfoContext(r.Context(), "api key deleted", "key_id", keyID, "request_id", RequestIDFromContext(r.Context()))
 	w.WriteHeader(http.StatusNoContent)
 }
 
