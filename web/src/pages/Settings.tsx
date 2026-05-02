@@ -4,6 +4,8 @@ import Shell from '../components/shell/Shell'
 import { api, ApiKey } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { CopyButton } from '../components/ui/CopyButton'
+import { trackEvent } from '../lib/analytics'
+import { reportError } from '../lib/bugbarn'
 
 const C = {
   bg: '#0f1117',
@@ -69,7 +71,7 @@ export default function Settings() {
   useEffect(() => {
     api.listApiKeys()
       .then((d) => setApiKeys(d.api_keys || []))
-      .catch(() => setApiKeys([]))
+      .catch((e) => { reportError(e, { source: 'Settings.listApiKeys' }); setApiKeys([]) })
       .finally(() => setLoading(false))
   }, [])
 
@@ -81,6 +83,7 @@ export default function Settings() {
       // Pass the first project ID so the backend doesn't have to guess.
       const projectId = projects[0]?.id
       const res = await api.createApiKey(newKeyName, newKeyScope, projectId)
+      trackEvent('api_key_created', { scope: newKeyScope })
       setApiKeys((prev) => [...prev, res.api_key])
       setNewKeyValue(res.key)
       setNewKeyName('')

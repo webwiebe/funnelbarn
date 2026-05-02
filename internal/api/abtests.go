@@ -80,7 +80,7 @@ func (s *Server) handleCreateABTest(w http.ResponseWriter, r *http.Request) {
 		mapServiceError(w, err, "handleCreateABTest")
 		return
 	}
-	slog.DebugContext(r.Context(), "ab test created", "test_id", test.ID, "project_id", projectID, "request_id", RequestIDFromContext(r.Context()))
+	slog.InfoContext(r.Context(), "ab test created", "test_id", test.ID, "project_id", projectID, "request_id", RequestIDFromContext(r.Context()))
 	writeJSON(w, http.StatusCreated, test)
 }
 

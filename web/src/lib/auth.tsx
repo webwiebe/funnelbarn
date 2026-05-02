@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { api, User, ApiError } from './api'
+import { trackEvent } from './analytics'
 
 interface AuthContextValue {
   user: User | null
@@ -20,6 +21,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .catch((e: unknown) => {
         if (e instanceof ApiError && e.status === 401) {
           setUser(null)
+        } else {
+          console.error('auth check failed', e)
+          setUser(null)
         }
       })
       .finally(() => setIsLoading(false))
@@ -31,6 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = async () => {
+    trackEvent('logout')
     await api.logout()
     setUser(null)
   }

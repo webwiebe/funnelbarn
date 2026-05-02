@@ -149,6 +149,9 @@ func run() error {
 	if selfReporting {
 		slog.Info("self-reporting enabled", "endpoint", cfg.SelfEndpoint)
 	}
+	if cfg.DogfoodAPIKey != "" {
+		slog.Info("dogfood analytics enabled", "project", cfg.DogfoodProject)
+	}
 
 	go runBackgroundWorker(ctx, cfg, store)
 
@@ -187,6 +190,8 @@ func run() error {
 		Version,
 		cfg.SelfEndpoint,
 		cfg.SelfAPIKey,
+		cfg.DogfoodAPIKey,
+		cfg.DogfoodProject,
 	)
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)

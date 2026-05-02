@@ -40,6 +40,8 @@ type Server struct {
 	version            string
 	bugbarnEndpoint    string
 	bugbarnIngestKey   string
+	dogfoodAPIKey      string
+	dogfoodProject     string
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
@@ -70,6 +72,8 @@ func NewServer(
 	version string,
 	bugbarnEndpoint string,
 	bugbarnIngestKey string,
+	dogfoodAPIKey string,
+	dogfoodProject string,
 ) *Server {
 	s := &Server{
 		mux:              http.NewServeMux(),
@@ -89,6 +93,8 @@ func NewServer(
 		publicURL:        publicURL,
 		bugbarnEndpoint:  bugbarnEndpoint,
 		bugbarnIngestKey: bugbarnIngestKey,
+		dogfoodAPIKey:    dogfoodAPIKey,
+		dogfoodProject:   dogfoodProject,
 		loginLimiter:     newRateLimiter(loginRatePerMinute, loginRateBurst),
 		eventsLimiter:    newRateLimiter(ingestRatePerMinute, ingestRateBurst),
 		apiLimiter:       newRateLimiter(apiRatePerMinute, apiRateBurst),

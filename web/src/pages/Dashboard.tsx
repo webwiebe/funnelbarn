@@ -9,6 +9,8 @@ import Shell from '../components/shell/Shell'
 import { api, DashboardData } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { ProjectPicker } from '../components/ui/ProjectPicker'
+import { trackEvent } from '../lib/analytics'
+import { reportError } from '../lib/bugbarn'
 
 const C = {
   bg: '#0f1117',
@@ -111,6 +113,7 @@ export default function Dashboard() {
     setCreateError(null)
     try {
       const p = await api.createProject(newProjectName, '')
+      trackEvent('project_created', { project_id: p.id, project_name: p.name })
       refetchProjects()
       setShowCreateProject(false)
       setNewProjectName('')
@@ -128,7 +131,7 @@ export default function Dashboard() {
     setError(null)
     api.getDashboard(projectId, range)
       .then(setData)
-      .catch((e: unknown) => setError(String(e)))
+      .catch((e: unknown) => { reportError(e, { source: 'Dashboard.getDashboard' }); setError(String(e)) })
       .finally(() => setLoading(false))
   }, [projectId, range])
 

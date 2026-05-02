@@ -6,11 +6,17 @@ import "net/http"
 // No auth required — values are safe to expose (ingest keys are public by design).
 func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 	type response struct {
-		BugbarnEndpoint  string `json:"bugbarn_endpoint"`
-		BugbarnIngestKey string `json:"bugbarn_ingest_key"`
+		BugbarnEndpoint    string `json:"bugbarn_endpoint"`
+		BugbarnIngestKey   string `json:"bugbarn_ingest_key"`
+		FunnelbarnEndpoint string `json:"funnelbarn_endpoint,omitempty"`
+		FunnelbarnAPIKey   string `json:"funnelbarn_api_key,omitempty"`
+		FunnelbarnProject  string `json:"funnelbarn_project,omitempty"`
 	}
 	writeJSON(w, http.StatusOK, response{
-		BugbarnEndpoint:  s.bugbarnEndpoint,
-		BugbarnIngestKey: s.bugbarnIngestKey,
+		BugbarnEndpoint:    s.bugbarnEndpoint,
+		BugbarnIngestKey:   s.bugbarnIngestKey,
+		FunnelbarnEndpoint: s.publicURL,
+		FunnelbarnAPIKey:   s.dogfoodAPIKey,
+		FunnelbarnProject:  s.dogfoodProject,
 	})
 }

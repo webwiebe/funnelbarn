@@ -84,6 +84,14 @@ spec:
                   name: funnelbarn-secrets
                   key: FUNNELBARN_ENVIRONMENT
                   optional: true
+            - name: FUNNELBARN_DOGFOOD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_DOGFOOD_API_KEY
+                  optional: true
+            - name: FUNNELBARN_DOGFOOD_PROJECT
+              value: funnelbarn
             - name: LITESTREAM_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
