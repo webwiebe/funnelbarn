@@ -82,11 +82,11 @@ func (svc *ProjectService) GetProjectBySlug(ctx context.Context, slug string) (r
 	return p, nil
 }
 
-func (svc *ProjectService) UpdateProject(ctx context.Context, id, name string) (repository.Project, error) {
+func (svc *ProjectService) UpdateProject(ctx context.Context, id, name, projectDomain string) (repository.Project, error) {
 	if strings.TrimSpace(name) == "" {
 		return repository.Project{}, &domain.ValidationError{Field: "name", Message: "required"}
 	}
-	p, err := svc.store.UpdateProject(ctx, id, name)
+	p, err := svc.store.UpdateProject(ctx, id, name, strings.TrimSpace(projectDomain))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return repository.Project{}, fmt.Errorf("%w: project %s", domain.ErrNotFound, id)

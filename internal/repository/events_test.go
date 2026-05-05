@@ -441,9 +441,10 @@ func TestUpdateProject(t *testing.T) {
 
 	p, _ := s.CreateProject(ctx, "Old Name", "old-name-repo")
 
-	updated, err := s.UpdateProject(ctx, p.ID, "New Name")
+	updated, err := s.UpdateProject(ctx, p.ID, "New Name", "example.com")
 	require.NoError(t, err)
 	require.Equal(t, "New Name", updated.Name)
+	require.Equal(t, "example.com", updated.Domain)
 	require.Equal(t, p.ID, updated.ID)
 }
 

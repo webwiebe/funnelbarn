@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { Plus, X, Layers, Pencil, Trash2 } from 'lucide-react'
 import Shell from '../components/shell/Shell'
@@ -50,17 +50,17 @@ const ${constName} = {
 ${stepEntries}
 }
 
-// Track page view on load
-funnelbarn.track(${constName}.${toCamelCase(firstStep)})
+// Track page view (url is auto-captured, add extra context as properties)
+funnelbarn.page({ section: 'landing' })
 
-// Button click example
+// Button click example — pass context so you can filter in funnels
 document.querySelector('#your-cta').addEventListener('click', () => {
-  funnelbarn.track(${constName}.${toCamelCase(midStep)})
+  funnelbarn.track(${constName}.${toCamelCase(midStep)}, { page: location.pathname, label: 'hero-cta' })
 })
 
-// Form submit example
+// Form submit — include form name and page for filtering
 document.querySelector('form').addEventListener('submit', () => {
-  funnelbarn.track(${constName}.${toCamelCase(lastStep)})
+  funnelbarn.track(${constName}.${toCamelCase(lastStep)}, { form: 'signup', page: location.pathname })
 })
 
 // Scroll depth (50%)
@@ -69,6 +69,10 @@ window.addEventListener('scroll', () => {
   const pct = window.scrollY / (document.body.scrollHeight - window.innerHeight)
   if (pct >= 0.5 && !_scrolled) { _scrolled = true; funnelbarn.track('scroll_50') }
 }, { passive: true })
+
+// Identify logged-in users (enables "Logged in" / "Not logged in" segments)
+// Call this after the user logs in
+funnelbarn.identify('user-123')
 </script>`
 
       case 'React':
@@ -92,12 +96,18 @@ function useFunnelTrack() {
 function YourComponent() {
   const track = useFunnelTrack()
 
+  // page() auto-captures URL and referrer; add extra properties as needed
   useEffect(() => {
-    track(${constName}.${toCamelCase(firstStep)})
+    window.funnelbarn?.page({ section: 'dashboard' })
   }, [])
 
+  // Identify logged-in users (enables "Logged in" / "Not logged in" segments)
+  useEffect(() => {
+    if (currentUser) window.funnelbarn?.identify(currentUser.id)
+  }, [currentUser])
+
   return (
-    <button onClick={() => track(${constName}.${toCamelCase(midStep)})}>
+    <button onClick={() => track(${constName}.${toCamelCase(midStep)}, { page: location.pathname })}>
       Continue
     </button>
   )
@@ -141,8 +151,8 @@ client = FunnelBarnClient(
     endpoint="https://funnelbarn.wiebe.xyz"
 )
 
-# Track a step
-client.track(${constNameCapitalized}.${firstStep.toUpperCase()})
+# Track a step (user_id enables "Logged in" / "Not logged in" segments)
+client.track(${constNameCapitalized}.${firstStep.toUpperCase()}, properties={"user_id": "user_123"})
 
 # With properties
 client.track(
@@ -175,9 +185,9 @@ func trackFunnelStep(_ step: ${constNameCapitalized}Step,
     URLSession.shared.dataTask(with: request).resume()
 }
 
-// Usage
-trackFunnelStep(.${toCamelCase(firstStep)})
-trackFunnelStep(.${toCamelCase(lastStep)}, properties: ["user_id": "user_123"])`
+// Usage (user_id enables "Logged in" / "Not logged in" segments)
+trackFunnelStep(.${toCamelCase(firstStep)}, properties: ["user_id": "user_123"])
+trackFunnelStep(.${toCamelCase(lastStep)}, properties: ["plan": "pro"])`
 
       case 'Kotlin':
         return `import okhttp3.*
@@ -210,11 +220,12 @@ class FunnelBarnTracker(private val apiKey: String) {
     }
 }
 
-// Usage
+// Usage (user_id enables "Logged in" / "Not logged in" segments)
 val tracker = FunnelBarnTracker("${key}")
-tracker.track(${constNameCapitalized}.${firstStep.toUpperCase().replace(/-/g, '_')})
+tracker.track(${constNameCapitalized}.${firstStep.toUpperCase().replace(/-/g, '_')},
+    mapOf("user_id" to "user_123"))
 tracker.track(${constNameCapitalized}.${lastStep.toUpperCase().replace(/-/g, '_')},
-    mapOf("user_id" to "user_123"))`
+    mapOf("user_id" to "user_123", "plan" to "pro"))`
     }
   }
 
@@ -279,14 +290,14 @@ tracker.track(${constNameCapitalized}.${lastStep.toUpperCase().replace(/-/g, '_'
 }
 
 const PRESET_SEGMENTS = [
-  { id: 'all', label: 'All' },
-  { id: 'logged_in', label: 'Logged in' },
-  { id: 'not_logged_in', label: 'Not logged in' },
-  { id: 'mobile', label: 'Mobile' },
-  { id: 'desktop', label: 'Desktop' },
-  { id: 'tablet', label: 'Tablet' },
-  { id: 'new_visitor', label: 'New visitors' },
-  { id: 'returning', label: 'Returning' },
+  { id: 'all', label: 'All', tip: 'All sessions, no filtering applied' },
+  { id: 'logged_in', label: 'Logged in', tip: 'Sessions where identify() was called with a user ID. Requires: analytics.identify("user-123") in your tracking code.' },
+  { id: 'not_logged_in', label: 'Not logged in', tip: 'Sessions with no user ID. If you never call identify(), all sessions appear here.' },
+  { id: 'mobile', label: 'Mobile', tip: 'Detected automatically from the User-Agent header — no code changes needed.' },
+  { id: 'desktop', label: 'Desktop', tip: 'Detected automatically from the User-Agent header — no code changes needed.' },
+  { id: 'tablet', label: 'Tablet', tip: 'Detected automatically from the User-Agent header — no code changes needed.' },
+  { id: 'new_visitor', label: 'New visitors', tip: 'First-time sessions (1 event only). Tracked automatically via the SDK session in localStorage.' },
+  { id: 'returning', label: 'Returning', tip: 'Sessions with more than one event. Tracked automatically via the SDK session in localStorage.' },
 ]
 
 const C = {
@@ -306,6 +317,86 @@ function conversionColor(pct: number) {
   return C.error
 }
 
+function EventNameInput({
+  value,
+  onChange,
+  placeholder,
+  eventNames,
+}: {
+  value: string
+  onChange: (val: string) => void
+  placeholder?: string
+  eventNames: string[]
+}) {
+  const [open, setOpen] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  const filtered = eventNames.filter(
+    (n) => n.toLowerCase().includes(value.toLowerCase()) && n !== value
+  )
+
+  return (
+    <div ref={wrapperRef} style={{ position: 'relative', flex: 1 }}>
+      <input
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(true) }}
+        onFocus={(e) => { setFocused(true); setOpen(true); e.target.style.borderColor = C.amber }}
+        onBlur={(e) => { setFocused(false); e.target.style.borderColor = C.border; setTimeout(() => setOpen(false), 150) }}
+        placeholder={placeholder || 'Event name, e.g. page_view'}
+        style={{
+          width: '100%',
+          background: C.bg,
+          border: `1px solid ${C.border}`,
+          borderRadius: 8,
+          padding: '0.55rem 0.875rem',
+          color: C.text,
+          fontSize: 14,
+          outline: 'none',
+          boxSizing: 'border-box',
+        }}
+      />
+      {open && focused && filtered.length > 0 && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          marginTop: 4,
+          background: C.bg,
+          border: `1px solid ${C.border}`,
+          borderRadius: 8,
+          maxHeight: 160,
+          overflowY: 'auto',
+          zIndex: 100,
+        }}>
+          {filtered.slice(0, 10).map((n) => (
+            <div
+              key={n}
+              onMouseDown={(e) => { e.preventDefault(); onChange(n); setOpen(false) }}
+              style={{
+                padding: '0.45rem 0.875rem',
+                fontSize: 13,
+                color: C.text,
+                cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(245,158,11,0.1)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              {n}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface StepWithFilters {
+  event_name: string
+  filters: { property: string; value: string }[]
+}
+
 function CreateFunnelModal({
   projectId,
   onClose,
@@ -316,14 +407,28 @@ function CreateFunnelModal({
   onCreated: (f: Funnel) => void
 }) {
   const [name, setName] = useState('')
-  const [steps, setSteps] = useState<FunnelStepInput[]>([{ event_name: '' }, { event_name: '' }])
+  const [steps, setSteps] = useState<StepWithFilters[]>([
+    { event_name: '', filters: [] },
+    { event_name: '', filters: [] },
+  ])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [eventNames, setEventNames] = useState<string[]>([])
 
-  const addStep = () => setSteps((s) => [...s, { event_name: '' }])
+  useEffect(() => {
+    api.getEventNames(projectId).then((d) => setEventNames(d.event_names || [])).catch(() => {})
+  }, [projectId])
+
+  const addStep = () => setSteps((s) => [...s, { event_name: '', filters: [] }])
   const removeStep = (i: number) => setSteps((s) => s.filter((_, idx) => idx !== i))
   const updateStep = (i: number, val: string) =>
-    setSteps((s) => s.map((st, idx) => (idx === i ? { event_name: val } : st)))
+    setSteps((s) => s.map((st, idx) => (idx === i ? { ...st, event_name: val } : st)))
+  const addFilter = (i: number) =>
+    setSteps((s) => s.map((st, idx) => idx === i ? { ...st, filters: [...st.filters, { property: '', value: '' }] } : st))
+  const removeFilter = (stepIdx: number, filterIdx: number) =>
+    setSteps((s) => s.map((st, i) => i === stepIdx ? { ...st, filters: st.filters.filter((_, fi) => fi !== filterIdx) } : st))
+  const updateFilter = (stepIdx: number, filterIdx: number, field: 'property' | 'value', val: string) =>
+    setSteps((s) => s.map((st, i) => i === stepIdx ? { ...st, filters: st.filters.map((f, fi) => fi === filterIdx ? { ...f, [field]: val } : f) } : st))
 
   const handleCreate = async () => {
     if (!name.trim()) { setError('Name is required'); return }
@@ -331,7 +436,11 @@ function CreateFunnelModal({
     setSaving(true)
     setError(null)
     try {
-      const f = await api.createFunnel(projectId, name, steps)
+      const apiSteps: FunnelStepInput[] = steps.map((s) => ({
+        event_name: s.event_name,
+        ...(s.filters.length > 0 ? { filters: s.filters.filter((f) => f.property && f.value) } : {}),
+      }))
+      const f = await api.createFunnel(projectId, name, apiSteps)
       trackEvent('funnel_created', { funnel_name: name, step_count: steps.length })
       onCreated(f)
     } catch (e) {
@@ -407,47 +516,93 @@ function CreateFunnelModal({
         <div style={{ marginBottom: '1.25rem' }}>
           <label style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 10 }}>Steps</label>
           {steps.map((s, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-              <div style={{
-                width: 24,
-                height: 24,
-                background: C.amber,
-                color: '#0f1117',
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 12,
-                fontWeight: 800,
-                flexShrink: 0,
-              }}>
-                {i + 1}
+            <div key={i} style={{ marginBottom: 10 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div style={{
+                  width: 24,
+                  height: 24,
+                  background: C.amber,
+                  color: '#0f1117',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  flexShrink: 0,
+                }}>
+                  {i + 1}
+                </div>
+                <EventNameInput
+                  value={s.event_name}
+                  onChange={(val) => updateStep(i, val)}
+                  eventNames={eventNames}
+                />
+                {steps.length > 2 && (
+                  <button
+                    onClick={() => removeStep(i)}
+                    style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 4 }}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
               </div>
-              <input
-                value={s.event_name}
-                onChange={(e) => updateStep(i, e.target.value)}
-                placeholder={`Event name, e.g. page_view`}
-                style={{
-                  flex: 1,
-                  background: C.bg,
-                  border: `1px solid ${C.border}`,
-                  borderRadius: 8,
-                  padding: '0.55rem 0.875rem',
-                  color: C.text,
-                  fontSize: 14,
-                  outline: 'none',
-                }}
-                onFocus={(e) => (e.target.style.borderColor = C.amber)}
-                onBlur={(e) => (e.target.style.borderColor = C.border)}
-              />
-              {steps.length > 2 && (
+              {/* Filters */}
+              <div style={{ marginLeft: 32, marginTop: 4 }}>
+                {s.filters.map((f, fi) => (
+                  <div key={fi} style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
+                    <input
+                      value={f.property}
+                      onChange={(e) => updateFilter(i, fi, 'property', e.target.value)}
+                      placeholder="Property"
+                      style={{
+                        width: 100,
+                        background: C.bg,
+                        border: `1px solid ${C.border}`,
+                        borderRadius: 6,
+                        padding: '0.3rem 0.5rem',
+                        color: C.text,
+                        fontSize: 12,
+                        outline: 'none',
+                      }}
+                    />
+                    <input
+                      value={f.value}
+                      onChange={(e) => updateFilter(i, fi, 'value', e.target.value)}
+                      placeholder="Value"
+                      style={{
+                        width: 100,
+                        background: C.bg,
+                        border: `1px solid ${C.border}`,
+                        borderRadius: 6,
+                        padding: '0.3rem 0.5rem',
+                        color: C.text,
+                        fontSize: 12,
+                        outline: 'none',
+                      }}
+                    />
+                    <button
+                      onClick={() => removeFilter(i, fi)}
+                      style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 2 }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
                 <button
-                  onClick={() => removeStep(i)}
-                  style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 4 }}
+                  onClick={() => addFilter(i)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: C.muted,
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    padding: '2px 0',
+                  }}
                 >
-                  <X size={14} />
+                  + Add filter
                 </button>
-              )}
+              </div>
             </div>
           ))}
           <button
@@ -521,18 +676,29 @@ function EditFunnelModal({
   onUpdated: (f: Funnel) => void
 }) {
   const [name, setName] = useState(funnel.name)
-  const [steps, setSteps] = useState<FunnelStepInput[]>(
+  const [steps, setSteps] = useState<StepWithFilters[]>(
     funnel.steps?.length > 0
-      ? funnel.steps.map((s) => ({ event_name: s.event_name }))
-      : [{ event_name: '' }, { event_name: '' }]
+      ? funnel.steps.map((s) => ({ event_name: s.event_name, filters: s.filters || [] }))
+      : [{ event_name: '', filters: [] }, { event_name: '', filters: [] }]
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [eventNames, setEventNames] = useState<string[]>([])
 
-  const addStep = () => setSteps((s) => [...s, { event_name: '' }])
+  useEffect(() => {
+    api.getEventNames(projectId).then((d) => setEventNames(d.event_names || [])).catch(() => {})
+  }, [projectId])
+
+  const addStep = () => setSteps((s) => [...s, { event_name: '', filters: [] }])
   const removeStep = (i: number) => setSteps((s) => s.filter((_, idx) => idx !== i))
   const updateStep = (i: number, val: string) =>
-    setSteps((s) => s.map((st, idx) => (idx === i ? { event_name: val } : st)))
+    setSteps((s) => s.map((st, idx) => (idx === i ? { ...st, event_name: val } : st)))
+  const addFilter = (i: number) =>
+    setSteps((s) => s.map((st, idx) => idx === i ? { ...st, filters: [...st.filters, { property: '', value: '' }] } : st))
+  const removeFilter = (stepIdx: number, filterIdx: number) =>
+    setSteps((s) => s.map((st, i) => i === stepIdx ? { ...st, filters: st.filters.filter((_, fi) => fi !== filterIdx) } : st))
+  const updateFilter = (stepIdx: number, filterIdx: number, field: 'property' | 'value', val: string) =>
+    setSteps((s) => s.map((st, i) => i === stepIdx ? { ...st, filters: st.filters.map((f, fi) => fi === filterIdx ? { ...f, [field]: val } : f) } : st))
 
   const handleSave = async () => {
     if (!name.trim()) { setError('Name is required'); return }
@@ -540,7 +706,11 @@ function EditFunnelModal({
     setSaving(true)
     setError(null)
     try {
-      const updated = await api.updateFunnel(projectId, funnel.id, { name, steps })
+      const apiSteps: FunnelStepInput[] = steps.map((s) => ({
+        event_name: s.event_name,
+        ...(s.filters.length > 0 ? { filters: s.filters.filter((f) => f.property && f.value) } : {}),
+      }))
+      const updated = await api.updateFunnel(projectId, funnel.id, { name, steps: apiSteps })
       onUpdated(updated)
     } catch (e) {
       setError(String(e))
@@ -615,47 +785,93 @@ function EditFunnelModal({
         <div style={{ marginBottom: '1.25rem' }}>
           <label style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 10 }}>Steps</label>
           {steps.map((s, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-              <div style={{
-                width: 24,
-                height: 24,
-                background: C.amber,
-                color: '#0f1117',
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 12,
-                fontWeight: 800,
-                flexShrink: 0,
-              }}>
-                {i + 1}
+            <div key={i} style={{ marginBottom: 10 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div style={{
+                  width: 24,
+                  height: 24,
+                  background: C.amber,
+                  color: '#0f1117',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  flexShrink: 0,
+                }}>
+                  {i + 1}
+                </div>
+                <EventNameInput
+                  value={s.event_name}
+                  onChange={(val) => updateStep(i, val)}
+                  eventNames={eventNames}
+                />
+                {steps.length > 1 && (
+                  <button
+                    onClick={() => removeStep(i)}
+                    style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 4 }}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
               </div>
-              <input
-                value={s.event_name}
-                onChange={(e) => updateStep(i, e.target.value)}
-                placeholder={`Event name, e.g. page_view`}
-                style={{
-                  flex: 1,
-                  background: C.bg,
-                  border: `1px solid ${C.border}`,
-                  borderRadius: 8,
-                  padding: '0.55rem 0.875rem',
-                  color: C.text,
-                  fontSize: 14,
-                  outline: 'none',
-                }}
-                onFocus={(e) => (e.target.style.borderColor = C.amber)}
-                onBlur={(e) => (e.target.style.borderColor = C.border)}
-              />
-              {steps.length > 1 && (
+              {/* Filters */}
+              <div style={{ marginLeft: 32, marginTop: 4 }}>
+                {s.filters.map((f, fi) => (
+                  <div key={fi} style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
+                    <input
+                      value={f.property}
+                      onChange={(e) => updateFilter(i, fi, 'property', e.target.value)}
+                      placeholder="Property"
+                      style={{
+                        width: 100,
+                        background: C.bg,
+                        border: `1px solid ${C.border}`,
+                        borderRadius: 6,
+                        padding: '0.3rem 0.5rem',
+                        color: C.text,
+                        fontSize: 12,
+                        outline: 'none',
+                      }}
+                    />
+                    <input
+                      value={f.value}
+                      onChange={(e) => updateFilter(i, fi, 'value', e.target.value)}
+                      placeholder="Value"
+                      style={{
+                        width: 100,
+                        background: C.bg,
+                        border: `1px solid ${C.border}`,
+                        borderRadius: 6,
+                        padding: '0.3rem 0.5rem',
+                        color: C.text,
+                        fontSize: 12,
+                        outline: 'none',
+                      }}
+                    />
+                    <button
+                      onClick={() => removeFilter(i, fi)}
+                      style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 2 }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
                 <button
-                  onClick={() => removeStep(i)}
-                  style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 4 }}
+                  onClick={() => addFilter(i)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: C.muted,
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    padding: '2px 0',
+                  }}
                 >
-                  <X size={14} />
+                  + Add filter
                 </button>
-              )}
+              </div>
             </div>
           ))}
           <button
@@ -1137,6 +1353,7 @@ export default function Funnels() {
                 <button
                   key={seg.id}
                   onClick={() => setActiveSegment(seg.id)}
+                  title={seg.tip}
                   style={{
                     padding: '0.35rem 0.875rem',
                     borderRadius: 99,

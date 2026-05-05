@@ -589,6 +589,26 @@ func (s *Store) DailyUniqueSessions(ctx context.Context, projectID string, from,
 	return series, rows.Err()
 }
 
+// DistinctEventNames returns all unique event names for a project (for autocomplete).
+func (s *Store) DistinctEventNames(ctx context.Context, projectID string) ([]string, error) {
+	const q = `SELECT DISTINCT name FROM events WHERE project_id = ? ORDER BY name`
+	rows, err := s.db.QueryContext(ctx, q, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}
+
 // TopOS is an alias for TopOSSystems kept for backward compatibility in tests.
 func (s *Store) TopOS(ctx context.Context, projectID string, from, to time.Time, limit int) ([]OSStat, error) {
 	return s.TopOSSystems(ctx, projectID, from, to, limit)

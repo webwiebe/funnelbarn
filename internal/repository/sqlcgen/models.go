@@ -72,11 +72,12 @@ type FunnelStep struct {
 }
 
 type Project struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Slug      string    `json:"slug"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Slug      string         `json:"slug"`
+	Status    string         `json:"status"`
+	Domain    sql.NullString `json:"domain"`
+	CreatedAt time.Time      `json:"created_at"`
 }
 
 type SchemaMigration struct {

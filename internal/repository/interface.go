@@ -18,7 +18,7 @@ type Querier interface {
 	EnsureProject(ctx context.Context, slug string) (Project, error)
 	EnsureProjectPending(ctx context.Context, name, slug string) (Project, error)
 	ListProjects(ctx context.Context) ([]Project, error)
-	UpdateProject(ctx context.Context, id, name string) (Project, error)
+	UpdateProject(ctx context.Context, id, name, domain string) (Project, error)
 	DeleteProject(ctx context.Context, id string) error
 	ApproveProject(ctx context.Context, id string) (Project, error)
 	HasProjects(ctx context.Context) (bool, error)
@@ -73,6 +73,7 @@ type Querier interface {
 	AvgEventsPerSession(ctx context.Context, projectID string, from, to time.Time) (float64, error)
 	UniqueSessionCount(ctx context.Context, projectID string, from, to time.Time) (int64, error)
 	GetEventByIngestID(ctx context.Context, ingestID string) (*Event, error)
+	DistinctEventNames(ctx context.Context, projectID string) ([]string, error)
 	PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, error)
 }
 

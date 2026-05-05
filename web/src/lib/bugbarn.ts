@@ -39,7 +39,7 @@ export function reportToBugBarn(payload: BugBarnPayload): void {
     return
   }
   try {
-    fetch(`${endpoint}/api/v1/ingest`, {
+    fetch(`${endpoint}/api/v1/events`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

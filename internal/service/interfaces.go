@@ -13,7 +13,7 @@ type Projects interface {
 	ListProjects(ctx context.Context) ([]repository.Project, error)
 	GetProject(ctx context.Context, id string) (repository.Project, error)
 	GetProjectBySlug(ctx context.Context, slug string) (repository.Project, error)
-	UpdateProject(ctx context.Context, id, name string) (repository.Project, error)
+	UpdateProject(ctx context.Context, id, name, domain string) (repository.Project, error)
 	DeleteProject(ctx context.Context, id string) error
 	ApproveProject(ctx context.Context, id string) (repository.Project, error)
 	EnsureProjectPending(ctx context.Context, name, slug string) (repository.Project, error)
@@ -59,6 +59,7 @@ type Events interface {
 	AvgEventsPerSession(ctx context.Context, projectID string, from, to time.Time) (float64, error)
 	UniqueSessionCount(ctx context.Context, projectID string, from, to time.Time) (int64, error)
 	GetEventByIngestID(ctx context.Context, ingestID string) (*repository.Event, error)
+	DistinctEventNames(ctx context.Context, projectID string) ([]string, error)
 }
 
 // Sessions is the interface for session-related operations.

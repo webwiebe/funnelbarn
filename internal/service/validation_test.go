@@ -154,7 +154,7 @@ func TestProjectService_UpdateProject_EmptyName(t *testing.T) {
 	p, err := svc.CreateProject(ctx, "My Project", "my-update-project")
 	require.NoError(t, err)
 
-	_, err = svc.UpdateProject(ctx, p.ID, "")
+	_, err = svc.UpdateProject(ctx, p.ID, "", "")
 	require.Error(t, err)
 	require.True(t, domain.IsValidation(err), "expected validation error, got: %v", err)
 }

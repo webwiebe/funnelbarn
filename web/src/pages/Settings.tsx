@@ -146,7 +146,7 @@ export default function Settings() {
     try {
       await api.updateProject(projectId, { name, domain })
       refetchProjects()
-      setProjectSaveMsg('Saved!')
+      setProjectSaveMsg(projectId)
       setTimeout(() => setProjectSaveMsg(null), 2000)
     } catch (e) {
       setError(String(e))
@@ -387,9 +387,9 @@ export default function Settings() {
                   </button>
                 )}
               </div>
-              {projectSaveMsg && savingProject === null && (
+              {projectSaveMsg === p.id && savingProject === null && (
                 <div style={{ width: '100%', fontSize: 13, color: C.success, paddingTop: 2 }}>
-                  {projectSaveMsg}
+                  Saved!
                 </div>
               )}
               {deleteProjectConfirm === p.id && (
@@ -470,6 +470,28 @@ export default function Settings() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <CopyButton value={snippet} />
+          </div>
+
+          {/* Segments reference */}
+          <div style={{ marginTop: '1rem', paddingTop: '0.75rem', borderTop: `1px solid ${C.border}` }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 6 }}>
+              Segments reference
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontSize: 12, color: C.muted }}>
+                <span style={{ color: C.text }}>Mobile / Desktop / Tablet</span> — Detected automatically from the browser User-Agent.
+              </div>
+              <div style={{ fontSize: 12, color: C.muted }}>
+                <span style={{ color: C.text }}>Logged in / Not logged in</span> — Call{' '}
+                <code style={{ fontFamily: '"SF Mono", "Fira Code", monospace', color: C.amber, fontSize: 12 }}>
+                  funnelbarn.identify('user-id')
+                </code>{' '}
+                after login.
+              </div>
+              <div style={{ fontSize: 12, color: C.muted }}>
+                <span style={{ color: C.text }}>New visitors / Returning</span> — Tracked automatically via session in localStorage.
+              </div>
+            </div>
           </div>
         </div>
       </div>

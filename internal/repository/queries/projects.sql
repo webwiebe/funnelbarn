@@ -1,11 +1,11 @@
 -- name: GetProjectByID :one
-SELECT id, name, slug, status, created_at FROM projects WHERE id = ?;
+SELECT id, name, slug, status, domain, created_at FROM projects WHERE id = ?;
 
 -- name: GetProjectBySlug :one
-SELECT id, name, slug, status, created_at FROM projects WHERE slug = ?;
+SELECT id, name, slug, status, domain, created_at FROM projects WHERE slug = ?;
 
 -- name: ListProjects :many
-SELECT id, name, slug, status, created_at FROM projects ORDER BY name;
+SELECT id, name, slug, status, domain, created_at FROM projects ORDER BY name;
 
 -- name: InsertProject :exec
 INSERT INTO projects (id, name, slug) VALUES (?, ?, ?);
@@ -15,6 +15,9 @@ INSERT INTO projects (id, name, slug, status) VALUES (?, ?, ?, 'pending');
 
 -- name: UpdateProjectName :exec
 UPDATE projects SET name = ? WHERE id = ?;
+
+-- name: UpdateProject :exec
+UPDATE projects SET name = ?, domain = ? WHERE id = ?;
 
 -- name: DeleteProject :exec
 DELETE FROM projects WHERE id = ?;
