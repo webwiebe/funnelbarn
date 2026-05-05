@@ -284,7 +284,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleUpdateProject updates a project's name.
+// handleUpdateProject updates a project's name and domain.
 func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
@@ -292,7 +292,8 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name string `json:"name"`
+		Name   string `json:"name"`
+		Domain string `json:"domain"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -302,7 +303,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "name is required", http.StatusBadRequest)
 		return
 	}
-	project, err := s.projects.UpdateProject(r.Context(), projectID, body.Name)
+	project, err := s.projects.UpdateProject(r.Context(), projectID, body.Name, body.Domain)
 	if err != nil {
 		mapServiceError(w, err, "handleUpdateProject")
 		return

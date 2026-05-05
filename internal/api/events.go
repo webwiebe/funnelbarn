@@ -20,6 +20,25 @@ func addPaginationHeaders(w http.ResponseWriter, r *http.Request, limit, offset,
 	w.Header().Set("Link", fmt.Sprintf(`<%s>; rel="next"`, next))
 }
 
+// handleEventNames returns distinct event names for a project (autocomplete).
+func (s *Server) handleEventNames(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		jsonError(w, "project id required", http.StatusBadRequest)
+		return
+	}
+
+	names, err := s.events.DistinctEventNames(r.Context(), projectID)
+	if err != nil {
+		mapServiceError(w, err, "handleEventNames")
+		return
+	}
+	if names == nil {
+		names = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"event_names": names})
+}
+
 // handleListEvents returns a paginated list of events for a project.
 func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")

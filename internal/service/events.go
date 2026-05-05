@@ -76,3 +76,7 @@ func (svc *EventService) UniqueSessionCount(ctx context.Context, projectID strin
 func (svc *EventService) GetEventByIngestID(ctx context.Context, ingestID string) (*repository.Event, error) {
 	return svc.store.GetEventByIngestID(ctx, ingestID)
 }
+
+func (svc *EventService) DistinctEventNames(ctx context.Context, projectID string) ([]string, error) {
+	return svc.store.DistinctEventNames(ctx, projectID)
+}

@@ -21,6 +21,7 @@ type Project struct {
 	Name      string    `json:"name"`
 	Slug      string    `json:"slug"`
 	Status    string    `json:"status"`
+	Domain    string    `json:"domain"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -106,9 +107,10 @@ func (s *Store) DeleteProject(ctx context.Context, id string) error {
 	return s.q.DeleteProject(ctx, id)
 }
 
-// UpdateProject updates a project's name.
-func (s *Store) UpdateProject(ctx context.Context, id, name string) (Project, error) {
-	if err := s.q.UpdateProjectName(ctx, sqlcgen.UpdateProjectNameParams{Name: name, ID: id}); err != nil {
+// UpdateProject updates a project's name and domain.
+func (s *Store) UpdateProject(ctx context.Context, id, name, domain string) (Project, error) {
+	domainVal := sql.NullString{String: domain, Valid: domain != ""}
+	if err := s.q.UpdateProject(ctx, sqlcgen.UpdateProjectParams{Name: name, Domain: domainVal, ID: id}); err != nil {
 		return Project{}, fmt.Errorf("update project: %w", err)
 	}
 	return s.ProjectByID(ctx, id)
@@ -129,6 +131,7 @@ func projectFromGen(p sqlcgen.Project) Project {
 		Name:      p.Name,
 		Slug:      p.Slug,
 		Status:    p.Status,
+		Domain:    p.Domain.String,
 		CreatedAt: p.CreatedAt,
 	}
 }

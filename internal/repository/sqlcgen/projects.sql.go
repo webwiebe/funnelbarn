@@ -7,6 +7,7 @@ package sqlcgen
 
 import (
 	"context"
+	"database/sql"
 )
 
 const approveProject = `-- name: ApproveProject :exec
@@ -39,7 +40,7 @@ func (q *Queries) DeleteProject(ctx context.Context, id string) error {
 }
 
 const getProjectByID = `-- name: GetProjectByID :one
-SELECT id, name, slug, status, created_at FROM projects WHERE id = ?
+SELECT id, name, slug, status, domain, created_at FROM projects WHERE id = ?
 `
 
 func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error) {
@@ -50,13 +51,14 @@ func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error
 		&i.Name,
 		&i.Slug,
 		&i.Status,
+		&i.Domain,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getProjectBySlug = `-- name: GetProjectBySlug :one
-SELECT id, name, slug, status, created_at FROM projects WHERE slug = ?
+SELECT id, name, slug, status, domain, created_at FROM projects WHERE slug = ?
 `
 
 func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (Project, error) {
@@ -67,6 +69,7 @@ func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (Project, e
 		&i.Name,
 		&i.Slug,
 		&i.Status,
+		&i.Domain,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -103,7 +106,7 @@ func (q *Queries) InsertProjectPending(ctx context.Context, arg InsertProjectPen
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, name, slug, status, created_at FROM projects ORDER BY name
+SELECT id, name, slug, status, domain, created_at FROM projects ORDER BY name
 `
 
 func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
@@ -120,6 +123,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 			&i.Name,
 			&i.Slug,
 			&i.Status,
+			&i.Domain,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -133,6 +137,21 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateProject = `-- name: UpdateProject :exec
+UPDATE projects SET name = ?, domain = ? WHERE id = ?
+`
+
+type UpdateProjectParams struct {
+	Name   string         `json:"name"`
+	Domain sql.NullString `json:"domain"`
+	ID     string         `json:"id"`
+}
+
+func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) error {
+	_, err := q.db.ExecContext(ctx, updateProject, arg.Name, arg.Domain, arg.ID)
+	return err
 }
 
 const updateProjectName = `-- name: UpdateProjectName :exec

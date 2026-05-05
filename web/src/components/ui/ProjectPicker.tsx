@@ -28,6 +28,8 @@ export function ProjectPicker({ projects, base, onSelect, variant = 'badge' }: P
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
+  const sortedProjects = [...projects].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+
   const currentProject = projects.find((p) => p.id === urlProjectId) ?? projects[0]
 
   // Close dropdown when clicking outside
@@ -105,7 +107,7 @@ export function ProjectPicker({ projects, base, onSelect, variant = 'badge' }: P
             zIndex: 300,
             overflow: 'hidden',
           }}>
-            {projects.map((p) => (
+            {sortedProjects.map((p) => (
               <button
                 key={p.id}
                 onClick={() => handleSelect(p)}
@@ -170,7 +172,7 @@ export function ProjectPicker({ projects, base, onSelect, variant = 'badge' }: P
               width: '100%',
               background: p.id === currentProject?.id ? 'rgba(245,158,11,0.07)' : 'transparent',
               border: 'none',
-              borderBottom: i < projects.length - 1 ? `1px solid ${C.border}` : 'none',
+              borderBottom: i < sortedProjects.length - 1 ? `1px solid ${C.border}` : 'none',
               padding: '0.75rem 1rem',
               cursor: 'pointer',
               textAlign: 'left',

@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
+
+// validPropertyName matches only alphanumeric and underscore characters.
+var validPropertyName = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 
 // Funnel is a multi-step conversion funnel.
 type Funnel struct {
@@ -296,6 +300,16 @@ func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time,
 		if segArg != nil {
 			args = append(args, segArg)
 		}
+
+		// Append step-level property filters.
+		for _, filter := range step.Filters {
+			if !validPropertyName.MatchString(filter.Property) {
+				continue // skip invalid property names to prevent injection
+			}
+			q += fmt.Sprintf(" AND json_extract(properties, '$.%s') = ?", filter.Property)
+			args = append(args, filter.Value)
+		}
+
 		if err := s.db.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
 			return nil, fmt.Errorf("analyze step %d: %w", i, err)
 		}

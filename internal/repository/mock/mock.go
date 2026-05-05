@@ -102,7 +102,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]repository.Project, error) 
 	return out, nil
 }
 
-func (s *Store) UpdateProject(ctx context.Context, id, name string) (repository.Project, error) {
+func (s *Store) UpdateProject(ctx context.Context, id, name, domain string) (repository.Project, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, ok := s.projects[id]
@@ -110,6 +110,7 @@ func (s *Store) UpdateProject(ctx context.Context, id, name string) (repository.
 		return repository.Project{}, sql.ErrNoRows
 	}
 	p.Name = name
+	p.Domain = domain
 	s.projects[id] = p
 	return p, nil
 }
@@ -549,6 +550,10 @@ func (s *Store) GetEventByIngestID(ctx context.Context, ingestID string) (*repos
 			return &ec, nil
 		}
 	}
+	return nil, nil
+}
+
+func (s *Store) DistinctEventNames(_ context.Context, _ string) ([]string, error) {
 	return nil, nil
 }
 

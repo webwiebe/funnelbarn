@@ -61,9 +61,10 @@ func TestProjectService_UpdateProject(t *testing.T) {
 	p, err := svc.CreateProject(ctx, "Old Name", "old-name")
 	require.NoError(t, err)
 
-	updated, err := svc.UpdateProject(ctx, p.ID, "New Name")
+	updated, err := svc.UpdateProject(ctx, p.ID, "New Name", "example.com")
 	require.NoError(t, err)
 	require.Equal(t, "New Name", updated.Name)
+	require.Equal(t, "example.com", updated.Domain)
 }
 
 func TestProjectService_ApproveProject(t *testing.T) {
@@ -128,7 +129,7 @@ func TestProjectService_UpdateProject_Extended(t *testing.T) {
 	p, err := svc.CreateProject(ctx, "Original Name", "update-slug")
 	require.NoError(t, err)
 
-	updated, err := svc.UpdateProject(ctx, p.ID, "Updated Name")
+	updated, err := svc.UpdateProject(ctx, p.ID, "Updated Name", "")
 	require.NoError(t, err)
 	assert.Equal(t, "Updated Name", updated.Name)
 	assert.Equal(t, "update-slug", updated.Slug)

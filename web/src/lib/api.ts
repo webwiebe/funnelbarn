@@ -158,6 +158,10 @@ export const api = {
   getABTestAnalysis: (projectId: string, testId: string) =>
     request<ABTestAnalysis>(`/api/v1/projects/${projectId}/abtests/${testId}/analysis`),
 
+  // Event names (autocomplete)
+  getEventNames: (projectId: string) =>
+    request<{ event_names: string[] }>(`/api/v1/projects/${projectId}/event-names`),
+
   // Active sessions (last 5 minutes)
   getActiveSessions: (projectId: string) =>
     request<{ active_sessions: number; window_minutes: number }>(`/api/v1/projects/${projectId}/sessions/active`),
@@ -192,10 +196,12 @@ export interface Event {
 export interface FunnelStep {
   step_order: number
   event_name: string
+  filters?: { property: string; value: string }[]
 }
 
 export interface FunnelStepInput {
   event_name: string
+  filters?: { property: string; value: string }[]
 }
 
 export interface Funnel {

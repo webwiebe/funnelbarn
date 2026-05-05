@@ -86,9 +86,10 @@ func TestStore_UpdateProject(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Original", "the-slug")
 	require.NoError(t, err)
 
-	updated, err := s.UpdateProject(ctx, p.ID, "Updated Name")
+	updated, err := s.UpdateProject(ctx, p.ID, "Updated Name", "example.org")
 	require.NoError(t, err)
 	assert.Equal(t, "Updated Name", updated.Name)
+	assert.Equal(t, "example.org", updated.Domain)
 	assert.Equal(t, "the-slug", updated.Slug) // slug unchanged
 }
 

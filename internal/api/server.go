@@ -129,6 +129,7 @@ func (s *Server) registerRoutes() {
 	// Dashboard & analytics (session required)
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/dashboard", s.requireSession(s.handleDashboard))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/events", s.requireSession(s.handleListEvents))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-names", s.requireSession(s.handleEventNames))
 
 	// Funnels
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels", s.requireSession(s.handleListFunnels))
@@ -204,7 +205,7 @@ func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(s.allowedOrigins) == 0 {
+	if len(s.allowedOrigins) == 0 || (len(s.allowedOrigins) == 1 && s.allowedOrigins[0] == "") {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 	} else {
 		for _, allowed := range s.allowedOrigins {
