@@ -35,3 +35,17 @@ function identify(userId: string): void {
 }
 
 export { init, track, page, identify };
+
+// Auto-init from script tag data attributes:
+//   <script src="/sdk.js" data-api-key="fb_xxx"></script>
+if (typeof document !== "undefined") {
+  const script = document.currentScript as HTMLScriptElement | null;
+  if (script) {
+    const apiKey = script.getAttribute("data-api-key");
+    if (apiKey) {
+      const endpoint = script.getAttribute("data-endpoint") || script.src.replace(/\/sdk\.js.*$/, "");
+      init({ apiKey, endpoint });
+      page();
+    }
+  }
+}

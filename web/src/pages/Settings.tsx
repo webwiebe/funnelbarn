@@ -165,7 +165,7 @@ export default function Settings() {
   // Otherwise fall back to the key ID from the list (a human-readable reference).
   const ingestKey = apiKeys.find((k) => k.scope === 'ingest')
   const snippetKey = newKeyValue ?? ingestKey?.id ?? 'fb_your_key_here'
-  const snippet = `<script src="https://funnelbarn.wiebe.xyz/sdk.js"\n        data-api-key="${snippetKey}"></script>`
+  const snippet = `<script src="${publicURL}/sdk.js"\n        data-api-key="${snippetKey}"></script>`
 
   const inputStyle = {
     background: C.surface,
