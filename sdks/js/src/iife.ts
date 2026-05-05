@@ -3,15 +3,9 @@
  *
  * Exposes a `window.funnelbarn` global with `init`, `track`, `page`, and
  * `identify` convenience functions that delegate to a shared FunnelBarnClient
- * instance. Usage:
+ * instance. Auto-initialises when loaded with a data-api-key attribute:
  *
- *   <script src="/sdk/funnelbarn.js"></script>
- *   <script>
- *     funnelbarn.init({ apiKey: '...', endpoint: 'https://analytics.example.com' });
- *     funnelbarn.page();
- *     funnelbarn.track('signup', { plan: 'pro' });
- *     funnelbarn.identify('user-123');
- *   </script>
+ *   <script src="/sdk.js" data-api-key="your-key" defer></script>
  */
 
 import { FunnelBarnClient, FunnelBarnOptions } from "./index.js";
