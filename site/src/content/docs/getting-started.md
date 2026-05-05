@@ -57,20 +57,14 @@ Refresh the dashboard — your event will appear in the live feed and be rolled 
 
 ## 3. Add the browser SDK to your site
 
-Drop these two lines into your HTML `<head>`:
+Add this single script tag to your HTML `<head>`:
 
 ```html
-<script>
-  window.funnelbarn = {
-    apiKey: 'mysecret',
-    endpoint: 'https://your-funnelbarn-host.example.com',
-    projectName: 'my-website',
-  };
-</script>
-<script src="https://your-funnelbarn-host.example.com/sdk/funnelbarn.js" async></script>
+<script src="https://your-funnelbarn-host.example.com/sdk.js"
+        data-api-key="your-ingest-api-key" defer></script>
 ```
 
-The SDK fires a `page_view` event automatically on load, manages sessions in `localStorage`, and provides `funnelbarn.track()` for custom events.
+The SDK auto-initialises from the `data-api-key` attribute, fires a `page_view` event on load, manages sessions in `localStorage`, and provides `funnelbarn.track()` for custom events.
 
 ## 4. Track a custom event
 

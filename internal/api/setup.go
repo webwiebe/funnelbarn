@@ -67,7 +67,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	endpoint := publicURL + "/api/v1/events"
-	sdkURL := publicURL + "/packages/js/latest"
+	sdkURL := publicURL + "/sdk.js"
 	setupURL := publicURL + "/api/v1/setup/" + slug
 	now := time.Now().UTC().Format(time.RFC3339)
 

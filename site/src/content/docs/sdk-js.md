@@ -21,17 +21,11 @@ npm install @funnelbarn/js
 If you are not using a bundler, load the SDK from your FunnelBarn instance's built-in CDN path:
 
 ```html
-<script>
-  window.funnelbarnConfig = {
-    apiKey: 'your-ingest-api-key',
-    endpoint: 'https://funnelbarn.example.com',
-    projectName: 'my-website',
-  };
-</script>
-<script src="https://funnelbarn.example.com/sdk/funnelbarn.js" async></script>
+<script src="https://funnelbarn.example.com/sdk.js"
+        data-api-key="your-ingest-api-key" defer></script>
 ```
 
-The global `funnelbarn` object is available after the script loads. Use `window.addEventListener('funnelbarn:ready', ...)` if you need to wait for it.
+The SDK auto-initialises from `data-api-key`, infers the endpoint from the script's `src` URL, and exposes a global `funnelbarn` object with `track()`, `page()`, and `identify()` methods.
 
 ## Usage with a bundler
 

@@ -22,26 +22,26 @@ type Pinger interface {
 
 // Server is the main HTTP API server.
 type Server struct {
-	mux            *http.ServeMux
-	db             Pinger
-	projects       service.Projects
-	funnels        service.Funnels
-	abtests        service.ABTests
-	events         service.Events
-	sessions       service.Sessions
-	apikeys        service.APIKeys
-	ingest         *ingest.Handler
-	userAuth       *auth.UserAuthenticator
-	sessionManager *auth.SessionManager
-	allowedOrigins     []string
-	sessionSecret      string
-	publicURL          string
-	metricsToken       string
-	version            string
-	bugbarnEndpoint    string
-	bugbarnIngestKey   string
-	dogfoodAPIKey      string
-	dogfoodProject     string
+	mux              *http.ServeMux
+	db               Pinger
+	projects         service.Projects
+	funnels          service.Funnels
+	abtests          service.ABTests
+	events           service.Events
+	sessions         service.Sessions
+	apikeys          service.APIKeys
+	ingest           *ingest.Handler
+	userAuth         *auth.UserAuthenticator
+	sessionManager   *auth.SessionManager
+	allowedOrigins   []string
+	sessionSecret    string
+	publicURL        string
+	metricsToken     string
+	version          string
+	bugbarnEndpoint  string
+	bugbarnIngestKey string
+	dogfoodAPIKey    string
+	dogfoodProject   string
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter

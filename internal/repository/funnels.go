@@ -24,10 +24,10 @@ type Funnel struct {
 
 // FunnelStep is one step in a funnel.
 type FunnelStep struct {
-	ID        string        `json:"id"`
-	FunnelID  string        `json:"funnel_id"`
-	StepOrder int           `json:"step_order"`
-	EventName string        `json:"event_name"`
+	ID        string         `json:"id"`
+	FunnelID  string         `json:"funnel_id"`
+	StepOrder int            `json:"step_order"`
+	EventName string         `json:"event_name"`
 	Filters   []FunnelFilter `json:"filters"`
 }
 
