@@ -577,12 +577,12 @@ func TestStore_UpsertSession_Create(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	sess := repository.Session{
-		ID:         "session-001",
-		ProjectID:  p.ID,
+		ID:          "session-001",
+		ProjectID:   p.ID,
 		FirstSeenAt: now,
 		LastSeenAt:  now,
-		EntryURL:   "https://example.com",
-		DeviceType: "desktop",
+		EntryURL:    "https://example.com",
+		DeviceType:  "desktop",
 	}
 	err = s.UpsertSession(ctx, sess)
 	require.NoError(t, err)

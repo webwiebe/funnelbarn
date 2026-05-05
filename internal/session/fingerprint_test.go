@@ -148,10 +148,10 @@ func TestIsValidSessionID(t *testing.T) {
 		want bool
 	}{
 		{"", false},
-		{"abcdef1234567890abcdef1234567890", true},  // 32 hex
-		{"ABCDEF1234567890ABCDEF1234567890", true},  // uppercase hex
-		{"abcdef1234567890abcdef123456789g", false}, // non-hex char
-		{"abcdef1234567890abcdef12345678", false},   // 30 chars
+		{"abcdef1234567890abcdef1234567890", true},     // 32 hex
+		{"ABCDEF1234567890ABCDEF1234567890", true},     // uppercase hex
+		{"abcdef1234567890abcdef123456789g", false},    // non-hex char
+		{"abcdef1234567890abcdef12345678", false},      // 30 chars
 		{"  abcdef1234567890abcdef1234567890  ", true}, // trimmed
 		{"abcdef1234567890abcdef1234567890ab", false},  // 34 chars
 	}

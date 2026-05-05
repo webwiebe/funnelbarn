@@ -63,9 +63,9 @@ func Track(name string, properties map[string]any) bool {
 		return false
 	}
 	return t.enqueue(eventPayload{
-		Name:        name,
-		Properties:  properties,
-		Timestamp:   time.Now().UTC(),
+		Name:       name,
+		Properties: properties,
+		Timestamp:  time.Now().UTC(),
 	})
 }
 

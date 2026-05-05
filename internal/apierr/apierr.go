@@ -33,7 +33,9 @@ func Conflict(msg string) *Error     { return &Error{Code: http.StatusConflict, 
 func TooManyRequests(msg string) *Error {
 	return &Error{Code: http.StatusTooManyRequests, Message: msg}
 }
-func Internal() *Error { return &Error{Code: http.StatusInternalServerError, Message: "internal server error"} }
+func Internal() *Error {
+	return &Error{Code: http.StatusInternalServerError, Message: "internal server error"}
+}
 
 // MapDB converts a database-layer error to an *Error.
 // sql.ErrNoRows → 404 with notFoundMsg.

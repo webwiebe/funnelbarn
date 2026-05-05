@@ -80,9 +80,10 @@ export default function FirstRunWizard({ onComplete }: FirstRunWizardProps) {
     }
   }
 
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://funnelbarn.wiebe.xyz'
   const snippet = ingestKey
-    ? `<script src="https://funnelbarn.wiebe.xyz/sdk.js"\n        data-api-key="${ingestKey}"></script>`
-    : `<script src="https://funnelbarn.wiebe.xyz/sdk.js"\n        data-api-key="fb_xxxxx"></script>`
+    ? `<script src="${origin}/sdk.js"\n        data-api-key="${ingestKey}"></script>`
+    : `<script src="${origin}/sdk.js"\n        data-api-key="fb_xxxxx"></script>`
 
   const totalSteps = 4
 

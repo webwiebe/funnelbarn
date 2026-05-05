@@ -11,7 +11,6 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
-
 func TestEventService_InsertAndList(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

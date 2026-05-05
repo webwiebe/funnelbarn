@@ -13,6 +13,7 @@ type Lang = typeof LANGS[number]
 function ImplementationSnippet({ funnel, apiKey }: { funnel: Funnel; apiKey?: string }) {
   const [copied, setCopied] = useState(false)
   const [activeLang, setActiveLang] = useState<Lang>('JS')
+  const origin = typeof window !== 'undefined' ? window.location.origin : '${origin}'
   const steps = funnel.steps || []
 
   // Convert event_name to camelCase for the const key
@@ -41,7 +42,7 @@ function ImplementationSnippet({ funnel, apiKey }: { funnel: Funnel; apiKey?: st
     switch (lang) {
       case 'JS':
         return `<!-- Add to <head> -->
-<script src="https://funnelbarn.wiebe.xyz/sdk.js"
+<script src="${origin}/sdk.js"
         data-api-key="${key}"></script>
 
 <script>
@@ -128,7 +129,7 @@ ${steps.map(s => `    ${toGoExportedCase(s.event_name)}Step = "${s.event_name}"`
 func main() {
     funnelbarn.Init(funnelbarn.Options{
         APIKey:   "${key}",
-        Endpoint: "https://funnelbarn.wiebe.xyz",
+        Endpoint: "${origin}",
     })
     defer funnelbarn.Shutdown(2 * time.Second)
 
@@ -148,7 +149,7 @@ ${steps.map(s => `    ${s.event_name.toUpperCase()} = "${s.event_name}"`).join('
 # Initialize client
 client = FunnelBarnClient(
     api_key="${key}",
-    endpoint="https://funnelbarn.wiebe.xyz"
+    endpoint="${origin}"
 )
 
 # Track a step (user_id enables "Logged in" / "Not logged in" segments)
@@ -176,7 +177,7 @@ func trackFunnelStep(_ step: ${constNameCapitalized}Step,
     var body: [String: Any] = ["name": step.rawValue]
     body.merge(properties) { _, new in new }
 
-    var request = URLRequest(url: URL(string: "https://funnelbarn.wiebe.xyz/api/v1/events")!)
+    var request = URLRequest(url: URL(string: "${origin}/api/v1/events")!)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("${key}", forHTTPHeaderField: "X-FunnelBarn-Api-Key")
@@ -204,7 +205,7 @@ ${steps.map(s => `    const val ${s.event_name.toUpperCase()} = "${s.event_name}
 class FunnelBarnTracker(private val apiKey: String) {
     private val client = OkHttpClient()
     private val JSON = "application/json".toMediaType()
-    private val endpoint = "https://funnelbarn.wiebe.xyz/api/v1/events"
+    private val endpoint = "${origin}/api/v1/events"
 
     fun track(eventName: String, properties: Map<String, Any> = emptyMap()) {
         val body = JSONObject(mapOf("name" to eventName) + properties)

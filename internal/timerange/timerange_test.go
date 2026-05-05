@@ -23,9 +23,9 @@ func TestParse_Default(t *testing.T) {
 
 func TestParse_Shorthands(t *testing.T) {
 	cases := []struct {
-		shorthand    string
-		minusDays    int
-		minusHours   int
+		shorthand  string
+		minusDays  int
+		minusHours int
 	}{
 		{"7d", 7, 0},
 		{"30d", 30, 0},

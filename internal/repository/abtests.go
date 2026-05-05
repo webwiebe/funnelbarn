@@ -185,4 +185,3 @@ func (s *Store) countConversionsWithFilter(ctx context.Context, projectID string
 	).Scan(&n)
 	return n, err
 }
-

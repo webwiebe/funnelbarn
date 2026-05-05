@@ -124,16 +124,11 @@ curl -X POST http://localhost:8080/api/v1/events \\
 The browser SDK auto-tracks page views, manages sessions, and provides a custom event API.
 
 \`\`\`html
-<script>
-  window.funnelbarn = {
-    host: 'https://your-funnelbarn-host.example.com',
-    apiKey: 'your-ingest-api-key',
-  };
-</script>
-<script src="https://your-funnelbarn-host.example.com/sdk/funnelbarn.js" async></script>
+<script src="https://your-funnelbarn-host.example.com/sdk.js"
+        data-api-key="your-ingest-api-key" defer></script>
 \`\`\`
 
-After loading, the SDK automatically fires a page_view event. It manages session IDs via localStorage and flushes events asynchronously so it never blocks rendering.
+The SDK auto-initialises from the \`data-api-key\` attribute, infers the endpoint from the script URL, fires a \`page_view\` event on load, and manages session IDs via localStorage.
 
 Custom events:
 \`\`\`javascript
