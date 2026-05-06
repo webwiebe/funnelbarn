@@ -197,7 +197,7 @@ export interface Event {
   id: string
   name: string
   url: string
-  timestamp: string
+  occurred_at: string
 }
 
 export interface FunnelStep {
