@@ -11,10 +11,10 @@
 
 ## Environments
 
-- **Production**: `funnelbarn.wiebe.xyz`
-- **Testing**: `funnelbarn-test.wiebe.xyz`
-- **Staging**: `funnelbarn-staging.wiebe.xyz`
-- Subdomains use hyphens (`app-env.wiebe.xyz`), never dots (`app.env.wiebe.xyz`) — free Cloudflare SSL only covers `*.wiebe.xyz`
+- **Production**: `funnelbarn.wiebe.xyz` (Cloudflare → k3s)
+- **Testing**: `funnelbarn-test.nijmegen.wiebe.xyz` (Caddy @ 192.168.4.111 → k3s)
+- **Staging**: `funnelbarn-staging.nijmegen.wiebe.xyz` (Caddy @ 192.168.4.111 → k3s)
+- Non-production uses `*.nijmegen.wiebe.xyz` wildcard — Caddy handles TLS, no Cloudflare free-tier limits
 
 ## Workflow
 
