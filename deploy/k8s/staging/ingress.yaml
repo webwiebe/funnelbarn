@@ -9,7 +9,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - host: funnelbarn-staging.wiebe.xyz
+    - host: funnelbarn-staging.nijmegen.wiebe.xyz
       http:
         paths:
           - path: /api
@@ -28,4 +28,4 @@ spec:
                   name: http
   tls:
     - hosts:
-        - funnelbarn-staging.wiebe.xyz
+        - funnelbarn-staging.nijmegen.wiebe.xyz
