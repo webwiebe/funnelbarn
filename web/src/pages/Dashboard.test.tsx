@@ -43,10 +43,10 @@ const mockDashboard: DashboardData = {
   total_events: 42,
   unique_sessions: 7,
   bounce_rate: 0.42,
-  top_pages: [{ URL: '/home', Views: 30 }],
-  top_referrers: [{ Domain: 'google.com', Visits: 10 }],
+  top_pages: [{ url: '/home', views: 30 }],
+  top_referrers: [{ domain: 'google.com', visits: 10 }],
   top_event_names: [{ name: 'page_view', count: 30 }],
-  events_time_series: [{ Time: '2024-01-01T00:00:00Z', Count: 42 }],
+  events_time_series: [{ time: '2024-01-01T00:00:00Z', count: 42 }],
 }
 
 function renderDashboard(projectId = 'p1') {
