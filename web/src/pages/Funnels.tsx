@@ -282,7 +282,7 @@ tracker.track(${constNameCapitalized}.${lastStep.toUpperCase().replace(/-/g, '_'
         maxWidth: '100%',
         whiteSpace: 'pre',
         fontFamily: 'ui-monospace, SFMono-Regular, monospace',
-        WebkitOverflowScrolling: 'touch' as any,
+        WebkitOverflowScrolling: 'touch' as React.CSSProperties['WebkitOverflowScrolling'],
       }}>
         {snippet}
       </pre>
@@ -922,6 +922,7 @@ function EditFunnelModal({
     steps.forEach((s, i) => {
       if (s.event_name) fetchProperties(i, s.event_name)
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const addStep = () => setSteps((s) => [...s, { event_name: '', filters: [] }])

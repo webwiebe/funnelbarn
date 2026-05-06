@@ -6,12 +6,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
+
+func now() time.Time { return time.Now().UTC().Truncate(time.Second) }
+
+func randomID() string { return fmt.Sprintf("%x", time.Now().UnixNano()) }
 
 // ---------------------------------------------------------------------------
 // A/B test handlers
@@ -354,5 +360,88 @@ func TestHandleListEvents_PaginationClamped(t *testing.T) {
 	// limit in response should be clamped to ≤ 500
 	if lim, ok := resp["limit"].(float64); ok && lim > 500 {
 		t.Errorf("limit clamped: want ≤ 500, got %.0f", lim)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Event properties / property values handlers
+// ---------------------------------------------------------------------------
+
+func TestHandleEventProperties_Success(t *testing.T) {
+	srv, store := newTestServer(t)
+	ctx := context.Background()
+	p, _ := store.CreateProject(ctx, "PropsSite", "propssite")
+
+	_ = store.InsertEvent(ctx, repository.Event{
+		ID: "ep1", ProjectID: p.ID, SessionID: "s1", Name: "signup",
+		Properties: `{"plan":"pro","source":"ads"}`,
+		IngestID: "i-ep1", OccurredAt: now(),
+	})
+
+	w := getJSON(t, srv, "/api/v1/projects/"+p.ID+"/event-properties?event_name=signup", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Properties []string `json:"properties"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if len(resp.Properties) != 2 {
+		t.Fatalf("want 2 properties, got %d: %v", len(resp.Properties), resp.Properties)
+	}
+}
+
+func TestHandleEventProperties_MissingEventName(t *testing.T) {
+	srv, store := newTestServer(t)
+	ctx := context.Background()
+	p, _ := store.CreateProject(ctx, "PropsNoName", "propsnoname")
+
+	w := getJSON(t, srv, "/api/v1/projects/"+p.ID+"/event-properties", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", w.Code)
+	}
+}
+
+func TestHandleEventPropertyValues_Success(t *testing.T) {
+	srv, store := newTestServer(t)
+	ctx := context.Background()
+	p, _ := store.CreateProject(ctx, "ValsSite", "valssite")
+
+	for _, plan := range []string{"pro", "free", "pro"} {
+		_ = store.InsertEvent(ctx, repository.Event{
+			ID: randomID(), ProjectID: p.ID, SessionID: "s1", Name: "signup",
+			Properties: `{"plan":"` + plan + `"}`,
+			IngestID: randomID(), OccurredAt: now(),
+		})
+	}
+
+	w := getJSON(t, srv, "/api/v1/projects/"+p.ID+"/event-property-values?event_name=signup&property=plan", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Values []string `json:"values"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if len(resp.Values) != 2 {
+		t.Fatalf("want 2 distinct values, got %d: %v", len(resp.Values), resp.Values)
+	}
+}
+
+func TestHandleEventPropertyValues_MissingParams(t *testing.T) {
+	srv, store := newTestServer(t)
+	ctx := context.Background()
+	p, _ := store.CreateProject(ctx, "ValsNoParam", "valsnoparam")
+
+	// Missing event_name
+	w1 := getJSON(t, srv, "/api/v1/projects/"+p.ID+"/event-property-values?property=plan", nil)
+	if w1.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 for missing event_name, got %d", w1.Code)
+	}
+
+	// Missing property
+	w2 := getJSON(t, srv, "/api/v1/projects/"+p.ID+"/event-property-values?event_name=signup", nil)
+	if w2.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 for missing property, got %d", w2.Code)
 	}
 }
