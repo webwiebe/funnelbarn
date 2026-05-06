@@ -21,7 +21,7 @@ interface LiveEvent {
   id: string
   name: string
   url: string
-  timestamp: string
+  occurred_at: string
 }
 
 interface SparkPoint {
@@ -314,7 +314,7 @@ export default function Live() {
                   {ev.url}
                 </div>
                 <div style={{ fontSize: 12, color: C.muted, flexShrink: 0 }}>
-                  {timeAgo(ev.timestamp)}
+                  {timeAgo(ev.occurred_at)}
                 </div>
               </div>
             ))}
