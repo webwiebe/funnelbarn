@@ -155,36 +155,36 @@ export default function Dashboard() {
 
   // Format time series for chart
   const chartData = data?.events_time_series?.map((pt) => ({
-    time: new Date(pt.Time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    events: pt.Count,
+    time: new Date(pt.time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    events: pt.count,
   })) ?? []
 
   // Referrer data for pie chart
   const referrerData = data?.top_referrers?.slice(0, 6).map((r) => ({
-    name: r.Domain || 'Direct',
-    value: r.Visits,
+    name: r.domain || 'Direct',
+    value: r.visits,
   })) ?? []
 
   // Max views for inline bar
-  const maxViews = data?.top_pages ? Math.max(...data.top_pages.map((p) => p.Views)) : 1
+  const maxViews = data?.top_pages ? Math.max(...data.top_pages.map((p) => p.views)) : 1
 
   // Compute real trends from time-series data (first vs last half of period)
   const eventsTrend = (() => {
     const ts = data?.events_time_series
     if (!ts || ts.length < 2) return undefined
     const mid = Math.floor(ts.length / 2)
-    const prev = ts.slice(0, mid).reduce((s, p) => s + p.Count, 0)
-    const curr = ts.slice(mid).reduce((s, p) => s + p.Count, 0)
+    const prev = ts.slice(0, mid).reduce((s, p) => s + p.count, 0)
+    const curr = ts.slice(mid).reduce((s, p) => s + p.count, 0)
     if (prev === 0) return undefined
     return ((curr - prev) / prev) * 100
   })()
 
   const sessionsTrend = (() => {
-    const ts = (data as (DashboardData & { sessions_time_series?: { Time: string; Count: number }[] }) | null)?.sessions_time_series
+    const ts = (data as (DashboardData & { sessions_time_series?: { time: string; count: number }[] }) | null)?.sessions_time_series
     if (!ts || ts.length < 2) return undefined
     const mid = Math.floor(ts.length / 2)
-    const prev = ts.slice(0, mid).reduce((s, p) => s + p.Count, 0)
-    const curr = ts.slice(mid).reduce((s, p) => s + p.Count, 0)
+    const prev = ts.slice(0, mid).reduce((s, p) => s + p.count, 0)
+    const curr = ts.slice(mid).reduce((s, p) => s + p.count, 0)
     if (prev === 0) return undefined
     return ((curr - prev) / prev) * 100
   })()
@@ -499,7 +499,7 @@ export default function Dashboard() {
           ) : (
             <div>
               {data.top_pages.slice(0, 8).map((p) => (
-                <div key={p.URL} style={{ marginBottom: '0.75rem' }}>
+                <div key={p.url} style={{ marginBottom: '0.75rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                     <div style={{
                       fontSize: 13,
@@ -509,14 +509,14 @@ export default function Dashboard() {
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
                     }}>
-                      {p.URL}
+                      {p.url}
                     </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: C.amber }}>{p.Views.toLocaleString()}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.amber }}>{p.views.toLocaleString()}</div>
                   </div>
                   <div style={{ height: 4, background: '#2a2d3a', borderRadius: 2 }}>
                     <div style={{
                       height: '100%',
-                      width: `${(p.Views / maxViews) * 100}%`,
+                      width: `${(p.views / maxViews) * 100}%`,
                       background: C.amber,
                       borderRadius: 2,
                     }} />

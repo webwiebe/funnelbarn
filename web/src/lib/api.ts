@@ -180,10 +180,10 @@ export interface DashboardData {
   total_events: number
   unique_sessions: number
   bounce_rate: number
-  top_pages: { URL: string; Views: number }[]
-  top_referrers: { Domain: string; Visits: number }[]
+  top_pages: { url: string; views: number }[]
+  top_referrers: { domain: string; visits: number }[]
   top_event_names: { name: string; count: number }[]
-  events_time_series: { Time: string; Count: number }[]
+  events_time_series: { time: string; count: number }[]
 }
 
 export interface Event {

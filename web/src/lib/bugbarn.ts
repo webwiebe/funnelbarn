@@ -1,6 +1,7 @@
 // BugBarn error reporting utility.
 // Config is fetched from /api/v1/client-config at runtime so the Docker image
-// is environment-agnostic. Falls back to console.error only when unconfigured.
+// is environment-agnostic. Errors arriving before config loads are queued and
+// flushed once the endpoint is known.
 
 interface ClientConfig {
   bugbarn_endpoint: string
@@ -9,11 +10,10 @@ interface ClientConfig {
 
 let endpoint = ''
 let ingestKey = ''
-let initialized = false
+let configReady = false
+const pendingQueue: BugBarnPayload[] = []
 
 async function loadConfig(): Promise<void> {
-  if (initialized) return
-  initialized = true
   try {
     const res = await fetch('/api/v1/client-config')
     if (!res.ok) return
@@ -22,10 +22,14 @@ async function loadConfig(): Promise<void> {
     ingestKey = cfg.bugbarn_ingest_key ?? ''
   } catch {
     // Config fetch failed — reporting falls back to console.error.
+  } finally {
+    configReady = true
+    for (const payload of pendingQueue.splice(0)) {
+      sendToBugBarn(payload)
+    }
   }
 }
 
-// Kick off config fetch immediately so it's ready before the first error.
 loadConfig()
 
 export interface BugBarnPayload {
@@ -33,7 +37,7 @@ export interface BugBarnPayload {
   properties: Record<string, unknown>
 }
 
-export function reportToBugBarn(payload: BugBarnPayload): void {
+function sendToBugBarn(payload: BugBarnPayload): void {
   if (!endpoint || !ingestKey) {
     console.error('[BugBarn not configured]', payload.name, payload.properties)
     return
@@ -51,6 +55,14 @@ export function reportToBugBarn(payload: BugBarnPayload): void {
   } catch {
     // Never throw from error reporting.
   }
+}
+
+export function reportToBugBarn(payload: BugBarnPayload): void {
+  if (!configReady) {
+    pendingQueue.push(payload)
+    return
+  }
+  sendToBugBarn(payload)
 }
 
 export function reportError(
