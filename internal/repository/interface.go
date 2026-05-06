@@ -64,6 +64,7 @@ type Querier interface {
 	TopPages(ctx context.Context, projectID string, from, to time.Time, limit int) ([]PageStat, error)
 	TopReferrers(ctx context.Context, projectID string, from, to time.Time, limit int) ([]ReferrerStat, error)
 	DailyEventCounts(ctx context.Context, projectID string, from, to time.Time) ([]TimeSeriesPoint, error)
+	HourlyEventCounts(ctx context.Context, projectID string, from, to time.Time) ([]TimeSeriesPoint, error)
 	DailyUniqueSessions(ctx context.Context, projectID string, from, to time.Time) ([]TimeSeriesPoint, error)
 	TopBrowsers(ctx context.Context, projectID string, from, to time.Time, limit int) ([]BrowserStat, error)
 	TopDeviceTypes(ctx context.Context, projectID string, from, to time.Time) ([]DeviceStat, error)

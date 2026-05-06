@@ -510,6 +510,10 @@ func (s *Store) DailyEventCounts(ctx context.Context, projectID string, from, to
 	return []repository.TimeSeriesPoint{}, nil
 }
 
+func (s *Store) HourlyEventCounts(ctx context.Context, projectID string, from, to time.Time) ([]repository.TimeSeriesPoint, error) {
+	return []repository.TimeSeriesPoint{}, nil
+}
+
 func (s *Store) DailyUniqueSessions(ctx context.Context, projectID string, from, to time.Time) ([]repository.TimeSeriesPoint, error) {
 	return []repository.TimeSeriesPoint{}, nil
 }
