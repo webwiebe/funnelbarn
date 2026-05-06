@@ -9,6 +9,7 @@ import Funnels from './pages/Funnels'
 import Live from './pages/Live'
 import Settings from './pages/Settings'
 import ABTests from './pages/ABTests'
+import Insights from './pages/Insights'
 import FirstRunWizard from './components/wizards/FirstRunWizard'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { trackPageView } from './lib/analytics'
@@ -163,6 +164,14 @@ function AppRoutes() {
         <Route
           path="/abtests/:projectId"
           element={<ProtectedRoute><ABTests /></ProtectedRoute>}
+        />
+        <Route
+          path="/insights"
+          element={<ProtectedRoute><DefaultProjectRoute base="/insights" /></ProtectedRoute>}
+        />
+        <Route
+          path="/insights/:projectId"
+          element={<ProtectedRoute><Insights /></ProtectedRoute>}
         />
         <Route
           path="/live"

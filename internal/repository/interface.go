@@ -77,6 +77,14 @@ type Querier interface {
 	DistinctEventProperties(ctx context.Context, projectID, eventName string) ([]string, error)
 	DistinctPropertyValues(ctx context.Context, projectID, eventName, property string, limit int) ([]string, error)
 	PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, error)
+
+	// Widgets
+	CreateWidget(ctx context.Context, w DashboardWidget) (DashboardWidget, error)
+	WidgetByID(ctx context.Context, id string) (DashboardWidget, error)
+	ListWidgets(ctx context.Context, projectID string) ([]DashboardWidget, error)
+	UpdateWidget(ctx context.Context, w DashboardWidget) (DashboardWidget, error)
+	DeleteWidget(ctx context.Context, id string) error
+	WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]PropertyBreakdown, error)
 }
 
 // compile-time check that *Store satisfies Querier.

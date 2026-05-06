@@ -33,6 +33,7 @@ type Store struct {
 	abtests  map[string]repository.ABTest
 	sessions map[string]repository.Session
 	events   []repository.Event
+	widgets  map[string]repository.DashboardWidget
 }
 
 // New returns a fresh empty Store.
@@ -579,6 +580,72 @@ func (s *Store) PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, er
 	}
 	s.events = kept
 	return deleted, nil
+}
+
+// ── Widgets ──────────────────────────────────────────────────────────────────
+
+func (s *Store) CreateWidget(_ context.Context, w repository.DashboardWidget) (repository.DashboardWidget, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	w.ID = newMockID("widget")
+	w.CreatedAt = time.Now()
+	if s.widgets == nil {
+		s.widgets = make(map[string]repository.DashboardWidget)
+	}
+	s.widgets[w.ID] = w
+	return w, nil
+}
+
+func (s *Store) WidgetByID(_ context.Context, id string) (repository.DashboardWidget, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	w, ok := s.widgets[id]
+	if !ok {
+		return repository.DashboardWidget{}, sql.ErrNoRows
+	}
+	return w, nil
+}
+
+func (s *Store) ListWidgets(_ context.Context, projectID string) ([]repository.DashboardWidget, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []repository.DashboardWidget
+	for _, w := range s.widgets {
+		if w.ProjectID == projectID {
+			out = append(out, w)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Position != out[j].Position {
+			return out[i].Position < out[j].Position
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
+}
+
+func (s *Store) UpdateWidget(_ context.Context, w repository.DashboardWidget) (repository.DashboardWidget, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	existing, ok := s.widgets[w.ID]
+	if !ok {
+		return repository.DashboardWidget{}, sql.ErrNoRows
+	}
+	w.ProjectID = existing.ProjectID
+	w.CreatedAt = existing.CreatedAt
+	s.widgets[w.ID] = w
+	return w, nil
+}
+
+func (s *Store) DeleteWidget(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.widgets, id)
+	return nil
+}
+
+func (s *Store) WidgetBreakdown(_ context.Context, _, _, _ string, _, _ int) ([]repository.PropertyBreakdown, error) {
+	return []repository.PropertyBreakdown{}, nil
 }
 
 func (s *Store) Ping(_ context.Context) error { return nil }

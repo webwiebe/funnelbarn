@@ -64,6 +64,16 @@ type Events interface {
 	DistinctPropertyValues(ctx context.Context, projectID, eventName, property string, limit int) ([]string, error)
 }
 
+// Widgets is the interface for dashboard widget operations.
+type Widgets interface {
+	CreateWidget(ctx context.Context, w repository.DashboardWidget) (repository.DashboardWidget, error)
+	GetWidget(ctx context.Context, id string) (repository.DashboardWidget, error)
+	ListWidgets(ctx context.Context, projectID string) ([]repository.DashboardWidget, error)
+	UpdateWidget(ctx context.Context, w repository.DashboardWidget) (repository.DashboardWidget, error)
+	DeleteWidget(ctx context.Context, id string) error
+	WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]repository.PropertyBreakdown, error)
+}
+
 // Sessions is the interface for session-related operations.
 type Sessions interface {
 	UpsertSession(ctx context.Context, sess repository.Session) error

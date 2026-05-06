@@ -172,6 +172,33 @@ export const api = {
   // Active sessions (last 5 minutes)
   getActiveSessions: (projectId: string) =>
     request<{ active_sessions: number; window_minutes: number }>(`/api/v1/projects/${projectId}/sessions/active`),
+
+  // Widgets (Insights)
+  listWidgets: (projectId: string) =>
+    request<{ widgets: DashboardWidget[] }>(`/api/v1/projects/${projectId}/widgets`),
+
+  createWidget: (projectId: string, data: { event_name: string; property: string; title: string; position?: number }) =>
+    request<DashboardWidget>(`/api/v1/projects/${projectId}/widgets`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateWidget: (projectId: string, widgetId: string, data: { event_name: string; property: string; title: string; position?: number }) =>
+    request<DashboardWidget>(`/api/v1/projects/${projectId}/widgets/${widgetId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteWidget: (projectId: string, widgetId: string) =>
+    request<void>(`/api/v1/projects/${projectId}/widgets/${widgetId}`, { method: 'DELETE' }),
+
+  getWidgetBreakdown: (projectId: string, widgetId: string) =>
+    request<{ widget: DashboardWidget; breakdown: PropertyBreakdown[]; window: number }>(
+      `/api/v1/projects/${projectId}/widgets/${widgetId}/breakdown`
+    ),
+
+  getBatchBreakdowns: (projectId: string) =>
+    request<{ results: WidgetBreakdownResult[] }>(`/api/v1/projects/${projectId}/widgets/breakdowns`),
 }
 
 // Types
@@ -264,4 +291,24 @@ export interface ABTestAnalysis {
   variant_conversions: number
   significant: boolean
   z_score?: number
+}
+
+export interface DashboardWidget {
+  id: string
+  project_id: string
+  event_name: string
+  property: string
+  title: string
+  position: number
+  created_at: string
+}
+
+export interface PropertyBreakdown {
+  value: string
+  count: number
+}
+
+export interface WidgetBreakdownResult {
+  widget: DashboardWidget
+  breakdown: PropertyBreakdown[]
 }

@@ -123,6 +123,7 @@ func run() error {
 	eventsSvc := service.NewEventService(store)
 	sessionsSvc := service.NewSessionService(store)
 	apikeysSvc := service.NewAPIKeyService(store)
+	widgetsSvc := service.NewWidgetService(store)
 
 	eventSpool, err := spool.NewWithLimit(cfg.SpoolDir, cfg.MaxSpoolBytes)
 	if err != nil {
@@ -175,6 +176,7 @@ func run() error {
 		eventsSvc,
 		sessionsSvc,
 		apikeysSvc,
+		widgetsSvc,
 		userAuth,
 		sessionManager,
 		cfg.AllowedOrigins,
