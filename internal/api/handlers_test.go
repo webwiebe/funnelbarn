@@ -375,7 +375,7 @@ func TestHandleEventProperties_Success(t *testing.T) {
 	_ = store.InsertEvent(ctx, repository.Event{
 		ID: "ep1", ProjectID: p.ID, SessionID: "s1", Name: "signup",
 		Properties: `{"plan":"pro","source":"ads"}`,
-		IngestID: "i-ep1", OccurredAt: now(),
+		IngestID:   "i-ep1", OccurredAt: now(),
 	})
 
 	w := getJSON(t, srv, "/api/v1/projects/"+p.ID+"/event-properties?event_name=signup", nil)
@@ -411,7 +411,7 @@ func TestHandleEventPropertyValues_Success(t *testing.T) {
 		_ = store.InsertEvent(ctx, repository.Event{
 			ID: randomID(), ProjectID: p.ID, SessionID: "s1", Name: "signup",
 			Properties: `{"plan":"` + plan + `"}`,
-			IngestID: randomID(), OccurredAt: now(),
+			IngestID:   randomID(), OccurredAt: now(),
 		})
 	}
 
