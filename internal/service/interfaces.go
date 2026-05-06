@@ -60,6 +60,8 @@ type Events interface {
 	UniqueSessionCount(ctx context.Context, projectID string, from, to time.Time) (int64, error)
 	GetEventByIngestID(ctx context.Context, ingestID string) (*repository.Event, error)
 	DistinctEventNames(ctx context.Context, projectID string) ([]string, error)
+	DistinctEventProperties(ctx context.Context, projectID, eventName string) ([]string, error)
+	DistinctPropertyValues(ctx context.Context, projectID, eventName, property string, limit int) ([]string, error)
 }
 
 // Sessions is the interface for session-related operations.

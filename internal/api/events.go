@@ -39,6 +39,59 @@ func (s *Server) handleEventNames(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"event_names": names})
 }
 
+// handleEventProperties returns distinct JSON property keys for a given event name.
+func (s *Server) handleEventProperties(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		jsonError(w, "project id required", http.StatusBadRequest)
+		return
+	}
+	eventName := r.URL.Query().Get("event_name")
+	if eventName == "" {
+		jsonError(w, "event_name query parameter required", http.StatusBadRequest)
+		return
+	}
+
+	props, err := s.events.DistinctEventProperties(r.Context(), projectID, eventName)
+	if err != nil {
+		mapServiceError(w, err, "handleEventProperties")
+		return
+	}
+	if props == nil {
+		props = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"properties": props})
+}
+
+// handleEventPropertyValues returns distinct values for a property key on a given event name.
+func (s *Server) handleEventPropertyValues(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		jsonError(w, "project id required", http.StatusBadRequest)
+		return
+	}
+	eventName := r.URL.Query().Get("event_name")
+	if eventName == "" {
+		jsonError(w, "event_name query parameter required", http.StatusBadRequest)
+		return
+	}
+	property := r.URL.Query().Get("property")
+	if property == "" {
+		jsonError(w, "property query parameter required", http.StatusBadRequest)
+		return
+	}
+
+	vals, err := s.events.DistinctPropertyValues(r.Context(), projectID, eventName, property, 50)
+	if err != nil {
+		mapServiceError(w, err, "handleEventPropertyValues")
+		return
+	}
+	if vals == nil {
+		vals = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"values": vals})
+}
+
 // handleListEvents returns a paginated list of events for a project.
 func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")

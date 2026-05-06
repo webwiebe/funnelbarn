@@ -80,3 +80,11 @@ func (svc *EventService) GetEventByIngestID(ctx context.Context, ingestID string
 func (svc *EventService) DistinctEventNames(ctx context.Context, projectID string) ([]string, error) {
 	return svc.store.DistinctEventNames(ctx, projectID)
 }
+
+func (svc *EventService) DistinctEventProperties(ctx context.Context, projectID, eventName string) ([]string, error) {
+	return svc.store.DistinctEventProperties(ctx, projectID, eventName)
+}
+
+func (svc *EventService) DistinctPropertyValues(ctx context.Context, projectID, eventName, property string, limit int) ([]string, error) {
+	return svc.store.DistinctPropertyValues(ctx, projectID, eventName, property, limit)
+}

@@ -216,3 +216,36 @@ describe('api.createFunnel', () => {
     expect(body.steps).toEqual(steps)
   })
 })
+
+describe('api.getEventProperties', () => {
+  it('calls the correct URL with encoded event_name', async () => {
+    mockFetch(200, { properties: ['plan', 'source'] })
+    const result = await api.getEventProperties('proj1', 'page view')
+    expect(result.properties).toEqual(['plan', 'source'])
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string]
+    expect(url).toContain('/event-properties?event_name=page%20view')
+  })
+
+  it('returns empty array from server', async () => {
+    mockFetch(200, { properties: [] })
+    const result = await api.getEventProperties('proj1', 'signup')
+    expect(result.properties).toEqual([])
+  })
+})
+
+describe('api.getEventPropertyValues', () => {
+  it('calls the correct URL with encoded params', async () => {
+    mockFetch(200, { values: ['pro', 'free'] })
+    const result = await api.getEventPropertyValues('proj1', 'signup', 'plan')
+    expect(result.values).toEqual(['pro', 'free'])
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string]
+    expect(url).toContain('/event-property-values?event_name=signup&property=plan')
+  })
+
+  it('encodes special characters in property name', async () => {
+    mockFetch(200, { values: [] })
+    await api.getEventPropertyValues('proj1', 'click', 'button name')
+    const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string]
+    expect(url).toContain('property=button%20name')
+  })
+})

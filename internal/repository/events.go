@@ -609,6 +609,62 @@ func (s *Store) DistinctEventNames(ctx context.Context, projectID string) ([]str
 	return names, rows.Err()
 }
 
+// DistinctEventProperties returns all unique JSON property keys used by events
+// with the given name for a project.
+func (s *Store) DistinctEventProperties(ctx context.Context, projectID, eventName string) ([]string, error) {
+	const q = `
+		SELECT DISTINCT j.key
+		FROM events e, json_each(e.properties) j
+		WHERE e.project_id = ? AND e.name = ? AND e.properties != '' AND e.properties IS NOT NULL
+		ORDER BY j.key`
+	rows, err := s.db.QueryContext(ctx, q, projectID, eventName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var keys []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
+}
+
+// DistinctPropertyValues returns up to `limit` unique values for a JSON
+// property key on events with the given name for a project.
+func (s *Store) DistinctPropertyValues(ctx context.Context, projectID, eventName, property string, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	const q = `
+		SELECT DISTINCT json_extract(e.properties, '$.' || ?) AS val
+		FROM events e
+		WHERE e.project_id = ? AND e.name = ?
+		  AND e.properties != '' AND e.properties IS NOT NULL
+		  AND val IS NOT NULL AND val != ''
+		ORDER BY val
+		LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, property, projectID, eventName, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var vals []string
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return nil, err
+		}
+		vals = append(vals, v)
+	}
+	return vals, rows.Err()
+}
+
 // TopOS is an alias for TopOSSystems kept for backward compatibility in tests.
 func (s *Store) TopOS(ctx context.Context, projectID string, from, to time.Time, limit int) ([]OSStat, error) {
 	return s.TopOSSystems(ctx, projectID, from, to, limit)

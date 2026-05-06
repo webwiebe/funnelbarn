@@ -74,6 +74,8 @@ type Querier interface {
 	UniqueSessionCount(ctx context.Context, projectID string, from, to time.Time) (int64, error)
 	GetEventByIngestID(ctx context.Context, ingestID string) (*Event, error)
 	DistinctEventNames(ctx context.Context, projectID string) ([]string, error)
+	DistinctEventProperties(ctx context.Context, projectID, eventName string) ([]string, error)
+	DistinctPropertyValues(ctx context.Context, projectID, eventName, property string, limit int) ([]string, error)
 	PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, error)
 }
 

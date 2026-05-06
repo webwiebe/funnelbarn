@@ -581,6 +581,84 @@ func TestFunnelSegmentData(t *testing.T) {
 	require.Empty(t, segs.DeviceTypes) // no events
 }
 
+func TestDistinctEventProperties(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	p, _ := s.CreateProject(ctx, "EvtProps", "evtprops")
+
+	// Insert events with JSON properties.
+	e1 := repository.Event{
+		ID:         randomHex(t),
+		ProjectID:  p.ID,
+		SessionID:  "s1",
+		Name:       "signup",
+		Properties: `{"plan":"pro","source":"google"}`,
+		IngestID:   "ingest-" + randomHex(t),
+		OccurredAt: time.Now().UTC().Truncate(time.Second),
+	}
+	e2 := repository.Event{
+		ID:         randomHex(t),
+		ProjectID:  p.ID,
+		SessionID:  "s2",
+		Name:       "signup",
+		Properties: `{"plan":"free","region":"eu"}`,
+		IngestID:   "ingest-" + randomHex(t),
+		OccurredAt: time.Now().UTC().Truncate(time.Second),
+	}
+	require.NoError(t, s.InsertEvent(ctx, e1))
+	require.NoError(t, s.InsertEvent(ctx, e2))
+
+	props, err := s.DistinctEventProperties(ctx, p.ID, "signup")
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"plan", "region", "source"}, props)
+
+	// Different event name returns nothing.
+	empty, err := s.DistinctEventProperties(ctx, p.ID, "page_view")
+	require.NoError(t, err)
+	require.Empty(t, empty)
+}
+
+func TestDistinctPropertyValues(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	p, _ := s.CreateProject(ctx, "PropVals", "propvals")
+
+	for _, plan := range []string{"pro", "free", "enterprise", "pro"} {
+		e := repository.Event{
+			ID:         randomHex(t),
+			ProjectID:  p.ID,
+			SessionID:  "s1",
+			Name:       "signup",
+			Properties: fmt.Sprintf(`{"plan":"%s"}`, plan),
+			IngestID:   "ingest-" + randomHex(t),
+			OccurredAt: time.Now().UTC().Truncate(time.Second),
+		}
+		require.NoError(t, s.InsertEvent(ctx, e))
+	}
+
+	vals, err := s.DistinctPropertyValues(ctx, p.ID, "signup", "plan", 50)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"enterprise", "free", "pro"}, vals)
+
+	// Non-existent property returns empty.
+	empty, err := s.DistinctPropertyValues(ctx, p.ID, "signup", "nonexistent", 50)
+	require.NoError(t, err)
+	require.Empty(t, empty)
+}
+
+func TestDistinctEventProperties_EmptyProperties(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	p, _ := s.CreateProject(ctx, "EmptyProps", "emptyprops")
+
+	// Event with no properties.
+	insertEvent(t, s, p.ID, "s1", "click", "https://example.com/")
+
+	props, err := s.DistinctEventProperties(ctx, p.ID, "click")
+	require.NoError(t, err)
+	require.Empty(t, props)
+}
+
 func TestAnalyzeFunnel_WithEqSegment(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
