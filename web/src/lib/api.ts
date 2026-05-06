@@ -162,6 +162,13 @@ export const api = {
   getEventNames: (projectId: string) =>
     request<{ event_names: string[] }>(`/api/v1/projects/${projectId}/event-names`),
 
+  // Event properties (autocomplete for filters)
+  getEventProperties: (projectId: string, eventName: string) =>
+    request<{ properties: string[] }>(`/api/v1/projects/${projectId}/event-properties?event_name=${encodeURIComponent(eventName)}`),
+
+  getEventPropertyValues: (projectId: string, eventName: string, property: string) =>
+    request<{ values: string[] }>(`/api/v1/projects/${projectId}/event-property-values?event_name=${encodeURIComponent(eventName)}&property=${encodeURIComponent(property)}`),
+
   // Active sessions (last 5 minutes)
   getActiveSessions: (projectId: string) =>
     request<{ active_sessions: number; window_minutes: number }>(`/api/v1/projects/${projectId}/sessions/active`),

@@ -557,6 +557,14 @@ func (s *Store) DistinctEventNames(_ context.Context, _ string) ([]string, error
 	return nil, nil
 }
 
+func (s *Store) DistinctEventProperties(_ context.Context, _, _ string) ([]string, error) {
+	return nil, nil
+}
+
+func (s *Store) DistinctPropertyValues(_ context.Context, _, _, _ string, _ int) ([]string, error) {
+	return nil, nil
+}
+
 func (s *Store) PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

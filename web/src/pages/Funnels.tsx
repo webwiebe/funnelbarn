@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { Plus, X, Layers, Pencil, Trash2 } from 'lucide-react'
+import { Plus, X, Layers, Pencil, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api, Funnel, FunnelAnalysis, FunnelStepInput } from '../lib/api'
 import { useProjects } from '../lib/projects'
@@ -393,6 +393,159 @@ function EventNameInput({
   )
 }
 
+function AutocompleteInput({
+  value,
+  onChange,
+  placeholder,
+  suggestions,
+  width,
+}: {
+  value: string
+  onChange: (val: string) => void
+  placeholder?: string
+  suggestions: string[]
+  width?: number
+}) {
+  const [open, setOpen] = useState(false)
+  const [focused, setFocused] = useState(false)
+
+  const filtered = suggestions.filter(
+    (s) => s.toLowerCase().includes(value.toLowerCase()) && s !== value
+  )
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => { setFocused(true); setOpen(true) }}
+        onBlur={() => { setFocused(false); setTimeout(() => setOpen(false), 150) }}
+        placeholder={placeholder}
+        style={{
+          width: width ?? 120,
+          background: C.bg,
+          border: `1px solid ${C.border}`,
+          borderRadius: 6,
+          padding: '0.3rem 0.5rem',
+          color: C.text,
+          fontSize: 12,
+          outline: 'none',
+          boxSizing: 'border-box',
+        }}
+      />
+      {open && focused && filtered.length > 0 && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          marginTop: 2,
+          background: C.bg,
+          border: `1px solid ${C.border}`,
+          borderRadius: 6,
+          maxHeight: 120,
+          overflowY: 'auto',
+          zIndex: 200,
+          minWidth: width ?? 120,
+        }}>
+          {filtered.slice(0, 10).map((s) => (
+            <div
+              key={s}
+              onMouseDown={(e) => { e.preventDefault(); onChange(s); setOpen(false) }}
+              style={{
+                padding: '0.3rem 0.5rem',
+                fontSize: 12,
+                color: C.text,
+                cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(245,158,11,0.1)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              {s}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AvailableEventsPanel({
+  eventNames,
+  onSelect,
+}: {
+  eventNames: string[]
+  onSelect: (name: string) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  if (eventNames.length === 0) return null
+
+  return (
+    <div style={{
+      marginBottom: '1.25rem',
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 8,
+    }}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          width: '100%',
+          background: 'none',
+          border: 'none',
+          color: C.muted,
+          cursor: 'pointer',
+          padding: '0.6rem 0.75rem',
+          fontSize: 13,
+          fontWeight: 600,
+          textAlign: 'left',
+        }}
+      >
+        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        Available events ({eventNames.length})
+      </button>
+      {expanded && (
+        <div style={{
+          padding: '0 0.75rem 0.6rem',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 6,
+        }}>
+          {eventNames.map((name) => (
+            <button
+              key={name}
+              onClick={() => onSelect(name)}
+              style={{
+                background: 'rgba(245,158,11,0.08)',
+                border: `1px solid rgba(245,158,11,0.25)`,
+                borderRadius: 6,
+                color: C.amber,
+                padding: '0.3rem 0.6rem',
+                fontSize: 12,
+                cursor: 'pointer',
+                fontWeight: 500,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(245,158,11,0.18)'
+                e.currentTarget.style.borderColor = 'rgba(245,158,11,0.5)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(245,158,11,0.08)'
+                e.currentTarget.style.borderColor = 'rgba(245,158,11,0.25)'
+              }}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface StepWithFilters {
   event_name: string
   filters: { property: string; value: string }[]
@@ -415,21 +568,51 @@ function CreateFunnelModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [eventNames, setEventNames] = useState<string[]>([])
+  const [stepProperties, setStepProperties] = useState<Record<number, string[]>>({})
+  const [filterValues, setFilterValues] = useState<Record<string, string[]>>({})
 
   useEffect(() => {
     api.getEventNames(projectId).then((d) => setEventNames(d.event_names || [])).catch(() => {})
   }, [projectId])
 
+  const fetchProperties = (stepIdx: number, eventName: string) => {
+    if (!eventName) return
+    api.getEventProperties(projectId, eventName)
+      .then((d) => setStepProperties((prev) => ({ ...prev, [stepIdx]: d.properties || [] })))
+      .catch(() => {})
+  }
+
+  const fetchPropertyValues = (eventName: string, property: string) => {
+    if (!eventName || !property) return
+    const cacheKey = `${eventName}:${property}`
+    if (filterValues[cacheKey]) return
+    api.getEventPropertyValues(projectId, eventName, property)
+      .then((d) => setFilterValues((prev) => ({ ...prev, [cacheKey]: d.values || [] })))
+      .catch(() => {})
+  }
+
   const addStep = () => setSteps((s) => [...s, { event_name: '', filters: [] }])
   const removeStep = (i: number) => setSteps((s) => s.filter((_, idx) => idx !== i))
-  const updateStep = (i: number, val: string) =>
+  const updateStep = (i: number, val: string) => {
     setSteps((s) => s.map((st, idx) => (idx === i ? { ...st, event_name: val } : st)))
+    fetchProperties(i, val)
+  }
   const addFilter = (i: number) =>
     setSteps((s) => s.map((st, idx) => idx === i ? { ...st, filters: [...st.filters, { property: '', value: '' }] } : st))
+  const addFilterWithProperty = (stepIdx: number, property: string) => {
+    setSteps((s) => s.map((st, i) => i === stepIdx ? { ...st, filters: [...st.filters, { property, value: '' }] } : st))
+    const eventName = steps[stepIdx]?.event_name
+    if (eventName) fetchPropertyValues(eventName, property)
+  }
   const removeFilter = (stepIdx: number, filterIdx: number) =>
     setSteps((s) => s.map((st, i) => i === stepIdx ? { ...st, filters: st.filters.filter((_, fi) => fi !== filterIdx) } : st))
-  const updateFilter = (stepIdx: number, filterIdx: number, field: 'property' | 'value', val: string) =>
+  const updateFilter = (stepIdx: number, filterIdx: number, field: 'property' | 'value', val: string) => {
     setSteps((s) => s.map((st, i) => i === stepIdx ? { ...st, filters: st.filters.map((f, fi) => fi === filterIdx ? { ...f, [field]: val } : f) } : st))
+    if (field === 'property') {
+      const eventName = steps[stepIdx]?.event_name
+      if (eventName && val) fetchPropertyValues(eventName, val)
+    }
+  }
 
   const handleCreate = async () => {
     if (!name.trim()) { setError('Name is required'); return }
@@ -514,6 +697,19 @@ function CreateFunnelModal({
           />
         </div>
 
+        <AvailableEventsPanel
+          eventNames={eventNames}
+          onSelect={(eName) => {
+            const emptyIdx = steps.findIndex((s) => !s.event_name)
+            if (emptyIdx >= 0) {
+              updateStep(emptyIdx, eName)
+            } else {
+              setSteps((prev) => [...prev, { event_name: eName, filters: [] }])
+              fetchProperties(steps.length, eName)
+            }
+          }}
+        />
+
         <div style={{ marginBottom: '1.25rem' }}>
           <label style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 10 }}>Steps</label>
           {steps.map((s, i) => (
@@ -548,39 +744,53 @@ function CreateFunnelModal({
                   </button>
                 )}
               </div>
-              {/* Filters */}
               <div style={{ marginLeft: 32, marginTop: 4 }}>
+                {(stepProperties[i] || []).length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
+                    {(stepProperties[i] || [])
+                      .filter((p) => !s.filters.some((f) => f.property === p))
+                      .map((prop) => (
+                        <button
+                          key={prop}
+                          onClick={() => addFilterWithProperty(i, prop)}
+                          style={{
+                            background: 'rgba(148,163,184,0.08)',
+                            border: `1px solid ${C.border}`,
+                            borderRadius: 4,
+                            color: C.muted,
+                            padding: '0.15rem 0.4rem',
+                            fontSize: 11,
+                            cursor: 'pointer',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = C.amber
+                            e.currentTarget.style.color = C.amber
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = C.border
+                            e.currentTarget.style.color = C.muted
+                          }}
+                        >
+                          + {prop}
+                        </button>
+                      ))}
+                  </div>
+                )}
                 {s.filters.map((f, fi) => (
                   <div key={fi} style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
-                    <input
+                    <AutocompleteInput
                       value={f.property}
-                      onChange={(e) => updateFilter(i, fi, 'property', e.target.value)}
+                      onChange={(val) => updateFilter(i, fi, 'property', val)}
                       placeholder="Property"
-                      style={{
-                        width: 100,
-                        background: C.bg,
-                        border: `1px solid ${C.border}`,
-                        borderRadius: 6,
-                        padding: '0.3rem 0.5rem',
-                        color: C.text,
-                        fontSize: 12,
-                        outline: 'none',
-                      }}
+                      suggestions={stepProperties[i] || []}
+                      width={120}
                     />
-                    <input
+                    <AutocompleteInput
                       value={f.value}
-                      onChange={(e) => updateFilter(i, fi, 'value', e.target.value)}
+                      onChange={(val) => updateFilter(i, fi, 'value', val)}
                       placeholder="Value"
-                      style={{
-                        width: 100,
-                        background: C.bg,
-                        border: `1px solid ${C.border}`,
-                        borderRadius: 6,
-                        padding: '0.3rem 0.5rem',
-                        color: C.text,
-                        fontSize: 12,
-                        outline: 'none',
-                      }}
+                      suggestions={filterValues[`${s.event_name}:${f.property}`] || []}
+                      width={120}
                     />
                     <button
                       onClick={() => removeFilter(i, fi)}
@@ -685,21 +895,57 @@ function EditFunnelModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [eventNames, setEventNames] = useState<string[]>([])
+  const [stepProperties, setStepProperties] = useState<Record<number, string[]>>({})
+  const [filterValues, setFilterValues] = useState<Record<string, string[]>>({})
+
+  const fetchProperties = (stepIdx: number, eventName: string) => {
+    if (!eventName) return
+    api.getEventProperties(projectId, eventName)
+      .then((d) => setStepProperties((prev) => ({ ...prev, [stepIdx]: d.properties || [] })))
+      .catch(() => {})
+  }
+
+  const fetchPropertyValues = (eventName: string, property: string) => {
+    if (!eventName || !property) return
+    const cacheKey = `${eventName}:${property}`
+    if (filterValues[cacheKey]) return
+    api.getEventPropertyValues(projectId, eventName, property)
+      .then((d) => setFilterValues((prev) => ({ ...prev, [cacheKey]: d.values || [] })))
+      .catch(() => {})
+  }
 
   useEffect(() => {
     api.getEventNames(projectId).then((d) => setEventNames(d.event_names || [])).catch(() => {})
   }, [projectId])
 
+  useEffect(() => {
+    steps.forEach((s, i) => {
+      if (s.event_name) fetchProperties(i, s.event_name)
+    })
+  }, [])
+
   const addStep = () => setSteps((s) => [...s, { event_name: '', filters: [] }])
   const removeStep = (i: number) => setSteps((s) => s.filter((_, idx) => idx !== i))
-  const updateStep = (i: number, val: string) =>
+  const updateStep = (i: number, val: string) => {
     setSteps((s) => s.map((st, idx) => (idx === i ? { ...st, event_name: val } : st)))
+    fetchProperties(i, val)
+  }
   const addFilter = (i: number) =>
     setSteps((s) => s.map((st, idx) => idx === i ? { ...st, filters: [...st.filters, { property: '', value: '' }] } : st))
+  const addFilterWithProperty = (stepIdx: number, property: string) => {
+    setSteps((s) => s.map((st, i) => i === stepIdx ? { ...st, filters: [...st.filters, { property, value: '' }] } : st))
+    const eventName = steps[stepIdx]?.event_name
+    if (eventName) fetchPropertyValues(eventName, property)
+  }
   const removeFilter = (stepIdx: number, filterIdx: number) =>
     setSteps((s) => s.map((st, i) => i === stepIdx ? { ...st, filters: st.filters.filter((_, fi) => fi !== filterIdx) } : st))
-  const updateFilter = (stepIdx: number, filterIdx: number, field: 'property' | 'value', val: string) =>
+  const updateFilter = (stepIdx: number, filterIdx: number, field: 'property' | 'value', val: string) => {
     setSteps((s) => s.map((st, i) => i === stepIdx ? { ...st, filters: st.filters.map((f, fi) => fi === filterIdx ? { ...f, [field]: val } : f) } : st))
+    if (field === 'property') {
+      const eventName = steps[stepIdx]?.event_name
+      if (eventName && val) fetchPropertyValues(eventName, val)
+    }
+  }
 
   const handleSave = async () => {
     if (!name.trim()) { setError('Name is required'); return }
@@ -783,6 +1029,19 @@ function EditFunnelModal({
           />
         </div>
 
+        <AvailableEventsPanel
+          eventNames={eventNames}
+          onSelect={(eName) => {
+            const emptyIdx = steps.findIndex((s) => !s.event_name)
+            if (emptyIdx >= 0) {
+              updateStep(emptyIdx, eName)
+            } else {
+              setSteps((prev) => [...prev, { event_name: eName, filters: [] }])
+              fetchProperties(steps.length, eName)
+            }
+          }}
+        />
+
         <div style={{ marginBottom: '1.25rem' }}>
           <label style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 10 }}>Steps</label>
           {steps.map((s, i) => (
@@ -817,39 +1076,53 @@ function EditFunnelModal({
                   </button>
                 )}
               </div>
-              {/* Filters */}
               <div style={{ marginLeft: 32, marginTop: 4 }}>
+                {(stepProperties[i] || []).length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
+                    {(stepProperties[i] || [])
+                      .filter((p) => !s.filters.some((f) => f.property === p))
+                      .map((prop) => (
+                        <button
+                          key={prop}
+                          onClick={() => addFilterWithProperty(i, prop)}
+                          style={{
+                            background: 'rgba(148,163,184,0.08)',
+                            border: `1px solid ${C.border}`,
+                            borderRadius: 4,
+                            color: C.muted,
+                            padding: '0.15rem 0.4rem',
+                            fontSize: 11,
+                            cursor: 'pointer',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = C.amber
+                            e.currentTarget.style.color = C.amber
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = C.border
+                            e.currentTarget.style.color = C.muted
+                          }}
+                        >
+                          + {prop}
+                        </button>
+                      ))}
+                  </div>
+                )}
                 {s.filters.map((f, fi) => (
                   <div key={fi} style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
-                    <input
+                    <AutocompleteInput
                       value={f.property}
-                      onChange={(e) => updateFilter(i, fi, 'property', e.target.value)}
+                      onChange={(val) => updateFilter(i, fi, 'property', val)}
                       placeholder="Property"
-                      style={{
-                        width: 100,
-                        background: C.bg,
-                        border: `1px solid ${C.border}`,
-                        borderRadius: 6,
-                        padding: '0.3rem 0.5rem',
-                        color: C.text,
-                        fontSize: 12,
-                        outline: 'none',
-                      }}
+                      suggestions={stepProperties[i] || []}
+                      width={120}
                     />
-                    <input
+                    <AutocompleteInput
                       value={f.value}
-                      onChange={(e) => updateFilter(i, fi, 'value', e.target.value)}
+                      onChange={(val) => updateFilter(i, fi, 'value', val)}
                       placeholder="Value"
-                      style={{
-                        width: 100,
-                        background: C.bg,
-                        border: `1px solid ${C.border}`,
-                        borderRadius: 6,
-                        padding: '0.3rem 0.5rem',
-                        color: C.text,
-                        fontSize: 12,
-                        outline: 'none',
-                      }}
+                      suggestions={filterValues[`${s.event_name}:${f.property}`] || []}
+                      width={120}
                     />
                     <button
                       onClick={() => removeFilter(i, fi)}
