@@ -3,8 +3,23 @@ package repository
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 )
+
+var metadataColumns = []string{
+	"url", "referrer", "referrer_domain",
+	"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+	"browser", "os", "device_type", "country_code",
+}
+
+func IsMetadataColumn(name string) bool {
+	return slices.Contains(metadataColumns, name)
+}
+
+func MetadataColumns() []string {
+	return metadataColumns
+}
 
 // DashboardWidget is a user-configured breakdown card on the Insights page.
 type DashboardWidget struct {
@@ -80,27 +95,51 @@ func (s *Store) DeleteWidget(ctx context.Context, id string) error {
 }
 
 // WidgetBreakdown returns the top-N property value counts from the last `window` events
-// of the given event type. This is the rolling window query.
+// of the given event type. When property is empty, returns only the total count.
+// When property is a metadata column (url, browser, etc.), queries the column directly.
+// Otherwise, extracts from the JSON properties field.
 func (s *Store) WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]PropertyBreakdown, error) {
-	if !validPropertyName.MatchString(property) {
-		return nil, fmt.Errorf("invalid property name: %s", property)
+	if property == "" {
+		return s.widgetCount(ctx, projectID, eventName, window)
 	}
 
-	q := fmt.Sprintf(`
-		SELECT val, COUNT(*) AS cnt
-		FROM (
-			SELECT json_extract(properties, '$.%s') AS val
+	var q string
+	if IsMetadataColumn(property) {
+		q = fmt.Sprintf(`
+			SELECT val, COUNT(*) AS cnt
 			FROM (
-				SELECT properties FROM events
-				WHERE project_id = ? AND name = ?
-				ORDER BY occurred_at DESC
-				LIMIT ?
+				SELECT %s AS val
+				FROM (
+					SELECT %s FROM events
+					WHERE project_id = ? AND name = ?
+					ORDER BY occurred_at DESC
+					LIMIT ?
+				)
 			)
-		)
-		WHERE val IS NOT NULL AND val != ''
-		GROUP BY val
-		ORDER BY cnt DESC
-		LIMIT ?`, property)
+			WHERE val IS NOT NULL AND val != ''
+			GROUP BY val
+			ORDER BY cnt DESC
+			LIMIT ?`, property, property)
+	} else {
+		if !validPropertyName.MatchString(property) {
+			return nil, fmt.Errorf("invalid property name: %s", property)
+		}
+		q = fmt.Sprintf(`
+			SELECT val, COUNT(*) AS cnt
+			FROM (
+				SELECT json_extract(properties, '$.%s') AS val
+				FROM (
+					SELECT properties FROM events
+					WHERE project_id = ? AND name = ?
+					ORDER BY occurred_at DESC
+					LIMIT ?
+				)
+			)
+			WHERE val IS NOT NULL AND val != ''
+			GROUP BY val
+			ORDER BY cnt DESC
+			LIMIT ?`, property)
+	}
 
 	rows, err := s.db.QueryContext(ctx, q, projectID, eventName, window, limit)
 	if err != nil {
@@ -117,4 +156,13 @@ func (s *Store) WidgetBreakdown(ctx context.Context, projectID, eventName, prope
 		results = append(results, r)
 	}
 	return results, rows.Err()
+}
+
+func (s *Store) widgetCount(ctx context.Context, projectID, eventName string, window int) ([]PropertyBreakdown, error) {
+	const q = `SELECT COUNT(*) FROM (SELECT 1 FROM events WHERE project_id = ? AND name = ? ORDER BY occurred_at DESC LIMIT ?)`
+	var count int64
+	if err := s.db.QueryRowContext(ctx, q, projectID, eventName, window).Scan(&count); err != nil {
+		return nil, fmt.Errorf("widget count: %w", err)
+	}
+	return []PropertyBreakdown{{Value: "_total", Count: count}}, nil
 }

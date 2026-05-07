@@ -386,8 +386,9 @@ func TestHandleEventProperties_Success(t *testing.T) {
 		Properties []string `json:"properties"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if len(resp.Properties) != 2 {
-		t.Fatalf("want 2 properties, got %d: %v", len(resp.Properties), resp.Properties)
+	expectedCount := len(repository.MetadataColumns()) + 2
+	if len(resp.Properties) != expectedCount {
+		t.Fatalf("want %d properties (12 metadata + 2 custom), got %d: %v", expectedCount, len(resp.Properties), resp.Properties)
 	}
 }
 
