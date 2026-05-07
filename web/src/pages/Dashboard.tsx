@@ -152,13 +152,19 @@ export default function Dashboard() {
       .catch(() => setTopFunnelRate(null))
   }, [projectId])
 
-  // Format time series for chart — hourly labels for 24h, daily for 7d/30d
-  const chartData = data?.events_time_series?.map((pt) => ({
-    time: range === '24h'
-      ? new Date(pt.time).toLocaleTimeString('en-US', { hour: 'numeric', hour12: true })
-      : new Date(pt.time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    events: pt.count,
-  })) ?? []
+  // Format time series for chart — hourly labels for 24h/7d, daily for 30d
+  const chartData = data?.events_time_series?.map((pt) => {
+    const d = new Date(pt.time)
+    let time: string
+    if (range === '24h') {
+      time = d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true })
+    } else if (range === '7d') {
+      time = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', hour12: true })
+    } else {
+      time = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    }
+    return { time, events: pt.count }
+  }) ?? []
 
   // Referrer data for pie chart
   const referrerData = data?.top_referrers?.slice(0, 6).map((r) => ({
