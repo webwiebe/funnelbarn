@@ -69,7 +69,10 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 		}, nil
 	}
 
-	targetingKey := evalContext["targeting_key"]
+	targetingKey := evalContext["targetingKey"]
+	if targetingKey == "" {
+		targetingKey = evalContext["targeting_key"]
+	}
 	if targetingKey == "" {
 		targetingKey = evalContext["session_id"]
 	}
