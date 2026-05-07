@@ -180,8 +180,13 @@ function WidgetCard({ widget, breakdown, onDelete }: {
   breakdown: PropertyBreakdown[]
   onDelete: () => void
 }) {
+  const isCountOnly = !widget.property
   const maxCount = breakdown.length > 0 ? breakdown[0].count : 1
   const total = breakdown.reduce((sum, r) => sum + r.count, 0)
+
+  const subtitle = widget.property
+    ? `${widget.event_name} → ${widget.property}`
+    : widget.event_name
 
   return (
     <div style={{
@@ -199,11 +204,11 @@ function WidgetCard({ widget, breakdown, onDelete }: {
       }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
-            {widget.title || `${widget.event_name} → ${widget.property}`}
+            {widget.title || subtitle}
           </div>
           {widget.title && (
             <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-              {widget.event_name} → {widget.property}
+              {subtitle}
             </div>
           )}
         </div>
@@ -228,6 +233,11 @@ function WidgetCard({ widget, breakdown, onDelete }: {
         {breakdown.length === 0 ? (
           <div style={{ color: C.muted, fontSize: 13, textAlign: 'center', padding: '1rem 0' }}>
             No data yet
+          </div>
+        ) : isCountOnly ? (
+          <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+            <div style={{ fontSize: 36, fontWeight: 800, color: C.amber }}>{breakdown[0].count.toLocaleString()}</div>
+            <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>events</div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -314,13 +324,16 @@ function AddWidgetModal({ projectId, onClose, onAdded }: {
   }, [projectId, selectedEvent])
 
   const handleSave = async () => {
-    if (!selectedEvent || !selectedProperty) return
+    if (!selectedEvent) return
     setSaving(true)
     try {
+      const defaultTitle = selectedProperty
+        ? `${selectedEvent} → ${selectedProperty}`
+        : `${selectedEvent} (count)`
       await api.createWidget(projectId, {
         event_name: selectedEvent,
         property: selectedProperty,
-        title: title || `${selectedEvent} → ${selectedProperty}`,
+        title: title || defaultTitle,
       })
       onAdded()
     } catch {
@@ -399,7 +412,7 @@ function AddWidgetModal({ projectId, onClose, onAdded }: {
           )}
 
           <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: C.muted, marginBottom: 6, marginTop: 16 }}>
-            Property
+            Property (optional)
           </label>
           {loadingProps ? (
             <Skeleton height={40} />
@@ -419,7 +432,7 @@ function AddWidgetModal({ projectId, onClose, onAdded }: {
                 boxSizing: 'border-box',
               }}
             >
-              <option value="">{selectedEvent ? 'Select a property...' : 'Select an event first'}</option>
+              <option value="">{selectedEvent ? 'None (total count)' : 'Select an event first'}</option>
               {properties.map((p) => (
                 <option key={p} value={p}>{p}</option>
               ))}
@@ -433,7 +446,7 @@ function AddWidgetModal({ projectId, onClose, onAdded }: {
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder={selectedEvent && selectedProperty ? `${selectedEvent} → ${selectedProperty}` : 'Widget title'}
+            placeholder={selectedEvent ? (selectedProperty ? `${selectedEvent} → ${selectedProperty}` : `${selectedEvent} (count)`) : 'Widget title'}
             style={{
               width: '100%',
               padding: '0.6rem 0.75rem',
@@ -471,16 +484,16 @@ function AddWidgetModal({ projectId, onClose, onAdded }: {
           </button>
           <button
             onClick={handleSave}
-            disabled={!selectedEvent || !selectedProperty || saving}
+            disabled={!selectedEvent || saving}
             style={{
               padding: '0.5rem 1rem',
-              background: !selectedEvent || !selectedProperty || saving ? '#4a4d5a' : C.amber,
+              background: !selectedEvent || saving ? '#4a4d5a' : C.amber,
               border: 'none',
               borderRadius: 8,
-              color: !selectedEvent || !selectedProperty || saving ? C.muted : '#000',
+              color: !selectedEvent || saving ? C.muted : '#000',
               fontSize: 13,
               fontWeight: 700,
-              cursor: !selectedEvent || !selectedProperty || saving ? 'default' : 'pointer',
+              cursor: !selectedEvent || saving ? 'default' : 'pointer',
             }}
           >
             {saving ? 'Adding...' : 'Add Widget'}

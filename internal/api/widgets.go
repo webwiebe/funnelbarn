@@ -45,8 +45,8 @@ func (s *Server) handleCreateWidget(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	if body.EventName == "" || body.Property == "" {
-		jsonError(w, "event_name and property are required", http.StatusUnprocessableEntity)
+	if body.EventName == "" {
+		jsonError(w, "event_name is required", http.StatusUnprocessableEntity)
 		return
 	}
 
