@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 )
 
@@ -688,6 +689,40 @@ func (s *Store) DistinctPropertyValues(ctx context.Context, projectID, eventName
 		vals = append(vals, v)
 	}
 	return vals, rows.Err()
+}
+
+// PopulatedMetadataColumns returns only metadata columns that have at least
+// one non-empty value for the given project and event name.
+func (s *Store) PopulatedMetadataColumns(ctx context.Context, projectID, eventName string) ([]string, error) {
+	q := `SELECT `
+	for i, col := range metadataColumns {
+		if i > 0 {
+			q += `, `
+		}
+		q += fmt.Sprintf(`MAX(CASE WHEN %s IS NOT NULL AND %s != '' THEN 1 ELSE 0 END)`, col, col)
+	}
+	q += ` FROM events WHERE project_id = ? AND name = ? LIMIT 1000`
+
+	row := s.db.QueryRowContext(ctx, q, projectID, eventName)
+	flags := make([]int, len(metadataColumns))
+	ptrs := make([]any, len(metadataColumns))
+	for i := range flags {
+		ptrs[i] = &flags[i]
+	}
+	if err := row.Scan(ptrs...); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var populated []string
+	for i, f := range flags {
+		if f == 1 {
+			populated = append(populated, metadataColumns[i])
+		}
+	}
+	return populated, nil
 }
 
 // TopOS is an alias for TopOSSystems kept for backward compatibility in tests.

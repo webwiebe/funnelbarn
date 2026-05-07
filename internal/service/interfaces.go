@@ -75,6 +75,7 @@ type Events interface {
 	DistinctEventNames(ctx context.Context, projectID string) ([]string, error)
 	DistinctEventProperties(ctx context.Context, projectID, eventName string) ([]string, error)
 	DistinctPropertyValues(ctx context.Context, projectID, eventName, property string, limit int) ([]string, error)
+	PopulatedMetadataColumns(ctx context.Context, projectID, eventName string) ([]string, error)
 }
 
 // Widgets is the interface for dashboard widget operations.
