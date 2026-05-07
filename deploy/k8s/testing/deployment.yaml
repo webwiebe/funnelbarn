@@ -80,6 +80,18 @@ spec:
                   name: funnelbarn-secrets
                   key: FUNNELBARN_ENVIRONMENT
                   optional: true
+            - name: FUNNELBARN_SPANBARN_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_SPANBARN_ENDPOINT
+                  optional: true
+            - name: FUNNELBARN_SPANBARN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_SPANBARN_API_KEY
+                  optional: true
           resources:
             requests:
               cpu: 50m

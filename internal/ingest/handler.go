@@ -12,9 +12,12 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 const defaultQueueSize = 32768
@@ -140,7 +143,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	ingestID := h.idFn()
 
-	// Derive project slug from the API key's project ID or the header.
+	_, span := tracing.StartSpan(r.Context(), "ingest.enqueue",
+		attribute.String("ingest.id", ingestID),
+		attribute.String("project.id", projectID),
+		attribute.Int64("body.size", int64(len(body))),
+	)
+	defer span.End()
+
 	projectSlug := r.Header.Get("x-funnelbarn-project")
 	if projectSlug == "" {
 		projectSlug = projectID

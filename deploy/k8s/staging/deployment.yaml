@@ -86,6 +86,18 @@ spec:
                   optional: true
             - name: FUNNELBARN_DOGFOOD_PROJECT
               value: funnelbarn
+            - name: FUNNELBARN_SPANBARN_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_SPANBARN_ENDPOINT
+                  optional: true
+            - name: FUNNELBARN_SPANBARN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_SPANBARN_API_KEY
+                  optional: true
           resources:
             requests:
               cpu: 100m

@@ -13,6 +13,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // Pinger is satisfied by any type with a Ping method (e.g. *repository.Store).
@@ -195,8 +196,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil && r.URL.Path != "/api/v1/events" {
 		r.Body = http.MaxBytesReader(w, r.Body, 256<<10) // 256 KiB
 	}
-	// Apply middleware: requestLogger (innermost) → securityHeaders → dispatch.
-	requestLogger(securityHeaders(s.mux)).ServeHTTP(w, r)
+	// Apply middleware: requestLogger (innermost) → securityHeaders → tracing → dispatch.
+	tracing.Middleware(requestLogger(securityHeaders(s.mux))).ServeHTTP(w, r)
 }
 
 // SetMetricsToken configures a bearer token required to access /metrics.

@@ -5,7 +5,10 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // handleUpdateFunnel updates a funnel's name and steps.
@@ -206,7 +209,13 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 	// Parse optional segment filter.
 	seg := parseSegment(r.URL.Query().Get("segment"))
 
-	results, err := s.funnels.AnalyzeFunnel(r.Context(), funnel, from, to, seg)
+	ctx, span := tracing.StartSpan(r.Context(), "funnels.analyze",
+		attribute.String("project.id", projectID),
+		attribute.String("funnel.id", funnelID),
+	)
+	defer span.End()
+
+	results, err := s.funnels.AnalyzeFunnel(ctx, funnel, from, to, seg)
 	if err != nil {
 		mapServiceError(w, err, "handleFunnelAnalysis")
 		return

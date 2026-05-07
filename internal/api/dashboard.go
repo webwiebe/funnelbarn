@@ -4,7 +4,10 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // handleDashboard returns aggregate dashboard stats for a project.
@@ -39,7 +42,11 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ctx := r.Context()
+	ctx, span := tracing.StartSpan(r.Context(), "dashboard.aggregate",
+		attribute.String("project.id", projectID),
+		attribute.String("range", rangeParam),
+	)
+	defer span.End()
 
 	totalEvents, err := s.events.CountEvents(ctx, projectID, from, to)
 	if err != nil {
