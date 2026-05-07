@@ -17,6 +17,7 @@ type FeatureFlag struct {
 	DefaultVariant  string    `json:"default_variant"`
 	Split           string    `json:"split"`
 	ConversionEvent string    `json:"conversion_event"`
+	TargetingRules  string    `json:"targeting_rules"`
 	Status          string    `json:"status"`
 	CreatedAt       time.Time `json:"created_at"`
 }
@@ -46,10 +47,13 @@ func (s *Store) CreateFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, err
 	if err != nil {
 		return FeatureFlag{}, fmt.Errorf("generate uuid: %w", err)
 	}
-	const q = `INSERT INTO feature_flags (id, project_id, flag_key, name, flag_type, variants, default_variant, split, conversion_event, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	if f.TargetingRules == "" {
+		f.TargetingRules = "[]"
+	}
+	const q = `INSERT INTO feature_flags (id, project_id, flag_key, name, flag_type, variants, default_variant, split, conversion_event, targeting_rules, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	if _, err := s.db.ExecContext(ctx, q,
 		f.ID, f.ProjectID, f.FlagKey, f.Name, f.FlagType,
-		f.Variants, f.DefaultVariant, f.Split, f.ConversionEvent, f.Status,
+		f.Variants, f.DefaultVariant, f.Split, f.ConversionEvent, f.TargetingRules, f.Status,
 	); err != nil {
 		return FeatureFlag{}, fmt.Errorf("create flag: %w", err)
 	}
@@ -57,12 +61,12 @@ func (s *Store) CreateFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, err
 }
 
 func (s *Store) FlagByID(ctx context.Context, id string) (FeatureFlag, error) {
-	const q = `SELECT id, project_id, flag_key, name, flag_type, variants, default_variant, split, COALESCE(conversion_event,''), status, created_at FROM feature_flags WHERE id = ?`
+	const q = `SELECT id, project_id, flag_key, name, flag_type, variants, default_variant, split, COALESCE(conversion_event,''), COALESCE(targeting_rules,'[]'), status, created_at FROM feature_flags WHERE id = ?`
 	var f FeatureFlag
 	if err := s.db.QueryRowContext(ctx, q, id).Scan(
 		&f.ID, &f.ProjectID, &f.FlagKey, &f.Name, &f.FlagType,
 		&f.Variants, &f.DefaultVariant, &f.Split, &f.ConversionEvent,
-		&f.Status, &f.CreatedAt,
+		&f.TargetingRules, &f.Status, &f.CreatedAt,
 	); err != nil {
 		return FeatureFlag{}, err
 	}
@@ -70,12 +74,12 @@ func (s *Store) FlagByID(ctx context.Context, id string) (FeatureFlag, error) {
 }
 
 func (s *Store) FlagByKey(ctx context.Context, projectID, flagKey string) (FeatureFlag, error) {
-	const q = `SELECT id, project_id, flag_key, name, flag_type, variants, default_variant, split, COALESCE(conversion_event,''), status, created_at FROM feature_flags WHERE project_id = ? AND flag_key = ?`
+	const q = `SELECT id, project_id, flag_key, name, flag_type, variants, default_variant, split, COALESCE(conversion_event,''), COALESCE(targeting_rules,'[]'), status, created_at FROM feature_flags WHERE project_id = ? AND flag_key = ?`
 	var f FeatureFlag
 	if err := s.db.QueryRowContext(ctx, q, projectID, flagKey).Scan(
 		&f.ID, &f.ProjectID, &f.FlagKey, &f.Name, &f.FlagType,
 		&f.Variants, &f.DefaultVariant, &f.Split, &f.ConversionEvent,
-		&f.Status, &f.CreatedAt,
+		&f.TargetingRules, &f.Status, &f.CreatedAt,
 	); err != nil {
 		return FeatureFlag{}, err
 	}
@@ -83,7 +87,7 @@ func (s *Store) FlagByKey(ctx context.Context, projectID, flagKey string) (Featu
 }
 
 func (s *Store) ListFlags(ctx context.Context, projectID string) ([]FeatureFlag, error) {
-	const q = `SELECT id, project_id, flag_key, name, flag_type, variants, default_variant, split, COALESCE(conversion_event,''), status, created_at FROM feature_flags WHERE project_id = ? ORDER BY created_at DESC`
+	const q = `SELECT id, project_id, flag_key, name, flag_type, variants, default_variant, split, COALESCE(conversion_event,''), COALESCE(targeting_rules,'[]'), status, created_at FROM feature_flags WHERE project_id = ? ORDER BY created_at DESC`
 	rows, err := s.db.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, err
@@ -96,7 +100,7 @@ func (s *Store) ListFlags(ctx context.Context, projectID string) ([]FeatureFlag,
 		if err := rows.Scan(
 			&f.ID, &f.ProjectID, &f.FlagKey, &f.Name, &f.FlagType,
 			&f.Variants, &f.DefaultVariant, &f.Split, &f.ConversionEvent,
-			&f.Status, &f.CreatedAt,
+			&f.TargetingRules, &f.Status, &f.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -106,10 +110,13 @@ func (s *Store) ListFlags(ctx context.Context, projectID string) ([]FeatureFlag,
 }
 
 func (s *Store) UpdateFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, error) {
-	const q = `UPDATE feature_flags SET name=?, flag_type=?, variants=?, default_variant=?, split=?, conversion_event=?, status=? WHERE id=?`
+	if f.TargetingRules == "" {
+		f.TargetingRules = "[]"
+	}
+	const q = `UPDATE feature_flags SET name=?, flag_type=?, variants=?, default_variant=?, split=?, conversion_event=?, targeting_rules=?, status=? WHERE id=?`
 	if _, err := s.db.ExecContext(ctx, q,
 		f.Name, f.FlagType, f.Variants, f.DefaultVariant, f.Split,
-		f.ConversionEvent, f.Status, f.ID,
+		f.ConversionEvent, f.TargetingRules, f.Status, f.ID,
 	); err != nil {
 		return FeatureFlag{}, fmt.Errorf("update flag: %w", err)
 	}

@@ -3,11 +3,13 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -43,6 +45,7 @@ func (s *Server) handleCreateFlag(w http.ResponseWriter, r *http.Request) {
 		DefaultVariant  string `json:"default_variant"`
 		Split           string `json:"split"`
 		ConversionEvent string `json:"conversion_event"`
+		TargetingRules  string `json:"targeting_rules"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid json", http.StatusBadRequest)
@@ -55,6 +58,13 @@ func (s *Server) handleCreateFlag(w http.ResponseWriter, r *http.Request) {
 	if body.FlagType == "" {
 		body.FlagType = "boolean"
 	}
+	if body.TargetingRules == "" {
+		body.TargetingRules = "[]"
+	}
+	if err := service.ValidateTargetingRules(body.TargetingRules); err != nil {
+		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
 
 	flag, err := s.flags.CreateFlag(r.Context(), repository.FeatureFlag{
 		ProjectID:       projectID,
@@ -65,6 +75,7 @@ func (s *Server) handleCreateFlag(w http.ResponseWriter, r *http.Request) {
 		DefaultVariant:  body.DefaultVariant,
 		Split:           body.Split,
 		ConversionEvent: body.ConversionEvent,
+		TargetingRules:  body.TargetingRules,
 		Status:          "active",
 	})
 	if err != nil {
@@ -103,11 +114,18 @@ func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
 		DefaultVariant  string `json:"default_variant"`
 		Split           string `json:"split"`
 		ConversionEvent string `json:"conversion_event"`
+		TargetingRules  string `json:"targeting_rules"`
 		Status          string `json:"status"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid json", http.StatusBadRequest)
 		return
+	}
+	if body.TargetingRules != "" {
+		if err := service.ValidateTargetingRules(body.TargetingRules); err != nil {
+			jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
 	}
 
 	flag, err := s.flags.UpdateFlag(r.Context(), repository.FeatureFlag{
@@ -118,6 +136,7 @@ func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
 		DefaultVariant:  body.DefaultVariant,
 		Split:           body.Split,
 		ConversionEvent: body.ConversionEvent,
+		TargetingRules:  body.TargetingRules,
 		Status:          body.Status,
 	})
 	if err != nil {
@@ -206,9 +225,9 @@ func (s *Server) handleEvaluateFlag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		FlagKey      string            `json:"flag_key"`
-		DefaultValue any               `json:"default_value"`
-		Context      map[string]string `json:"context"`
+		FlagKey      string         `json:"flag_key"`
+		DefaultValue any            `json:"default_value"`
+		Context      map[string]any `json:"context"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid json", http.StatusBadRequest)
@@ -219,7 +238,7 @@ func (s *Server) handleEvaluateFlag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Context == nil {
-		body.Context = map[string]string{}
+		body.Context = map[string]any{}
 	}
 
 	ctx, span := tracing.StartSpan(r.Context(), "flags.evaluate.handler",
@@ -230,12 +249,17 @@ func (s *Server) handleEvaluateFlag(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.flags.EvaluateFlag(ctx, projectID, body.FlagKey, body.Context)
 	if err != nil {
+		errorCode := "GENERAL"
+		if strings.Contains(err.Error(), "flag not found") {
+			errorCode = "FLAG_NOT_FOUND"
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"value":    body.DefaultValue,
-			"variant":  "",
-			"reason":   "ERROR",
-			"flag_key": body.FlagKey,
-			"error":    err.Error(),
+			"value":      body.DefaultValue,
+			"variant":    "",
+			"reason":     "ERROR",
+			"flag_key":   body.FlagKey,
+			"error_code": errorCode,
+			"error":      err.Error(),
 		})
 		return
 	}

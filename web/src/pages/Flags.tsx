@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Flag, Plus, X, Pause, Play, Trash2 } from 'lucide-react'
+import { Flag, Plus, X, Pause, Play, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api } from '../lib/api'
-import type { FeatureFlag, FlagAnalysis } from '../lib/api'
+import type { FeatureFlag, FlagAnalysis, TargetingRule, TargetingOperator } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { reportError } from '../lib/bugbarn'
 import { Skeleton } from '../components/ui/Skeleton'
@@ -161,7 +161,7 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
         {flag.conversion_event && <div>Conversion: <span style={{ color: C.text }}>{flag.conversion_event}</span></div>}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
         {Object.entries(split).map(([variant, pct]) => (
           <div key={variant} style={{
             background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
@@ -173,6 +173,8 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
           </div>
         ))}
       </div>
+
+      <TargetingRulesDisplay rulesJSON={flag.targeting_rules} />
 
       {loading ? (
         <div style={{ display: 'flex', gap: '1rem' }}>
@@ -216,6 +218,42 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
   )
 }
 
+function TargetingRulesDisplay({ rulesJSON }: { rulesJSON: string }) {
+  const rules: TargetingRule[] = (() => { try { return JSON.parse(rulesJSON || '[]') } catch { return [] } })()
+  if (rules.length === 0) return null
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+        Targeting Rules ({rules.length})
+      </div>
+      {rules.map((rule, i) => (
+        <div key={i} style={{
+          background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
+          padding: '10px 12px', marginBottom: 6, fontSize: 13,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span style={{ color: C.text, fontWeight: 600 }}>{rule.name || `Rule ${i + 1}`}</span>
+            <span style={{ color: C.amber }}>→ {rule.variant}</span>
+          </div>
+          <div style={{ color: C.muted, fontSize: 12 }}>
+            {rule.match === 'all' ? 'ALL' : 'ANY'} of:{' '}
+            {rule.conditions.map((c, j) => (
+              <span key={j}>
+                {j > 0 && <span style={{ color: C.amber }}> {rule.match === 'all' ? '&&' : '||'} </span>}
+                <code style={{ color: C.text }}>{c.context_key}</code>
+                {' '}<span style={{ color: C.amber }}>{c.operator}</span>{' '}
+                {c.operator !== 'present' && c.operator !== 'not_present' && (
+                  <code style={{ color: C.text }}>"{c.value}"</code>
+                )}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function CreateFlagModal({ projectId, onClose, onCreated }: {
   projectId: string; onClose: () => void; onCreated: (f: FeatureFlag) => void
 }) {
@@ -227,6 +265,8 @@ function CreateFlagModal({ projectId, onClose, onCreated }: {
   const [eventNames, setEventNames] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [targetingRules, setTargetingRules] = useState<TargetingRule[]>([])
+  const [showRules, setShowRules] = useState(false)
 
   // String variants
   const [variantAKey, setVariantAKey] = useState('control')
@@ -263,6 +303,7 @@ function CreateFlagModal({ projectId, onClose, onCreated }: {
         default_variant: flagType === 'boolean' ? 'off' : variantAKey,
         split: JSON.stringify(split),
         conversion_event: conversionEvent,
+        targeting_rules: targetingRules.length > 0 ? JSON.stringify(targetingRules) : '[]',
       })
       onCreated(f)
     } catch (e) {
@@ -342,10 +383,117 @@ function CreateFlagModal({ projectId, onClose, onCreated }: {
 
           <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Conversion event</label>
           <select value={conversionEvent} onChange={(e) => setConversionEvent(e.target.value)}
-            style={{ ...inputStyle, marginBottom: 8 }}>
+            style={{ ...inputStyle, marginBottom: 16 }}>
             <option value="">Select an event (optional)...</option>
             {eventNames.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
+
+          <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
+            <button onClick={() => setShowRules(!showRules)} type="button" style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '0.75rem 1rem', background: 'transparent', border: 'none',
+              color: C.muted, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}>
+              <span>Targeting Rules ({targetingRules.length})</span>
+              {showRules ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+
+            {showRules && (
+              <div style={{ padding: '0 1rem 1rem', borderTop: `1px solid ${C.border}` }}>
+                {targetingRules.map((rule, ri) => {
+                  const variantKeys = flagType === 'boolean' ? ['on', 'off'] : [variantAKey, variantBKey]
+                  return (
+                    <div key={ri} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: '0.75rem', marginTop: '0.75rem' }}>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                        <input value={rule.name} placeholder="Rule name" onChange={(e) => {
+                          const updated = [...targetingRules]; updated[ri] = { ...rule, name: e.target.value }; setTargetingRules(updated)
+                        }} style={{ ...inputStyle, flex: 2 }} />
+                        <select value={rule.variant} onChange={(e) => {
+                          const updated = [...targetingRules]; updated[ri] = { ...rule, variant: e.target.value }; setTargetingRules(updated)
+                        }} style={{ ...inputStyle, flex: 1 }}>
+                          {variantKeys.map((v) => <option key={v} value={v}>{v}</option>)}
+                        </select>
+                        <button onClick={() => setTargetingRules(targetingRules.filter((_, i) => i !== ri))} type="button"
+                          style={{ background: 'transparent', border: 'none', color: C.error, cursor: 'pointer', padding: 4 }}>
+                          <X size={14} />
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                        {(['all', 'any'] as const).map((m) => (
+                          <button key={m} type="button" onClick={() => {
+                            const updated = [...targetingRules]; updated[ri] = { ...rule, match: m }; setTargetingRules(updated)
+                          }} style={{
+                            padding: '0.25rem 0.6rem', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                            border: `1px solid ${rule.match === m ? C.amber : C.border}`, borderRadius: 6,
+                            background: rule.match === m ? 'rgba(245,158,11,0.1)' : 'transparent',
+                            color: rule.match === m ? C.amber : C.muted,
+                          }}>
+                            {m === 'all' ? 'ALL (AND)' : 'ANY (OR)'}
+                          </button>
+                        ))}
+                      </div>
+
+                      {rule.conditions.map((cond, ci) => (
+                        <div key={ci} style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                          <input value={cond.context_key} placeholder="context key" onChange={(e) => {
+                            const updated = [...targetingRules]
+                            const conds = [...rule.conditions]; conds[ci] = { ...cond, context_key: e.target.value }
+                            updated[ri] = { ...rule, conditions: conds }; setTargetingRules(updated)
+                          }} style={{ ...inputStyle, flex: 2, fontSize: 12, padding: '0.4rem 0.6rem', fontFamily: 'monospace' }} />
+                          <select value={cond.operator} onChange={(e) => {
+                            const updated = [...targetingRules]
+                            const conds = [...rule.conditions]; conds[ci] = { ...cond, operator: e.target.value as TargetingOperator }
+                            updated[ri] = { ...rule, conditions: conds }; setTargetingRules(updated)
+                          }} style={{ ...inputStyle, flex: 1.5, fontSize: 12, padding: '0.4rem 0.4rem' }}>
+                            {(['eq', 'neq', 'contains', 'not_contains', 'starts_with', 'ends_with', 'in', 'not_in', 'present', 'not_present'] as const).map((op) => (
+                              <option key={op} value={op}>{op}</option>
+                            ))}
+                          </select>
+                          {cond.operator !== 'present' && cond.operator !== 'not_present' && (
+                            <input value={cond.value} placeholder="value" onChange={(e) => {
+                              const updated = [...targetingRules]
+                              const conds = [...rule.conditions]; conds[ci] = { ...cond, value: e.target.value }
+                              updated[ri] = { ...rule, conditions: conds }; setTargetingRules(updated)
+                            }} style={{ ...inputStyle, flex: 2, fontSize: 12, padding: '0.4rem 0.6rem' }} />
+                          )}
+                          <button onClick={() => {
+                            const updated = [...targetingRules]
+                            updated[ri] = { ...rule, conditions: rule.conditions.filter((_, i) => i !== ci) }
+                            setTargetingRules(updated)
+                          }} type="button" style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', padding: 2 }}>
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+
+                      <button onClick={() => {
+                        const updated = [...targetingRules]
+                        updated[ri] = { ...rule, conditions: [...rule.conditions, { context_key: '', operator: 'eq', value: '' }] }
+                        setTargetingRules(updated)
+                      }} type="button" style={{
+                        background: 'transparent', border: 'none', color: C.amber,
+                        fontSize: 12, cursor: 'pointer', padding: '4px 0', fontWeight: 600,
+                      }}>
+                        + Add condition
+                      </button>
+                    </div>
+                  )
+                })}
+
+                <button onClick={() => setTargetingRules([...targetingRules, {
+                  name: '', variant: flagType === 'boolean' ? 'off' : variantAKey,
+                  match: 'all', conditions: [{ context_key: '', operator: 'eq', value: '' }],
+                }])} type="button" style={{
+                  marginTop: '0.75rem', width: '100%', padding: '0.5rem',
+                  background: 'transparent', border: `1px dashed ${C.border}`, borderRadius: 8,
+                  color: C.amber, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                }}>
+                  + Add rule
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div style={{ padding: '1rem 1.5rem', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
