@@ -25,17 +25,16 @@ func newMockID(prefix string) string {
 
 // Store is a thread-safe in-memory implementation of repository.Querier.
 type Store struct {
-	mu        sync.RWMutex
-	projects  map[string]repository.Project
-	apikeys   map[string]repository.APIKey // keyed by ID
-	users     map[string]repository.User   // keyed by username
-	funnels   map[string]repository.Funnel
-	abtests   map[string]repository.ABTest
-	sessions  map[string]repository.Session
-	events    []repository.Event
-	widgets   map[string]repository.DashboardWidget
-	flags     map[string]repository.FeatureFlag
-
+	mu       sync.RWMutex
+	projects map[string]repository.Project
+	apikeys  map[string]repository.APIKey // keyed by ID
+	users    map[string]repository.User   // keyed by username
+	funnels  map[string]repository.Funnel
+	abtests  map[string]repository.ABTest
+	sessions map[string]repository.Session
+	events   []repository.Event
+	widgets  map[string]repository.DashboardWidget
+	flags    map[string]repository.FeatureFlag
 }
 
 // New returns a fresh empty Store.
