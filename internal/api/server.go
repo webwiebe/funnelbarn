@@ -132,6 +132,15 @@ func NewServer(cfg ServerConfig) *Server {
 	return s
 }
 
+// StartCleanup begins periodic rate limiter cleanup goroutines.
+// Call this once with a context that is cancelled on shutdown.
+func (s *Server) StartCleanup(ctx context.Context) {
+	s.loginLimiter.startCleanup(ctx)
+	s.eventsLimiter.startCleanup(ctx)
+	s.apiLimiter.startCleanup(ctx)
+	s.setupLimiter.startCleanup(ctx)
+}
+
 func (s *Server) registerRoutes() {
 	// Metrics — open when no token configured, bearer-protected otherwise.
 	s.mux.Handle("GET /metrics", s.metricsHandler())

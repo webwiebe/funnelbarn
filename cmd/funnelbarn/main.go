@@ -220,6 +220,8 @@ func run() error {
 		apiServer.SetMetricsToken(cfg.MetricsToken)
 	}
 
+	apiServer.StartCleanup(ctx)
+
 	var httpHandler http.Handler = apiServer
 	if selfReporting {
 		httpHandler = bb.RecoverMiddleware(httpHandler)
