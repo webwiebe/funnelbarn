@@ -35,7 +35,7 @@ type Store struct {
 	events    []repository.Event
 	widgets   map[string]repository.DashboardWidget
 	flags     map[string]repository.FeatureFlag
-	flagEvals []repository.FlagEvaluation
+
 }
 
 // New returns a fresh empty Store.
