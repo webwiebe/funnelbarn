@@ -211,13 +211,13 @@ export const api = {
   listWidgets: (projectId: string) =>
     request<{ widgets: DashboardWidget[] }>(`/api/v1/projects/${projectId}/widgets`),
 
-  createWidget: (projectId: string, data: { event_name: string; property: string; title: string; position?: number }) =>
+  createWidget: (projectId: string, data: { event_name: string; property: string; title: string; position?: number; size?: number }) =>
     request<DashboardWidget>(`/api/v1/projects/${projectId}/widgets`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
-  updateWidget: (projectId: string, widgetId: string, data: { event_name: string; property: string; title: string; position?: number }) =>
+  updateWidget: (projectId: string, widgetId: string, data: { event_name: string; property: string; title: string; position?: number; size?: number }) =>
     request<DashboardWidget>(`/api/v1/projects/${projectId}/widgets/${widgetId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -342,6 +342,7 @@ export interface DashboardWidget {
   property: string
   title: string
   position: number
+  size: number
   created_at: string
 }
 

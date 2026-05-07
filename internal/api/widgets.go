@@ -40,6 +40,7 @@ func (s *Server) handleCreateWidget(w http.ResponseWriter, r *http.Request) {
 		Property  string `json:"property"`
 		Title     string `json:"title"`
 		Position  int    `json:"position"`
+		Size      int    `json:"size"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid json", http.StatusBadRequest)
@@ -56,6 +57,7 @@ func (s *Server) handleCreateWidget(w http.ResponseWriter, r *http.Request) {
 		Property:  body.Property,
 		Title:     body.Title,
 		Position:  body.Position,
+		Size:      body.Size,
 	})
 	if err != nil {
 		mapServiceError(w, err, "handleCreateWidget")
@@ -76,6 +78,7 @@ func (s *Server) handleUpdateWidget(w http.ResponseWriter, r *http.Request) {
 		Property  string `json:"property"`
 		Title     string `json:"title"`
 		Position  int    `json:"position"`
+		Size      int    `json:"size"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid json", http.StatusBadRequest)
@@ -88,6 +91,7 @@ func (s *Server) handleUpdateWidget(w http.ResponseWriter, r *http.Request) {
 		Property:  body.Property,
 		Title:     body.Title,
 		Position:  body.Position,
+		Size:      body.Size,
 	})
 	if err != nil {
 		mapServiceError(w, err, "handleUpdateWidget")

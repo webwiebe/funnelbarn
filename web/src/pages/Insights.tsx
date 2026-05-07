@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
-import { Plus, Trash2, Lightbulb, X } from 'lucide-react'
+import { Plus, Trash2, Lightbulb, X, Columns2, Columns3, Square } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api } from '../lib/api'
 import type { DashboardWidget, PropertyBreakdown } from '../lib/api'
@@ -50,6 +50,28 @@ export default function Insights() {
     try {
       await api.deleteWidget(projectId, widgetId)
       setWidgets((prev) => prev.filter((w) => w.widget.id !== widgetId))
+    } catch {
+      // silent
+    }
+  }
+
+  const handleResize = async (widgetId: string) => {
+    if (!projectId) return
+    const entry = widgets.find((w) => w.widget.id === widgetId)
+    if (!entry) return
+    const currentSize = entry.widget.size || 1
+    const nextSize = currentSize >= 3 ? 1 : currentSize + 1
+    try {
+      const updated = await api.updateWidget(projectId, widgetId, {
+        event_name: entry.widget.event_name,
+        property: entry.widget.property,
+        title: entry.widget.title,
+        position: entry.widget.position,
+        size: nextSize,
+      })
+      setWidgets((prev) =>
+        prev.map((w) => w.widget.id === widgetId ? { ...w, widget: updated } : w)
+      )
     } catch {
       // silent
     }
@@ -152,13 +174,14 @@ export default function Insights() {
           </button>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
           {widgets.map(({ widget, breakdown }) => (
             <WidgetCard
               key={widget.id}
               widget={widget}
               breakdown={breakdown}
               onDelete={() => handleDelete(widget.id)}
+              onResize={() => handleResize(widget.id)}
             />
           ))}
         </div>
@@ -175,14 +198,61 @@ export default function Insights() {
   )
 }
 
-function WidgetCard({ widget, breakdown, onDelete }: {
+function isUrl(value: string): boolean {
+  return /^https?:\/\//.test(value)
+}
+
+function BreakdownValue({ value }: { value: string }) {
+  if (isUrl(value)) {
+    return (
+      <a
+        href={value}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          color: C.amber,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          maxWidth: '70%',
+          textDecoration: 'none',
+        }}
+        title={value}
+        onMouseOver={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+        onMouseOut={(e) => (e.currentTarget.style.textDecoration = 'none')}
+      >
+        {value}
+      </a>
+    )
+  }
+  return (
+    <span style={{
+      color: C.text,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+      maxWidth: '70%',
+    }} title={value}>
+      {value}
+    </span>
+  )
+}
+
+const sizeIcons = { 1: Square, 2: Columns2, 3: Columns3 } as const
+const sizeLabels = { 1: 'Small (1 col)', 2: 'Medium (2 cols)', 3: 'Wide (3 cols)' } as const
+
+function WidgetCard({ widget, breakdown, onDelete, onResize }: {
   widget: DashboardWidget
   breakdown: PropertyBreakdown[]
   onDelete: () => void
+  onResize: () => void
 }) {
   const isCountOnly = !widget.property
   const maxCount = breakdown.length > 0 ? breakdown[0].count : 1
   const total = breakdown.reduce((sum, r) => sum + r.count, 0)
+  const size = (widget.size || 1) as 1 | 2 | 3
+  const nextSize = size >= 3 ? 1 : (size + 1) as 1 | 2 | 3
+  const SizeIcon = sizeIcons[nextSize]
 
   const subtitle = widget.property
     ? `${widget.event_name} → ${widget.property}`
@@ -194,6 +264,7 @@ function WidgetCard({ widget, breakdown, onDelete }: {
       border: `1px solid ${C.border}`,
       borderRadius: 12,
       overflow: 'hidden',
+      gridColumn: `span ${size}`,
     }}>
       <div style={{
         padding: '1rem 1.25rem',
@@ -212,21 +283,38 @@ function WidgetCard({ widget, breakdown, onDelete }: {
             </div>
           )}
         </div>
-        <button
-          onClick={onDelete}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: C.muted,
-            cursor: 'pointer',
-            padding: 4,
-            borderRadius: 4,
-            display: 'flex',
-          }}
-          title="Delete widget"
-        >
-          <Trash2 size={14} />
-        </button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button
+            onClick={onResize}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: C.muted,
+              cursor: 'pointer',
+              padding: 4,
+              borderRadius: 4,
+              display: 'flex',
+            }}
+            title={sizeLabels[nextSize]}
+          >
+            <SizeIcon size={14} />
+          </button>
+          <button
+            onClick={onDelete}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: C.muted,
+              cursor: 'pointer',
+              padding: 4,
+              borderRadius: 4,
+              display: 'flex',
+            }}
+            title="Delete widget"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
 
       <div style={{ padding: '1rem 1.25rem' }}>
@@ -244,15 +332,7 @@ function WidgetCard({ widget, breakdown, onDelete }: {
             {breakdown.map((row) => (
               <div key={row.value}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
-                  <span style={{
-                    color: C.text,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    maxWidth: '70%',
-                  }} title={row.value}>
-                    {row.value}
-                  </span>
+                  <BreakdownValue value={row.value} />
                   <span style={{ color: C.muted, flexShrink: 0, marginLeft: 8 }}>
                     {row.count} <span style={{ fontSize: 11 }}>({total > 0 ? Math.round(row.count / total * 100) : 0}%)</span>
                   </span>
