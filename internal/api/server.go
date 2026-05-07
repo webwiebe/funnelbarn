@@ -30,6 +30,7 @@ type Server struct {
 	events           service.Events
 	sessions         service.Sessions
 	apikeys          service.APIKeys
+	widgets          service.Widgets
 	ingest           *ingest.Handler
 	userAuth         *auth.UserAuthenticator
 	sessionManager   *auth.SessionManager
@@ -57,6 +58,7 @@ func NewServer(
 	events service.Events,
 	sessions service.Sessions,
 	apikeys service.APIKeys,
+	widgets service.Widgets,
 	userAuth *auth.UserAuthenticator,
 	sessionManager *auth.SessionManager,
 	allowedOrigins []string,
@@ -85,6 +87,7 @@ func NewServer(
 		events:           events,
 		sessions:         sessions,
 		apikeys:          apikeys,
+		widgets:          widgets,
 		ingest:           ingestHandler,
 		userAuth:         userAuth,
 		sessionManager:   sessionManager,
@@ -145,6 +148,14 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/abtests", s.requireSession(s.handleListABTests))
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/abtests", s.requireSession(s.handleCreateABTest))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/abtests/{abid}/analysis", s.requireSession(s.handleABTestAnalysis))
+
+	// Widgets (Insights)
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/widgets", s.requireSession(s.handleListWidgets))
+	s.mux.HandleFunc("POST /api/v1/projects/{id}/widgets", s.requireSession(s.handleCreateWidget))
+	s.mux.HandleFunc("PUT /api/v1/projects/{id}/widgets/{wid}", s.requireSession(s.handleUpdateWidget))
+	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/widgets/{wid}", s.requireSession(s.handleDeleteWidget))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/widgets/{wid}/breakdown", s.requireSession(s.handleWidgetBreakdown))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/widgets/breakdowns", s.requireSession(s.handleBatchBreakdowns))
 
 	// Sessions
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/sessions", s.requireSession(s.handleListSessions))

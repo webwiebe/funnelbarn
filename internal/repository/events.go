@@ -519,6 +519,31 @@ func (s *Store) DailyEventCounts(ctx context.Context, projectID string, from, to
 	return series, rows.Err()
 }
 
+// HourlyEventCounts returns hourly event counts for a project over a time range.
+func (s *Store) HourlyEventCounts(ctx context.Context, projectID string, from, to time.Time) ([]TimeSeriesPoint, error) {
+	const q = `
+		SELECT substr(occurred_at, 1, 13) || ':00:00' as hour, COUNT(*) as count
+		FROM events
+		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?
+		GROUP BY hour
+		ORDER BY hour`
+	rows, err := s.db.QueryContext(ctx, q, projectID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var series []TimeSeriesPoint
+	for rows.Next() {
+		var p TimeSeriesPoint
+		if err := rows.Scan(&p.Time, &p.Count); err != nil {
+			return nil, err
+		}
+		series = append(series, p)
+	}
+	return series, rows.Err()
+}
+
 // BounceRate computes the fraction of sessions with only 1 event.
 func (s *Store) BounceRate(ctx context.Context, projectID string, from, to time.Time) (float64, error) {
 	const q = `

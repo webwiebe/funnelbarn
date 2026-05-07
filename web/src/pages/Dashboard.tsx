@@ -153,9 +153,11 @@ export default function Dashboard() {
       .catch(() => setTopFunnelRate(null))
   }, [projectId])
 
-  // Format time series for chart
+  // Format time series for chart — hourly labels for 24h, daily for 7d/30d
   const chartData = data?.events_time_series?.map((pt) => ({
-    time: new Date(pt.time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    time: range === '24h'
+      ? new Date(pt.time).toLocaleTimeString('en-US', { hour: 'numeric', hour12: true })
+      : new Date(pt.time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
     events: pt.count,
   })) ?? []
 
@@ -347,7 +349,7 @@ export default function Dashboard() {
           0% { background-position: 200% 0; }
           100% { background-position: -200% 0; }
         }
-        @media (max-width: 640px) {
+        @media (max-width: 767px) {
           .stat-cards-grid { grid-template-columns: 1fr 1fr !important; }
           .bottom-row-grid { grid-template-columns: 1fr !important; }
         }
@@ -488,6 +490,8 @@ export default function Dashboard() {
           border: `1px solid ${C.border}`,
           borderRadius: 12,
           padding: '1.5rem',
+          overflow: 'hidden',
+          minWidth: 0,
         }}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: '1rem' }}>Top pages</div>
           {loading ? (
@@ -533,6 +537,8 @@ export default function Dashboard() {
           border: `1px solid ${C.border}`,
           borderRadius: 12,
           padding: '1.5rem',
+          overflow: 'hidden',
+          minWidth: 0,
         }}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: '1rem' }}>Referrer breakdown</div>
           {loading ? (

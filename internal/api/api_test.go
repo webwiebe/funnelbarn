@@ -62,6 +62,7 @@ func newTestServer(t *testing.T) (*Server, *repository.Store) {
 		service.NewProjectService(store), service.NewFunnelService(store),
 		service.NewABTestService(store), service.NewEventService(store),
 		service.NewSessionService(store), service.NewAPIKeyService(store),
+		service.NewWidgetService(store),
 		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, 1000, 1000, 1000, 1000, store, "test", "", "", "", "")
 	return srv, store
 }
@@ -79,6 +80,7 @@ func newAuthedServer(t *testing.T) (*Server, *repository.Store) {
 		service.NewProjectService(store), service.NewFunnelService(store),
 		service.NewABTestService(store), service.NewEventService(store),
 		service.NewSessionService(store), service.NewAPIKeyService(store),
+		service.NewWidgetService(store),
 		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, 1000, 1000, 1000, 1000, store, "test", "", "", "", "")
 	return srv, store
 }
@@ -166,6 +168,7 @@ func TestHandleHealth_DBDown(t *testing.T) {
 		service.NewProjectService(store), service.NewFunnelService(store),
 		service.NewABTestService(store), service.NewEventService(store),
 		service.NewSessionService(store), service.NewAPIKeyService(store),
+		service.NewWidgetService(store),
 		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, 1000, 1000, 1000, 1000, brokenPinger, "test", "", "", "", "")
 
 	w := getJSON(t, srv, "/api/v1/health", nil)

@@ -41,6 +41,10 @@ func (svc *EventService) DailyEventCounts(ctx context.Context, projectID string,
 	return svc.store.DailyEventCounts(ctx, projectID, from, to)
 }
 
+func (svc *EventService) HourlyEventCounts(ctx context.Context, projectID string, from, to time.Time) ([]repository.TimeSeriesPoint, error) {
+	return svc.store.HourlyEventCounts(ctx, projectID, from, to)
+}
+
 func (svc *EventService) DailyUniqueSessions(ctx context.Context, projectID string, from, to time.Time) ([]repository.TimeSeriesPoint, error) {
 	return svc.store.DailyUniqueSessions(ctx, projectID, from, to)
 }

@@ -64,6 +64,7 @@ type Querier interface {
 	TopPages(ctx context.Context, projectID string, from, to time.Time, limit int) ([]PageStat, error)
 	TopReferrers(ctx context.Context, projectID string, from, to time.Time, limit int) ([]ReferrerStat, error)
 	DailyEventCounts(ctx context.Context, projectID string, from, to time.Time) ([]TimeSeriesPoint, error)
+	HourlyEventCounts(ctx context.Context, projectID string, from, to time.Time) ([]TimeSeriesPoint, error)
 	DailyUniqueSessions(ctx context.Context, projectID string, from, to time.Time) ([]TimeSeriesPoint, error)
 	TopBrowsers(ctx context.Context, projectID string, from, to time.Time, limit int) ([]BrowserStat, error)
 	TopDeviceTypes(ctx context.Context, projectID string, from, to time.Time) ([]DeviceStat, error)
@@ -77,6 +78,14 @@ type Querier interface {
 	DistinctEventProperties(ctx context.Context, projectID, eventName string) ([]string, error)
 	DistinctPropertyValues(ctx context.Context, projectID, eventName, property string, limit int) ([]string, error)
 	PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, error)
+
+	// Widgets
+	CreateWidget(ctx context.Context, w DashboardWidget) (DashboardWidget, error)
+	WidgetByID(ctx context.Context, id string) (DashboardWidget, error)
+	ListWidgets(ctx context.Context, projectID string) ([]DashboardWidget, error)
+	UpdateWidget(ctx context.Context, w DashboardWidget) (DashboardWidget, error)
+	DeleteWidget(ctx context.Context, id string) error
+	WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]PropertyBreakdown, error)
 }
 
 // compile-time check that *Store satisfies Querier.

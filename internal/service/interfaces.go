@@ -50,6 +50,7 @@ type Events interface {
 	TopPages(ctx context.Context, projectID string, from, to time.Time, limit int) ([]repository.PageStat, error)
 	TopReferrers(ctx context.Context, projectID string, from, to time.Time, limit int) ([]repository.ReferrerStat, error)
 	DailyEventCounts(ctx context.Context, projectID string, from, to time.Time) ([]repository.TimeSeriesPoint, error)
+	HourlyEventCounts(ctx context.Context, projectID string, from, to time.Time) ([]repository.TimeSeriesPoint, error)
 	DailyUniqueSessions(ctx context.Context, projectID string, from, to time.Time) ([]repository.TimeSeriesPoint, error)
 	TopBrowsers(ctx context.Context, projectID string, from, to time.Time, limit int) ([]repository.BrowserStat, error)
 	TopDeviceTypes(ctx context.Context, projectID string, from, to time.Time) ([]repository.DeviceStat, error)
@@ -62,6 +63,16 @@ type Events interface {
 	DistinctEventNames(ctx context.Context, projectID string) ([]string, error)
 	DistinctEventProperties(ctx context.Context, projectID, eventName string) ([]string, error)
 	DistinctPropertyValues(ctx context.Context, projectID, eventName, property string, limit int) ([]string, error)
+}
+
+// Widgets is the interface for dashboard widget operations.
+type Widgets interface {
+	CreateWidget(ctx context.Context, w repository.DashboardWidget) (repository.DashboardWidget, error)
+	GetWidget(ctx context.Context, id string) (repository.DashboardWidget, error)
+	ListWidgets(ctx context.Context, projectID string) ([]repository.DashboardWidget, error)
+	UpdateWidget(ctx context.Context, w repository.DashboardWidget) (repository.DashboardWidget, error)
+	DeleteWidget(ctx context.Context, id string) error
+	WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]repository.PropertyBreakdown, error)
 }
 
 // Sessions is the interface for session-related operations.

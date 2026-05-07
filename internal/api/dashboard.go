@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // handleDashboard returns aggregate dashboard stats for a project.
@@ -16,7 +18,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	// Parse time range. Supports ?range=24h|7d|30d or explicit ?from=&to= (RFC3339).
 	to := time.Now().UTC()
 	from := to.AddDate(0, 0, -30)
-	switch r.URL.Query().Get("range") {
+	rangeParam := r.URL.Query().Get("range")
+	switch rangeParam {
 	case "24h":
 		from = to.Add(-24 * time.Hour)
 	case "7d":
@@ -62,9 +65,14 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	timeSeries, err := s.events.DailyEventCounts(ctx, projectID, from, to)
+	var timeSeries []repository.TimeSeriesPoint
+	if rangeParam == "24h" {
+		timeSeries, err = s.events.HourlyEventCounts(ctx, projectID, from, to)
+	} else {
+		timeSeries, err = s.events.DailyEventCounts(ctx, projectID, from, to)
+	}
 	if err != nil {
-		mapServiceError(w, err, "handleDashboard.dailyEventCounts")
+		mapServiceError(w, err, "handleDashboard.eventCounts")
 		return
 	}
 
