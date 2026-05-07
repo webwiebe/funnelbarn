@@ -174,7 +174,7 @@ export default function Insights() {
           </button>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: '1rem' }}>
           {widgets.map(({ widget, breakdown }) => (
             <WidgetCard
               key={widget.id}

@@ -571,6 +571,10 @@ func (s *Store) DistinctPropertyValues(_ context.Context, _, _, _ string, _ int)
 	return nil, nil
 }
 
+func (s *Store) PopulatedMetadataColumns(_ context.Context, _, _ string) ([]string, error) {
+	return nil, nil
+}
+
 func (s *Store) PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

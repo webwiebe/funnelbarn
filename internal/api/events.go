@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // addPaginationHeaders sets a Link header for the next page when more results
@@ -62,7 +60,12 @@ func (s *Server) handleEventProperties(w http.ResponseWriter, r *http.Request) {
 	if props == nil {
 		props = []string{}
 	}
-	all := append(repository.MetadataColumns(), props...)
+	populated, err := s.events.PopulatedMetadataColumns(r.Context(), projectID, eventName)
+	if err != nil {
+		mapServiceError(w, err, "handleEventProperties.metadata")
+		return
+	}
+	all := append(populated, props...)
 	writeJSON(w, http.StatusOK, map[string]any{"properties": all})
 }
 

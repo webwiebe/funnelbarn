@@ -73,7 +73,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var timeSeries []repository.TimeSeriesPoint
-	if rangeParam == "24h" {
+	if rangeParam == "24h" || rangeParam == "7d" {
 		timeSeries, err = s.events.HourlyEventCounts(ctx, projectID, from, to)
 	} else {
 		timeSeries, err = s.events.DailyEventCounts(ctx, projectID, from, to)

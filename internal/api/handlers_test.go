@@ -375,6 +375,8 @@ func TestHandleEventProperties_Success(t *testing.T) {
 	_ = store.InsertEvent(ctx, repository.Event{
 		ID: "ep1", ProjectID: p.ID, SessionID: "s1", Name: "signup",
 		Properties: `{"plan":"pro","source":"ads"}`,
+		URL:        "https://example.com",
+		Browser:    "Chrome",
 		IngestID:   "i-ep1", OccurredAt: now(),
 	})
 
@@ -386,9 +388,10 @@ func TestHandleEventProperties_Success(t *testing.T) {
 		Properties []string `json:"properties"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	expectedCount := len(repository.MetadataColumns()) + 2
+	// 2 populated metadata columns (url, browser) + 2 custom JSON properties (plan, source)
+	expectedCount := 4
 	if len(resp.Properties) != expectedCount {
-		t.Fatalf("want %d properties (12 metadata + 2 custom), got %d: %v", expectedCount, len(resp.Properties), resp.Properties)
+		t.Fatalf("want %d properties (2 metadata + 2 custom), got %d: %v", expectedCount, len(resp.Properties), resp.Properties)
 	}
 }
 

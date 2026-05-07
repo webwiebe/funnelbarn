@@ -93,3 +93,7 @@ func (svc *EventService) DistinctEventProperties(ctx context.Context, projectID,
 func (svc *EventService) DistinctPropertyValues(ctx context.Context, projectID, eventName, property string, limit int) ([]string, error) {
 	return svc.store.DistinctPropertyValues(ctx, projectID, eventName, property, limit)
 }
+
+func (svc *EventService) PopulatedMetadataColumns(ctx context.Context, projectID, eventName string) ([]string, error) {
+	return svc.store.PopulatedMetadataColumns(ctx, projectID, eventName)
+}
