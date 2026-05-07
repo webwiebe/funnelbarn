@@ -140,23 +140,42 @@ export const api = {
   approveProject: (projectId: string) =>
     request<Project>(`/api/v1/projects/${projectId}/approve`, { method: 'POST' }),
 
-  // A/B Tests
-  getABTests: (projectId: string) =>
-    request<{ tests: ABTest[] }>(`/api/v1/projects/${projectId}/abtests`),
+  // Feature Flags
+  listFlags: (projectId: string) =>
+    request<{ flags: FeatureFlag[] }>(`/api/v1/projects/${projectId}/flags`),
 
-  createABTest: (projectId: string, data: {
+  createFlag: (projectId: string, data: {
     name: string
-    conversion_event: string
-    control_filter?: { property: string; value: string }
-    variant_filter?: { property: string; value: string }
+    flag_key: string
+    flag_type: string
+    variants: string
+    default_variant: string
+    split: string
+    conversion_event?: string
   }) =>
-    request<ABTest>(`/api/v1/projects/${projectId}/abtests`, {
+    request<FeatureFlag>(`/api/v1/projects/${projectId}/flags`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
-  getABTestAnalysis: (projectId: string, testId: string) =>
-    request<ABTestAnalysis>(`/api/v1/projects/${projectId}/abtests/${testId}/analysis`),
+  updateFlag: (projectId: string, flagId: string, data: Partial<{
+    name: string
+    variants: string
+    default_variant: string
+    split: string
+    conversion_event: string
+    status: string
+  }>) =>
+    request<FeatureFlag>(`/api/v1/projects/${projectId}/flags/${flagId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteFlag: (projectId: string, flagId: string) =>
+    request<void>(`/api/v1/projects/${projectId}/flags/${flagId}`, { method: 'DELETE' }),
+
+  getFlagAnalysis: (projectId: string, flagId: string) =>
+    request<FlagAnalysis>(`/api/v1/projects/${projectId}/flags/${flagId}/analysis`),
 
   // Event names (autocomplete)
   getEventNames: (projectId: string) =>
@@ -273,23 +292,31 @@ export interface ApiKey {
   created_at: string
 }
 
-export interface ABTest {
+export interface FeatureFlag {
   id: string
+  project_id: string
+  flag_key: string
   name: string
-  conversion_event: string
-  status?: string
+  flag_type: string
+  variants: string
+  default_variant: string
+  split: string
+  conversion_event?: string
+  status: string
   created_at: string
-  control_filter?: { property: string; value: string }
-  variant_filter?: { property: string; value: string }
 }
 
-export interface ABTestAnalysis {
-  test: ABTest
-  control_sample: number
-  control_conversions: number
-  variant_sample: number
-  variant_conversions: number
-  significant: boolean
+export interface FlagAnalysisVariant {
+  variant: string
+  sample: number
+  conversions: number
+  rate: number
+}
+
+export interface FlagAnalysis {
+  flag: FeatureFlag
+  results: FlagAnalysisVariant[]
+  significant?: boolean
   z_score?: number
 }
 

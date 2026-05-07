@@ -36,8 +36,8 @@ vi.mock('./pages/Live', () => ({
 vi.mock('./pages/Settings', () => ({
   default: () => <div data-testid="settings-page">Settings</div>,
 }))
-vi.mock('./pages/ABTests', () => ({
-  default: () => <div data-testid="abtests-page">ABTests</div>,
+vi.mock('./pages/Flags', () => ({
+  default: () => <div data-testid="flags-page">Flags</div>,
 }))
 vi.mock('./components/wizards/FirstRunWizard', () => ({
   default: () => <div data-testid="first-run-wizard">Wizard</div>,

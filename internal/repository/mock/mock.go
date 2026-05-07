@@ -34,6 +34,7 @@ type Store struct {
 	sessions map[string]repository.Session
 	events   []repository.Event
 	widgets  map[string]repository.DashboardWidget
+	flags    map[string]repository.FeatureFlag
 }
 
 // New returns a fresh empty Store.
@@ -584,6 +585,87 @@ func (s *Store) PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, er
 	}
 	s.events = kept
 	return deleted, nil
+}
+
+// ── Feature Flags ────────────────────────────────────────────────────────────
+
+func (s *Store) CreateFlag(_ context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f.ID = newMockID("flag")
+	f.CreatedAt = time.Now()
+	if s.flags == nil {
+		s.flags = make(map[string]repository.FeatureFlag)
+	}
+	s.flags[f.ID] = f
+	return f, nil
+}
+
+func (s *Store) FlagByID(_ context.Context, id string) (repository.FeatureFlag, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	f, ok := s.flags[id]
+	if !ok {
+		return repository.FeatureFlag{}, sql.ErrNoRows
+	}
+	return f, nil
+}
+
+func (s *Store) FlagByKey(_ context.Context, projectID, flagKey string) (repository.FeatureFlag, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, f := range s.flags {
+		if f.ProjectID == projectID && f.FlagKey == flagKey {
+			return f, nil
+		}
+	}
+	return repository.FeatureFlag{}, sql.ErrNoRows
+}
+
+func (s *Store) ListFlags(_ context.Context, projectID string) ([]repository.FeatureFlag, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []repository.FeatureFlag
+	for _, f := range s.flags {
+		if f.ProjectID == projectID {
+			out = append(out, f)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return out, nil
+}
+
+func (s *Store) UpdateFlag(_ context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	existing, ok := s.flags[f.ID]
+	if !ok {
+		return repository.FeatureFlag{}, sql.ErrNoRows
+	}
+	f.ProjectID = existing.ProjectID
+	f.FlagKey = existing.FlagKey
+	f.CreatedAt = existing.CreatedAt
+	s.flags[f.ID] = f
+	return f, nil
+}
+
+func (s *Store) DeleteFlag(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.flags, id)
+	return nil
+}
+
+func (s *Store) RecordEvaluation(_ context.Context, _ repository.FlagEvaluation) error {
+	return nil
+}
+
+func (s *Store) CountEvaluationsByVariant(_ context.Context, _ string, _, _ time.Time) (map[string]int64, error) {
+	return map[string]int64{}, nil
+}
+
+func (s *Store) CountConversionsByVariant(_ context.Context, _, _, _ string, _, _ time.Time) (map[string]int64, error) {
+	return map[string]int64{}, nil
 }
 
 // ── Widgets ──────────────────────────────────────────────────────────────────

@@ -120,6 +120,7 @@ func run() error {
 	projectsSvc := service.NewProjectService(store)
 	funnelsSvc := service.NewFunnelService(store)
 	abtestsSvc := service.NewABTestService(store)
+	flagsSvc := service.NewFlagService(store)
 	eventsSvc := service.NewEventService(store)
 	sessionsSvc := service.NewSessionService(store)
 	apikeysSvc := service.NewAPIKeyService(store)
@@ -173,6 +174,7 @@ func run() error {
 		projectsSvc,
 		funnelsSvc,
 		abtestsSvc,
+		flagsSvc,
 		eventsSvc,
 		sessionsSvc,
 		apikeysSvc,

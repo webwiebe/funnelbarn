@@ -60,7 +60,7 @@ func newTestServer(t *testing.T) (*Server, *repository.Store) {
 
 	srv := NewServer(ingestHandler,
 		service.NewProjectService(store), service.NewFunnelService(store),
-		service.NewABTestService(store), service.NewEventService(store),
+		service.NewABTestService(store), service.NewFlagService(store), service.NewEventService(store),
 		service.NewSessionService(store), service.NewAPIKeyService(store),
 		service.NewWidgetService(store),
 		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, 1000, 1000, 1000, 1000, store, "test", "", "", "", "")
@@ -78,7 +78,7 @@ func newAuthedServer(t *testing.T) (*Server, *repository.Store) {
 
 	srv := NewServer(ingestHandler,
 		service.NewProjectService(store), service.NewFunnelService(store),
-		service.NewABTestService(store), service.NewEventService(store),
+		service.NewABTestService(store), service.NewFlagService(store), service.NewEventService(store),
 		service.NewSessionService(store), service.NewAPIKeyService(store),
 		service.NewWidgetService(store),
 		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, 1000, 1000, 1000, 1000, store, "test", "", "", "", "")
@@ -166,7 +166,7 @@ func TestHandleHealth_DBDown(t *testing.T) {
 
 	srv := NewServer(ingestHandler,
 		service.NewProjectService(store), service.NewFunnelService(store),
-		service.NewABTestService(store), service.NewEventService(store),
+		service.NewABTestService(store), service.NewFlagService(store), service.NewEventService(store),
 		service.NewSessionService(store), service.NewAPIKeyService(store),
 		service.NewWidgetService(store),
 		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, 1000, 1000, 1000, 1000, brokenPinger, "test", "", "", "", "")

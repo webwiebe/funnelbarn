@@ -34,6 +34,18 @@ type Funnels interface {
 	FunnelSegmentData(ctx context.Context, projectID string) (repository.FunnelSegments, error)
 }
 
+// Flags is the interface for feature flag operations.
+type Flags interface {
+	CreateFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error)
+	GetFlag(ctx context.Context, id string) (repository.FeatureFlag, error)
+	GetFlagByKey(ctx context.Context, projectID, flagKey string) (repository.FeatureFlag, error)
+	ListFlags(ctx context.Context, projectID string) ([]repository.FeatureFlag, error)
+	UpdateFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error)
+	DeleteFlag(ctx context.Context, id string) error
+	EvaluateFlag(ctx context.Context, projectID, flagKey string, evalContext map[string]string) (FlagEvalResult, error)
+	AnalyzeFlag(ctx context.Context, flag repository.FeatureFlag, from, to time.Time) ([]repository.FlagAnalysisResult, error)
+}
+
 // ABTests is the interface for A/B test-related operations.
 type ABTests interface {
 	CreateABTest(ctx context.Context, t repository.ABTest) (repository.ABTest, error)

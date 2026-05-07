@@ -1,6 +1,6 @@
 import { ReactNode, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { BarChart2, Layers, Radio, Settings, LogOut, User, FlaskConical, Lightbulb, MoreHorizontal } from 'lucide-react'
+import { BarChart2, Layers, Radio, Settings, LogOut, User, Flag, Lightbulb, MoreHorizontal } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { useProjects } from '../../lib/projects'
 import { ProjectPicker } from '../ui/ProjectPicker'
@@ -45,7 +45,7 @@ export default function Shell({ children, projectId, projectName, projects: proj
   const navLinks = [
     { to: projectId ? `/dashboard/${projectId}` : '/dashboard', label: 'Overview', icon: <BarChart2 size={16} /> },
     { to: projectId ? `/funnels/${projectId}` : '/funnels', label: 'Funnels', icon: <Layers size={16} /> },
-    { to: projectId ? `/abtests/${projectId}` : '/abtests', label: 'A/B Tests', icon: <FlaskConical size={16} /> },
+    { to: projectId ? `/flags/${projectId}` : '/flags', label: 'Flags', icon: <Flag size={16} /> },
     { to: projectId ? `/insights/${projectId}` : '/insights', label: 'Insights', icon: <Lightbulb size={16} /> },
     { to: projectId ? `/live/${projectId}` : '/live', label: 'Live', icon: <Radio size={16} /> },
     { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
@@ -55,7 +55,7 @@ export default function Shell({ children, projectId, projectName, projects: proj
   const bottomTabs = [
     { to: projectId ? `/dashboard/${projectId}` : '/dashboard', label: 'Overview', icon: BarChart2 },
     { to: projectId ? `/funnels/${projectId}` : '/funnels', label: 'Funnels', icon: Layers },
-    { to: projectId ? `/abtests/${projectId}` : '/abtests', label: 'A/B Tests', icon: FlaskConical },
+    { to: projectId ? `/flags/${projectId}` : '/flags', label: 'Flags', icon: Flag },
     { to: projectId ? `/insights/${projectId}` : '/insights', label: 'Insights', icon: Lightbulb },
     { to: projectId ? `/live/${projectId}` : '/live', label: 'Live', icon: Radio },
   ]

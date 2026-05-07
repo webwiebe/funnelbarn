@@ -79,6 +79,17 @@ type Querier interface {
 	DistinctPropertyValues(ctx context.Context, projectID, eventName, property string, limit int) ([]string, error)
 	PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, error)
 
+	// Feature Flags
+	CreateFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, error)
+	FlagByID(ctx context.Context, id string) (FeatureFlag, error)
+	FlagByKey(ctx context.Context, projectID, flagKey string) (FeatureFlag, error)
+	ListFlags(ctx context.Context, projectID string) ([]FeatureFlag, error)
+	UpdateFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, error)
+	DeleteFlag(ctx context.Context, id string) error
+	RecordEvaluation(ctx context.Context, eval FlagEvaluation) error
+	CountEvaluationsByVariant(ctx context.Context, flagID string, from, to time.Time) (map[string]int64, error)
+	CountConversionsByVariant(ctx context.Context, flagID, conversionEvent, projectID string, from, to time.Time) (map[string]int64, error)
+
 	// Widgets
 	CreateWidget(ctx context.Context, w DashboardWidget) (DashboardWidget, error)
 	WidgetByID(ctx context.Context, id string) (DashboardWidget, error)
