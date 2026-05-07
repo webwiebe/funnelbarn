@@ -29,6 +29,7 @@ type DashboardWidget struct {
 	Property  string    `json:"property"`
 	Title     string    `json:"title"`
 	Position  int       `json:"position"`
+	Size      int       `json:"size"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -45,8 +46,11 @@ func (s *Store) CreateWidget(ctx context.Context, w DashboardWidget) (DashboardW
 		return DashboardWidget{}, fmt.Errorf("generate uuid: %w", err)
 	}
 
-	const q = `INSERT INTO dashboard_widgets (id, project_id, event_name, property, title, position) VALUES (?, ?, ?, ?, ?, ?)`
-	if _, err := s.db.ExecContext(ctx, q, w.ID, w.ProjectID, w.EventName, w.Property, w.Title, w.Position); err != nil {
+	if w.Size < 1 || w.Size > 3 {
+		w.Size = 1
+	}
+	const q = `INSERT INTO dashboard_widgets (id, project_id, event_name, property, title, position, size) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	if _, err := s.db.ExecContext(ctx, q, w.ID, w.ProjectID, w.EventName, w.Property, w.Title, w.Position, w.Size); err != nil {
 		return DashboardWidget{}, fmt.Errorf("insert widget: %w", err)
 	}
 
@@ -54,16 +58,16 @@ func (s *Store) CreateWidget(ctx context.Context, w DashboardWidget) (DashboardW
 }
 
 func (s *Store) WidgetByID(ctx context.Context, id string) (DashboardWidget, error) {
-	const q = `SELECT id, project_id, event_name, property, COALESCE(title,''), position, created_at FROM dashboard_widgets WHERE id = ?`
+	const q = `SELECT id, project_id, event_name, property, COALESCE(title,''), position, size, created_at FROM dashboard_widgets WHERE id = ?`
 	var w DashboardWidget
-	if err := s.db.QueryRowContext(ctx, q, id).Scan(&w.ID, &w.ProjectID, &w.EventName, &w.Property, &w.Title, &w.Position, &w.CreatedAt); err != nil {
+	if err := s.db.QueryRowContext(ctx, q, id).Scan(&w.ID, &w.ProjectID, &w.EventName, &w.Property, &w.Title, &w.Position, &w.Size, &w.CreatedAt); err != nil {
 		return DashboardWidget{}, err
 	}
 	return w, nil
 }
 
 func (s *Store) ListWidgets(ctx context.Context, projectID string) ([]DashboardWidget, error) {
-	const q = `SELECT id, project_id, event_name, property, COALESCE(title,''), position, created_at FROM dashboard_widgets WHERE project_id = ? ORDER BY position, created_at`
+	const q = `SELECT id, project_id, event_name, property, COALESCE(title,''), position, size, created_at FROM dashboard_widgets WHERE project_id = ? ORDER BY position, created_at`
 	rows, err := s.db.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, err
@@ -73,7 +77,7 @@ func (s *Store) ListWidgets(ctx context.Context, projectID string) ([]DashboardW
 	var widgets []DashboardWidget
 	for rows.Next() {
 		var w DashboardWidget
-		if err := rows.Scan(&w.ID, &w.ProjectID, &w.EventName, &w.Property, &w.Title, &w.Position, &w.CreatedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.ProjectID, &w.EventName, &w.Property, &w.Title, &w.Position, &w.Size, &w.CreatedAt); err != nil {
 			return nil, err
 		}
 		widgets = append(widgets, w)
@@ -82,8 +86,11 @@ func (s *Store) ListWidgets(ctx context.Context, projectID string) ([]DashboardW
 }
 
 func (s *Store) UpdateWidget(ctx context.Context, w DashboardWidget) (DashboardWidget, error) {
-	const q = `UPDATE dashboard_widgets SET event_name=?, property=?, title=?, position=? WHERE id=?`
-	if _, err := s.db.ExecContext(ctx, q, w.EventName, w.Property, w.Title, w.Position, w.ID); err != nil {
+	if w.Size < 1 || w.Size > 3 {
+		w.Size = 1
+	}
+	const q = `UPDATE dashboard_widgets SET event_name=?, property=?, title=?, position=?, size=? WHERE id=?`
+	if _, err := s.db.ExecContext(ctx, q, w.EventName, w.Property, w.Title, w.Position, w.Size, w.ID); err != nil {
 		return DashboardWidget{}, fmt.Errorf("update widget: %w", err)
 	}
 	return s.WidgetByID(ctx, w.ID)
