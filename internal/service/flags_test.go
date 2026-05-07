@@ -114,7 +114,7 @@ func TestFlagService_EvaluateFlag_TargetingMatch(t *testing.T) {
 	require.NoError(t, err)
 
 	result, err := svc.EvaluateFlag(context.Background(), "proj-1", "launch-gate", map[string]any{
-		"targetingKey":      "user-456",
+		"targetingKey":     "user-456",
 		"bypassLaunchGate": "true",
 	})
 	require.NoError(t, err)
