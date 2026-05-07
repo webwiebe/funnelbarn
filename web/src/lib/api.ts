@@ -8,11 +8,26 @@ export class ApiError extends Error {
   }
 }
 
+function getCookie(name: string): string | undefined {
+  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
+  return match ? decodeURIComponent(match[1]) : undefined
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...options.headers as Record<string, string> }
+
+  const method = (options.method || 'GET').toUpperCase()
+  if (method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH') {
+    const csrfToken = getCookie('funnelbarn_csrf')
+    if (csrfToken) {
+      headers['X-FunnelBarn-CSRF'] = csrfToken
+    }
+  }
+
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-    credentials: 'include',
     ...options,
+    headers,
+    credentials: 'include',
   })
 
   if (res.status === 401) {

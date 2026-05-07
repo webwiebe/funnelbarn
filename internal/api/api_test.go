@@ -55,15 +55,31 @@ func newTestServer(t *testing.T) (*Server, *repository.Store) {
 	ingestHandler := ingest.NewHandler(auth.New("test-key"), sp, 0)
 	sm := auth.NewSessionManager("test-secret", time.Hour)
 
-	// Use disabled user auth so requireSession lets all requests through.
 	userAuth, _ := auth.NewUserAuthenticator("", "", "")
 
-	srv := NewServer(ingestHandler,
-		service.NewProjectService(store), service.NewFunnelService(store),
-		service.NewABTestService(store), service.NewFlagService(store), service.NewEventService(store),
-		service.NewSessionService(store), service.NewAPIKeyService(store),
-		service.NewWidgetService(store),
-		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, 1000, 1000, 1000, 1000, store, "test", "", "", "", "")
+	srv := NewServer(ServerConfig{
+		Ingest:              ingestHandler,
+		Projects:            service.NewProjectService(store),
+		Funnels:             service.NewFunnelService(store),
+		ABTests:             service.NewABTestService(store),
+		Flags:               service.NewFlagService(store),
+		Events:              service.NewEventService(store),
+		Sessions:            service.NewSessionService(store),
+		APIKeys:             service.NewAPIKeyService(store),
+		Widgets:             service.NewWidgetService(store),
+		UserAuth:            userAuth,
+		SessionManager:      sm,
+		SessionSecret:       "test-secret",
+		PublicURL:           "http://localhost",
+		LoginRatePerMinute:  1000,
+		LoginRateBurst:      1000,
+		APIRatePerMinute:    1000,
+		APIRateBurst:        1000,
+		IngestRatePerMinute: 1000,
+		IngestRateBurst:     1000,
+		DB:                  store,
+		Version:             "test",
+	})
 	return srv, store
 }
 
@@ -76,12 +92,29 @@ func newAuthedServer(t *testing.T) (*Server, *repository.Store) {
 	sm := auth.NewSessionManager("test-secret", time.Hour)
 	userAuth, _ := auth.NewUserAuthenticator("admin", "password", "")
 
-	srv := NewServer(ingestHandler,
-		service.NewProjectService(store), service.NewFunnelService(store),
-		service.NewABTestService(store), service.NewFlagService(store), service.NewEventService(store),
-		service.NewSessionService(store), service.NewAPIKeyService(store),
-		service.NewWidgetService(store),
-		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, 1000, 1000, 1000, 1000, store, "test", "", "", "", "")
+	srv := NewServer(ServerConfig{
+		Ingest:              ingestHandler,
+		Projects:            service.NewProjectService(store),
+		Funnels:             service.NewFunnelService(store),
+		ABTests:             service.NewABTestService(store),
+		Flags:               service.NewFlagService(store),
+		Events:              service.NewEventService(store),
+		Sessions:            service.NewSessionService(store),
+		APIKeys:             service.NewAPIKeyService(store),
+		Widgets:             service.NewWidgetService(store),
+		UserAuth:            userAuth,
+		SessionManager:      sm,
+		SessionSecret:       "test-secret",
+		PublicURL:           "http://localhost",
+		LoginRatePerMinute:  1000,
+		LoginRateBurst:      1000,
+		APIRatePerMinute:    1000,
+		APIRateBurst:        1000,
+		IngestRatePerMinute: 1000,
+		IngestRateBurst:     1000,
+		DB:                  store,
+		Version:             "test",
+	})
 	return srv, store
 }
 
@@ -93,6 +126,25 @@ func sessionCookieFor(t *testing.T, srv *Server, username string) *http.Cookie {
 		t.Fatalf("Create session: %v", err)
 	}
 	return auth.SessionCookie(token, expires, false)
+}
+
+func postJSONWithCSRF(t *testing.T, srv *Server, path string, body any, cookie *http.Cookie, csrfToken string) *httptest.ResponseRecorder {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(body); err != nil {
+		t.Fatalf("encode body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, path, &buf)
+	req.Header.Set("Content-Type", "application/json")
+	if csrfToken != "" {
+		req.Header.Set("X-FunnelBarn-CSRF", csrfToken)
+	}
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	return w
 }
 
 func postJSON(t *testing.T, srv *Server, path string, body any, cookie *http.Cookie) *httptest.ResponseRecorder {
@@ -164,12 +216,29 @@ func TestHandleHealth_DBDown(t *testing.T) {
 
 	brokenPinger := &failPinger{err: errors.New("connection refused")}
 
-	srv := NewServer(ingestHandler,
-		service.NewProjectService(store), service.NewFunnelService(store),
-		service.NewABTestService(store), service.NewFlagService(store), service.NewEventService(store),
-		service.NewSessionService(store), service.NewAPIKeyService(store),
-		service.NewWidgetService(store),
-		userAuth, sm, nil, "test-secret", "http://localhost", 1000, 1000, 1000, 1000, 1000, 1000, brokenPinger, "test", "", "", "", "")
+	srv := NewServer(ServerConfig{
+		Ingest:              ingestHandler,
+		Projects:            service.NewProjectService(store),
+		Funnels:             service.NewFunnelService(store),
+		ABTests:             service.NewABTestService(store),
+		Flags:               service.NewFlagService(store),
+		Events:              service.NewEventService(store),
+		Sessions:            service.NewSessionService(store),
+		APIKeys:             service.NewAPIKeyService(store),
+		Widgets:             service.NewWidgetService(store),
+		UserAuth:            userAuth,
+		SessionManager:      sm,
+		SessionSecret:       "test-secret",
+		PublicURL:           "http://localhost",
+		LoginRatePerMinute:  1000,
+		LoginRateBurst:      1000,
+		APIRatePerMinute:    1000,
+		APIRateBurst:        1000,
+		IngestRatePerMinute: 1000,
+		IngestRateBurst:     1000,
+		DB:                  brokenPinger,
+		Version:             "test",
+	})
 
 	w := getJSON(t, srv, "/api/v1/health", nil)
 	if w.Code != http.StatusServiceUnavailable {

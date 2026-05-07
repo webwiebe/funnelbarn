@@ -4,16 +4,17 @@ import (
 	"context"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // EventService handles event business logic.
 type EventService struct {
-	store repository.Querier
+	store ports.EventRepo
 }
 
 // NewEventService creates a new EventService.
-func NewEventService(store repository.Querier) *EventService {
+func NewEventService(store ports.EventRepo) *EventService {
 	return &EventService{store: store}
 }
 

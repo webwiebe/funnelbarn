@@ -668,6 +668,10 @@ func (s *Store) CountConversionsByVariant(_ context.Context, _, _, _ string, _, 
 	return map[string]int64{}, nil
 }
 
+func (s *Store) PurgeOldEvaluations(_ context.Context, cutoff time.Time) (int64, error) {
+	return 0, nil
+}
+
 // ── Widgets ──────────────────────────────────────────────────────────────────
 
 func (s *Store) CreateWidget(_ context.Context, w repository.DashboardWidget) (repository.DashboardWidget, error) {

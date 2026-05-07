@@ -3,14 +3,15 @@ package service
 import (
 	"context"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 type WidgetService struct {
-	store repository.Querier
+	store ports.WidgetRepo
 }
 
-func NewWidgetService(store repository.Querier) *WidgetService {
+func NewWidgetService(store ports.WidgetRepo) *WidgetService {
 	return &WidgetService{store: store}
 }
 

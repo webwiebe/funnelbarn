@@ -42,6 +42,9 @@ type Config struct {
 	IngestRateBurst     float64
 	SpanBarnEndpoint    string
 	SpanBarnAPIKey      string
+	TrustedProxies      []string
+	SetupRatePerMinute  float64
+	SetupRateBurst      float64
 }
 
 // Load reads config from config files and environment variables.
@@ -145,6 +148,27 @@ func Load() Config {
 
 	cfg.SpanBarnEndpoint = os.Getenv("FUNNELBARN_SPANBARN_ENDPOINT")
 	cfg.SpanBarnAPIKey = os.Getenv("FUNNELBARN_SPANBARN_API_KEY")
+
+	if raw := os.Getenv("FUNNELBARN_TRUSTED_PROXIES"); raw != "" {
+		for _, p := range strings.Split(raw, ",") {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				cfg.TrustedProxies = append(cfg.TrustedProxies, trimmed)
+			}
+		}
+	}
+
+	cfg.SetupRatePerMinute = 10
+	cfg.SetupRateBurst = 5
+	if raw := os.Getenv("FUNNELBARN_SETUP_RATE_PER_MINUTE"); raw != "" {
+		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
+			cfg.SetupRatePerMinute = parsed
+		}
+	}
+	if raw := os.Getenv("FUNNELBARN_SETUP_RATE_BURST"); raw != "" {
+		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
+			cfg.SetupRateBurst = parsed
+		}
+	}
 
 	cfg.LogLevel = slog.LevelInfo
 	if raw := os.Getenv("FUNNELBARN_LOG_LEVEL"); raw != "" {

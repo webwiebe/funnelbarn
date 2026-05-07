@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
@@ -30,11 +31,11 @@ func normalizeSlug(s string) string {
 
 // ProjectService handles project business logic.
 type ProjectService struct {
-	store repository.Querier
+	store ports.ProjectRepo
 }
 
 // NewProjectService creates a new ProjectService.
-func NewProjectService(store repository.Querier) *ProjectService {
+func NewProjectService(store ports.ProjectRepo) *ProjectService {
 	return &ProjectService{store: store}
 }
 

@@ -3,16 +3,17 @@ package service
 import (
 	"context"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // SessionService handles session business logic.
 type SessionService struct {
-	store repository.Querier
+	store ports.SessionRepo
 }
 
 // NewSessionService creates a new SessionService.
-func NewSessionService(store repository.Querier) *SessionService {
+func NewSessionService(store ports.SessionRepo) *SessionService {
 	return &SessionService{store: store}
 }
 
