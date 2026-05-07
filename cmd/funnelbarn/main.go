@@ -30,6 +30,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 	"github.com/wiebe-xyz/funnelbarn/internal/worker"
 )
 
@@ -153,6 +154,21 @@ func run() error {
 	}
 	if cfg.DogfoodAPIKey != "" {
 		slog.Info("dogfood analytics enabled", "project", cfg.DogfoodProject)
+	}
+
+	shutdownTracer, err := tracing.Init(ctx, tracing.Config{
+		Endpoint:    cfg.SpanBarnEndpoint,
+		APIKey:      cfg.SpanBarnAPIKey,
+		ServiceName: "funnelbarn",
+		Version:     Version,
+		Environment: cfg.SelfEnvironment,
+	})
+	if err != nil {
+		return fmt.Errorf("init tracing: %w", err)
+	}
+	defer shutdownTracer(context.Background())
+	if cfg.SpanBarnEndpoint != "" {
+		slog.Info("tracing enabled", "endpoint", cfg.SpanBarnEndpoint)
 	}
 
 	go runBackgroundWorker(ctx, cfg, store)

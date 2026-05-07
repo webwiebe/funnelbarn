@@ -9,7 +9,10 @@ import (
 	"sort"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // FlagEvalResult is the result of evaluating a feature flag.
@@ -53,13 +56,20 @@ func (svc *FlagService) DeleteFlag(ctx context.Context, id string) error {
 }
 
 func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey string, evalContext map[string]string) (FlagEvalResult, error) {
+	ctx, span := tracing.StartSpan(ctx, "flags.evaluate",
+		attribute.String("flag.key", flagKey),
+		attribute.String("project.id", projectID),
+	)
+	defer span.End()
+
 	flag, err := svc.store.FlagByKey(ctx, projectID, flagKey)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return FlagEvalResult{}, fmt.Errorf("flag not found: %w", err)
 	}
 
-	// Paused flags return the default variant.
 	if flag.Status != "active" {
+		span.SetAttributes(attribute.String("flag.reason", "DISABLED"))
 		val, _ := variantValue(flag.Variants, flag.DefaultVariant)
 		return FlagEvalResult{
 			Value:   val,
@@ -80,6 +90,11 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 	variant := resolveVariant(flag.Split, flag.FlagKey, targetingKey, flag.DefaultVariant)
 	val, _ := variantValue(flag.Variants, variant)
 
+	span.SetAttributes(
+		attribute.String("flag.variant", variant),
+		attribute.String("flag.reason", "SPLIT_EVALUATION"),
+	)
+
 	_ = svc.store.RecordEvaluation(ctx, repository.FlagEvaluation{
 		FlagID:      flag.ID,
 		ProjectID:   flag.ProjectID,
@@ -97,8 +112,15 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 }
 
 func (svc *FlagService) AnalyzeFlag(ctx context.Context, flag repository.FeatureFlag, from, to time.Time) ([]repository.FlagAnalysisResult, error) {
+	ctx, span := tracing.StartSpan(ctx, "flags.analyze",
+		attribute.String("flag.id", flag.ID),
+		attribute.String("flag.key", flag.FlagKey),
+	)
+	defer span.End()
+
 	evals, err := svc.store.CountEvaluationsByVariant(ctx, flag.ID, from, to)
 	if err != nil {
+		tracing.RecordError(span, err)
 		return nil, fmt.Errorf("count evaluations: %w", err)
 	}
 

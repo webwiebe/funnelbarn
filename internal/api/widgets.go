@@ -4,7 +4,10 @@ import (
 	"net/http"
 	"strconv"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 func (s *Server) handleListWidgets(w http.ResponseWriter, r *http.Request) {
@@ -155,11 +158,19 @@ func (s *Server) handleBatchBreakdowns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	widgets, err := s.widgets.ListWidgets(r.Context(), projectID)
+	ctx, span := tracing.StartSpan(r.Context(), "widgets.batch_breakdowns",
+		attribute.String("project.id", projectID),
+	)
+	defer span.End()
+
+	widgets, err := s.widgets.ListWidgets(ctx, projectID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleBatchBreakdowns")
 		return
 	}
+
+	span.SetAttributes(attribute.Int("widgets.count", len(widgets)))
 
 	type widgetResult struct {
 		Widget    repository.DashboardWidget     `json:"widget"`
@@ -168,7 +179,7 @@ func (s *Server) handleBatchBreakdowns(w http.ResponseWriter, r *http.Request) {
 
 	results := make([]widgetResult, 0, len(widgets))
 	for _, widget := range widgets {
-		bd, err := s.widgets.WidgetBreakdown(r.Context(), widget.ProjectID, widget.EventName, widget.Property, 100, 10)
+		bd, err := s.widgets.WidgetBreakdown(ctx, widget.ProjectID, widget.EventName, widget.Property, 100, 10)
 		if err != nil {
 			bd = []repository.PropertyBreakdown{}
 		}

@@ -40,6 +40,8 @@ type Config struct {
 	LogLevel            slog.Level
 	IngestRatePerMinute float64
 	IngestRateBurst     float64
+	SpanBarnEndpoint    string
+	SpanBarnAPIKey      string
 }
 
 // Load reads config from config files and environment variables.
@@ -140,6 +142,9 @@ func Load() Config {
 			cfg.IngestRateBurst = parsed
 		}
 	}
+
+	cfg.SpanBarnEndpoint = os.Getenv("FUNNELBARN_SPANBARN_ENDPOINT")
+	cfg.SpanBarnAPIKey = os.Getenv("FUNNELBARN_SPANBARN_API_KEY")
 
 	cfg.LogLevel = slog.LevelInfo
 	if raw := os.Getenv("FUNNELBARN_LOG_LEVEL"); raw != "" {
