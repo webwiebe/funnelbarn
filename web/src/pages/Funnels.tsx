@@ -1345,6 +1345,11 @@ export default function Funnels() {
 
   useEffect(() => {
     if (!projectId) return
+    setSelected(null)
+    setAnalysis(null)
+    setAnalysisError(null)
+    setShowDetail(false)
+    setActiveSegment('all')
     api.listFunnels(projectId)
       .then((d) => setFunnels(d.funnels || []))
       .catch((e) => { console.error(e); reportError(e, { source: 'Funnels.listFunnels' }) })
