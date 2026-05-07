@@ -42,7 +42,7 @@ type Flags interface {
 	ListFlags(ctx context.Context, projectID string) ([]repository.FeatureFlag, error)
 	UpdateFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error)
 	DeleteFlag(ctx context.Context, id string) error
-	EvaluateFlag(ctx context.Context, projectID, flagKey string, evalContext map[string]string) (FlagEvalResult, error)
+	EvaluateFlag(ctx context.Context, projectID, flagKey string, evalContext map[string]any) (FlagEvalResult, error)
 	AnalyzeFlag(ctx context.Context, flag repository.FeatureFlag, from, to time.Time) ([]repository.FlagAnalysisResult, error)
 }
 

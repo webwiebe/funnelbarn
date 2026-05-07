@@ -167,6 +167,7 @@ export const api = {
     default_variant: string
     split: string
     conversion_event?: string
+    targeting_rules?: string
   }) =>
     request<FeatureFlag>(`/api/v1/projects/${projectId}/flags`, {
       method: 'POST',
@@ -179,6 +180,7 @@ export const api = {
     default_variant: string
     split: string
     conversion_event: string
+    targeting_rules: string
     status: string
   }>) =>
     request<FeatureFlag>(`/api/v1/projects/${projectId}/flags/${flagId}`, {
@@ -307,6 +309,21 @@ export interface ApiKey {
   created_at: string
 }
 
+export type TargetingOperator = 'eq' | 'neq' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'in' | 'not_in' | 'present' | 'not_present'
+
+export interface TargetingCondition {
+  context_key: string
+  operator: TargetingOperator
+  value: string
+}
+
+export interface TargetingRule {
+  name: string
+  variant: string
+  match: 'all' | 'any'
+  conditions: TargetingCondition[]
+}
+
 export interface FeatureFlag {
   id: string
   project_id: string
@@ -317,6 +334,7 @@ export interface FeatureFlag {
   default_variant: string
   split: string
   conversion_event?: string
+  targeting_rules: string
   status: string
   created_at: string
 }
