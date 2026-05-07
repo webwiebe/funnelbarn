@@ -8,7 +8,7 @@ import Dashboard from './pages/Dashboard'
 import Funnels from './pages/Funnels'
 import Live from './pages/Live'
 import Settings from './pages/Settings'
-import ABTests from './pages/ABTests'
+import Flags from './pages/Flags'
 import Insights from './pages/Insights'
 import FirstRunWizard from './components/wizards/FirstRunWizard'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
@@ -158,12 +158,12 @@ function AppRoutes() {
           element={<ProtectedRoute><Funnels /></ProtectedRoute>}
         />
         <Route
-          path="/abtests"
-          element={<ProtectedRoute><DefaultProjectRoute base="/abtests" /></ProtectedRoute>}
+          path="/flags"
+          element={<ProtectedRoute><DefaultProjectRoute base="/flags" /></ProtectedRoute>}
         />
         <Route
-          path="/abtests/:projectId"
-          element={<ProtectedRoute><ABTests /></ProtectedRoute>}
+          path="/flags/:projectId"
+          element={<ProtectedRoute><Flags /></ProtectedRoute>}
         />
         <Route
           path="/insights"

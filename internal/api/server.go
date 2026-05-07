@@ -27,6 +27,7 @@ type Server struct {
 	projects         service.Projects
 	funnels          service.Funnels
 	abtests          service.ABTests
+	flags            service.Flags
 	events           service.Events
 	sessions         service.Sessions
 	apikeys          service.APIKeys
@@ -55,6 +56,7 @@ func NewServer(
 	projects service.Projects,
 	funnels service.Funnels,
 	abtests service.ABTests,
+	flags service.Flags,
 	events service.Events,
 	sessions service.Sessions,
 	apikeys service.APIKeys,
@@ -84,6 +86,7 @@ func NewServer(
 		projects:         projects,
 		funnels:          funnels,
 		abtests:          abtests,
+		flags:            flags,
 		events:           events,
 		sessions:         sessions,
 		apikeys:          apikeys,
@@ -143,6 +146,17 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/funnels/{fid}", s.requireSession(s.handleDeleteFunnel))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels/{fid}/analysis", s.requireSession(s.handleFunnelAnalysis))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels/{fid}/segments", s.requireSession(s.handleFunnelSegments))
+
+	// Feature Flags (session required)
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags", s.requireSession(s.handleListFlags))
+	s.mux.HandleFunc("POST /api/v1/projects/{id}/flags", s.requireSession(s.handleCreateFlag))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/{fid}", s.requireSession(s.handleGetFlag))
+	s.mux.HandleFunc("PUT /api/v1/projects/{id}/flags/{fid}", s.requireSession(s.handleUpdateFlag))
+	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/flags/{fid}", s.requireSession(s.handleDeleteFlag))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/{fid}/analysis", s.requireSession(s.handleFlagAnalysis))
+
+	// Flag evaluation (API key required, like ingest)
+	s.mux.Handle("POST /api/v1/evaluate", s.eventsLimiter.middleware(http.HandlerFunc(s.handleEvaluateFlag)))
 
 	// A/B Tests
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/abtests", s.requireSession(s.handleListABTests))
