@@ -11,6 +11,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
@@ -24,10 +25,10 @@ type FlagEvalResult struct {
 }
 
 type FlagService struct {
-	store repository.Querier
+	store ports.FlagRepo
 }
 
-func NewFlagService(store repository.Querier) *FlagService {
+func NewFlagService(store ports.FlagRepo) *FlagService {
 	return &FlagService{store: store}
 }
 

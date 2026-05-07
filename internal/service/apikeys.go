@@ -5,16 +5,17 @@ import (
 	"strings"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // APIKeyService handles API key business logic.
 type APIKeyService struct {
-	store repository.Querier
+	store ports.APIKeyRepo
 }
 
 // NewAPIKeyService creates a new APIKeyService.
-func NewAPIKeyService(store repository.Querier) *APIKeyService {
+func NewAPIKeyService(store ports.APIKeyRepo) *APIKeyService {
 	return &APIKeyService{store: store}
 }
 

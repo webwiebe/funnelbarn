@@ -8,16 +8,17 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // ABTestService handles A/B test business logic.
 type ABTestService struct {
-	store repository.Querier
+	store ports.ABTestRepo
 }
 
 // NewABTestService creates a new ABTestService.
-func NewABTestService(store repository.Querier) *ABTestService {
+func NewABTestService(store ports.ABTestRepo) *ABTestService {
 	return &ABTestService{store: store}
 }
 

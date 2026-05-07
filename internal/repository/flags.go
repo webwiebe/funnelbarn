@@ -152,6 +152,14 @@ func (s *Store) CountEvaluationsByVariant(ctx context.Context, flagID string, fr
 	return result, rows.Err()
 }
 
+func (s *Store) PurgeOldEvaluations(ctx context.Context, cutoff time.Time) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM flag_evaluations WHERE created_at < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 func (s *Store) CountConversionsByVariant(ctx context.Context, flagID, conversionEvent, projectID string, from, to time.Time) (map[string]int64, error) {
 	const q = `
 		SELECT fe.variant, COUNT(DISTINCT fe.context_hash)

@@ -171,7 +171,7 @@ func run() error {
 		slog.Info("tracing enabled", "endpoint", cfg.SpanBarnEndpoint)
 	}
 
-	go runBackgroundWorker(ctx, cfg, store)
+	go runBackgroundWorker(ctx, cfg, store, eventSpool)
 
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
 	if err != nil {
@@ -185,34 +185,37 @@ func run() error {
 	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.MaxBodyBytes)
 	go handler.Start(ctx)
 
-	apiServer := api.NewServer(
-		handler,
-		projectsSvc,
-		funnelsSvc,
-		abtestsSvc,
-		flagsSvc,
-		eventsSvc,
-		sessionsSvc,
-		apikeysSvc,
-		widgetsSvc,
-		userAuth,
-		sessionManager,
-		cfg.AllowedOrigins,
-		cfg.SessionSecret,
-		cfg.PublicURL,
-		cfg.LoginRatePerMinute,
-		cfg.LoginRateBurst,
-		cfg.APIRatePerMinute,
-		cfg.APIRateBurst,
-		cfg.IngestRatePerMinute,
-		cfg.IngestRateBurst,
-		store,
-		Version,
-		cfg.SelfEndpoint,
-		cfg.SelfAPIKey,
-		cfg.DogfoodAPIKey,
-		cfg.DogfoodProject,
-	)
+	apiServer := api.NewServer(api.ServerConfig{
+		Ingest:              handler,
+		Projects:            projectsSvc,
+		Funnels:             funnelsSvc,
+		ABTests:             abtestsSvc,
+		Flags:               flagsSvc,
+		Events:              eventsSvc,
+		Sessions:            sessionsSvc,
+		APIKeys:             apikeysSvc,
+		Widgets:             widgetsSvc,
+		UserAuth:            userAuth,
+		SessionManager:      sessionManager,
+		AllowedOrigins:      cfg.AllowedOrigins,
+		SessionSecret:       cfg.SessionSecret,
+		PublicURL:           cfg.PublicURL,
+		LoginRatePerMinute:  cfg.LoginRatePerMinute,
+		LoginRateBurst:      cfg.LoginRateBurst,
+		APIRatePerMinute:    cfg.APIRatePerMinute,
+		APIRateBurst:        cfg.APIRateBurst,
+		IngestRatePerMinute: cfg.IngestRatePerMinute,
+		IngestRateBurst:     cfg.IngestRateBurst,
+		SetupRatePerMinute:  cfg.SetupRatePerMinute,
+		SetupRateBurst:      cfg.SetupRateBurst,
+		DB:                  store,
+		Version:             Version,
+		TrustedProxies:      cfg.TrustedProxies,
+		BugbarnEndpoint:     cfg.SelfEndpoint,
+		BugbarnIngestKey:    cfg.SelfAPIKey,
+		DogfoodAPIKey:       cfg.DogfoodAPIKey,
+		DogfoodProject:      cfg.DogfoodProject,
+	})
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)
 	}
@@ -266,7 +269,7 @@ const (
 	workerRotateThreshold = 64 << 20 // 64 MiB
 )
 
-func runBackgroundWorker(ctx context.Context, cfg config.Config, store *repository.Store) {
+func runBackgroundWorker(ctx context.Context, cfg config.Config, store *repository.Store, eventSpool *spool.Spool) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -294,6 +297,12 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				} else if n > 0 {
 					slog.Info("purged old events", "count", n, "before", cutoff.Format(time.DateOnly))
 					metrics.EventsPurged.Add(float64(n))
+				}
+				ne, err := store.PurgeOldEvaluations(ctx, cutoff)
+				if err != nil {
+					slog.Error("purge old evaluations", "err", err)
+				} else if ne > 0 {
+					slog.Info("purged old evaluations", "count", ne, "before", cutoff.Format(time.DateOnly))
 				}
 			}
 		case <-ticker.C:
@@ -379,7 +388,7 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				}
 			}
 
-			if err := spool.RotateIfExceedsPath(cfg.SpoolDir, workerRotateThreshold); err != nil {
+			if err := eventSpool.RotateIfExceeds(workerRotateThreshold); err != nil {
 				slog.Error("worker rotate spool", "err", err)
 			}
 		}

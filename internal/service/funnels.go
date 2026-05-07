@@ -9,16 +9,17 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // FunnelService handles funnel business logic.
 type FunnelService struct {
-	store repository.Querier
+	store ports.FunnelRepo
 }
 
 // NewFunnelService creates a new FunnelService.
-func NewFunnelService(store repository.Querier) *FunnelService {
+func NewFunnelService(store ports.FunnelRepo) *FunnelService {
 	return &FunnelService{store: store}
 }
 

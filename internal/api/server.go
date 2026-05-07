@@ -21,6 +21,42 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
+// ServerConfig holds all configuration for the API server.
+type ServerConfig struct {
+	Ingest         *ingest.Handler
+	Projects       service.Projects
+	Funnels        service.Funnels
+	ABTests        service.ABTests
+	Flags          service.Flags
+	Events         service.Events
+	Sessions       service.Sessions
+	APIKeys        service.APIKeys
+	Widgets        service.Widgets
+	UserAuth       *auth.UserAuthenticator
+	SessionManager *auth.SessionManager
+	AllowedOrigins []string
+	SessionSecret  string
+	PublicURL      string
+	DB             Pinger
+	Version        string
+	TrustedProxies []string
+
+	LoginRatePerMinute  float64
+	LoginRateBurst      float64
+	APIRatePerMinute    float64
+	APIRateBurst        float64
+	IngestRatePerMinute float64
+	IngestRateBurst     float64
+	SetupRatePerMinute  float64
+	SetupRateBurst      float64
+
+	MetricsToken     string
+	BugbarnEndpoint  string
+	BugbarnIngestKey string
+	DogfoodAPIKey    string
+	DogfoodProject   string
+}
+
 // Server is the main HTTP API server.
 type Server struct {
 	mux              *http.ServeMux
@@ -45,66 +81,52 @@ type Server struct {
 	bugbarnIngestKey string
 	dogfoodAPIKey    string
 	dogfoodProject   string
+	trustedProxies   []string
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
-	apiLimiter    *rateLimiter // configurable — for all session-authenticated endpoints
+	apiLimiter    *rateLimiter
+	setupLimiter  *rateLimiter
 }
 
 // NewServer creates the API server and registers all routes.
-func NewServer(
-	ingestHandler *ingest.Handler,
-	projects service.Projects,
-	funnels service.Funnels,
-	abtests service.ABTests,
-	flags service.Flags,
-	events service.Events,
-	sessions service.Sessions,
-	apikeys service.APIKeys,
-	widgets service.Widgets,
-	userAuth *auth.UserAuthenticator,
-	sessionManager *auth.SessionManager,
-	allowedOrigins []string,
-	sessionSecret string,
-	publicURL string,
-	loginRatePerMinute float64,
-	loginRateBurst float64,
-	apiRatePerMinute float64,
-	apiRateBurst float64,
-	ingestRatePerMinute float64,
-	ingestRateBurst float64,
-	db Pinger,
-	version string,
-	bugbarnEndpoint string,
-	bugbarnIngestKey string,
-	dogfoodAPIKey string,
-	dogfoodProject string,
-) *Server {
+func NewServer(cfg ServerConfig) *Server {
+	setupRate := cfg.SetupRatePerMinute
+	if setupRate == 0 {
+		setupRate = 10
+	}
+	setupBurst := cfg.SetupRateBurst
+	if setupBurst == 0 {
+		setupBurst = 5
+	}
+
 	s := &Server{
 		mux:              http.NewServeMux(),
-		db:               db,
-		version:          version,
-		projects:         projects,
-		funnels:          funnels,
-		abtests:          abtests,
-		flags:            flags,
-		events:           events,
-		sessions:         sessions,
-		apikeys:          apikeys,
-		widgets:          widgets,
-		ingest:           ingestHandler,
-		userAuth:         userAuth,
-		sessionManager:   sessionManager,
-		allowedOrigins:   allowedOrigins,
-		sessionSecret:    sessionSecret,
-		publicURL:        publicURL,
-		bugbarnEndpoint:  bugbarnEndpoint,
-		bugbarnIngestKey: bugbarnIngestKey,
-		dogfoodAPIKey:    dogfoodAPIKey,
-		dogfoodProject:   dogfoodProject,
-		loginLimiter:     newRateLimiter(loginRatePerMinute, loginRateBurst),
-		eventsLimiter:    newRateLimiter(ingestRatePerMinute, ingestRateBurst),
-		apiLimiter:       newRateLimiter(apiRatePerMinute, apiRateBurst),
+		db:               cfg.DB,
+		version:          cfg.Version,
+		projects:         cfg.Projects,
+		funnels:          cfg.Funnels,
+		abtests:          cfg.ABTests,
+		flags:            cfg.Flags,
+		events:           cfg.Events,
+		sessions:         cfg.Sessions,
+		apikeys:          cfg.APIKeys,
+		widgets:          cfg.Widgets,
+		ingest:           cfg.Ingest,
+		userAuth:         cfg.UserAuth,
+		sessionManager:   cfg.SessionManager,
+		allowedOrigins:   cfg.AllowedOrigins,
+		sessionSecret:    cfg.SessionSecret,
+		publicURL:        cfg.PublicURL,
+		bugbarnEndpoint:  cfg.BugbarnEndpoint,
+		bugbarnIngestKey: cfg.BugbarnIngestKey,
+		dogfoodAPIKey:    cfg.DogfoodAPIKey,
+		dogfoodProject:   cfg.DogfoodProject,
+		trustedProxies:   cfg.TrustedProxies,
+		loginLimiter:     newRateLimiter(cfg.LoginRatePerMinute, cfg.LoginRateBurst),
+		eventsLimiter:    newRateLimiter(cfg.IngestRatePerMinute, cfg.IngestRateBurst),
+		apiLimiter:       newRateLimiter(cfg.APIRatePerMinute, cfg.APIRateBurst),
+		setupLimiter:     newRateLimiter(setupRate, setupBurst),
 	}
 	s.registerRoutes()
 	return s
@@ -116,7 +138,7 @@ func (s *Server) registerRoutes() {
 
 	// Public
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
-	s.mux.HandleFunc("GET /api/v1/setup/{slug}", s.handleSetup)
+	s.mux.Handle("GET /api/v1/setup/{slug}", s.setupLimiter.middleware(http.HandlerFunc(s.handleSetup)))
 	s.mux.HandleFunc("GET /api/v1/client-config", s.handleClientConfig)
 
 	// Ingest (API key required)
@@ -252,12 +274,11 @@ func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 }
 
 // requireSession wraps a handler to enforce session cookie authentication.
-// It also applies the apiLimiter rate limit for authenticated endpoints.
+// It also applies the apiLimiter rate limit and CSRF validation on mutating methods.
 func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.sessionManager == nil || !s.userAuth.Enabled() {
-			// No auth configured — apply rate limit and allow through.
-			if !s.apiLimiter.allow(clientIP(r)) {
+			if !s.apiLimiter.allow(s.clientIP(r)) {
 				jsonError(w, "too many requests", http.StatusTooManyRequests)
 				return
 			}
@@ -277,7 +298,16 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		if !s.apiLimiter.allow(clientIP(r)) {
+		if isMutating(r.Method) {
+			expected := auth.CSRFToken(cookie.Value)
+			got := r.Header.Get("X-FunnelBarn-CSRF")
+			if got == "" || got != expected {
+				jsonError(w, "csrf token invalid", http.StatusForbidden)
+				return
+			}
+		}
+
+		if !s.apiLimiter.allow(s.clientIP(r)) {
 			jsonError(w, "too many requests", http.StatusTooManyRequests)
 			return
 		}
@@ -285,6 +315,10 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 		slog.Debug("session valid", "username", username)
 		next(w, r)
 	}
+}
+
+func isMutating(method string) bool {
+	return method == http.MethodPost || method == http.MethodPut || method == http.MethodDelete || method == http.MethodPatch
 }
 
 // mapServiceError maps domain/service errors to appropriate HTTP status codes.
