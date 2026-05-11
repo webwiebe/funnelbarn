@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
+import { useProjects } from '../lib/projects'
 import { ApiError } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
 
@@ -16,6 +17,7 @@ const C = {
 
 export default function Login() {
   const { user, login, isLoading } = useAuth()
+  const { refetch: refetchProjects } = useProjects()
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -33,6 +35,7 @@ export default function Login() {
     try {
       await login(username, password)
       trackEvent('login', { method: 'password' })
+      refetchProjects()
       navigate('/dashboard', { replace: true })
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
