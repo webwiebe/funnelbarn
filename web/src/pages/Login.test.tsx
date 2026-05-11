@@ -15,6 +15,17 @@ vi.mock('../lib/auth', () => ({
   }),
 }))
 
+const mockRefetch = vi.fn()
+vi.mock('../lib/projects', () => ({
+  useProjects: () => ({
+    projects: [],
+    isLoading: false,
+    refetch: mockRefetch,
+    defaultProjectId: null,
+    setDefaultProjectId: vi.fn(),
+  }),
+}))
+
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>()
   return { ...actual, useNavigate: () => mockNavigate }
