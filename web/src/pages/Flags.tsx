@@ -81,6 +81,16 @@ function StatCard({ label, sample, conversions, rate, winner }: {
   )
 }
 
+// mirrorBooleanSplit swaps the on/off percentages so flipping the default
+// preserves any gradual rollout. For example, {off: 80, on: 20} (80% on
+// default off, 20% rolled out to on) flips to {on: 80, off: 20} (same
+// 80/20 distribution, mirrored). Defaults missing keys to 0.
+export function mirrorBooleanSplit(splitJSON: string): string {
+  let current: Record<string, number>
+  try { current = JSON.parse(splitJSON) as Record<string, number> } catch { current = {} }
+  return JSON.stringify({ on: current.off ?? 0, off: current.on ?? 0 })
+}
+
 function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
   flag: FeatureFlag; projectId: string
   onUpdated: (f: FeatureFlag) => void
@@ -89,6 +99,7 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
   const [analysis, setAnalysis] = useState<FlagAnalysis | null>(null)
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState(false)
+  const [togglingDefault, setTogglingDefault] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [tab, setTab] = useState<'analytics' | 'tryit'>('analytics')
 
@@ -112,6 +123,23 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
       reportError(e instanceof Error ? e : new Error(String(e)), { source: 'Flags.toggle' })
     } finally {
       setToggling(false)
+    }
+  }
+
+  const toggleDefault = async () => {
+    if (flag.flag_type !== 'boolean') return
+    setTogglingDefault(true)
+    try {
+      const updated = await api.updateFlag(projectId, flag.id, {
+        ...flag,
+        default_variant: flag.default_variant === 'on' ? 'off' : 'on',
+        split: mirrorBooleanSplit(flag.split),
+      })
+      onUpdated(updated)
+    } catch (e) {
+      reportError(e instanceof Error ? e : new Error(String(e)), { source: 'Flags.toggleDefault' })
+    } finally {
+      setTogglingDefault(false)
     }
   }
 
@@ -144,6 +172,9 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
           </code>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {flag.flag_type === 'boolean' && (
+            <DefaultToggle value={flag.default_variant === 'on'} onChange={toggleDefault} disabled={togglingDefault} />
+          )}
           {statusBadge(flag.status)}
           <button onClick={toggleStatus} disabled={toggling} title={flag.status === 'active' ? 'Pause' : 'Resume'}
             style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, cursor: 'pointer', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
@@ -223,6 +254,54 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
         </>
       )}
     </div>
+  )
+}
+
+// DefaultToggle is the on/off switch for boolean (deploy) flags. Clicking it
+// flips the flag's default value — the most common operation on a release
+// flag once it's deployed.
+export function DefaultToggle({ value, onChange, disabled }: { value: boolean; onChange: () => void; disabled?: boolean }) {
+  return (
+    <button
+      onClick={onChange}
+      disabled={disabled}
+      title={value ? 'Default: on — click to flip to off' : 'Default: off — click to flip to on'}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        background: 'transparent',
+        border: `1px solid ${C.border}`,
+        borderRadius: 999,
+        padding: '2px 4px 2px 10px',
+        cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <span style={{
+        fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase',
+        color: value ? C.success : C.muted,
+      }}>
+        {value ? 'on' : 'off'}
+      </span>
+      <span style={{
+        position: 'relative',
+        width: 32, height: 18,
+        background: value ? 'rgba(16,185,129,0.25)' : C.border,
+        borderRadius: 999,
+        transition: 'background 120ms ease',
+      }}>
+        <span style={{
+          position: 'absolute',
+          top: 2,
+          left: value ? 16 : 2,
+          width: 14, height: 14,
+          background: value ? C.success : C.muted,
+          borderRadius: '50%',
+          transition: 'left 120ms ease',
+        }} />
+      </span>
+    </button>
   )
 }
 
@@ -429,13 +508,35 @@ function TargetingRulesDisplay({ rulesJSON }: { rulesJSON: string }) {
   )
 }
 
+interface StringVariantRow {
+  // The variant name is what's returned (and what targeting rules pick).
+  // returnValue is only different from name when the user opts in to the
+  // "use a different return value" disclosure — rare in practice.
+  name: string
+  returnValue: string
+  splitPct: number
+}
+
 function CreateFlagModal({ projectId, onClose, onCreated }: {
   projectId: string; onClose: () => void; onCreated: (f: FeatureFlag) => void
 }) {
   const [flagKey, setFlagKey] = useState('')
   const [name, setName] = useState('')
   const [flagType, setFlagType] = useState<'boolean' | 'string'>('boolean')
-  const [splitA, setSplitA] = useState(50)
+
+  // Boolean (release) state
+  const [defaultBool, setDefaultBool] = useState<'on' | 'off'>('off')
+  const [rolloutEnabled, setRolloutEnabled] = useState(false)
+  const [rolloutPct, setRolloutPct] = useState(0)
+
+  // String (experiment) state
+  const [variants, setVariants] = useState<StringVariantRow[]>([
+    { name: 'control', returnValue: 'control', splitPct: 50 },
+    { name: 'treatment', returnValue: 'treatment', splitPct: 50 },
+  ])
+  const [defaultVariant, setDefaultVariant] = useState('control')
+  const [advancedReturnValues, setAdvancedReturnValues] = useState(false)
+
   const [conversionEvent, setConversionEvent] = useState('')
   const [eventNames, setEventNames] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
@@ -443,40 +544,72 @@ function CreateFlagModal({ projectId, onClose, onCreated }: {
   const [targetingRules, setTargetingRules] = useState<TargetingRule[]>([])
   const [showRules, setShowRules] = useState(false)
 
-  // String variants
-  const [variantAKey, setVariantAKey] = useState('control')
-  const [variantAVal, setVariantAVal] = useState('control')
-  const [variantBKey, setVariantBKey] = useState('treatment')
-  const [variantBVal, setVariantBVal] = useState('treatment')
-
   useEffect(() => {
     api.getEventNames(projectId).then((d) => setEventNames(d.event_names || [])).catch(() => {})
   }, [projectId])
 
   const autoKey = (n: string) => n.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
+  // Variant names targeting-rule dropdowns and default-variant selectors can pick from.
+  const variantNames = flagType === 'boolean'
+    ? ['on', 'off']
+    : variants.map((v) => v.name).filter((n) => n.trim() !== '')
+
+  // Keep defaultVariant in sync when the user removes/renames the row it pointed at.
+  useEffect(() => {
+    if (flagType !== 'string') return
+    if (!variantNames.includes(defaultVariant) && variantNames.length > 0) {
+      setDefaultVariant(variantNames[0])
+    }
+  }, [flagType, variantNames, defaultVariant])
+
+  const splitSum = variants.reduce((sum, v) => sum + (v.splitPct || 0), 0)
+
+  const validateString = (): string | null => {
+    if (variants.length < 2) return 'Need at least two variants'
+    const trimmedNames = variants.map((v) => v.name.trim())
+    if (trimmedNames.some((n) => !n)) return 'All variants need a name'
+    if (new Set(trimmedNames).size !== trimmedNames.length) return 'Variant names must be unique'
+    if (splitSum !== 100) return `Splits must add up to 100% (currently ${splitSum}%)`
+    return null
+  }
+
   const handleCreate = async () => {
     if (!flagKey.trim() || !name.trim()) { setError('Key and name are required'); return }
+
+    let variantsObj: Record<string, unknown>
+    let splitObj: Record<string, number>
+    let resolvedDefault: string
+
+    if (flagType === 'boolean') {
+      variantsObj = { on: true, off: false }
+      resolvedDefault = defaultBool
+      // No rollout → 100% to default. With rollout → that % goes to the
+      // *opposite* of the default ("flip X% of users"), the rest stays default.
+      if (!rolloutEnabled || rolloutPct === 0) {
+        splitObj = { [defaultBool]: 100, [defaultBool === 'on' ? 'off' : 'on']: 0 }
+      } else {
+        const opposite = defaultBool === 'on' ? 'off' : 'on'
+        splitObj = { [defaultBool]: 100 - rolloutPct, [opposite]: rolloutPct }
+      }
+    } else {
+      const err = validateString()
+      if (err) { setError(err); return }
+      variantsObj = Object.fromEntries(variants.map((v) => [v.name.trim(), v.returnValue]))
+      splitObj = Object.fromEntries(variants.map((v) => [v.name.trim(), v.splitPct]))
+      resolvedDefault = defaultVariant
+    }
+
     setSaving(true)
     setError(null)
     try {
-      let variants: Record<string, unknown>
-      let split: Record<string, number>
-      if (flagType === 'boolean') {
-        variants = { on: true, off: false }
-        split = { on: splitA, off: 100 - splitA }
-      } else {
-        variants = { [variantAKey]: variantAVal, [variantBKey]: variantBVal }
-        split = { [variantAKey]: splitA, [variantBKey]: 100 - splitA }
-      }
-
       const f = await api.createFlag(projectId, {
         flag_key: flagKey,
         name,
         flag_type: flagType,
-        variants: JSON.stringify(variants),
-        default_variant: flagType === 'boolean' ? 'off' : variantAKey,
-        split: JSON.stringify(split),
+        variants: JSON.stringify(variantsObj),
+        default_variant: resolvedDefault,
+        split: JSON.stringify(splitObj),
         conversion_event: conversionEvent,
         targeting_rules: targetingRules.length > 0 ? JSON.stringify(targetingRules) : '[]',
       })
@@ -535,26 +668,114 @@ function CreateFlagModal({ projectId, onClose, onCreated }: {
             ))}
           </div>
 
+          {flagType === 'boolean' && (
+            <>
+              <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Default value</label>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                {(['on', 'off'] as const).map((v) => (
+                  <button key={v} onClick={() => setDefaultBool(v)} type="button" style={{
+                    flex: 1, padding: '0.5rem', border: `1px solid ${defaultBool === v ? C.amber : C.border}`,
+                    borderRadius: 8, background: defaultBool === v ? 'rgba(245,158,11,0.1)' : 'transparent',
+                    color: defaultBool === v ? C.amber : C.muted, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  }}>
+                    {v}
+                  </button>
+                ))}
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.muted, fontWeight: 600, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={rolloutEnabled} onChange={(e) => setRolloutEnabled(e.target.checked)} />
+                  Gradual rollout
+                </label>
+                {rolloutEnabled && (
+                  <div style={{ marginTop: 8, padding: '0.75rem', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8 }}>
+                    <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>
+                      Flip <span style={{ color: C.amber, fontWeight: 700 }}>{rolloutPct}%</span> of users to{' '}
+                      <code style={{ color: C.text }}>{defaultBool === 'on' ? 'off' : 'on'}</code>; the rest stay on the default.
+                    </div>
+                    <input type="range" min={0} max={100} value={rolloutPct}
+                      onChange={(e) => setRolloutPct(Number(e.target.value))}
+                      style={{ width: '100%', accentColor: C.amber }} />
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
           {flagType === 'string' && (
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Variants</label>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <input value={variantAKey} onChange={(e) => setVariantAKey(e.target.value)} placeholder="key" style={{ ...inputStyle, flex: 1, fontFamily: 'monospace' }} />
-                <input value={variantAVal} onChange={(e) => setVariantAVal(e.target.value)} placeholder="value" style={{ ...inputStyle, flex: 1 }} />
+              {variants.map((v, i) => (
+                <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                  <input
+                    type="radio"
+                    name="defaultVariant"
+                    checked={defaultVariant === v.name}
+                    onChange={() => setDefaultVariant(v.name)}
+                    title="Default variant"
+                    style={{ accentColor: C.amber }}
+                  />
+                  <input
+                    value={v.name}
+                    onChange={(e) => {
+                      const next = [...variants]
+                      const oldName = next[i].name
+                      next[i] = { ...v, name: e.target.value, returnValue: advancedReturnValues ? v.returnValue : e.target.value }
+                      setVariants(next)
+                      if (defaultVariant === oldName) setDefaultVariant(e.target.value)
+                    }}
+                    placeholder="variant name"
+                    style={{ ...inputStyle, flex: 2, fontFamily: 'monospace' }}
+                  />
+                  {advancedReturnValues && (
+                    <input
+                      value={v.returnValue}
+                      onChange={(e) => {
+                        const next = [...variants]; next[i] = { ...v, returnValue: e.target.value }; setVariants(next)
+                      }}
+                      placeholder="return value"
+                      style={{ ...inputStyle, flex: 2 }}
+                    />
+                  )}
+                  <input
+                    type="number" min={0} max={100}
+                    value={v.splitPct}
+                    onChange={(e) => {
+                      const next = [...variants]; next[i] = { ...v, splitPct: Number(e.target.value) }; setVariants(next)
+                    }}
+                    style={{ ...inputStyle, width: 70, textAlign: 'right' }}
+                  />
+                  <span style={{ color: C.muted, fontSize: 12, width: 14 }}>%</span>
+                  <button type="button" onClick={() => {
+                    if (variants.length <= 2) return
+                    const next = variants.filter((_, idx) => idx !== i); setVariants(next)
+                  }} disabled={variants.length <= 2}
+                    style={{ background: 'transparent', border: 'none', color: variants.length <= 2 ? '#4a4d5a' : C.muted, cursor: variants.length <= 2 ? 'default' : 'pointer', padding: 2 }}>
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+                <button type="button"
+                  onClick={() => setVariants([...variants, { name: '', returnValue: '', splitPct: 0 }])}
+                  style={{ background: 'transparent', border: `1px dashed ${C.border}`, borderRadius: 6, color: C.muted, cursor: 'pointer', padding: '4px 10px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Plus size={12} /> Add variant
+                </button>
+                <span style={{ fontSize: 12, color: splitSum === 100 ? C.success : C.error }}>
+                  Splits sum: {splitSum}%
+                </span>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input value={variantBKey} onChange={(e) => setVariantBKey(e.target.value)} placeholder="key" style={{ ...inputStyle, flex: 1, fontFamily: 'monospace' }} />
-                <input value={variantBVal} onChange={(e) => setVariantBVal(e.target.value)} placeholder="value" style={{ ...inputStyle, flex: 1 }} />
-              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.muted, marginTop: 10, cursor: 'pointer' }}>
+                <input type="checkbox" checked={advancedReturnValues} onChange={(e) => {
+                  setAdvancedReturnValues(e.target.checked)
+                  if (!e.target.checked) {
+                    setVariants((rows) => rows.map((r) => ({ ...r, returnValue: r.name })))
+                  }
+                }} />
+                Use a different return value than the variant name
+              </label>
             </div>
           )}
-
-          <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>
-            Split: {flagType === 'boolean' ? `on ${splitA}% / off ${100 - splitA}%` : `${variantAKey} ${splitA}% / ${variantBKey} ${100 - splitA}%`}
-          </label>
-          <input type="range" min={0} max={100} value={splitA}
-            onChange={(e) => setSplitA(Number(e.target.value))}
-            style={{ width: '100%', marginBottom: 16, accentColor: C.amber }} />
 
           <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Conversion event</label>
           <select value={conversionEvent} onChange={(e) => setConversionEvent(e.target.value)}
@@ -576,7 +797,7 @@ function CreateFlagModal({ projectId, onClose, onCreated }: {
             {showRules && (
               <div style={{ padding: '0 1rem 1rem', borderTop: `1px solid ${C.border}` }}>
                 {targetingRules.map((rule, ri) => {
-                  const variantKeys = flagType === 'boolean' ? ['on', 'off'] : [variantAKey, variantBKey]
+                  const variantKeys = variantNames
                   return (
                     <div key={ri} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: '0.75rem', marginTop: '0.75rem' }}>
                       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -657,7 +878,7 @@ function CreateFlagModal({ projectId, onClose, onCreated }: {
                 })}
 
                 <button onClick={() => setTargetingRules([...targetingRules, {
-                  name: '', variant: flagType === 'boolean' ? 'off' : variantAKey,
+                  name: '', variant: flagType === 'boolean' ? (defaultBool === 'on' ? 'off' : 'on') : (variantNames[0] || ''),
                   match: 'all', conditions: [{ context_key: '', operator: 'eq', value: '' }],
                 }])} type="button" style={{
                   marginTop: '0.75rem', width: '100%', padding: '0.5rem',
