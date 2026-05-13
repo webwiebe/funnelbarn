@@ -89,6 +89,7 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
   const [analysis, setAnalysis] = useState<FlagAnalysis | null>(null)
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState(false)
+  const [togglingDefault, setTogglingDefault] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [tab, setTab] = useState<'analytics' | 'tryit'>('analytics')
 
@@ -112,6 +113,30 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
       reportError(e instanceof Error ? e : new Error(String(e)), { source: 'Flags.toggle' })
     } finally {
       setToggling(false)
+    }
+  }
+
+  // Flips the default value for boolean flags. Mirrors the split so any
+  // gradual rollout percentage is preserved (e.g. 80/20 off→on becomes
+  // 20/80, which means the same "20% of users see the non-default" intent).
+  const toggleDefault = async () => {
+    if (flag.flag_type !== 'boolean') return
+    const newDefault = flag.default_variant === 'on' ? 'off' : 'on'
+    let currentSplit: Record<string, number>
+    try { currentSplit = JSON.parse(flag.split) as Record<string, number> } catch { currentSplit = {} }
+    const newSplit = { on: currentSplit.off ?? 0, off: currentSplit.on ?? 0 }
+    setTogglingDefault(true)
+    try {
+      const updated = await api.updateFlag(projectId, flag.id, {
+        ...flag,
+        default_variant: newDefault,
+        split: JSON.stringify(newSplit),
+      })
+      onUpdated(updated)
+    } catch (e) {
+      reportError(e instanceof Error ? e : new Error(String(e)), { source: 'Flags.toggleDefault' })
+    } finally {
+      setTogglingDefault(false)
     }
   }
 
@@ -144,6 +169,9 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
           </code>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {flag.flag_type === 'boolean' && (
+            <DefaultToggle value={flag.default_variant === 'on'} onChange={toggleDefault} disabled={togglingDefault} />
+          )}
           {statusBadge(flag.status)}
           <button onClick={toggleStatus} disabled={toggling} title={flag.status === 'active' ? 'Pause' : 'Resume'}
             style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, cursor: 'pointer', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
@@ -223,6 +251,54 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
         </>
       )}
     </div>
+  )
+}
+
+// DefaultToggle is the on/off switch for boolean (deploy) flags. Clicking it
+// flips the flag's default value — the most common operation on a release
+// flag once it's deployed.
+function DefaultToggle({ value, onChange, disabled }: { value: boolean; onChange: () => void; disabled?: boolean }) {
+  return (
+    <button
+      onClick={onChange}
+      disabled={disabled}
+      title={value ? 'Default: on — click to flip to off' : 'Default: off — click to flip to on'}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        background: 'transparent',
+        border: `1px solid ${C.border}`,
+        borderRadius: 999,
+        padding: '2px 4px 2px 10px',
+        cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <span style={{
+        fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase',
+        color: value ? C.success : C.muted,
+      }}>
+        {value ? 'on' : 'off'}
+      </span>
+      <span style={{
+        position: 'relative',
+        width: 32, height: 18,
+        background: value ? 'rgba(16,185,129,0.25)' : C.border,
+        borderRadius: 999,
+        transition: 'background 120ms ease',
+      }}>
+        <span style={{
+          position: 'absolute',
+          top: 2,
+          left: value ? 16 : 2,
+          width: 14, height: 14,
+          background: value ? C.success : C.muted,
+          borderRadius: '50%',
+          transition: 'left 120ms ease',
+        }} />
+      </span>
+    </button>
   )
 }
 
