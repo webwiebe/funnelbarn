@@ -32,10 +32,10 @@ func Open(path string) (*Store, error) {
 	db, err := otelsql.Open("sqlite", dsn,
 		otelsql.WithAttributes(semconv.DBSystemSqlite),
 		otelsql.WithSpanOptions(otelsql.SpanOptions{
-			OmitConnPrepare:   true,
+			OmitConnPrepare:      true,
 			OmitConnResetSession: true,
-			OmitRows:          true,
-			DisableErrSkip:    true,
+			OmitRows:             true,
+			DisableErrSkip:       true,
 		}),
 	)
 	if err != nil {
