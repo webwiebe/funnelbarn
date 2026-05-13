@@ -250,7 +250,9 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
 function FlagPlayground({ projectId, flag }: { projectId: string; flag: FeatureFlag }) {
   const [flagKey, setFlagKey] = useState(flag.flag_key)
   const [defaultValue, setDefaultValue] = useState('')
-  const [context, setContext] = useState<Array<{ k: string; v: string }>>([{ k: 'user_id', v: '' }])
+  // targeting_key is what the eval service buckets on; defaulting to user_id
+  // would silently bucket every user to the same variant.
+  const [context, setContext] = useState<Array<{ k: string; v: string }>>([{ k: 'targeting_key', v: '' }])
   const [result, setResult] = useState<FlagEvaluationResult | null>(null)
   const [evaluating, setEvaluating] = useState(false)
   const [requestError, setRequestError] = useState<string | null>(null)

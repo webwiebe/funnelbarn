@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
@@ -94,11 +97,25 @@ func (svc *FlagService) CreateFlag(ctx context.Context, f repository.FeatureFlag
 }
 
 func (svc *FlagService) GetFlag(ctx context.Context, id string) (repository.FeatureFlag, error) {
-	return svc.store.FlagByID(ctx, id)
+	f, err := svc.store.FlagByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return repository.FeatureFlag{}, fmt.Errorf("%w: flag %s", domain.ErrNotFound, id)
+		}
+		return repository.FeatureFlag{}, err
+	}
+	return f, nil
 }
 
 func (svc *FlagService) GetFlagByKey(ctx context.Context, projectID, flagKey string) (repository.FeatureFlag, error) {
-	return svc.store.FlagByKey(ctx, projectID, flagKey)
+	f, err := svc.store.FlagByKey(ctx, projectID, flagKey)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return repository.FeatureFlag{}, fmt.Errorf("%w: flag %s", domain.ErrNotFound, flagKey)
+		}
+		return repository.FeatureFlag{}, err
+	}
+	return f, nil
 }
 
 func (svc *FlagService) ListFlags(ctx context.Context, projectID string) ([]repository.FeatureFlag, error) {
