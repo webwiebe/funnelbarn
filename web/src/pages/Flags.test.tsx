@@ -1,26 +1,45 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { DefaultToggle, mirrorBooleanSplit } from './Flags'
+import { DefaultToggle, alignBooleanSplit } from './Flags'
 
-describe('mirrorBooleanSplit', () => {
-  it('swaps on and off percentages', () => {
-    expect(JSON.parse(mirrorBooleanSplit(JSON.stringify({ on: 20, off: 80 })))).toEqual({ on: 80, off: 20 })
+describe('alignBooleanSplit', () => {
+  it('self-heals legacy state where split contradicted default', () => {
+    // Legacy: stored default=off but split says 100% on (the bug we shipped
+    // from the old modal). Toggling to default=on should produce a
+    // consistent state, not flip the split to {on:0, off:100} via mirror.
+    expect(JSON.parse(alignBooleanSplit(JSON.stringify({ on: 100, off: 0 }), 'on')))
+      .toEqual({ on: 100, off: 0 })
   })
 
-  it('preserves the 100/0 case (no rollout)', () => {
-    expect(JSON.parse(mirrorBooleanSplit(JSON.stringify({ on: 0, off: 100 })))).toEqual({ on: 100, off: 0 })
-    expect(JSON.parse(mirrorBooleanSplit(JSON.stringify({ on: 100, off: 0 })))).toEqual({ on: 0, off: 100 })
+  it('preserves rollout percentage when swapping default', () => {
+    // 80% on default, 20% rolled out → toggling default flips which side is
+    // the rollout but keeps the percentage.
+    expect(JSON.parse(alignBooleanSplit(JSON.stringify({ on: 80, off: 20 }), 'off')))
+      .toEqual({ off: 80, on: 20 })
+    expect(JSON.parse(alignBooleanSplit(JSON.stringify({ on: 20, off: 80 }), 'on')))
+      .toEqual({ on: 80, off: 20 })
+  })
+
+  it('handles the trivial 100/0 case', () => {
+    expect(JSON.parse(alignBooleanSplit(JSON.stringify({ on: 0, off: 100 }), 'on')))
+      .toEqual({ on: 100, off: 0 })
+    expect(JSON.parse(alignBooleanSplit(JSON.stringify({ on: 100, off: 0 }), 'off')))
+      .toEqual({ off: 100, on: 0 })
+  })
+
+  it('handles 50/50 splits (no clear majority)', () => {
+    expect(JSON.parse(alignBooleanSplit(JSON.stringify({ on: 50, off: 50 }), 'on')))
+      .toEqual({ on: 50, off: 50 })
   })
 
   it('treats missing keys as 0', () => {
-    // A flag stored with only one key (legacy or partial) shouldn't blow up.
-    expect(JSON.parse(mirrorBooleanSplit(JSON.stringify({ on: 30 })))).toEqual({ on: 0, off: 30 })
-    expect(JSON.parse(mirrorBooleanSplit(JSON.stringify({ off: 50 })))).toEqual({ on: 50, off: 0 })
+    expect(JSON.parse(alignBooleanSplit(JSON.stringify({ on: 30 }), 'on')))
+      .toEqual({ on: 30, off: 0 })
   })
 
-  it('falls back to {on:0, off:0} on invalid JSON instead of throwing', () => {
-    expect(JSON.parse(mirrorBooleanSplit(''))).toEqual({ on: 0, off: 0 })
-    expect(JSON.parse(mirrorBooleanSplit('not json'))).toEqual({ on: 0, off: 0 })
+  it('falls back to all-zero on invalid JSON instead of throwing', () => {
+    expect(JSON.parse(alignBooleanSplit('', 'on'))).toEqual({ on: 0, off: 0 })
+    expect(JSON.parse(alignBooleanSplit('not json', 'off'))).toEqual({ off: 0, on: 0 })
   })
 })
 
