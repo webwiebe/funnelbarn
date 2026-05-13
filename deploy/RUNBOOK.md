@@ -110,8 +110,16 @@ Production deploys are gated behind the `Deploy Production` GitHub Actions workf
 2. Click **Run workflow**.
 3. Fill in:
    - **Version to deploy** — e.g. `v0.2.0` (must match an existing GHCR image tag).
-   - **Confirmed** — check the box to confirm the version is validated on staging.
+   - **Confirmed** — check the box to confirm the version is validated on staging. The workflow fails fast in the `preflight` job if this is left unchecked.
 4. Click **Run workflow**.
+
+Equivalent `gh` CLI invocation (note both inputs are required):
+
+```sh
+gh workflow run deploy-production.yml \
+  -f production_version=v0.2.0 \
+  -f confirmed=true
+```
 
 The workflow will:
 - Verify the images exist in GHCR.

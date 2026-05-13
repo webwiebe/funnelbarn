@@ -44,13 +44,20 @@ test.describe('API: auth', () => {
 })
 
 test.describe('API: projects', () => {
-  // Helper: log in and return the session context
-  async function loginContext(request: import('@playwright/test').APIRequestContext) {
+  // Helper: log in and return the CSRF token the server set on the response.
+  // The server enforces double-submit CSRF on mutating methods (POST/PUT/DELETE/PATCH),
+  // so callers need to pass this token as X-FunnelBarn-CSRF for those requests.
+  async function loginContext(request: import('@playwright/test').APIRequestContext): Promise<string> {
     const loginResp = await request.post('/api/v1/login', {
       data: { username: 'wiebe', password: 'wiebe' },
     })
     expect(loginResp.status()).toBe(200)
-    return loginResp
+    const setCookies = loginResp.headersArray().filter((h) => h.name.toLowerCase() === 'set-cookie')
+    for (const c of setCookies) {
+      const match = c.value.match(/funnelbarn_csrf=([^;]+)/)
+      if (match) return decodeURIComponent(match[1])
+    }
+    throw new Error('login did not set funnelbarn_csrf cookie')
   }
 
   test('GET /api/v1/projects returns array after login', async ({ request }) => {
@@ -62,9 +69,10 @@ test.describe('API: projects', () => {
   })
 
   test('POST /api/v1/projects creates a new project', async ({ request }) => {
-    await loginContext(request)
+    const csrf = await loginContext(request)
     const slug = `e2e-test-${Date.now()}`
     const resp = await request.post('/api/v1/projects', {
+      headers: { 'X-FunnelBarn-CSRF': csrf },
       data: { name: 'E2E Test Project', slug },
     })
     expect(resp.status()).toBe(201)
