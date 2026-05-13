@@ -477,6 +477,50 @@ func TestEnsureProject(t *testing.T) {
 	require.Equal(t, p1.ID, p2.ID)
 }
 
+// A misconfigured tracker that puts a project's ID into the
+// x-funnelbarn-project header (instead of the slug) used to spawn a
+// duplicate project named after the UUID. Now we recognise the UUID
+// shape and route the event to the existing project.
+func TestEnsureProject_UUIDSlug_RoutesToExistingProjectByID(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	real, err := s.CreateProject(ctx, "Places", "places")
+	require.NoError(t, err)
+
+	got, err := s.EnsureProject(ctx, real.ID) // tracker sent the UUID
+	require.NoError(t, err)
+	require.Equal(t, real.ID, got.ID)
+	require.Equal(t, "places", got.Slug, "must reuse the existing project, not create a new one")
+}
+
+// If the slug looks like a UUID but no project with that ID exists, we
+// refuse to auto-create — creating a UUID-named project is never the
+// right answer.
+func TestEnsureProject_UUIDSlug_NoMatchingProject_Refuses(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	_, err := s.EnsureProject(ctx, "00000000-0000-0000-0000-000000000000")
+	require.Error(t, err)
+
+	// And no project should have been written.
+	_, err = s.ProjectBySlug(ctx, "00000000-0000-0000-0000-000000000000")
+	require.Error(t, err, "no project should be created from a UUID-shaped slug")
+}
+
+// Normal slugs that happen to contain hex characters but aren't UUID-shaped
+// must still auto-create as before.
+func TestEnsureProject_NormalSlugAutoCreates(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	// "deadbeef" is hex but not the right length / layout.
+	p, err := s.EnsureProject(ctx, "deadbeef")
+	require.NoError(t, err)
+	require.Equal(t, "deadbeef", p.Slug)
+}
+
 // ---------------------------------------------------------------------------
 // API Keys — remaining gaps
 // ---------------------------------------------------------------------------

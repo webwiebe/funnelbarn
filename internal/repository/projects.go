@@ -53,6 +53,13 @@ func (s *Store) ProjectBySlug(ctx context.Context, slug string) (Project, error)
 }
 
 // EnsureProject fetches a project by slug, creating it if absent.
+//
+// As a defence against misconfigured trackers that send a project's *ID* in
+// the place of its slug (we have seen this happen multiple times — e.g. a
+// site copies a UUID out of the dashboard URL into its x-funnelbarn-project
+// header), if the supplied slug parses as a UUID and a project with that
+// exact ID already exists, we route the event to that existing project
+// instead of auto-creating a duplicate named after the UUID.
 func (s *Store) EnsureProject(ctx context.Context, slug string) (Project, error) {
 	p, err := s.ProjectBySlug(ctx, slug)
 	if err == nil {
@@ -61,7 +68,42 @@ func (s *Store) EnsureProject(ctx context.Context, slug string) (Project, error)
 	if err != sql.ErrNoRows {
 		return Project{}, err
 	}
+
+	if looksLikeUUID(slug) {
+		if byID, idErr := s.ProjectByID(ctx, slug); idErr == nil {
+			return byID, nil
+		} else if idErr != sql.ErrNoRows {
+			return Project{}, idErr
+		}
+		// UUID-shaped slug with no matching project either way — refuse to
+		// auto-create. A UUID is never a meaningful slug; creating one
+		// produces the "project shows up as a UUID in the picker" UX bug.
+		return Project{}, fmt.Errorf("slug %q looks like a UUID but no project with that ID exists; refusing to auto-create", slug)
+	}
+
 	return s.CreateProject(ctx, slug, slug)
+}
+
+// looksLikeUUID matches the canonical 8-4-4-4-12 hex layout, case-insensitive.
+// We don't validate the variant/version bits because we only need to recognise
+// "this is almost certainly a UUID someone pasted in", not strict RFC4122.
+func looksLikeUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, r := range s {
+		switch i {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+		default:
+			if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // EnsureProjectPending fetches a project by slug or creates it with status='pending'.
