@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"runtime/debug"
 	"time"
 )
@@ -17,9 +18,14 @@ func ReportPanic(endpoint, apiKey string, r any) {
 		return
 	}
 
+	project := os.Getenv("FUNNELBARN_SELF_PROJECT")
+	if project == "" {
+		project = "funnelbarn"
+	}
+
 	body, _ := json.Marshal(map[string]any{
 		"event":   "panic",
-		"project": "funnelbarn",
+		"project": project,
 		"properties": map[string]any{
 			"panic": fmt.Sprint(r),
 			"stack": string(debug.Stack()),
@@ -35,5 +41,6 @@ func ReportPanic(endpoint, apiKey string, r any) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-BugBarn-Api-Key", apiKey)
+	req.Header.Set("X-BugBarn-Project", project)
 	_, _ = http.DefaultClient.Do(req)
 }

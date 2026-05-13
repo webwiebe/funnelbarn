@@ -242,8 +242,8 @@ func TestCORS_EmptyAllowedOriginsAllowsAll(t *testing.T) {
 	srv.ServeHTTP(w, req)
 
 	got := w.Header().Get("Access-Control-Allow-Origin")
-	if got != "*" {
-		t.Errorf("empty allowedOrigins: want ACAO=*, got %q", got)
+	if got != "https://example.com" {
+		t.Errorf("empty allowedOrigins: want reflected origin, got %q", got)
 	}
 }
 

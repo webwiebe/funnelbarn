@@ -53,6 +53,7 @@ type ServerConfig struct {
 	MetricsToken     string
 	BugbarnEndpoint  string
 	BugbarnIngestKey string
+	BugbarnProject   string
 	DogfoodAPIKey    string
 	DogfoodProject   string
 }
@@ -79,6 +80,7 @@ type Server struct {
 	version          string
 	bugbarnEndpoint  string
 	bugbarnIngestKey string
+	bugbarnProject   string
 	dogfoodAPIKey    string
 	dogfoodProject   string
 	trustedProxies   []string
@@ -120,6 +122,7 @@ func NewServer(cfg ServerConfig) *Server {
 		publicURL:        cfg.PublicURL,
 		bugbarnEndpoint:  cfg.BugbarnEndpoint,
 		bugbarnIngestKey: cfg.BugbarnIngestKey,
+		bugbarnProject:   cfg.BugbarnProject,
 		dogfoodAPIKey:    cfg.DogfoodAPIKey,
 		dogfoodProject:   cfg.DogfoodProject,
 		trustedProxies:   cfg.TrustedProxies,
@@ -264,20 +267,35 @@ func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(s.allowedOrigins) == 0 || (len(s.allowedOrigins) == 1 && s.allowedOrigins[0] == "") {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-	} else {
-		for _, allowed := range s.allowedOrigins {
-			if allowed == "*" || strings.EqualFold(allowed, origin) {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-				w.Header().Set("Vary", "Origin")
+	open := len(s.allowedOrigins) == 0 || (len(s.allowedOrigins) == 1 && s.allowedOrigins[0] == "")
+	allowed := open
+	if !allowed {
+		for _, o := range s.allowedOrigins {
+			if o == "*" || strings.EqualFold(o, origin) {
+				allowed = true
 				break
 			}
 		}
 	}
+	if !allowed {
+		return
+	}
 
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, "+auth.HeaderAPIKey+", X-FunnelBarn-CSRF")
+	// Always reflect the origin (not "*") so credentialed requests work — browsers
+	// reject Allow-Credentials: true combined with Allow-Origin: *.
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Add("Vary", "Origin")
+
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
+	// Echo back any headers the client asked for in preflight; fall back to a
+	// permissive default list so trackers using non-standard headers aren't blocked.
+	reqHeaders := r.Header.Get("Access-Control-Request-Headers")
+	if reqHeaders != "" {
+		w.Header().Set("Access-Control-Allow-Headers", reqHeaders)
+		w.Header().Add("Vary", "Access-Control-Request-Headers")
+	} else {
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, "+auth.HeaderAPIKey+", X-FunnelBarn-CSRF, X-Requested-With")
+	}
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
 	w.Header().Set("Access-Control-Max-Age", "86400")
 }

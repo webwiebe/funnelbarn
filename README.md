@@ -115,10 +115,19 @@ funnelbarn user create --username admin --password yourpassword
 | `FUNNELBARN_ADMIN_PASSWORD_BCRYPT` | — | Admin password (bcrypt hash) |
 | `FUNNELBARN_SESSION_SECRET` | random | HMAC secret for session tokens |
 | `FUNNELBARN_SESSION_TTL_SECONDS` | `43200` | Session TTL (12 hours) |
-| `FUNNELBARN_ALLOWED_ORIGINS` | — | CORS origins (CSV) |
+| `FUNNELBARN_ALLOWED_ORIGINS` | — | CORS origins (CSV). Empty = allow any origin (reflected). |
 | `FUNNELBARN_PUBLIC_URL` | — | Public server URL |
 | `FUNNELBARN_SELF_ENDPOINT` | — | BugBarn endpoint for self-reporting |
 | `FUNNELBARN_SELF_API_KEY` | — | BugBarn API key for self-reporting |
+| `FUNNELBARN_SELF_PROJECT` | `funnelbarn` | BugBarn project slug for self-reporting |
+| `FUNNELBARN_ENVIRONMENT` | `production` | Environment tag attached to self-reported events |
+| `FUNNELBARN_DOGFOOD_API_KEY` | — | API key the web app uses to send its own analytics to FunnelBarn |
+| `FUNNELBARN_DOGFOOD_PROJECT` | `funnelbarn` | Project slug the web app dogfoods into |
+| `FUNNELBARN_SPANBARN_ENDPOINT` | — | SpanBarn endpoint for distributed tracing |
+| `FUNNELBARN_SPANBARN_API_KEY` | — | SpanBarn API key |
+| `FUNNELBARN_TRUSTED_PROXIES` | — | CIDRs/IPs whose `X-Forwarded-For` headers are trusted (CSV) |
+| `FUNNELBARN_SETUP_RATE_PER_MINUTE` | `10` | Setup endpoint rate limit (requests/min) |
+| `FUNNELBARN_SETUP_RATE_BURST` | `5` | Setup endpoint burst capacity |
 | `FUNNELBARN_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 | `FUNNELBARN_LOGIN_RATE_PER_MINUTE` | `20` | Login endpoint rate limit (requests/min) |
 | `FUNNELBARN_LOGIN_RATE_BURST` | `20` | Login endpoint burst capacity |

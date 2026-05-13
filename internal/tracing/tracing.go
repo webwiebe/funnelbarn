@@ -78,8 +78,8 @@ func Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		spanName := r.Method + " " + r.URL.Path
-		ctx, span := tracer.Start(r.Context(), spanName,
+		// Provisional name until the mux resolves the route pattern.
+		ctx, span := tracer.Start(r.Context(), r.Method,
 			trace.WithSpanKind(trace.SpanKindServer),
 			trace.WithAttributes(
 				semconv.HTTPMethod(r.Method),
@@ -91,8 +91,18 @@ func Middleware(next http.Handler) http.Handler {
 		defer span.End()
 
 		rw := &statusWriter{ResponseWriter: w}
-		next.ServeHTTP(rw, r.WithContext(ctx))
+		req := r.WithContext(ctx)
+		next.ServeHTTP(rw, req)
 
+		// After routing, req.Pattern is the matched route template
+		// (e.g. "GET /api/v1/projects/{id}/events") — low cardinality and
+		// much better for grouping in trace search.
+		if req.Pattern != "" {
+			span.SetName(req.Pattern)
+			span.SetAttributes(semconv.HTTPRoute(req.Pattern))
+		} else {
+			span.SetName(r.Method + " " + r.URL.Path)
+		}
 		span.SetAttributes(semconv.HTTPStatusCode(rw.status))
 		if rw.status >= 500 {
 			span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", rw.status))

@@ -6,7 +6,10 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // zTestTwoProportions performs a two-proportion z-test.
@@ -125,8 +128,15 @@ func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	results, err := s.abtests.AnalyzeABTest(r.Context(), test, from, to)
+	ctx, span := tracing.StartSpan(r.Context(), "abtests.analyze",
+		attribute.String("project.id", test.ProjectID),
+		attribute.String("abtest.id", test.ID),
+		attribute.String("abtest.conversion_event", test.ConversionEvent),
+	)
+	results, err := s.abtests.AnalyzeABTest(ctx, test, from, to)
+	span.End()
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleABTestAnalysis")
 		return
 	}

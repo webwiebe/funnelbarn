@@ -38,3 +38,4 @@ FUNNELBARN_SPOOL_DIR=/var/lib/funnelbarn/spool
 # BugBarn self-error-reporting (optional)
 # FUNNELBARN_SELF_ENDPOINT=https://bugbarn.wiebe.xyz
 # FUNNELBARN_SELF_API_KEY=
+# FUNNELBARN_SELF_PROJECT=funnelbarn

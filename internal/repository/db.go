@@ -6,8 +6,10 @@ import (
 	"embed"
 	"fmt"
 
+	"github.com/XSAM/otelsql"
 	"github.com/pressly/goose/v3"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/sqlcgen"
+	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	_ "modernc.org/sqlite"
 )
 
@@ -26,7 +28,16 @@ func Open(path string) (*Store, error) {
 		path = ".data/funnelbarn.db"
 	}
 
-	db, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on")
+	dsn := path + "?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on"
+	db, err := otelsql.Open("sqlite", dsn,
+		otelsql.WithAttributes(semconv.DBSystemSqlite),
+		otelsql.WithSpanOptions(otelsql.SpanOptions{
+			OmitConnPrepare:   true,
+			OmitConnResetSession: true,
+			OmitRows:          true,
+			DisableErrSkip:    true,
+		}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
