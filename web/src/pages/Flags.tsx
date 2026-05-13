@@ -81,6 +81,16 @@ function StatCard({ label, sample, conversions, rate, winner }: {
   )
 }
 
+// mirrorBooleanSplit swaps the on/off percentages so flipping the default
+// preserves any gradual rollout. For example, {off: 80, on: 20} (80% on
+// default off, 20% rolled out to on) flips to {on: 80, off: 20} (same
+// 80/20 distribution, mirrored). Defaults missing keys to 0.
+export function mirrorBooleanSplit(splitJSON: string): string {
+  let current: Record<string, number>
+  try { current = JSON.parse(splitJSON) as Record<string, number> } catch { current = {} }
+  return JSON.stringify({ on: current.off ?? 0, off: current.on ?? 0 })
+}
+
 function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
   flag: FeatureFlag; projectId: string
   onUpdated: (f: FeatureFlag) => void
@@ -116,21 +126,14 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
     }
   }
 
-  // Flips the default value for boolean flags. Mirrors the split so any
-  // gradual rollout percentage is preserved (e.g. 80/20 off→on becomes
-  // 20/80, which means the same "20% of users see the non-default" intent).
   const toggleDefault = async () => {
     if (flag.flag_type !== 'boolean') return
-    const newDefault = flag.default_variant === 'on' ? 'off' : 'on'
-    let currentSplit: Record<string, number>
-    try { currentSplit = JSON.parse(flag.split) as Record<string, number> } catch { currentSplit = {} }
-    const newSplit = { on: currentSplit.off ?? 0, off: currentSplit.on ?? 0 }
     setTogglingDefault(true)
     try {
       const updated = await api.updateFlag(projectId, flag.id, {
         ...flag,
-        default_variant: newDefault,
-        split: JSON.stringify(newSplit),
+        default_variant: flag.default_variant === 'on' ? 'off' : 'on',
+        split: mirrorBooleanSplit(flag.split),
       })
       onUpdated(updated)
     } catch (e) {
@@ -257,7 +260,7 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
 // DefaultToggle is the on/off switch for boolean (deploy) flags. Clicking it
 // flips the flag's default value — the most common operation on a release
 // flag once it's deployed.
-function DefaultToggle({ value, onChange, disabled }: { value: boolean; onChange: () => void; disabled?: boolean }) {
+export function DefaultToggle({ value, onChange, disabled }: { value: boolean; onChange: () => void; disabled?: boolean }) {
   return (
     <button
       onClick={onChange}
