@@ -81,14 +81,26 @@ function StatCard({ label, sample, conversions, rate, winner }: {
   )
 }
 
-// mirrorBooleanSplit swaps the on/off percentages so flipping the default
-// preserves any gradual rollout. For example, {off: 80, on: 20} (80% on
-// default off, 20% rolled out to on) flips to {on: 80, off: 20} (same
-// 80/20 distribution, mirrored). Defaults missing keys to 0.
-export function mirrorBooleanSplit(splitJSON: string): string {
+// alignBooleanSplit produces a new split where the *new default* is always
+// the majority bucket. This both preserves intentional rollouts and
+// self-heals legacy flags whose split contradicted their default.
+//
+// Examples:
+// - {on:100, off:0} (any default) → newDefault gets 100, the other gets 0.
+//   Self-heals the "Default: off but always returns on" inconsistency.
+// - {on:80, off:20}, toggling default off→on → {on:80, off:20}. Rollout
+//   already pointed the right way, no change needed.
+// - {on:80, off:20}, toggling default on→off → {off:80, on:20}. Rollout
+//   percentage preserved, sides swapped.
+export function alignBooleanSplit(splitJSON: string, newDefault: 'on' | 'off'): string {
   let current: Record<string, number>
   try { current = JSON.parse(splitJSON) as Record<string, number> } catch { current = {} }
-  return JSON.stringify({ on: current.off ?? 0, off: current.on ?? 0 })
+  const a = current.on ?? 0
+  const b = current.off ?? 0
+  const majority = Math.max(a, b)
+  const minority = Math.min(a, b)
+  const opposite = newDefault === 'on' ? 'off' : 'on'
+  return JSON.stringify({ [newDefault]: majority, [opposite]: minority })
 }
 
 function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
@@ -128,12 +140,13 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
 
   const toggleDefault = async () => {
     if (flag.flag_type !== 'boolean') return
+    const newDefault: 'on' | 'off' = flag.default_variant === 'on' ? 'off' : 'on'
     setTogglingDefault(true)
     try {
       const updated = await api.updateFlag(projectId, flag.id, {
         ...flag,
-        default_variant: flag.default_variant === 'on' ? 'off' : 'on',
-        split: mirrorBooleanSplit(flag.split),
+        default_variant: newDefault,
+        split: alignBooleanSplit(flag.split, newDefault),
       })
       onUpdated(updated)
     } catch (e) {
@@ -189,22 +202,34 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16, fontSize: 13, color: C.muted }}>
         <div>Type: <span style={{ color: C.text }}>{flag.flag_type}</span></div>
-        <div>Default: <span style={{ color: C.text }}>{flag.default_variant}</span></div>
+        {flag.flag_type !== 'boolean' && (
+          <div>Default: <span style={{ color: C.text }}>{flag.default_variant}</span></div>
+        )}
         {flag.conversion_event && <div>Conversion: <span style={{ color: C.text }}>{flag.conversion_event}</span></div>}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-        {Object.entries(split).map(([variant, pct]) => (
-          <div key={variant} style={{
-            background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
-            padding: '8px 12px', fontSize: 13,
-          }}>
-            <span style={{ color: C.text, fontWeight: 600 }}>{variant}</span>
-            <span style={{ color: C.muted }}> = {JSON.stringify(variants[variant])}</span>
-            <span style={{ color: C.amber, marginLeft: 8 }}>{pct}%</span>
+      {(() => {
+        // For boolean flags, only render the split tiles when there's a real
+        // rollout (neither side is 0%). A 100/0 split is just "use the
+        // default" and the header toggle already conveys that.
+        const entries = Object.entries(split)
+        const hasRollout = flag.flag_type !== 'boolean' || entries.every(([, pct]) => pct !== 0)
+        if (!hasRollout) return null
+        return (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+            {entries.map(([variant, pct]) => (
+              <div key={variant} style={{
+                background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
+                padding: '8px 12px', fontSize: 13,
+              }}>
+                <span style={{ color: C.text, fontWeight: 600 }}>{variant}</span>
+                <span style={{ color: C.muted }}> = {JSON.stringify(variants[variant])}</span>
+                <span style={{ color: C.amber, marginLeft: 8 }}>{pct}%</span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        )
+      })()}
 
       <TargetingRulesDisplay rulesJSON={flag.targeting_rules} />
 
