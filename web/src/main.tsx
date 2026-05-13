@@ -18,6 +18,11 @@ window.onerror = (message, source, lineno, colno, error) => {
 
 // Global unhandled promise rejection handler.
 window.onunhandledrejection = (event: PromiseRejectionEvent) => {
+  // ServiceWorker registration failures (typically untrusted TLS in dev/test
+  // environments or sandboxed browsers) are not actionable from app code.
+  const msg = event.reason instanceof Error ? event.reason.message : String(event.reason)
+  if (msg.includes('Failed to register a ServiceWorker')) return
+
   reportError(event.reason, {
     source: 'window.onunhandledrejection',
   })

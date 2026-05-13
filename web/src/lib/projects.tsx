@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react'
-import { api, Project } from './api'
+import { api, ApiError, Project } from './api'
 import { reportError } from './bugbarn'
 
 const STORAGE_KEY = 'funnelbarn_default_project'
@@ -30,7 +30,14 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setIsLoading(true)
     api.listProjects()
       .then((d) => setProjects(d.projects || []))
-      .catch((e) => { reportError(e, { source: 'ProjectProvider.listProjects' }); setProjects([]) })
+      .catch((e) => {
+        // 401 is expected when the session has expired or the user isn't logged in yet;
+        // the API client already redirects to /login. Don't pollute BugBarn with it.
+        if (!(e instanceof ApiError && e.status === 401)) {
+          reportError(e, { source: 'ProjectProvider.listProjects' })
+        }
+        setProjects([])
+      })
       .finally(() => setIsLoading(false))
   }, [])
 
