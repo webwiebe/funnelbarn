@@ -194,6 +194,15 @@ export const api = {
   getFlagAnalysis: (projectId: string, flagId: string) =>
     request<FlagAnalysis>(`/api/v1/projects/${projectId}/flags/${flagId}/analysis`),
 
+  evaluateFlagPlayground: (
+    projectId: string,
+    body: { flag_key: string; default_value?: unknown; context: Record<string, unknown> },
+  ) =>
+    request<FlagEvaluationResult>(`/api/v1/projects/${projectId}/flags/evaluate`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
   // Event names (autocomplete)
   getEventNames: (projectId: string) =>
     request<{ event_names: string[] }>(`/api/v1/projects/${projectId}/event-names`),
@@ -351,6 +360,15 @@ export interface FlagAnalysis {
   results: FlagAnalysisVariant[]
   significant?: boolean
   z_score?: number
+}
+
+export interface FlagEvaluationResult {
+  flag_key: string
+  variant: string
+  value: unknown
+  reason: string
+  error_code?: string
+  error?: string
 }
 
 export interface DashboardWidget {

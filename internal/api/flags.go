@@ -220,7 +220,21 @@ func (s *Server) handleEvaluateFlag(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	s.evaluateFlagInProject(w, r, projectID)
+}
 
+// handlePlaygroundEvaluateFlag is the session-authed dashboard counterpart of
+// handleEvaluateFlag. The project ID comes from the URL instead of the API key.
+func (s *Server) handlePlaygroundEvaluateFlag(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		jsonError(w, "project id required", http.StatusBadRequest)
+		return
+	}
+	s.evaluateFlagInProject(w, r, projectID)
+}
+
+func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, projectID string) {
 	var body struct {
 		FlagKey      string         `json:"flag_key"`
 		DefaultValue any            `json:"default_value"`
