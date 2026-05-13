@@ -6,11 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
-
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
-	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 func (s *Server) handleListFlags(w http.ResponseWriter, r *http.Request) {
@@ -241,13 +238,7 @@ func (s *Server) handleEvaluateFlag(w http.ResponseWriter, r *http.Request) {
 		body.Context = map[string]any{}
 	}
 
-	ctx, span := tracing.StartSpan(r.Context(), "flags.evaluate.handler",
-		attribute.String("flag.key", body.FlagKey),
-		attribute.String("project.id", projectID),
-	)
-	defer span.End()
-
-	result, err := s.flags.EvaluateFlag(ctx, projectID, body.FlagKey, body.Context)
+	result, err := s.flags.EvaluateFlag(r.Context(), projectID, body.FlagKey, body.Context)
 	if err != nil {
 		errorCode := "GENERAL"
 		if strings.Contains(err.Error(), "flag not found") {

@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/crypto/bcrypt"
 
 	bb "github.com/wiebe-xyz/bugbarn-go"
@@ -142,7 +143,7 @@ func run() error {
 		bb.Init(bb.Options{
 			APIKey:      cfg.SelfAPIKey,
 			Endpoint:    cfg.SelfEndpoint,
-			ProjectSlug: "funnelbarn",
+			ProjectSlug: cfg.SelfProject,
 			Environment: cfg.SelfEnvironment,
 		})
 		defer bb.Shutdown(2 * time.Second)
@@ -213,6 +214,7 @@ func run() error {
 		TrustedProxies:      cfg.TrustedProxies,
 		BugbarnEndpoint:     cfg.SelfEndpoint,
 		BugbarnIngestKey:    cfg.SelfAPIKey,
+		BugbarnProject:      cfg.SelfProject,
 		DogfoodAPIKey:       cfg.DogfoodAPIKey,
 		DogfoodProject:      cfg.DogfoodProject,
 	})
@@ -347,6 +349,10 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				// Resolve project from the slug stored in the spool record.
 				// Each DB operation gets a 30s timeout so a stuck write can't block the worker.
 				opCtx, opCancel := context.WithTimeout(ctx, 30*time.Second)
+				opCtx, span := tracing.StartSpan(opCtx, "worker.persist_event",
+					attribute.String("ingest.id", record.IngestID),
+					attribute.String("project.slug", record.ProjectSlug),
+				)
 				if record.ProjectSlug != "" {
 					proj, err := store.EnsureProject(opCtx, record.ProjectSlug)
 					if err == nil {
@@ -357,6 +363,10 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				}
 
 				persistErr := worker.PersistEvent(opCtx, store, event)
+				if persistErr != nil {
+					tracing.RecordError(span, persistErr)
+				}
+				span.End()
 				opCancel()
 				if persistErr != nil {
 					retryCounts[record.IngestID]++

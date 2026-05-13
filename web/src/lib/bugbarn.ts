@@ -6,10 +6,12 @@
 interface ClientConfig {
   bugbarn_endpoint: string
   bugbarn_ingest_key: string
+  bugbarn_project?: string
 }
 
 let endpoint = ''
 let ingestKey = ''
+let project = ''
 let configReady = false
 const pendingQueue: BugBarnPayload[] = []
 
@@ -20,6 +22,7 @@ async function loadConfig(): Promise<void> {
     const cfg: ClientConfig = await res.json()
     endpoint = cfg.bugbarn_endpoint ?? ''
     ingestKey = cfg.bugbarn_ingest_key ?? ''
+    project = cfg.bugbarn_project ?? ''
   } catch {
     // Config fetch failed — reporting falls back to console.error.
   } finally {
@@ -43,12 +46,14 @@ function sendToBugBarn(payload: BugBarnPayload): void {
     return
   }
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-BugBarn-Api-Key': ingestKey,
+    }
+    if (project) headers['X-BugBarn-Project'] = project
     fetch(`${endpoint}/api/v1/events`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-BugBarn-Api-Key': ingestKey,
-      },
+      headers,
       body: JSON.stringify(payload),
       keepalive: true,
     }).catch(() => {})

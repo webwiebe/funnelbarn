@@ -10,7 +10,7 @@ Used to decrypt Kubernetes secret manifests per environment.
 | Secret | Used by | Description |
 |--------|---------|-------------|
 | `SOPS_AGE_KEY_TESTING` | build-and-test.yml | Age private key for decrypting `deploy/k8s/testing/secret.yaml` |
-| `SOPS_AGE_KEY_STAGING` | deploy-staging.yml | Age private key for decrypting `deploy/k8s/staging/secret.yaml` |
+| `SOPS_AGE_KEY_STAGING` | build-and-test.yml (`deploy-staging` job) | Age private key for decrypting `deploy/k8s/staging/secret.yaml` |
 | `SOPS_AGE_KEY_PRODUCTION` | deploy-production.yml | Age private key for decrypting `deploy/k8s/production/secret.yaml` |
 
 ## MinIO / S3 Storage

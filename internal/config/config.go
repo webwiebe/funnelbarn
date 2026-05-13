@@ -28,6 +28,7 @@ type Config struct {
 	PublicURL           string
 	SelfEndpoint        string
 	SelfAPIKey          string
+	SelfProject         string
 	SelfEnvironment     string
 	DogfoodAPIKey       string
 	DogfoodProject      string
@@ -67,6 +68,7 @@ func Load() Config {
 		PublicURL:           os.Getenv("FUNNELBARN_PUBLIC_URL"),
 		SelfEndpoint:        os.Getenv("FUNNELBARN_SELF_ENDPOINT"),
 		SelfAPIKey:          os.Getenv("FUNNELBARN_SELF_API_KEY"),
+		SelfProject:         getenv("FUNNELBARN_SELF_PROJECT", "funnelbarn"),
 		SelfEnvironment:     getenv("FUNNELBARN_ENVIRONMENT", "production"),
 		DogfoodAPIKey:       os.Getenv("FUNNELBARN_DOGFOOD_API_KEY"),
 		DogfoodProject:      getenv("FUNNELBARN_DOGFOOD_PROJECT", "funnelbarn"),
