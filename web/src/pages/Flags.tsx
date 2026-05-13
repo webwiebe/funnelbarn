@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Flag, Plus, X, Pause, Play, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api } from '../lib/api'
-import type { FeatureFlag, FlagAnalysis, TargetingRule, TargetingOperator } from '../lib/api'
+import type { FeatureFlag, FlagAnalysis, FlagEvaluationResult, TargetingRule, TargetingOperator } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { reportError } from '../lib/bugbarn'
 import { Skeleton } from '../components/ui/Skeleton'
@@ -90,6 +90,7 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [tab, setTab] = useState<'analytics' | 'tryit'>('analytics')
 
   useEffect(() => {
     setLoading(true)
@@ -176,7 +177,14 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
 
       <TargetingRulesDisplay rulesJSON={flag.targeting_rules} />
 
-      {loading ? (
+      <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${C.border}`, margin: '12px 0 16px' }}>
+        <TabButton active={tab === 'analytics'} onClick={() => setTab('analytics')}>Analytics</TabButton>
+        <TabButton active={tab === 'tryit'} onClick={() => setTab('tryit')}>Try it</TabButton>
+      </div>
+
+      {tab === 'tryit' ? (
+        <FlagPlayground projectId={projectId} flag={flag} />
+      ) : loading ? (
         <div style={{ display: 'flex', gap: '1rem' }}>
           <Skeleton height={180} />
           <Skeleton height={180} />
@@ -214,6 +222,173 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
           )}
         </>
       )}
+    </div>
+  )
+}
+
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        borderBottom: `2px solid ${active ? C.amber : 'transparent'}`,
+        color: active ? C.text : C.muted,
+        fontWeight: active ? 600 : 500,
+        cursor: 'pointer',
+        padding: '8px 16px',
+        fontSize: 14,
+        marginBottom: -1,
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+function FlagPlayground({ projectId, flag }: { projectId: string; flag: FeatureFlag }) {
+  const [flagKey, setFlagKey] = useState(flag.flag_key)
+  const [defaultValue, setDefaultValue] = useState('')
+  const [context, setContext] = useState<Array<{ k: string; v: string }>>([{ k: 'user_id', v: '' }])
+  const [result, setResult] = useState<FlagEvaluationResult | null>(null)
+  const [evaluating, setEvaluating] = useState(false)
+  const [requestError, setRequestError] = useState<string | null>(null)
+
+  // Keep flag_key in sync if the user switches to a different flag in the list.
+  useEffect(() => { setFlagKey(flag.flag_key) }, [flag.flag_key])
+
+  // Build the context object the API expects. Skip rows with empty keys.
+  // Cast numbers and booleans so targeting-rule comparisons line up with what
+  // a real SDK would send.
+  const contextObject = useMemo(() => {
+    const out: Record<string, unknown> = {}
+    for (const { k, v } of context) {
+      const key = k.trim()
+      if (!key) continue
+      if (v === 'true') out[key] = true
+      else if (v === 'false') out[key] = false
+      else if (v !== '' && !isNaN(Number(v))) out[key] = Number(v)
+      else out[key] = v
+    }
+    return out
+  }, [context])
+
+  // Debounced live evaluation. Triggers on every change to flag_key, default,
+  // or context (300ms quiet period).
+  const debounceRef = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (!flagKey.trim()) {
+      setResult(null)
+      setRequestError(null)
+      return
+    }
+    window.clearTimeout(debounceRef.current)
+    debounceRef.current = window.setTimeout(() => {
+      setEvaluating(true)
+      setRequestError(null)
+      api.evaluateFlagPlayground(projectId, {
+        flag_key: flagKey.trim(),
+        default_value: defaultValue || undefined,
+        context: contextObject,
+      })
+        .then(setResult)
+        .catch((e) => {
+          setResult(null)
+          setRequestError(e instanceof Error ? e.message : String(e))
+        })
+        .finally(() => setEvaluating(false))
+    }, 300)
+    return () => window.clearTimeout(debounceRef.current)
+  }, [projectId, flagKey, defaultValue, contextObject])
+
+  const inputStyle: React.CSSProperties = {
+    background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6,
+    color: C.text, padding: '6px 10px', fontSize: 13, width: '100%',
+  }
+  const labelStyle: React.CSSProperties = { fontSize: 12, color: C.muted, marginBottom: 4, display: 'block' }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={labelStyle}>Flag key</label>
+          <input value={flagKey} onChange={(e) => setFlagKey(e.target.value)} style={inputStyle} spellCheck={false} />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={labelStyle}>Default value (returned if flag is missing)</label>
+          <input value={defaultValue} onChange={(e) => setDefaultValue(e.target.value)} style={inputStyle} placeholder="optional" />
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <label style={labelStyle}>Evaluation context</label>
+          {context.map((row, i) => (
+            <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+              <input
+                value={row.k}
+                onChange={(e) => setContext((rows) => rows.map((r, idx) => idx === i ? { ...r, k: e.target.value } : r))}
+                style={{ ...inputStyle, flex: '0 0 40%' }}
+                placeholder="key"
+                spellCheck={false}
+              />
+              <input
+                value={row.v}
+                onChange={(e) => setContext((rows) => rows.map((r, idx) => idx === i ? { ...r, v: e.target.value } : r))}
+                style={{ ...inputStyle, flex: 1 }}
+                placeholder="value"
+                spellCheck={false}
+              />
+              <button
+                onClick={() => setContext((rows) => rows.filter((_, idx) => idx !== i))}
+                disabled={context.length === 1}
+                title="Remove row"
+                style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, cursor: 'pointer', padding: '0 8px' }}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={() => setContext((rows) => [...rows, { k: '', v: '' }])}
+            style={{ background: 'transparent', border: `1px dashed ${C.border}`, borderRadius: 6, color: C.muted, cursor: 'pointer', padding: '4px 10px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+          >
+            <Plus size={12} /> Add field
+          </button>
+        </div>
+      </div>
+
+      <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <span style={{ fontSize: 12, color: C.muted, letterSpacing: 0.5, textTransform: 'uppercase' }}>Result</span>
+          {evaluating && <span style={{ fontSize: 11, color: C.muted }}>evaluating…</span>}
+        </div>
+        {requestError ? (
+          <div style={{ color: C.error, fontSize: 13 }}>{requestError}</div>
+        ) : result ? (
+          <>
+            <div style={{ marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: C.muted }}>Variant: </span>
+              <code style={{ fontSize: 13, color: C.amber, background: 'rgba(245,158,11,0.1)', padding: '2px 6px', borderRadius: 4 }}>
+                {result.variant || '(none)'}
+              </code>
+            </div>
+            <div style={{ marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: C.muted }}>Value: </span>
+              <code style={{ fontSize: 13, color: C.text }}>{JSON.stringify(result.value)}</code>
+            </div>
+            <div style={{ marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: C.muted }}>Reason: </span>
+              <code style={{ fontSize: 13, color: result.reason === 'ERROR' ? C.error : C.success }}>{result.reason}</code>
+            </div>
+            {result.error && (
+              <div style={{ marginTop: 12, padding: 8, background: 'rgba(239,68,68,0.08)', border: `1px solid rgba(239,68,68,0.3)`, borderRadius: 6, color: C.error, fontSize: 12 }}>
+                {result.error}{result.error_code ? ` (${result.error_code})` : ''}
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={{ color: C.muted, fontSize: 13 }}>Enter a flag key to evaluate.</div>
+        )}
+      </div>
     </div>
   )
 }
