@@ -1,6 +1,25 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { DefaultToggle, alignBooleanSplit } from './Flags'
+import { DefaultToggle, alignBooleanSplit, parseFlagFormState } from './Flags'
+import type { FeatureFlag } from '../lib/api'
+
+function makeFlag(overrides: Partial<FeatureFlag> = {}): FeatureFlag {
+  return {
+    id: 'flag-1',
+    project_id: 'p',
+    flag_key: 'k',
+    name: 'n',
+    flag_type: 'boolean',
+    variants: '{"on":true,"off":false}',
+    default_variant: 'off',
+    split: '{"on":0,"off":100}',
+    conversion_event: '',
+    targeting_rules: '[]',
+    status: 'active',
+    created_at: '',
+    ...overrides,
+  } as FeatureFlag
+}
 
 describe('alignBooleanSplit', () => {
   it('self-heals legacy state where split contradicted default', () => {
@@ -73,5 +92,83 @@ describe('DefaultToggle', () => {
     expect(screen.getByRole('button')).toHaveAttribute('title', expect.stringContaining('flip to off'))
     rerender(<DefaultToggle value={false} onChange={() => {}} />)
     expect(screen.getByRole('button')).toHaveAttribute('title', expect.stringContaining('flip to on'))
+  })
+})
+
+describe('parseFlagFormState', () => {
+  it('parses a boolean flag with no rollout', () => {
+    const state = parseFlagFormState(makeFlag({
+      flag_type: 'boolean',
+      default_variant: 'off',
+      split: '{"on":0,"off":100}',
+    }))
+    expect(state.defaultBool).toBe('off')
+    expect(state.rolloutEnabled).toBe(false)
+    expect(state.rolloutPct).toBe(0)
+  })
+
+  it('parses a boolean flag with a partial rollout', () => {
+    const state = parseFlagFormState(makeFlag({
+      flag_type: 'boolean',
+      default_variant: 'off',
+      split: '{"on":20,"off":80}', // 20% rolled out to on
+    }))
+    expect(state.defaultBool).toBe('off')
+    expect(state.rolloutEnabled).toBe(true)
+    expect(state.rolloutPct).toBe(20)
+  })
+
+  it('treats fully-flipped boolean (default=off but 100% on) as no rollout', () => {
+    // Legacy bad state — the editor shouldn't pre-fill rollout=100. The
+    // toggle/align fix in the detail view is the right path for these.
+    const state = parseFlagFormState(makeFlag({
+      flag_type: 'boolean',
+      default_variant: 'off',
+      split: '{"on":100,"off":0}',
+    }))
+    expect(state.rolloutEnabled).toBe(false)
+  })
+
+  it('parses targeting rules from JSON', () => {
+    const rules = [{ name: 'Beta', variant: 'on', match: 'all', conditions: [{ context_key: 'plan', operator: 'eq', value: 'pro' }] }]
+    const state = parseFlagFormState(makeFlag({ targeting_rules: JSON.stringify(rules) }))
+    expect(state.targetingRules).toHaveLength(1)
+    expect(state.targetingRules[0].name).toBe('Beta')
+  })
+
+  it('rebuilds string variant rows from variants+split', () => {
+    const state = parseFlagFormState(makeFlag({
+      flag_type: 'string',
+      variants: '{"a":"a","b":"b","c":"c"}',
+      split: '{"a":33,"b":33,"c":34}',
+      default_variant: 'b',
+    }))
+    expect(state.variants).toHaveLength(3)
+    expect(state.variants.map((v) => v.name)).toEqual(['a', 'b', 'c'])
+    expect(state.variants.map((v) => v.splitPct)).toEqual([33, 33, 34])
+    expect(state.defaultVariant).toBe('b')
+    expect(state.advancedReturnValues).toBe(false)
+  })
+
+  it('detects advanced return values when variant name !== value', () => {
+    const state = parseFlagFormState(makeFlag({
+      flag_type: 'string',
+      variants: '{"a":"alpha","b":"beta"}',
+      split: '{"a":50,"b":50}',
+      default_variant: 'a',
+    }))
+    expect(state.advancedReturnValues).toBe(true)
+    expect(state.variants[0].returnValue).toBe('alpha')
+  })
+
+  it('falls back to defaults on invalid JSON instead of throwing', () => {
+    const state = parseFlagFormState(makeFlag({
+      flag_type: 'string',
+      variants: 'not json',
+      split: 'also not json',
+      targeting_rules: 'still not json',
+    }))
+    expect(state.variants.length).toBeGreaterThanOrEqual(2)
+    expect(state.targetingRules).toEqual([])
   })
 })

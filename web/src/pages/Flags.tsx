@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Flag, Plus, X, Pause, Play, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
+import { Flag, Plus, X, Pause, Play, Pencil, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api } from '../lib/api'
 import type { FeatureFlag, FlagAnalysis, FlagEvaluationResult, TargetingRule, TargetingOperator } from '../lib/api'
@@ -114,6 +114,7 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
   const [togglingDefault, setTogglingDefault] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [tab, setTab] = useState<'analytics' | 'tryit'>('analytics')
+  const [editing, setEditing] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -192,6 +193,10 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
           <button onClick={toggleStatus} disabled={toggling} title={flag.status === 'active' ? 'Pause' : 'Resume'}
             style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, cursor: 'pointer', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
             {flag.status === 'active' ? <Pause size={14} /> : <Play size={14} />}
+          </button>
+          <button onClick={() => setEditing(true)} title="Edit"
+            style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, cursor: 'pointer', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
+            <Pencil size={14} />
           </button>
           <button onClick={handleDelete} disabled={deleting} title="Delete"
             style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.error, cursor: 'pointer', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
@@ -277,6 +282,15 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
             </div>
           )}
         </>
+      )}
+
+      {editing && (
+        <FlagFormModal
+          projectId={projectId}
+          flag={flag}
+          onClose={() => setEditing(false)}
+          onSaved={(f) => { onUpdated(f); setEditing(false) }}
+        />
       )}
     </div>
   )
@@ -542,32 +556,98 @@ interface StringVariantRow {
   splitPct: number
 }
 
-function CreateFlagModal({ projectId, onClose, onCreated }: {
-  projectId: string; onClose: () => void; onCreated: (f: FeatureFlag) => void
+// parseFlagFormState converts a stored FeatureFlag back into the form state.
+// Returns the values the modal needs to pre-fill when editing.
+export function parseFlagFormState(flag: FeatureFlag): {
+  defaultBool: 'on' | 'off'
+  rolloutEnabled: boolean
+  rolloutPct: number
+  variants: StringVariantRow[]
+  defaultVariant: string
+  advancedReturnValues: boolean
+  targetingRules: TargetingRule[]
+} {
+  let split: Record<string, number> = {}
+  try { split = JSON.parse(flag.split) as Record<string, number> } catch { /* leave empty */ }
+  let variantsObj: Record<string, unknown> = {}
+  try { variantsObj = JSON.parse(flag.variants) as Record<string, unknown> } catch { /* leave empty */ }
+  let rules: TargetingRule[] = []
+  try { rules = JSON.parse(flag.targeting_rules || '[]') as TargetingRule[] } catch { /* leave empty */ }
+
+  if (flag.flag_type === 'boolean') {
+    const defaultBool: 'on' | 'off' = flag.default_variant === 'on' ? 'on' : 'off'
+    const opposite = defaultBool === 'on' ? 'off' : 'on'
+    const oppositePct = split[opposite] ?? 0
+    const rolloutEnabled = oppositePct > 0 && oppositePct < 100
+    return {
+      defaultBool,
+      rolloutEnabled,
+      rolloutPct: rolloutEnabled ? oppositePct : 0,
+      variants: [
+        { name: 'control', returnValue: 'control', splitPct: 50 },
+        { name: 'treatment', returnValue: 'treatment', splitPct: 50 },
+      ],
+      defaultVariant: 'control',
+      advancedReturnValues: false,
+      targetingRules: rules,
+    }
+  }
+
+  // String flag — rebuild variant rows from variants+split.
+  const rows: StringVariantRow[] = Object.entries(variantsObj).map(([name, value]) => ({
+    name,
+    returnValue: typeof value === 'string' ? value : JSON.stringify(value),
+    splitPct: split[name] ?? 0,
+  }))
+  const advanced = rows.some((r) => r.name !== r.returnValue)
+  return {
+    defaultBool: 'off',
+    rolloutEnabled: false,
+    rolloutPct: 0,
+    variants: rows.length >= 2 ? rows : [
+      { name: 'control', returnValue: 'control', splitPct: 50 },
+      { name: 'treatment', returnValue: 'treatment', splitPct: 50 },
+    ],
+    defaultVariant: flag.default_variant || (rows[0]?.name ?? 'control'),
+    advancedReturnValues: advanced,
+    targetingRules: rules,
+  }
+}
+
+function FlagFormModal({ projectId, flag, onClose, onSaved }: {
+  projectId: string
+  flag?: FeatureFlag // when present, modal is in edit mode
+  onClose: () => void
+  onSaved: (f: FeatureFlag) => void
 }) {
-  const [flagKey, setFlagKey] = useState('')
-  const [name, setName] = useState('')
-  const [flagType, setFlagType] = useState<'boolean' | 'string'>('boolean')
+  const isEdit = flag !== undefined
+  const initial = isEdit ? parseFlagFormState(flag) : null
+
+  const [flagKey, setFlagKey] = useState(flag?.flag_key ?? '')
+  const [name, setName] = useState(flag?.name ?? '')
+  const [flagType, setFlagType] = useState<'boolean' | 'string'>(
+    (flag?.flag_type as 'boolean' | 'string') ?? 'boolean'
+  )
 
   // Boolean (release) state
-  const [defaultBool, setDefaultBool] = useState<'on' | 'off'>('off')
-  const [rolloutEnabled, setRolloutEnabled] = useState(false)
-  const [rolloutPct, setRolloutPct] = useState(0)
+  const [defaultBool, setDefaultBool] = useState<'on' | 'off'>(initial?.defaultBool ?? 'off')
+  const [rolloutEnabled, setRolloutEnabled] = useState(initial?.rolloutEnabled ?? false)
+  const [rolloutPct, setRolloutPct] = useState(initial?.rolloutPct ?? 0)
 
   // String (experiment) state
-  const [variants, setVariants] = useState<StringVariantRow[]>([
+  const [variants, setVariants] = useState<StringVariantRow[]>(initial?.variants ?? [
     { name: 'control', returnValue: 'control', splitPct: 50 },
     { name: 'treatment', returnValue: 'treatment', splitPct: 50 },
   ])
-  const [defaultVariant, setDefaultVariant] = useState('control')
-  const [advancedReturnValues, setAdvancedReturnValues] = useState(false)
+  const [defaultVariant, setDefaultVariant] = useState(initial?.defaultVariant ?? 'control')
+  const [advancedReturnValues, setAdvancedReturnValues] = useState(initial?.advancedReturnValues ?? false)
 
-  const [conversionEvent, setConversionEvent] = useState('')
+  const [conversionEvent, setConversionEvent] = useState(flag?.conversion_event ?? '')
   const [eventNames, setEventNames] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [targetingRules, setTargetingRules] = useState<TargetingRule[]>([])
-  const [showRules, setShowRules] = useState(false)
+  const [targetingRules, setTargetingRules] = useState<TargetingRule[]>(initial?.targetingRules ?? [])
+  const [showRules, setShowRules] = useState((initial?.targetingRules?.length ?? 0) > 0)
 
   useEffect(() => {
     api.getEventNames(projectId).then((d) => setEventNames(d.event_names || [])).catch(() => {})
@@ -599,7 +679,7 @@ function CreateFlagModal({ projectId, onClose, onCreated }: {
     return null
   }
 
-  const handleCreate = async () => {
+  const handleSave = async () => {
     if (!flagKey.trim() || !name.trim()) { setError('Key and name are required'); return }
 
     let variantsObj: Record<string, unknown>
@@ -628,7 +708,7 @@ function CreateFlagModal({ projectId, onClose, onCreated }: {
     setSaving(true)
     setError(null)
     try {
-      const f = await api.createFlag(projectId, {
+      const body = {
         flag_key: flagKey,
         name,
         flag_type: flagType,
@@ -637,8 +717,11 @@ function CreateFlagModal({ projectId, onClose, onCreated }: {
         split: JSON.stringify(splitObj),
         conversion_event: conversionEvent,
         targeting_rules: targetingRules.length > 0 ? JSON.stringify(targetingRules) : '[]',
-      })
-      onCreated(f)
+      }
+      const f = isEdit && flag
+        ? await api.updateFlag(projectId, flag.id, body)
+        : await api.createFlag(projectId, body)
+      onSaved(f)
     } catch (e) {
       setError(String(e))
     } finally {
@@ -661,7 +744,7 @@ function CreateFlagModal({ projectId, onClose, onCreated }: {
         width: '90%', maxWidth: 520, zIndex: 1001, maxHeight: '90vh', overflowY: 'auto',
       }}>
         <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Create Flag</h2>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{isEdit ? 'Edit Flag' : 'Create Flag'}</h2>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer' }}><X size={18} /></button>
         </div>
 
@@ -673,20 +756,35 @@ function CreateFlagModal({ projectId, onClose, onCreated }: {
           )}
 
           <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Name</label>
-          <input value={name} onChange={(e) => { setName(e.target.value); if (!flagKey || flagKey === autoKey(name)) setFlagKey(autoKey(e.target.value)) }}
+          <input value={name} onChange={(e) => {
+            setName(e.target.value)
+            // Auto-sync the key to the name only when creating — once a flag is
+            // created its key is the stable identifier consumers reference, so
+            // changing it via this auto-derivation would silently break them.
+            if (!isEdit && (!flagKey || flagKey === autoKey(name))) setFlagKey(autoKey(e.target.value))
+          }}
             placeholder="e.g. Checkout Redesign" style={{ ...inputStyle, marginBottom: 16 }} />
 
-          <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Key</label>
-          <input value={flagKey} onChange={(e) => setFlagKey(e.target.value)}
-            placeholder="e.g. checkout-redesign" style={{ ...inputStyle, marginBottom: 16, fontFamily: 'monospace' }} />
+          <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>
+            Key {isEdit && <span style={{ color: C.muted, fontWeight: 400 }}>(immutable)</span>}
+          </label>
+          <input value={flagKey}
+            onChange={(e) => setFlagKey(e.target.value)}
+            disabled={isEdit}
+            placeholder="e.g. checkout-redesign"
+            style={{ ...inputStyle, marginBottom: 16, fontFamily: 'monospace', opacity: isEdit ? 0.6 : 1, cursor: isEdit ? 'not-allowed' : 'text' }} />
 
-          <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Type</label>
+          <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>
+            Type {isEdit && <span style={{ color: C.muted, fontWeight: 400 }}>(immutable)</span>}
+          </label>
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
             {(['boolean', 'string'] as const).map((t) => (
-              <button key={t} onClick={() => setFlagType(t)} style={{
+              <button key={t} type="button" onClick={() => { if (!isEdit) setFlagType(t) }} disabled={isEdit} style={{
                 flex: 1, padding: '0.5rem', border: `1px solid ${flagType === t ? C.amber : C.border}`,
                 borderRadius: 8, background: flagType === t ? 'rgba(245,158,11,0.1)' : 'transparent',
-                color: flagType === t ? C.amber : C.muted, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                color: flagType === t ? C.amber : C.muted, fontSize: 13, fontWeight: 600,
+                cursor: isEdit ? 'not-allowed' : 'pointer',
+                opacity: isEdit && flagType !== t ? 0.5 : 1,
               }}>
                 {t}
               </button>
@@ -921,13 +1019,13 @@ function CreateFlagModal({ projectId, onClose, onCreated }: {
           <button onClick={onClose} style={{ padding: '0.5rem 1rem', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             Cancel
           </button>
-          <button onClick={handleCreate} disabled={saving || !flagKey || !name}
+          <button onClick={handleSave} disabled={saving || !flagKey || !name}
             style={{
               padding: '0.5rem 1rem', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: saving ? 'default' : 'pointer',
               background: saving || !flagKey || !name ? '#4a4d5a' : C.amber,
               color: saving || !flagKey || !name ? C.muted : '#000',
             }}>
-            {saving ? 'Creating...' : 'Create Flag'}
+            {saving ? 'Saving...' : (isEdit ? 'Save changes' : 'Create Flag')}
           </button>
         </div>
       </div>
@@ -977,8 +1075,8 @@ export default function Flags() {
       `}</style>
 
       {showCreate && (
-        <CreateFlagModal projectId={projectId} onClose={() => setShowCreate(false)}
-          onCreated={(f) => { setFlags((prev) => [f, ...prev]); setShowCreate(false); setSelected(f); setShowDetail(true) }} />
+        <FlagFormModal projectId={projectId} onClose={() => setShowCreate(false)}
+          onSaved={(f) => { setFlags((prev) => [f, ...prev]); setShowCreate(false); setSelected(f); setShowDetail(true) }} />
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
