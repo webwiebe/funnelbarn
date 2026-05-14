@@ -249,3 +249,50 @@ describe('api.getEventPropertyValues', () => {
     expect(url).toContain('property=button%20name')
   })
 })
+
+describe('api — transient 5xx retry', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function mockFetchSequence(...responses: Array<{ status: number; body?: unknown }>) {
+    const fn = vi.fn()
+    for (const r of responses) {
+      const body = r.body ?? {}
+      fn.mockResolvedValueOnce({
+        status: r.status,
+        ok: r.status >= 200 && r.status < 300,
+        text: () => Promise.resolve(JSON.stringify(body)),
+        json: () => Promise.resolve(body),
+        headers: new Headers(),
+      })
+    }
+    globalThis.fetch = fn
+    return fn
+  }
+
+  it('retries a GET once on 503 and succeeds on second attempt', async () => {
+    const fetchFn = mockFetchSequence({ status: 503 }, { status: 200, body: { ok: true } })
+    const promise = api.me()
+    await vi.advanceTimersByTimeAsync(800)
+    const result = await promise
+    expect(result).toEqual({ ok: true })
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry POST on 503 (mutation might have partially applied)', async () => {
+    const fetchFn = mockFetchSequence({ status: 503, body: { error: 'unavailable' } })
+    await expect(api.login({ username: 'a', password: 'b' })).rejects.toMatchObject({
+      status: 503,
+    })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws ApiError(0) when fetch itself rejects (network failure)', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
+    await expect(api.me()).rejects.toMatchObject({ status: 0 })
+  })
+})

@@ -31,9 +31,11 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     api.listProjects()
       .then((d) => setProjects(d.projects || []))
       .catch((e) => {
-        // 401 is expected when the session has expired or the user isn't logged in yet;
-        // the API client already redirects to /login. Don't pollute BugBarn with it.
-        if (!(e instanceof ApiError && e.status === 401)) {
+        // Skip noise:
+        // - 401: expected when session expired / before login. api.request already redirects.
+        // - 0:   network failure (TypeError: Failed to fetch). User's network, not our code.
+        const isNoise = e instanceof ApiError && (e.status === 401 || e.status === 0)
+        if (!isNoise) {
           reportError(e, { source: 'ProjectProvider.listProjects' })
         }
         setProjects([])
