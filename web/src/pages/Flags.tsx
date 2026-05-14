@@ -178,19 +178,33 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-        <div>
-          <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 4px' }}>{flag.name}</h2>
-          <code style={{ fontSize: 13, color: C.amber, background: 'rgba(245,158,11,0.1)', padding: '2px 8px', borderRadius: 4 }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        gap: 12,
+        flexWrap: 'wrap',
+        marginBottom: 16,
+      }}>
+        <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+          <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 4px', overflowWrap: 'anywhere' }}>{flag.name}</h2>
+          <code style={{
+            fontSize: 13, color: C.amber, background: 'rgba(245,158,11,0.1)',
+            padding: '2px 8px', borderRadius: 4,
+            display: 'inline-block', maxWidth: '100%', overflowWrap: 'anywhere',
+          }}>
             {flag.flag_key}
           </code>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
           {flag.flag_type === 'boolean' && (
             <DefaultToggle value={flag.default_variant === 'on'} onChange={toggleDefault} disabled={togglingDefault} />
           )}
           {statusBadge(flag.status)}
-          <button onClick={toggleStatus} disabled={toggling} title={flag.status === 'active' ? 'Pause' : 'Resume'}
+          <button onClick={toggleStatus} disabled={toggling}
+            title={flag.status === 'active'
+              ? 'Pause — every evaluation returns the default value, targeting rules and split are bypassed (reason: DISABLED)'
+              : 'Resume — re-enable targeting rules and split'}
             style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, cursor: 'pointer', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
             {flag.status === 'active' ? <Pause size={14} /> : <Play size={14} />}
           </button>
