@@ -38,7 +38,8 @@ if (typeof document !== "undefined") {
     const apiKey = script.getAttribute("data-api-key");
     if (apiKey) {
       const endpoint = script.getAttribute("data-endpoint") || script.src.replace(/\/sdk\.js.*$/, "");
-      init({ apiKey, endpoint });
+      const projectName = script.getAttribute("data-project-name") ?? undefined;
+      init({ apiKey, endpoint, projectName });
       page();
     }
   }
