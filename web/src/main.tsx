@@ -18,12 +18,24 @@ window.onerror = (message, source, lineno, colno, error) => {
 
 // Global unhandled promise rejection handler.
 window.onunhandledrejection = (event: PromiseRejectionEvent) => {
-  // ServiceWorker registration failures (typically untrusted TLS in dev/test
-  // environments or sandboxed browsers) are not actionable from app code.
-  const msg = event.reason instanceof Error ? event.reason.message : String(event.reason)
-  if (msg.includes('Failed to register a ServiceWorker')) return
+  const reason = event.reason
+  const msg = reason instanceof Error ? reason.message : String(reason)
+  const stack = reason instanceof Error ? (reason.stack ?? '') : ''
 
-  reportError(event.reason, {
+  // Filters for things that aren't application bugs:
+  // - "Failed to register a ServiceWorker": untrusted TLS in dev/test envs.
+  // - registerSW.js / ServiceWorkerContainer.register: same root cause, but
+  //   the rejection sometimes surfaces with a generic message like "Rejected"
+  //   so we also match on the stack.
+  // - "Failed to fetch" (TypeError): browser-level network blip; the API
+  //   client already handles this as ApiError(0). Surfacing it as an
+  //   unhandled rejection here means a non-api call dropped — still not
+  //   actionable from app code.
+  if (msg.includes('Failed to register a ServiceWorker')) return
+  if (stack.includes('registerSW.js') || stack.includes('ServiceWorkerContainer.register')) return
+  if (reason instanceof TypeError && msg.includes('Failed to fetch')) return
+
+  reportError(reason, {
     source: 'window.onunhandledrejection',
   })
 }

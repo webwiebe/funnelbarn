@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { Plus, X, Layers, Pencil, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import Shell from '../components/shell/Shell'
-import { api, Funnel, FunnelAnalysis, FunnelStepInput } from '../lib/api'
+import { api, ApiError, Funnel, FunnelAnalysis, FunnelStepInput } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { trackEvent } from '../lib/analytics'
 import { reportError } from '../lib/bugbarn'
@@ -1365,7 +1365,11 @@ export default function Funnels() {
       .then(setAnalysis)
       .catch((e) => {
         console.error(e)
-        reportError(e, { source: 'Funnels.getFunnelAnalysis' })
+        // 404 (deleted funnel / stale URL) and 0 (network blip) are not real
+        // bugs — the user just landed on a URL whose backing record is gone
+        // or their connection dropped. Surface in the UI, don't escalate.
+        const isNoise = e instanceof ApiError && (e.status === 404 || e.status === 0)
+        if (!isNoise) reportError(e, { source: 'Funnels.getFunnelAnalysis' })
         setAnalysisError(String(e))
       })
       .finally(() => setAnalysisLoading(false))
