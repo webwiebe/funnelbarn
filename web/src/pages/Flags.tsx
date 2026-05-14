@@ -201,7 +201,10 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
             <DefaultToggle value={flag.default_variant === 'on'} onChange={toggleDefault} disabled={togglingDefault} />
           )}
           {statusBadge(flag.status)}
-          <button onClick={toggleStatus} disabled={toggling} title={flag.status === 'active' ? 'Pause' : 'Resume'}
+          <button onClick={toggleStatus} disabled={toggling}
+            title={flag.status === 'active'
+              ? 'Pause — every evaluation returns the default value, targeting rules and split are bypassed (reason: DISABLED)'
+              : 'Resume — re-enable targeting rules and split'}
             style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, cursor: 'pointer', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
             {flag.status === 'active' ? <Pause size={14} /> : <Play size={14} />}
           </button>
