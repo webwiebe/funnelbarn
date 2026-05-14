@@ -58,7 +58,8 @@ export default function () {
   const res = http.post(`${BASE_URL}/api/v1/events`, payload, {
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': API_KEY,
+      'X-FunnelBarn-Api-Key': API_KEY,
+      'X-FunnelBarn-Project': PROJECT_SLUG,
     },
   });
   check(res, { '202 accepted': (r) => r.status === 202 });

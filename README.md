@@ -140,7 +140,7 @@ funnelbarn user create --username admin --password yourpassword
 
 ## API Endpoints
 
-Authentication: session cookie (obtained via `POST /api/v1/login`) or API key (`X-Api-Key` header). All project-scoped routes are under `/api/v1/projects/{id}/`. `/api/v1/health` returns DB connectivity status and server version.
+Authentication: session cookie (obtained via `POST /api/v1/login`) or API key (`X-FunnelBarn-Api-Key` header). Ingest also reads the project slug from `X-FunnelBarn-Project`. All project-scoped routes are under `/api/v1/projects/{id}/`. `/api/v1/health` returns DB connectivity status and server version.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
