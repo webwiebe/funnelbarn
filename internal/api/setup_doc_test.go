@@ -39,9 +39,9 @@ func TestSetupDoc_UsesCorrectHeaders(t *testing.T) {
 
 	// Must mention the correct headers.
 	for _, want := range []string{
-		"X-FunnelBarn-Api-Key",  // auth header
-		"X-FunnelBarn-Project",  // project routing header
-		"loadtest-project",      // the slug we requested
+		"X-FunnelBarn-Api-Key", // auth header
+		"X-FunnelBarn-Project", // project routing header
+		"loadtest-project",     // the slug we requested
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("setup doc missing %q", want)
