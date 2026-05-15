@@ -73,3 +73,35 @@ func TestSetupDoc_UsesCorrectHeaders(t *testing.T) {
 		t.Error("setup doc missing timestamp field reference")
 	}
 }
+
+// Lock in the Feature Flags section. FunnelBarn doubles as a flag service,
+// and any LLM/customer wiring up the setup endpoint should see how to
+// evaluate flags from their app.
+func TestSetupDoc_DocumentsFlagEvaluation(t *testing.T) {
+	srv, _ := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/setup/loadtest-project", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	body := w.Body.String()
+
+	for _, want := range []string{
+		"## Feature Flags",      // section header
+		"/api/v1/evaluate",      // endpoint path
+		"`flag_key`",            // request field
+		"`default_value`",       // request field — falls back on missing flag
+		"`context`",             // request field — for targeting + bucketing
+		"`targeting_key`",       // the actual bucket key (not user_id!)
+		"FLAG_NOT_FOUND",        // documented error code
+		"TARGETING_MATCH",       // documented reason
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("setup doc Feature Flags section missing %q", want)
+		}
+	}
+
+	// Common SDK mistake: assume `user_id` is the bucket key. The doc must
+	// explicitly call out that it isn't.
+	if !strings.Contains(body, "`user_id` is **not**") && !strings.Contains(body, "user_id is not") {
+		t.Error("setup doc should warn that user_id is not the bucket key (targeting_key is)")
+	}
+}
