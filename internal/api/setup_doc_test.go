@@ -85,14 +85,14 @@ func TestSetupDoc_DocumentsFlagEvaluation(t *testing.T) {
 	body := w.Body.String()
 
 	for _, want := range []string{
-		"## Feature Flags",      // section header
-		"/api/v1/evaluate",      // endpoint path
-		"`flag_key`",            // request field
-		"`default_value`",       // request field — falls back on missing flag
-		"`context`",             // request field — for targeting + bucketing
-		"`targeting_key`",       // the actual bucket key (not user_id!)
-		"FLAG_NOT_FOUND",        // documented error code
-		"TARGETING_MATCH",       // documented reason
+		"## Feature Flags", // section header
+		"/api/v1/evaluate", // endpoint path
+		"`flag_key`",       // request field
+		"`default_value`",  // request field — falls back on missing flag
+		"`context`",        // request field — for targeting + bucketing
+		"`targeting_key`",  // the actual bucket key (not user_id!)
+		"FLAG_NOT_FOUND",   // documented error code
+		"TARGETING_MATCH",  // documented reason
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("setup doc Feature Flags section missing %q", want)
