@@ -46,6 +46,11 @@ func TestSetupDoc_UsesCorrectHeaders(t *testing.T) {
 		"projectName:",         // correct FunnelBarnOptions field (not project:)
 		"data-project-name",    // IIFE script tag attribute for project routing
 		"NOT `event`",          // body schema must call out the wrong field name
+		"`properties`",         // the main extension point
+		"`utm_source`",         // explicit UTM override fields
+		"UTM params",           // auto-extraction call-out
+		"Hashed server-side",   // privacy property of user_id
+		"`user_agent`",         // server-side ingest UA override
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("setup doc missing %q", want)
@@ -58,6 +63,7 @@ func TestSetupDoc_UsesCorrectHeaders(t *testing.T) {
 		"X-Api-Key:",                 // case variant that's still wrong (different header altogether)
 		"/api/v1/releases",           // funnelbarn doesn't have this endpoint; only bugbarn does
 		"import { FunnelBarn } from", // wrong class import — exports FunnelBarnClient
+		"npm install @funnelbarn/js", // package isn't published — CDN script or vendoring is the only working path
 	} {
 		if strings.Contains(body, unwanted) {
 			t.Errorf("setup doc still references %q — would mislead consumers", unwanted)
@@ -85,14 +91,17 @@ func TestSetupDoc_DocumentsFlagEvaluation(t *testing.T) {
 	body := w.Body.String()
 
 	for _, want := range []string{
-		"## Feature Flags", // section header
-		"/api/v1/evaluate", // endpoint path
-		"`flag_key`",       // request field
-		"`default_value`",  // request field — falls back on missing flag
-		"`context`",        // request field — for targeting + bucketing
-		"`targeting_key`",  // the actual bucket key (not user_id!)
-		"FLAG_NOT_FOUND",   // documented error code
-		"TARGETING_MATCH",  // documented reason
+		"## Feature Flags",           // section header
+		"/api/v1/evaluate",           // endpoint path
+		"`flag_key`",                 // request field
+		"`default_value`",            // request field — falls back on missing flag
+		"`context`",                  // request field — for targeting + bucketing
+		"`targeting_key`",            // the actual bucket key (not user_id!)
+		"FLAG_NOT_FOUND",             // documented error code
+		"TARGETING_MATCH",            // documented reason
+		"flag_metadata",              // response field for targeting-match debugging
+		"evaluated_rule_name",        // what flag_metadata exposes
+		"Bucketing is deterministic", // determinism guarantee
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("setup doc Feature Flags section missing %q", want)
