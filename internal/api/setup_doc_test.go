@@ -39,18 +39,21 @@ func TestSetupDoc_UsesCorrectHeaders(t *testing.T) {
 
 	// Must mention the correct headers, class names, and option keys.
 	for _, want := range []string{
-		"X-FunnelBarn-Api-Key", // auth header
-		"X-FunnelBarn-Project", // project routing header
-		"loadtest-project",     // the slug we requested
-		"FunnelBarnClient",     // correct TS class name (not the alias FunnelBarn)
-		"projectName:",         // correct FunnelBarnOptions field (not project:)
-		"data-project-name",    // IIFE script tag attribute for project routing
-		"NOT `event`",          // body schema must call out the wrong field name
-		"`properties`",         // the main extension point
-		"`utm_source`",         // explicit UTM override fields
-		"UTM params",           // auto-extraction call-out
-		"Hashed server-side",   // privacy property of user_id
-		"`user_agent`",         // server-side ingest UA override
+		"X-FunnelBarn-Api-Key",       // auth header
+		"X-FunnelBarn-Project",       // project routing header
+		"loadtest-project",           // the slug we requested
+		"FunnelBarnClient",           // correct TS class name (not the alias FunnelBarn)
+		"projectName:",               // correct FunnelBarnOptions field (not project:)
+		"data-project-name",          // IIFE script tag attribute for project routing
+		"NOT `event`",                // body schema must call out the wrong field name
+		"`properties`",               // the main extension point
+		"`utm_source`",               // explicit UTM override fields
+		"UTM params",                 // auto-extraction call-out
+		"Hashed server-side",         // privacy property of user_id
+		"`user_agent`",               // server-side ingest UA override
+		"npm install @funnelbarn/js", // JS SDK install command
+		"pip install funnelbarn",     // Python SDK install command
+		"go get github.com/webwiebe/funnelbarn/sdks/go", // Go SDK install command
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("setup doc missing %q", want)
@@ -59,11 +62,11 @@ func TestSetupDoc_UsesCorrectHeaders(t *testing.T) {
 
 	// Must NOT mention legacy/wrong values that would cause 401s or silent failures.
 	for _, unwanted := range []string{
-		"X-API-Key:",                 // the old, wrong header name
-		"X-Api-Key:",                 // case variant that's still wrong (different header altogether)
-		"/api/v1/releases",           // funnelbarn doesn't have this endpoint; only bugbarn does
-		"import { FunnelBarn } from", // wrong class import — exports FunnelBarnClient
-		"npm install @funnelbarn/js", // package isn't published — CDN script or vendoring is the only working path
+		"X-API-Key:",                      // the old, wrong header name
+		"X-Api-Key:",                      // case variant that's still wrong (different header altogether)
+		"/api/v1/releases",                // funnelbarn doesn't have this endpoint; only bugbarn does
+		"import { FunnelBarn } from",      // wrong class import — exports FunnelBarnClient
+		"github.com/wiebe-xyz/funnelbarn", // legacy Go module path that never existed
 	} {
 		if strings.Contains(body, unwanted) {
 			t.Errorf("setup doc still references %q — would mislead consumers", unwanted)
