@@ -4,9 +4,13 @@ Python SDK for [FunnelBarn](https://github.com/wiebe-xyz/funnelbarn) — self-ho
 
 ## Installation
 
+> **Not yet published to PyPI.** The package metadata is ready (`name = "funnelbarn"`, `version = "1.0.0"`) but no release has been pushed. Until publishing is wired in, install from source:
+
 ```bash
-pip install funnelbarn
+pip install git+https://github.com/webwiebe/funnelbarn.git#subdirectory=sdks/python
 ```
+
+Or vendor `sdks/python/funnelbarn/` into your project and import directly.
 
 ## Usage
 

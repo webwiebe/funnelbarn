@@ -4,8 +4,11 @@ Go SDK for [FunnelBarn](https://github.com/wiebe-xyz/funnelbarn) — self-hosted
 
 ## Installation
 
+> **Not yet a standalone Go module.** The SDK lives in the funnelbarn monorepo at `sdks/go/`. The `go get` path advertised in earlier drafts (`github.com/wiebe-xyz/funnelbarn-go`) does not resolve. Until a separate module is published, vendor `sdks/go/` into your project or use a `replace` directive against a local checkout:
+
 ```bash
-go get github.com/wiebe-xyz/funnelbarn-go
+# in your project's go.mod
+replace github.com/webwiebe/funnelbarn/sdks/go => /path/to/funnelbarn/sdks/go
 ```
 
 ## Usage
