@@ -53,8 +53,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   if (res.status === 401) {
-    // Redirect to login unless we're already there or on the landing page
-    if (!window.location.pathname.includes('/login')) {
+    const { pathname } = window.location
+    if (pathname !== '/' && !pathname.startsWith('/login')) {
       window.location.href = '/login'
     }
     throw new ApiError(401, 'Unauthorized')
