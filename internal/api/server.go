@@ -204,6 +204,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PUT /api/v1/projects/{id}/flags/{fid}", s.requireSession(s.handleUpdateFlag))
 	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/flags/{fid}", s.requireSession(s.handleDeleteFlag))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/{fid}/analysis", s.requireSession(s.handleFlagAnalysis))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/context-keys", s.requireSession(s.handleFlagContextKeys))
 	// Dogfooding playground — same flag-eval logic as the customer endpoint
 	// but session-authed so the dashboard can call it without an API key in the browser.
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/flags/evaluate", s.requireSession(s.handlePlaygroundEvaluateFlag))

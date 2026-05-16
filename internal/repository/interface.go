@@ -90,6 +90,7 @@ type Querier interface {
 	CountEvaluationsByVariant(ctx context.Context, flagID string, from, to time.Time) (map[string]int64, error)
 	CountConversionsByVariant(ctx context.Context, flagID, conversionEvent, projectID string, from, to time.Time) (map[string]int64, error)
 	PurgeOldEvaluations(ctx context.Context, cutoff time.Time) (int64, error)
+	FlagContextKeySuggestions(ctx context.Context, projectID string) ([]ContextKeySuggestion, error)
 
 	// Widgets
 	CreateWidget(ctx context.Context, w DashboardWidget) (DashboardWidget, error)

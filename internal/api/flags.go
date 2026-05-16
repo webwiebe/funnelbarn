@@ -271,3 +271,20 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 
 	writeJSON(w, http.StatusOK, result)
 }
+
+func (s *Server) handleFlagContextKeys(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		jsonError(w, "project id required", http.StatusBadRequest)
+		return
+	}
+	suggestions, err := s.flags.ContextKeySuggestions(r.Context(), projectID)
+	if err != nil {
+		mapServiceError(w, err, "handleFlagContextKeys")
+		return
+	}
+	if suggestions == nil {
+		suggestions = []repository.ContextKeySuggestion{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"suggestions": suggestions})
+}
