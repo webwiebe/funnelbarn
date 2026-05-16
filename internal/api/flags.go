@@ -125,6 +125,16 @@ func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Preserve flag_type from the existing record when the caller omits it.
+	if body.FlagType == "" {
+		existing, err := s.flags.GetFlag(r.Context(), flagID)
+		if err != nil {
+			mapServiceError(w, err, "handleUpdateFlag.get")
+			return
+		}
+		body.FlagType = existing.FlagType
+	}
+
 	flag, err := s.flags.UpdateFlag(r.Context(), repository.FeatureFlag{
 		ID:              flagID,
 		Name:            body.Name,
