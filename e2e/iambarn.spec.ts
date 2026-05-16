@@ -57,9 +57,12 @@ test.describe('iambarn login page', () => {
     // committed (before the remote page fully loads), so this works even
     // if iam.wiebe.xyz isn't reachable from the runner.
     await page.waitForURL(/iam\.wiebe\.xyz/, { waitUntil: 'commit', timeout: 10000 })
-    expect(page.url()).toContain('iam.wiebe.xyz/oauth2/authorize')
-    expect(page.url()).toContain('code_challenge')
-    expect(page.url()).toContain('client_id=ibc_')
+    // IAMBarn shows its own login page first; the OAuth params are nested
+    // in the redirect_uri query param — so we check the full URL string.
+    const url = page.url()
+    expect(url).toContain('iam.wiebe.xyz')
+    expect(url).toContain('code_challenge')
+    expect(url).toContain('ibc_')
   })
 })
 
