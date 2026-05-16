@@ -12,6 +12,7 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		FunnelbarnEndpoint string `json:"funnelbarn_endpoint,omitempty"`
 		FunnelbarnAPIKey   string `json:"funnelbarn_api_key,omitempty"`
 		FunnelbarnProject  string `json:"funnelbarn_project,omitempty"`
+		IAMBarnEnabled     bool   `json:"iambarn_enabled"`
 	}
 	writeJSON(w, http.StatusOK, response{
 		BugbarnEndpoint:    s.bugbarnEndpoint,
@@ -20,5 +21,6 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		FunnelbarnEndpoint: s.publicURL,
 		FunnelbarnAPIKey:   s.dogfoodAPIKey,
 		FunnelbarnProject:  s.dogfoodProject,
+		IAMBarnEnabled:     s.iambarnFlagEnabled(r.Context()),
 	})
 }

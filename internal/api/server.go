@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/iambarn"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
@@ -56,6 +57,10 @@ type ServerConfig struct {
 	BugbarnProject   string
 	DogfoodAPIKey    string
 	DogfoodProject   string
+
+	IAMBarnProvider    *iambarn.Provider
+	IAMBarnUsers       IAMBarnUserRepo
+	IAMBarnFlagProject string // dogfood project slug to read the iambarn-enabled flag from
 }
 
 // Server is the main HTTP API server.
@@ -84,6 +89,9 @@ type Server struct {
 	dogfoodAPIKey    string
 	dogfoodProject   string
 	trustedProxies   []string
+	iambarnProvider    *iambarn.Provider
+	iambarnUsers       IAMBarnUserRepo
+	iambarnFlagProject string
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
@@ -130,6 +138,9 @@ func NewServer(cfg ServerConfig) *Server {
 		eventsLimiter:    newRateLimiter(cfg.IngestRatePerMinute, cfg.IngestRateBurst),
 		apiLimiter:       newRateLimiter(cfg.APIRatePerMinute, cfg.APIRateBurst),
 		setupLimiter:     newRateLimiter(setupRate, setupBurst),
+		iambarnProvider:    cfg.IAMBarnProvider,
+		iambarnUsers:       cfg.IAMBarnUsers,
+		iambarnFlagProject: cfg.IAMBarnFlagProject,
 	}
 	s.registerRoutes()
 	return s
@@ -160,6 +171,10 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("POST /api/v1/login", s.loginLimiter.middleware(http.HandlerFunc(s.handleLogin)))
 	s.mux.HandleFunc("POST /api/v1/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /api/v1/me", s.requireSession(s.handleMe))
+
+	// IAMBarn OIDC (gated by iambarnEnabled in the handlers themselves)
+	s.mux.Handle("GET /api/v1/auth/iambarn/login", s.loginLimiter.middleware(http.HandlerFunc(s.handleIAMBarnLogin)))
+	s.mux.HandleFunc("GET /api/v1/auth/iambarn/callback", s.handleIAMBarnCallback)
 
 	// Projects
 	s.mux.HandleFunc("GET /api/v1/projects", s.requireSession(s.handleListProjects))
@@ -307,7 +322,8 @@ func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 // It also applies the apiLimiter rate limit and CSRF validation on mutating methods.
 func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.sessionManager == nil || !s.userAuth.Enabled() {
+		authConfigured := s.userAuth.Enabled() || s.iambarnProvider != nil
+		if s.sessionManager == nil || !authConfigured {
 			if !s.apiLimiter.allow(s.clientIP(r)) {
 				jsonError(w, "too many requests", http.StatusTooManyRequests)
 				return
@@ -345,6 +361,28 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 		slog.Debug("session valid", "username", username)
 		next(w, r)
 	}
+}
+
+// iambarnFlagEnabled evaluates the "iambarn-enabled" feature flag in the
+// dogfood project. Returns false if the provider is unconfigured, the project
+// doesn't exist, or the flag is absent / off.
+func (s *Server) iambarnFlagEnabled(ctx context.Context) bool {
+	if s.iambarnProvider == nil || s.iambarnFlagProject == "" {
+		return false
+	}
+	proj, err := s.projects.GetProjectBySlug(ctx, s.iambarnFlagProject)
+	if err != nil {
+		return false
+	}
+	result, err := s.flags.EvaluateFlag(ctx, proj.ID, "iambarn-enabled", map[string]any{})
+	if err != nil {
+		return false
+	}
+	if result.Variant == "on" {
+		return true
+	}
+	v, ok := result.Value.(bool)
+	return ok && v
 }
 
 func isMutating(method string) bool {

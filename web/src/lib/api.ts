@@ -100,6 +100,9 @@ export interface LoginRequest {
 }
 
 export const api = {
+  getClientConfig: () =>
+    request<ClientConfig>('/api/v1/client-config'),
+
   login: (body: LoginRequest) =>
     request<User>('/api/v1/login', { method: 'POST', body: JSON.stringify(body) }),
 
@@ -415,4 +418,14 @@ export interface PropertyBreakdown {
 export interface WidgetBreakdownResult {
   widget: DashboardWidget
   breakdown: PropertyBreakdown[]
+}
+
+export interface ClientConfig {
+  bugbarn_endpoint: string
+  bugbarn_ingest_key: string
+  bugbarn_project?: string
+  funnelbarn_endpoint?: string
+  funnelbarn_api_key?: string
+  funnelbarn_project?: string
+  iambarn_enabled: boolean
 }

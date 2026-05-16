@@ -1,8 +1,8 @@
-import { useState, FormEvent } from 'react'
+import { useState, useEffect, FormEvent } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { useProjects } from '../lib/projects'
-import { ApiError } from '../lib/api'
+import { api, ApiError } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
 
 const C = {
@@ -23,6 +23,20 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [iambarnEnabled, setIambarnEnabled] = useState(false)
+
+  useEffect(() => {
+    api.getClientConfig().then((cfg) => {
+      setIambarnEnabled(cfg.iambarn_enabled)
+    }).catch(() => {
+      // Non-fatal: IAMBarn button simply won't appear.
+    })
+
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('error') === 'auth_failed') {
+      setError('Login failed. Please try again.')
+    }
+  }, [])
 
   if (!isLoading && user) {
     return <Navigate to="/dashboard" replace />
@@ -184,6 +198,46 @@ export default function Login() {
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+
+        {iambarnEnabled && (
+          <>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+              margin: '1.5rem 0 1.25rem',
+            }}>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+              <span style={{ fontSize: 12, color: C.muted }}>or</span>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+            </div>
+            <a
+              href="/api/v1/auth/iambarn/login"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                width: '100%',
+                background: 'transparent',
+                border: `1px solid ${C.border}`,
+                borderRadius: 8,
+                padding: '0.75rem',
+                color: C.text,
+                fontSize: 15,
+                fontWeight: 600,
+                textDecoration: 'none',
+                transition: 'border-color 0.15s',
+                boxSizing: 'border-box',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = C.amber)}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = C.border)}
+            >
+              <span style={{ fontSize: 18 }}>⬡</span>
+              Continue with IAMBarn
+            </a>
+          </>
+        )}
       </div>
     </div>
   )

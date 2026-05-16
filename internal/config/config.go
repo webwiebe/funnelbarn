@@ -46,6 +46,9 @@ type Config struct {
 	TrustedProxies      []string
 	SetupRatePerMinute  float64
 	SetupRateBurst      float64
+
+	IAMBarnClientID string
+	IAMBarnIssuer   string
 }
 
 // Load reads config from config files and environment variables.
@@ -158,6 +161,9 @@ func Load() Config {
 			}
 		}
 	}
+
+	cfg.IAMBarnClientID = os.Getenv("FUNNELBARN_IAMBARN_CLIENT_ID")
+	cfg.IAMBarnIssuer = getenv("FUNNELBARN_IAMBARN_ISSUER", "https://iam.wiebe.xyz")
 
 	cfg.SetupRatePerMinute = 10
 	cfg.SetupRateBurst = 5
