@@ -21,6 +21,6 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		FunnelbarnEndpoint: s.publicURL,
 		FunnelbarnAPIKey:   s.dogfoodAPIKey,
 		FunnelbarnProject:  s.dogfoodProject,
-		IAMBarnEnabled:     s.iambarnFlagEnabled(r.Context()),
+		IAMBarnEnabled:     s.iambarnFlagEnabled(r.Context(), map[string]any{"user_agent": r.Header.Get("User-Agent")}),
 	})
 }

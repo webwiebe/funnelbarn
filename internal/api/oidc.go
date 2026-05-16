@@ -28,7 +28,7 @@ const (
 // handleOIDCLogin starts the authorization code + PKCE flow.
 // GET /api/v1/auth/oidc/login
 func (s *Server) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
-	if !s.iambarnFlagEnabled(r.Context()) {
+	if !s.iambarnFlagEnabled(r.Context(), map[string]any{"user_agent": r.Header.Get("User-Agent")}) {
 		jsonError(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -66,7 +66,7 @@ func (s *Server) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 // handleOIDCCallback completes the PKCE flow and issues a FunnelBarn session.
 // GET /api/v1/auth/oidc/callback
 func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
-	if !s.iambarnFlagEnabled(r.Context()) {
+	if !s.iambarnFlagEnabled(r.Context(), map[string]any{"user_agent": r.Header.Get("User-Agent")}) {
 		jsonError(w, "not found", http.StatusNotFound)
 		return
 	}

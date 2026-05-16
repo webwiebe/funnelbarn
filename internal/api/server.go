@@ -365,9 +365,9 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // iambarnFlagEnabled evaluates the "iambarn-enabled" feature flag in the
-// dogfood project. Returns false if the provider is unconfigured, the project
-// doesn't exist, or the flag is absent / off.
-func (s *Server) iambarnFlagEnabled(ctx context.Context) bool {
+// dogfood project. evalCtx is passed as-is to the flag evaluator so that
+// targeting rules (e.g. user_agent contains "Chrome") can act on request data.
+func (s *Server) iambarnFlagEnabled(ctx context.Context, evalCtx map[string]any) bool {
 	if s.iambarnProvider == nil || s.iambarnFlagProject == "" {
 		return false
 	}
@@ -375,7 +375,7 @@ func (s *Server) iambarnFlagEnabled(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	result, err := s.flags.EvaluateFlag(ctx, proj.ID, "iambarn-enabled", map[string]any{})
+	result, err := s.flags.EvaluateFlag(ctx, proj.ID, "iambarn-enabled", evalCtx)
 	if err != nil {
 		return false
 	}
