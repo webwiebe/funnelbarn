@@ -172,9 +172,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/v1/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /api/v1/me", s.requireSession(s.handleMe))
 
-	// IAMBarn OIDC (gated by iambarnEnabled in the handlers themselves)
-	s.mux.Handle("GET /api/v1/auth/iambarn/login", s.loginLimiter.middleware(http.HandlerFunc(s.handleIAMBarnLogin)))
-	s.mux.HandleFunc("GET /api/v1/auth/iambarn/callback", s.handleIAMBarnCallback)
+	// OIDC (gated by the iambarn-enabled feature flag in handlers)
+	s.mux.Handle("GET /api/v1/auth/oidc/login", s.loginLimiter.middleware(http.HandlerFunc(s.handleOIDCLogin)))
+	s.mux.HandleFunc("GET /api/v1/auth/oidc/callback", s.handleOIDCCallback)
 
 	// Projects
 	s.mux.HandleFunc("GET /api/v1/projects", s.requireSession(s.handleListProjects))

@@ -212,7 +212,7 @@ export default function Login() {
               <div style={{ flex: 1, height: 1, background: C.border }} />
             </div>
             <a
-              href="/api/v1/auth/iambarn/login"
+              href="/api/v1/auth/oidc/login"
               style={{
                 display: 'flex',
                 alignItems: 'center',

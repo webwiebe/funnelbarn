@@ -14,20 +14,20 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
-// IAMBarnUserRepo is the storage interface needed by the IAMBarn callback handler.
+// IAMBarnUserRepo is the storage interface needed by the OIDC callback handler.
 type IAMBarnUserRepo interface {
 	FindUserByIAMBarnSub(ctx context.Context, sub string) (repository.User, error)
 	CreateIAMBarnUser(ctx context.Context, sub, username string) (repository.User, error)
 }
 
 const (
-	iambarnStateCookie = "iambarn_state"
-	iambarnStateTTL    = 10 * time.Minute
+	oidcStateCookie = "oidc_state"
+	oidcStateTTL    = 10 * time.Minute
 )
 
-// handleIAMBarnLogin starts the authorization code + PKCE flow.
-// GET /api/v1/auth/iambarn/login
-func (s *Server) handleIAMBarnLogin(w http.ResponseWriter, r *http.Request) {
+// handleOIDCLogin starts the authorization code + PKCE flow.
+// GET /api/v1/auth/oidc/login
+func (s *Server) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 	if !s.iambarnFlagEnabled(r.Context()) {
 		jsonError(w, "not found", http.StatusNotFound)
 		return
@@ -35,23 +35,23 @@ func (s *Server) handleIAMBarnLogin(w http.ResponseWriter, r *http.Request) {
 
 	verifier, err := iambarn.GenerateVerifier()
 	if err != nil {
-		slog.Error("iambarn: generate pkce verifier", "error", err, "handled", false)
+		slog.Error("oidc: generate pkce verifier", "error", err, "handled", false)
 		jsonError(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	state, err := generateOpaqueToken()
 	if err != nil {
-		slog.Error("iambarn: generate state", "error", err, "handled", false)
+		slog.Error("oidc: generate state", "error", err, "handled", false)
 		jsonError(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, &http.Cookie{
-		Name:     iambarnStateCookie,
+		Name:     oidcStateCookie,
 		Value:    state + "|" + verifier,
 		Path:     "/",
-		MaxAge:   int(iambarnStateTTL.Seconds()),
+		MaxAge:   int(oidcStateTTL.Seconds()),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Secure:   secure,
@@ -63,29 +63,29 @@ func (s *Server) handleIAMBarnLogin(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-// handleIAMBarnCallback completes the PKCE flow and issues a FunnelBarn session.
-// GET /api/v1/auth/iambarn/callback
-func (s *Server) handleIAMBarnCallback(w http.ResponseWriter, r *http.Request) {
+// handleOIDCCallback completes the PKCE flow and issues a FunnelBarn session.
+// GET /api/v1/auth/oidc/callback
+func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	if !s.iambarnFlagEnabled(r.Context()) {
 		jsonError(w, "not found", http.StatusNotFound)
 		return
 	}
 
 	// Validate state to prevent CSRF.
-	stateCookie, err := r.Cookie(iambarnStateCookie)
+	stateCookie, err := r.Cookie(oidcStateCookie)
 	if err != nil {
-		slog.WarnContext(r.Context(), "iambarn: missing state cookie")
+		slog.WarnContext(r.Context(), "oidc: missing state cookie")
 		http.Redirect(w, r, "/login?error=auth_failed", http.StatusFound)
 		return
 	}
 	state, verifier, ok := parseStateCookie(stateCookie.Value)
 	if !ok {
-		slog.WarnContext(r.Context(), "iambarn: malformed state cookie")
+		slog.WarnContext(r.Context(), "oidc: malformed state cookie")
 		http.Redirect(w, r, "/login?error=auth_failed", http.StatusFound)
 		return
 	}
 	if r.URL.Query().Get("state") != state {
-		slog.WarnContext(r.Context(), "iambarn: state mismatch")
+		slog.WarnContext(r.Context(), "oidc: state mismatch")
 		http.Redirect(w, r, "/login?error=auth_failed", http.StatusFound)
 		return
 	}
@@ -93,7 +93,7 @@ func (s *Server) handleIAMBarnCallback(w http.ResponseWriter, r *http.Request) {
 	// Clear state cookie.
 	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, &http.Cookie{
-		Name:     iambarnStateCookie,
+		Name:     oidcStateCookie,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
@@ -103,7 +103,7 @@ func (s *Server) handleIAMBarnCallback(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
-		slog.WarnContext(r.Context(), "iambarn: authorization error", "error", errParam,
+		slog.WarnContext(r.Context(), "oidc: authorization error", "error", errParam,
 			"description", r.URL.Query().Get("error_description"))
 		http.Redirect(w, r, "/login?error=auth_failed", http.StatusFound)
 		return
@@ -111,7 +111,7 @@ func (s *Server) handleIAMBarnCallback(w http.ResponseWriter, r *http.Request) {
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		slog.WarnContext(r.Context(), "iambarn: missing code in callback")
+		slog.WarnContext(r.Context(), "oidc: missing code in callback")
 		http.Redirect(w, r, "/login?error=auth_failed", http.StatusFound)
 		return
 	}
@@ -119,23 +119,22 @@ func (s *Server) handleIAMBarnCallback(w http.ResponseWriter, r *http.Request) {
 	// Exchange code for tokens and validate the ID token.
 	claims, err := s.iambarnProvider.ExchangeAndValidate(r.Context(), code, verifier)
 	if err != nil {
-		slog.WarnContext(r.Context(), "iambarn: token exchange/validation failed", "error", err)
+		slog.WarnContext(r.Context(), "oidc: token exchange/validation failed", "error", err)
 		http.Redirect(w, r, "/login?error=auth_failed", http.StatusFound)
 		return
 	}
 
-	// Upsert the user record, keyed by the stable IAMBarn sub.
+	// Upsert the user record, keyed by the stable sub claim.
 	if s.iambarnUsers != nil {
 		if _, upsertErr := s.iambarnUsers.CreateIAMBarnUser(r.Context(), claims.Sub, claims.DisplayName()); upsertErr != nil {
-			slog.WarnContext(r.Context(), "iambarn: upsert user", "sub", claims.Sub, "error", upsertErr)
+			slog.WarnContext(r.Context(), "oidc: upsert user", "sub", claims.Sub, "error", upsertErr)
 			// Non-fatal: session is issued regardless; user record is best-effort.
 		}
 	}
 
-	// Issue the standard FunnelBarn session using the IAMBarn display name as username.
 	token, expires, err := s.sessionManager.Create(claims.DisplayName())
 	if err != nil {
-		slog.Error("iambarn: create session", "error", err, "handled", false)
+		slog.Error("oidc: create session", "error", err, "handled", false)
 		http.Redirect(w, r, "/login?error=auth_failed", http.StatusFound)
 		return
 	}
@@ -143,7 +142,7 @@ func (s *Server) handleIAMBarnCallback(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, auth.SessionCookie(token, expires, secure))
 	http.SetCookie(w, auth.CSRFCookie(token, expires, secure))
 
-	slog.InfoContext(r.Context(), "iambarn login", "sub", claims.Sub, "display", claims.DisplayName())
+	slog.InfoContext(r.Context(), "oidc login", "sub", claims.Sub, "display", claims.DisplayName())
 	http.Redirect(w, r, "/dashboard", http.StatusFound)
 }
 
