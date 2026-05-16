@@ -22,7 +22,6 @@ permissions:
   packages: read
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   SERVICE_IMAGE: ghcr.io/webwiebe/funnelbarn/service
   WEB_IMAGE: ghcr.io/webwiebe/funnelbarn/web
   K3S_HOST: layer7.wiebe.xyz
@@ -46,7 +45,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -80,7 +79,7 @@ jobs:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Transfer manifests
         run: |
