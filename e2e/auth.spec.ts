@@ -5,7 +5,7 @@ test.describe('auth', () => {
     await page.context().clearCookies()
     await page.goto('/')
     await expect(page.getByText('Own Your')).toBeVisible()
-    await expect(page.getByText('Analytics')).toBeVisible()
+    await expect(page.getByText('Analytics', { exact: true })).toBeVisible()
   })
 
   test('login and redirect to dashboard', async ({ page }) => {
