@@ -98,6 +98,12 @@ spec:
                   name: funnelbarn-secrets
                   key: FUNNELBARN_SPANBARN_API_KEY
                   optional: true
+            - name: FUNNELBARN_IAMBARN_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_IAMBARN_CLIENT_ID
+                  optional: true
           resources:
             requests:
               cpu: 100m
