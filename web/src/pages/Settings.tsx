@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Trash2, Plus, Save, CheckCircle, Link } from 'lucide-react'
+import { Trash2, Plus, Save, CheckCircle, Link, X } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api, ApiKey } from '../lib/api'
 import { useProjects } from '../lib/projects'
@@ -58,8 +58,19 @@ export default function Settings() {
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState<string | null>(null)
   const [deletingProject, setDeletingProject] = useState<string | null>(null)
 
-  // Approving pending projects
+  // Approving / rejecting pending projects
   const [approvingProject, setApprovingProject] = useState<string | null>(null)
+  const [rejectingProject, setRejectingProject] = useState<string | null>(null)
+
+  const handleRejectProject = async (projectId: string) => {
+    setRejectingProject(projectId)
+    try {
+      await api.deleteProject(projectId)
+      refetchProjects()
+    } finally {
+      setRejectingProject(null)
+    }
+  }
 
   // Sync editedNames when context projects change
   useEffect(() => {
@@ -280,6 +291,27 @@ export default function Settings() {
                     Open
                   </a>
                 </div>
+                {/* Reject button */}
+                <button
+                  onClick={() => handleRejectProject(p.id)}
+                  disabled={rejectingProject === p.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    background: 'rgba(239,68,68,0.08)',
+                    border: '1px solid rgba(239,68,68,0.25)',
+                    borderRadius: 7,
+                    color: '#ef4444',
+                    padding: '0.5rem 1rem',
+                    cursor: rejectingProject === p.id ? 'not-allowed' : 'pointer',
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                >
+                  <X size={13} />
+                  {rejectingProject === p.id ? 'Rejecting…' : 'Reject'}
+                </button>
                 {/* Approve button */}
                 <button
                   onClick={() => handleApproveProject(p.id)}
