@@ -58,6 +58,7 @@ type FlagRepo interface {
 	RecordEvaluation(ctx context.Context, eval repository.FlagEvaluation) error
 	CountEvaluationsByVariant(ctx context.Context, flagID string, from, to time.Time) (map[string]int64, error)
 	CountConversionsByVariant(ctx context.Context, flagID, conversionEvent, projectID string, from, to time.Time) (map[string]int64, error)
+	FlagContextKeySuggestions(ctx context.Context, projectID string) ([]repository.ContextKeySuggestion, error)
 }
 
 // EventRepo is the persistence port for events and analytics queries.

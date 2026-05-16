@@ -662,9 +662,15 @@ function FlagFormModal({ projectId, flag, onClose, onSaved }: {
   const [error, setError] = useState<string | null>(null)
   const [targetingRules, setTargetingRules] = useState<TargetingRule[]>(initial?.targetingRules ?? [])
   const [showRules, setShowRules] = useState((initial?.targetingRules?.length ?? 0) > 0)
+  const [contextKeySuggestions, setContextKeySuggestions] = useState<{ context_key: string; pct: number }[]>([])
+  const [activeKeyInput, setActiveKeyInput] = useState<string | null>(null)
 
   useEffect(() => {
     api.getEventNames(projectId).then((d) => setEventNames(d.event_names || [])).catch(() => {})
+  }, [projectId])
+
+  useEffect(() => {
+    api.getContextKeySuggestions(projectId).then((d) => setContextKeySuggestions(d.suggestions || [])).catch(() => {})
   }, [projectId])
 
   const autoKey = (n: string) => n.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -969,11 +975,55 @@ function FlagFormModal({ projectId, flag, onClose, onSaved }: {
 
                       {rule.conditions.map((cond, ci) => (
                         <div key={ci} style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
-                          <input value={cond.context_key} placeholder="context key" onChange={(e) => {
-                            const updated = [...targetingRules]
-                            const conds = [...rule.conditions]; conds[ci] = { ...cond, context_key: e.target.value }
-                            updated[ri] = { ...rule, conditions: conds }; setTargetingRules(updated)
-                          }} style={{ ...inputStyle, flex: 2, fontSize: 12, padding: '0.4rem 0.6rem', fontFamily: 'monospace' }} />
+                          <div style={{ position: 'relative', flex: 2 }}>
+                            <input
+                              value={cond.context_key}
+                              placeholder="context key"
+                              onChange={(e) => {
+                                const updated = [...targetingRules]
+                                const conds = [...rule.conditions]
+                                conds[ci] = { ...cond, context_key: e.target.value }
+                                updated[ri] = { ...rule, conditions: conds }
+                                setTargetingRules(updated)
+                              }}
+                              onFocus={() => setActiveKeyInput(`${ri}-${ci}`)}
+                              onBlur={() => setTimeout(() => setActiveKeyInput(null), 150)}
+                              style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '0.4rem 0.6rem', fontFamily: 'monospace' }}
+                            />
+                            {activeKeyInput === `${ri}-${ci}` && contextKeySuggestions.filter(s =>
+                              !cond.context_key || s.context_key.toLowerCase().includes(cond.context_key.toLowerCase())
+                            ).length > 0 && (
+                              <div style={{
+                                position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
+                                background: '#1a1d27', border: '1px solid #2a2d3a', borderRadius: 6,
+                                marginTop: 2, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden',
+                              }}>
+                                {contextKeySuggestions
+                                  .filter(s => !cond.context_key || s.context_key.toLowerCase().includes(cond.context_key.toLowerCase()))
+                                  .slice(0, 8)
+                                  .map(s => (
+                                    <div
+                                      key={s.context_key}
+                                      onMouseDown={() => {
+                                        const updated = [...targetingRules]
+                                        const conds = [...rule.conditions]
+                                        conds[ci] = { ...cond, context_key: s.context_key }
+                                        updated[ri] = { ...rule, conditions: conds }
+                                        setTargetingRules(updated)
+                                        setActiveKeyInput(null)
+                                      }}
+                                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                        padding: '0.35rem 0.6rem', cursor: 'pointer', fontFamily: 'monospace', fontSize: 12 }}
+                                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(245,158,11,0.08)' }}
+                                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                                    >
+                                      <span style={{ color: '#e2e8f0' }}>{s.context_key}</span>
+                                      <span style={{ color: '#94a3b8', fontSize: 10 }}>{s.pct}%</span>
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
                           <select value={cond.operator} onChange={(e) => {
                             const updated = [...targetingRules]
                             const conds = [...rule.conditions]; conds[ci] = { ...cond, operator: e.target.value as TargetingOperator }

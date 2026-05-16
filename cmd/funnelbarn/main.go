@@ -26,6 +26,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/iambarn"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -186,6 +187,14 @@ func run() error {
 	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.MaxBodyBytes)
 	go handler.Start(ctx)
 
+	var iambarnProvider *iambarn.Provider
+	if cfg.IAMBarnClientID != "" && cfg.PublicURL != "" {
+		redirectURI := strings.TrimRight(cfg.PublicURL, "/") + "/api/v1/auth/oidc/callback"
+		iambarnProvider = iambarn.New(cfg.IAMBarnIssuer, cfg.IAMBarnClientID, redirectURI)
+		slog.Info("iambarn configured", "client_id", cfg.IAMBarnClientID, "redirect_uri", redirectURI,
+			"flag_project", cfg.DogfoodProject)
+	}
+
 	apiServer := api.NewServer(api.ServerConfig{
 		Ingest:              handler,
 		Projects:            projectsSvc,
@@ -217,6 +226,9 @@ func run() error {
 		BugbarnProject:      cfg.SelfProject,
 		DogfoodAPIKey:       cfg.DogfoodAPIKey,
 		DogfoodProject:      cfg.DogfoodProject,
+		IAMBarnProvider:     iambarnProvider,
+		IAMBarnUsers:        store,
+		IAMBarnFlagProject:  cfg.DogfoodProject,
 	})
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)

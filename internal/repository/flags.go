@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -30,7 +31,15 @@ type FlagEvaluation struct {
 	Variant     string    `json:"variant"`
 	ContextHash string    `json:"context_hash"`
 	SessionID   string    `json:"session_id"`
+	ContextKeys []string  `json:"context_keys"` // key names present in the eval context
 	CreatedAt   time.Time `json:"created_at"`
+}
+
+// ContextKeySuggestion is a context key seen in recent evaluations with its frequency.
+type ContextKeySuggestion struct {
+	ContextKey string `json:"context_key"`
+	SeenCount  int64  `json:"seen_count"`
+	Pct        int    `json:"pct"` // percentage of evaluations in the last 30 days that included this key
 }
 
 // FlagAnalysisResult holds per-variant analysis.
@@ -134,9 +143,51 @@ func (s *Store) RecordEvaluation(ctx context.Context, eval FlagEvaluation) error
 	if err != nil {
 		return fmt.Errorf("generate uuid: %w", err)
 	}
-	const q = `INSERT INTO flag_evaluations (id, flag_id, project_id, variant, context_hash, session_id) VALUES (?, ?, ?, ?, ?, ?)`
-	_, err = s.db.ExecContext(ctx, q, eval.ID, eval.FlagID, eval.ProjectID, eval.Variant, eval.ContextHash, nullStr(eval.SessionID))
+	keysJSON := "[]"
+	if len(eval.ContextKeys) > 0 {
+		if b, jerr := json.Marshal(eval.ContextKeys); jerr == nil {
+			keysJSON = string(b)
+		}
+	}
+	const q = `INSERT INTO flag_evaluations (id, flag_id, project_id, variant, context_hash, session_id, context_keys) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	_, err = s.db.ExecContext(ctx, q, eval.ID, eval.FlagID, eval.ProjectID, eval.Variant, eval.ContextHash, nullStr(eval.SessionID), keysJSON)
 	return err
+}
+
+// FlagContextKeySuggestions returns context keys seen in recent evaluations for a project,
+// ordered by frequency, with the percentage of evaluations that included each key.
+func (s *Store) FlagContextKeySuggestions(ctx context.Context, projectID string) ([]ContextKeySuggestion, error) {
+	const q = `
+		WITH total AS (
+			SELECT COUNT(*) AS n
+			FROM flag_evaluations
+			WHERE project_id = ? AND created_at > datetime('now', '-30 days')
+		),
+		key_counts AS (
+			SELECT value AS context_key, COUNT(*) AS seen_count
+			FROM flag_evaluations, json_each(context_keys)
+			WHERE project_id = ? AND created_at > datetime('now', '-30 days')
+			GROUP BY value
+		)
+		SELECT kc.context_key, kc.seen_count,
+		       CAST(ROUND(kc.seen_count * 100.0 / NULLIF(t.n, 0)) AS INTEGER) AS pct
+		FROM key_counts kc, total t
+		ORDER BY kc.seen_count DESC
+		LIMIT 20`
+	rows, err := s.db.QueryContext(ctx, q, projectID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ContextKeySuggestion
+	for rows.Next() {
+		var s ContextKeySuggestion
+		if err := rows.Scan(&s.ContextKey, &s.SeenCount, &s.Pct); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) CountEvaluationsByVariant(ctx context.Context, flagID string, from, to time.Time) (map[string]int64, error) {

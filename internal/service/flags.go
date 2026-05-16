@@ -146,6 +146,8 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 	}
 	sessionID := contextString(evalContext, "session_id")
 
+	ctxKeys := contextKeyNames(evalContext)
+
 	if variant, ruleName, matched := evaluateTargetingRules(flag.TargetingRules, evalContext); matched {
 		val, _ := variantValue(flag.Variants, variant)
 		span.SetAttributes(
@@ -159,6 +161,7 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 			Variant:     variant,
 			ContextHash: hashContext(targetingKey),
 			SessionID:   sessionID,
+			ContextKeys: ctxKeys,
 		})
 		return FlagEvalResult{
 			Value:        val,
@@ -183,6 +186,7 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 		Variant:     variant,
 		ContextHash: hashContext(targetingKey),
 		SessionID:   sessionID,
+		ContextKeys: ctxKeys,
 	})
 
 	return FlagEvalResult{
@@ -284,6 +288,22 @@ func contextString(ctx map[string]any, key string) string {
 		return s
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+// contextKeyNames returns a sorted slice of key names from the eval context.
+func contextKeyNames(ctx map[string]any) []string {
+	if len(ctx) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(ctx))
+	for k := range ctx {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func (svc *FlagService) ContextKeySuggestions(ctx context.Context, projectID string) ([]repository.ContextKeySuggestion, error) {
+	return svc.store.FlagContextKeySuggestions(ctx, projectID)
 }
 
 func evaluateTargetingRules(rulesJSON string, ctx map[string]any) (variant, ruleName string, matched bool) {
