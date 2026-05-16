@@ -15,8 +15,6 @@ on:
 permissions:
   contents: write
 
-env:
-
 jobs:
   tag:
     name: Create Release Tag
