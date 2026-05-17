@@ -38,10 +38,10 @@ spec:
             - name: GEOIPUPDATE_EDITION_IDS
               value: GeoLite2-City GeoLite2-ASN
             - name: GEOIPUPDATE_DB_DIR
-              value: /geoip
+              value: /var/lib/funnelbarn/geoip
           volumeMounts:
-            - name: geoip-data
-              mountPath: /geoip
+            - name: funnelbarn-data
+              mountPath: /var/lib/funnelbarn
       containers:
         - name: funnelbarn
           image: funnelbarn/service
@@ -132,9 +132,9 @@ spec:
                   key: FUNNELBARN_IAMBARN_CLIENT_ID
                   optional: true
             - name: FUNNELBARN_GEOIP_CITY_DB
-              value: /geoip/GeoLite2-City.mmdb
+              value: /var/lib/funnelbarn/geoip/GeoLite2-City.mmdb
             - name: FUNNELBARN_GEOIP_ASN_DB
-              value: /geoip/GeoLite2-ASN.mmdb
+              value: /var/lib/funnelbarn/geoip/GeoLite2-ASN.mmdb
             - name: LITESTREAM_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
@@ -169,11 +169,7 @@ spec:
           volumeMounts:
             - name: funnelbarn-data
               mountPath: /var/lib/funnelbarn
-            - name: geoip-data
-              mountPath: /geoip
       volumes:
         - name: funnelbarn-data
           persistentVolumeClaim:
             claimName: funnelbarn-data
-        - name: geoip-data
-          emptyDir: {}
