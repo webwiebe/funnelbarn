@@ -31,6 +31,11 @@ type Event struct {
 	IngestID       string    `json:"ingest_id"`
 	OccurredAt     time.Time `json:"occurred_at"`
 	CreatedAt      time.Time `json:"created_at"`
+
+	// ClientIP is a transient field populated by the worker from the spool record.
+	// It is NOT stored in the database; it exists only to pass the real IP to
+	// UpsertSession for geo enrichment.
+	ClientIP string `json:"-"`
 }
 
 // InsertEvent writes a new event to the database.

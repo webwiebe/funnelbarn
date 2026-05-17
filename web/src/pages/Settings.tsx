@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Trash2, Plus, Save, CheckCircle, Link, X } from 'lucide-react'
+import { Trash2, Plus, Save, CheckCircle, Link, X, Globe, ShieldOff } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api, ApiKey } from '../lib/api'
 import { useProjects } from '../lib/projects'
@@ -62,6 +62,14 @@ export default function Settings() {
   const [approvingProject, setApprovingProject] = useState<string | null>(null)
   const [rejectingProject, setRejectingProject] = useState<string | null>(null)
 
+  // Data collection / geo settings
+  const [geoEnabled, setGeoEnabled] = useState(true)
+  const [savingGeo, setSavingGeo] = useState(false)
+  const [anonymizeInput, setAnonymizeInput] = useState('')
+  const [anonymizing, setAnonymizing] = useState(false)
+  const [anonymizeResult, setAnonymizeResult] = useState<string | null>(null)
+  const [anonymizeError, setAnonymizeError] = useState<string | null>(null)
+
   const handleRejectProject = async (projectId: string) => {
     setRejectingProject(projectId)
     try {
@@ -85,6 +93,44 @@ export default function Settings() {
       .catch((e) => { reportError(e, { source: 'Settings.listApiKeys' }); setApiKeys([]) })
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    api.getInstanceSettings()
+      .then((d) => setGeoEnabled(d.settings?.geo_enabled !== 'false'))
+      .catch(() => {})
+  }, [])
+
+  const handleGeoToggle = async (enabled: boolean) => {
+    setGeoEnabled(enabled)
+    setSavingGeo(true)
+    try {
+      await api.setInstanceSettings({ geo_enabled: enabled ? 'true' : 'false' })
+    } catch (e) {
+      setGeoEnabled(!enabled)
+      setError(String(e))
+    } finally {
+      setSavingGeo(false)
+    }
+  }
+
+  const handleAnonymize = async () => {
+    const val = anonymizeInput.trim()
+    if (!val) return
+    setAnonymizing(true)
+    setAnonymizeResult(null)
+    setAnonymizeError(null)
+    try {
+      const isIP = /^[\d.:a-fA-F]+$/.test(val) && !val.includes('-')
+      const params = isIP ? { ip: val } : { session_id: val }
+      const res = await api.anonymizeGeo(params)
+      setAnonymizeResult(`${res.anonymized} session${res.anonymized !== 1 ? 's' : ''} anonymized`)
+      setAnonymizeInput('')
+    } catch (e) {
+      setAnonymizeError(String(e))
+    } finally {
+      setAnonymizing(false)
+    }
+  }
 
   const handleCreate = async () => {
     if (!newKeyName.trim()) { setError('Name is required'); return }
@@ -895,6 +941,131 @@ export default function Settings() {
               </code>
               {' '}on the server. Events older than this window are automatically deleted.
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Data Collection */}
+      <div style={{
+        background: C.surface,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        overflow: 'hidden',
+        marginBottom: '2rem',
+      }}>
+        <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Globe size={16} color={C.amber} />
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Data Collection</div>
+          </div>
+          <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
+            Geo enrichment and anonymization controls. IP, city, and coordinates are resolved from visitor IPs at ingest time and stored on your server only.
+          </div>
+        </div>
+
+        {/* Geo toggle */}
+        <div style={{
+          padding: '1.25rem 1.5rem',
+          borderBottom: `1px solid ${C.border}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 16,
+          flexWrap: 'wrap',
+        }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 3 }}>Geo enrichment</div>
+            <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
+              Resolves visitor IPs to country, region, city, coordinates, timezone, and ISP.
+              Requires{' '}
+              <code style={{ color: C.amber, fontFamily: '"SF Mono", "Fira Code", monospace', fontSize: 11 }}>FUNNELBARN_GEOIP_CITY_DB</code>
+              {' '}to point to a GeoLite2-City.mmdb file.
+            </div>
+          </div>
+          <button
+            onClick={() => handleGeoToggle(!geoEnabled)}
+            disabled={savingGeo}
+            style={{
+              position: 'relative',
+              width: 44,
+              height: 24,
+              borderRadius: 99,
+              border: 'none',
+              background: geoEnabled ? C.amber : C.border,
+              cursor: savingGeo ? 'not-allowed' : 'pointer',
+              transition: 'background 0.2s',
+              flexShrink: 0,
+            }}
+          >
+            <span style={{
+              position: 'absolute',
+              top: 3,
+              left: geoEnabled ? 23 : 3,
+              width: 18,
+              height: 18,
+              borderRadius: '50%',
+              background: geoEnabled ? '#0f1117' : C.muted,
+              transition: 'left 0.2s',
+            }} />
+          </button>
+        </div>
+
+        {/* Anonymize form */}
+        <div style={{ padding: '1.25rem 1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <ShieldOff size={14} color={C.muted} />
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Anonymize geo data</div>
+          </div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, lineHeight: 1.5 }}>
+            Enter a session ID or IP address to zero out the stored geo fields (IP, city, region, coordinates, ISP).
+            Country code is preserved for aggregate analytics. Use this to fulfill GDPR right-to-erasure requests.
+          </div>
+          {anonymizeResult && (
+            <div style={{ fontSize: 13, color: C.success, marginBottom: 10 }}>{anonymizeResult}</div>
+          )}
+          {anonymizeError && (
+            <div style={{ fontSize: 13, color: C.error, marginBottom: 10 }}>{anonymizeError}</div>
+          )}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              value={anonymizeInput}
+              onChange={(e) => setAnonymizeInput(e.target.value)}
+              placeholder="Session ID or IP address"
+              style={{
+                flex: '1 1 240px',
+                background: C.bg,
+                border: `1px solid ${C.border}`,
+                borderRadius: 7,
+                padding: '0.55rem 0.875rem',
+                color: C.text,
+                fontSize: 13,
+                outline: 'none',
+                fontFamily: '"SF Mono", "Fira Code", monospace',
+              }}
+              onFocus={(e) => (e.target.style.borderColor = C.amber)}
+              onBlur={(e) => (e.target.style.borderColor = C.border)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAnonymize()}
+            />
+            <button
+              onClick={handleAnonymize}
+              disabled={anonymizing || !anonymizeInput.trim()}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                background: anonymizing ? C.surface : 'rgba(239,68,68,0.1)',
+                border: '1px solid rgba(239,68,68,0.3)',
+                borderRadius: 7,
+                color: '#ef4444',
+                padding: '0.55rem 1rem',
+                cursor: (anonymizing || !anonymizeInput.trim()) ? 'not-allowed' : 'pointer',
+                fontSize: 13,
+                fontWeight: 700,
+              }}
+            >
+              <ShieldOff size={13} />
+              {anonymizing ? 'Anonymizing…' : 'Anonymize'}
+            </button>
           </div>
         </div>
       </div>

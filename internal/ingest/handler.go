@@ -9,7 +9,9 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -160,6 +162,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ReceivedAt:    h.now().UTC(),
 		ContentType:   r.Header.Get("Content-Type"),
 		RemoteAddr:    r.RemoteAddr,
+		ClientIP:      extractClientIP(r),
 		ContentLength: int64(len(body)),
 		BodyBase64:    base64.StdEncoding.EncodeToString(body),
 		ProjectSlug:   projectSlug,
@@ -188,6 +191,33 @@ func jsonErr(w http.ResponseWriter, msg string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// extractClientIP returns the best-guess real client IP, preferring CDN headers
+// over X-Forwarded-For and falling back to the TCP remote address. Safe for
+// analytics use (not security-critical — geo data from a spoofed IP only
+// affects the spoofer's own session).
+func extractClientIP(r *http.Request) string {
+	if v := r.Header.Get("CF-Connecting-IP"); v != "" {
+		return v
+	}
+	if v := r.Header.Get("X-Real-IP"); v != "" {
+		return v
+	}
+	if v := r.Header.Get("X-Forwarded-For"); v != "" {
+		if idx := strings.IndexByte(v, ','); idx >= 0 {
+			v = strings.TrimSpace(v[:idx])
+		} else {
+			v = strings.TrimSpace(v)
+		}
+		if v != "" {
+			return v
+		}
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 func generateIngestID() string {

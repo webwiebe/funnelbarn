@@ -56,6 +56,13 @@ type Querier interface {
 	SessionByID(ctx context.Context, id string) (Session, error)
 	ListSessions(ctx context.Context, projectID string, limit, offset int) ([]Session, error)
 	ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error)
+	AnonymizeSessionGeo(ctx context.Context, sessionID string) error
+	AnonymizeSessionsByIP(ctx context.Context, ip string) (int64, error)
+
+	// Instance settings
+	GetInstanceSetting(ctx context.Context, key string) (string, bool, error)
+	SetInstanceSetting(ctx context.Context, key, value string) error
+	GetAllInstanceSettings(ctx context.Context) (map[string]string, error)
 
 	// Events
 	InsertEvent(ctx context.Context, e Event) error

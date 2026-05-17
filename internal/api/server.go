@@ -61,6 +61,21 @@ type ServerConfig struct {
 	IAMBarnProvider    *iambarn.Provider
 	IAMBarnUsers       IAMBarnUserRepo
 	IAMBarnFlagProject string // dogfood project slug to read the iambarn-enabled flag from
+
+	InstanceSettings InstanceSettingsRepo
+	GeoAnonymizer    GeoAnonymizer
+}
+
+// InstanceSettingsRepo is the narrow interface for reading/writing instance-level settings.
+type InstanceSettingsRepo interface {
+	GetAllInstanceSettings(ctx context.Context) (map[string]string, error)
+	SetInstanceSetting(ctx context.Context, key, value string) error
+}
+
+// GeoAnonymizer can zero out geo fields on sessions.
+type GeoAnonymizer interface {
+	AnonymizeSessionGeo(ctx context.Context, sessionID string) error
+	AnonymizeSessionsByIP(ctx context.Context, ip string) (int64, error)
 }
 
 // Server is the main HTTP API server.
@@ -92,6 +107,8 @@ type Server struct {
 	iambarnProvider    *iambarn.Provider
 	iambarnUsers       IAMBarnUserRepo
 	iambarnFlagProject string
+	instanceSettings   InstanceSettingsRepo
+	geoAnonymizer      GeoAnonymizer
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
@@ -141,6 +158,8 @@ func NewServer(cfg ServerConfig) *Server {
 		iambarnProvider:    cfg.IAMBarnProvider,
 		iambarnUsers:       cfg.IAMBarnUsers,
 		iambarnFlagProject: cfg.IAMBarnFlagProject,
+		instanceSettings:   cfg.InstanceSettings,
+		geoAnonymizer:      cfg.GeoAnonymizer,
 	}
 	s.registerRoutes()
 	return s
@@ -236,6 +255,13 @@ func (s *Server) registerRoutes() {
 
 	// Project approval
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/approve", s.requireSession(s.handleApproveProject))
+
+	// Instance settings
+	s.mux.HandleFunc("GET /api/v1/instance-settings", s.requireSession(s.handleGetInstanceSettings))
+	s.mux.HandleFunc("PUT /api/v1/instance-settings", s.requireSession(s.handlePutInstanceSettings))
+
+	// Geo anonymization
+	s.mux.HandleFunc("POST /api/v1/admin/anonymize-geo", s.requireSession(s.handleAnonymizeGeo))
 }
 
 // ServeHTTP adds CORS headers and dispatches to the router.

@@ -275,6 +275,23 @@ export const api = {
 
   getBatchBreakdowns: (projectId: string) =>
     request<{ results: WidgetBreakdownResult[] }>(`/api/v1/projects/${projectId}/widgets/breakdowns`),
+
+  // Instance settings
+  getInstanceSettings: () =>
+    request<{ settings: Record<string, string> }>('/api/v1/instance-settings'),
+
+  setInstanceSettings: (settings: Record<string, string>) =>
+    request<{ settings: Record<string, string> }>('/api/v1/instance-settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
+
+  // Geo anonymization
+  anonymizeGeo: (params: { session_id?: string; ip?: string }) =>
+    request<{ anonymized: number }>('/api/v1/admin/anonymize-geo', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
 }
 
 // Types

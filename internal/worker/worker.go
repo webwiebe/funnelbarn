@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
+	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/session"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
@@ -95,6 +96,11 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 		return repository.Event{}, fmt.Errorf("generate uuid: %w", err)
 	}
 
+	clientIP := record.ClientIP
+	if clientIP == "" {
+		clientIP = record.RemoteAddr
+	}
+
 	event := repository.Event{
 		ID:             eventID,
 		SessionID:      sessionID,
@@ -115,6 +121,7 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 		DeviceType:     deviceType,
 		IngestID:       record.IngestID,
 		OccurredAt:     occurredAt,
+		ClientIP:       clientIP,
 	}
 
 	return event, nil
@@ -130,7 +137,8 @@ type EventPersister interface {
 }
 
 // PersistEvent stores an event and upserts the associated session.
-func PersistEvent(ctx context.Context, store EventPersister, event repository.Event) error {
+// geo may be nil when geo collection is disabled or the database is unconfigured.
+func PersistEvent(ctx context.Context, store EventPersister, event repository.Event, geo *geoip.GeoResult) error {
 	// Check idempotency: skip if already stored.
 	existing, err := store.GetEventByIngestID(ctx, event.IngestID)
 	if err != nil {
@@ -168,6 +176,17 @@ func PersistEvent(ctx context.Context, store EventPersister, event repository.Ev
 		UTMCampaign: event.UTMCampaign,
 		DeviceType:  event.DeviceType,
 		CountryCode: event.CountryCode,
+	}
+	if geo != nil {
+		sess.CountryCode = geo.CountryCode
+		sess.IP = event.ClientIP
+		sess.City = geo.City
+		sess.Region = geo.Region
+		sess.Latitude = geo.Latitude
+		sess.Longitude = geo.Longitude
+		sess.Timezone = geo.Timezone
+		sess.ASNOrg = geo.ASNOrg
+		sess.ConnectionClass = geo.ConnectionClass
 	}
 	if err := store.UpsertSession(ctx, sess); err != nil {
 		// Non-fatal: log and continue.

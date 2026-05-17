@@ -47,7 +47,7 @@ func TestPersistEvent_InsertsEventAndUpsertSession(t *testing.T) {
 		OccurredAt: time.Now().UTC(),
 	}
 
-	if err := PersistEvent(context.Background(), store, event); err != nil {
+	if err := PersistEvent(context.Background(), store, event, nil); err != nil {
 		t.Fatalf("PersistEvent: %v", err)
 	}
 	if len(store.events) != 1 {
@@ -73,11 +73,11 @@ func TestPersistEvent_Idempotency(t *testing.T) {
 	}
 
 	// First call: inserts.
-	if err := PersistEvent(context.Background(), store, event); err != nil {
+	if err := PersistEvent(context.Background(), store, event, nil); err != nil {
 		t.Fatalf("first PersistEvent: %v", err)
 	}
 	// Second call: same ingest_id → must be skipped.
-	if err := PersistEvent(context.Background(), store, event); err != nil {
+	if err := PersistEvent(context.Background(), store, event, nil); err != nil {
 		t.Fatalf("second PersistEvent: %v", err)
 	}
 

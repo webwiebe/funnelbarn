@@ -26,6 +26,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
 	"github.com/wiebe-xyz/funnelbarn/internal/iambarn"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
@@ -173,7 +174,19 @@ func run() error {
 		slog.Info("tracing enabled", "endpoint", cfg.SpanBarnEndpoint)
 	}
 
-	go runBackgroundWorker(ctx, cfg, store, eventSpool)
+	var geoLookup *geoip.Lookup
+	if cfg.GeoIPCityDB != "" {
+		var geoErr error
+		geoLookup, geoErr = geoip.Open(cfg.GeoIPCityDB, cfg.GeoIPASNDB)
+		if geoErr != nil {
+			slog.Warn("geoip: failed to open database, geo lookup disabled", "err", geoErr)
+		} else {
+			defer geoLookup.Close()
+			slog.Info("geoip enabled", "city_db", cfg.GeoIPCityDB, "asn_db", cfg.GeoIPASNDB)
+		}
+	}
+
+	go runBackgroundWorker(ctx, cfg, store, eventSpool, geoLookup)
 
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
 	if err != nil {
@@ -196,6 +209,8 @@ func run() error {
 	}
 
 	apiServer := api.NewServer(api.ServerConfig{
+		InstanceSettings: store,
+		GeoAnonymizer:    store,
 		Ingest:              handler,
 		Projects:            projectsSvc,
 		Funnels:             funnelsSvc,
@@ -285,7 +300,7 @@ const (
 	workerRotateThreshold = 64 << 20 // 64 MiB
 )
 
-func runBackgroundWorker(ctx context.Context, cfg config.Config, store *repository.Store, eventSpool *spool.Spool) {
+func runBackgroundWorker(ctx context.Context, cfg config.Config, store *repository.Store, eventSpool *spool.Spool, geoLookup *geoip.Lookup) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -328,6 +343,13 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				continue
 			}
 			metrics.SpoolQueueDepth.Set(float64(len(entries)))
+
+			// Check geo_enabled once per batch to avoid a DB round-trip per event.
+			geoEnabled := geoLookup != nil
+			if geoEnabled {
+				val, _, _ := store.GetInstanceSetting(ctx, "geo_enabled")
+				geoEnabled = val != "false"
+			}
 
 			for _, entry := range entries {
 				record := entry.Record
@@ -374,7 +396,12 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 					}
 				}
 
-				persistErr := worker.PersistEvent(opCtx, store, event)
+				var geoResult *geoip.GeoResult
+				if geoEnabled {
+					geoResult = geoLookup.Lookup(event.ClientIP)
+				}
+
+				persistErr := worker.PersistEvent(opCtx, store, event, geoResult)
 				if persistErr != nil {
 					tracing.RecordError(span, persistErr)
 				}
@@ -450,7 +477,7 @@ func runWorkerOnce(cfg config.Config) error {
 				event.ProjectID = proj.ID
 			}
 		}
-		if err := worker.PersistEvent(ctx, store, event); err != nil {
+		if err := worker.PersistEvent(ctx, store, event, nil); err != nil {
 			slog.Error("worker-once: persist event", "ingest_id", record.IngestID, "err", err)
 			continue
 		}

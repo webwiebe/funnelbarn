@@ -25,6 +25,7 @@ type Record struct {
 	ReceivedAt    time.Time `json:"receivedAt"`
 	ContentType   string    `json:"contentType,omitempty"`
 	RemoteAddr    string    `json:"remoteAddr,omitempty"`
+	ClientIP      string    `json:"clientIp,omitempty"` // real client IP, unwrapped from CDN/proxy headers
 	ContentLength int64     `json:"contentLength,omitempty"`
 	BodyBase64    string    `json:"bodyBase64"`
 	ProjectSlug   string    `json:"projectSlug,omitempty"`

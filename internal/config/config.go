@@ -49,6 +49,9 @@ type Config struct {
 
 	IAMBarnClientID string
 	IAMBarnIssuer   string
+
+	GeoIPCityDB string // path to GeoLite2-City.mmdb; empty = geo disabled
+	GeoIPASNDB  string // path to GeoLite2-ASN.mmdb; empty = skip ASN enrichment
 }
 
 // Load reads config from config files and environment variables.
@@ -164,6 +167,9 @@ func Load() Config {
 
 	cfg.IAMBarnClientID = os.Getenv("FUNNELBARN_IAMBARN_CLIENT_ID")
 	cfg.IAMBarnIssuer = getenv("FUNNELBARN_IAMBARN_ISSUER", "https://iam.wiebe.xyz")
+
+	cfg.GeoIPCityDB = os.Getenv("FUNNELBARN_GEOIP_CITY_DB")
+	cfg.GeoIPASNDB = os.Getenv("FUNNELBARN_GEOIP_ASN_DB")
 
 	cfg.SetupRatePerMinute = 10
 	cfg.SetupRateBurst = 5
