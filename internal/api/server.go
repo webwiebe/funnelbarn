@@ -64,6 +64,7 @@ type ServerConfig struct {
 
 	InstanceSettings InstanceSettingsRepo
 	GeoAnonymizer    GeoAnonymizer
+	Segments         service.Segments
 }
 
 // InstanceSettingsRepo is the narrow interface for reading/writing instance-level settings.
@@ -109,6 +110,7 @@ type Server struct {
 	iambarnFlagProject string
 	instanceSettings   InstanceSettingsRepo
 	geoAnonymizer      GeoAnonymizer
+	segments           service.Segments
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
@@ -160,6 +162,7 @@ func NewServer(cfg ServerConfig) *Server {
 		iambarnFlagProject: cfg.IAMBarnFlagProject,
 		instanceSettings:   cfg.InstanceSettings,
 		geoAnonymizer:      cfg.GeoAnonymizer,
+		segments:           cfg.Segments,
 	}
 	s.registerRoutes()
 	return s
@@ -255,6 +258,12 @@ func (s *Server) registerRoutes() {
 
 	// Project approval
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/approve", s.requireSession(s.handleApproveProject))
+
+	// Segments
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/segments", s.requireSession(s.handleListSegments))
+	s.mux.HandleFunc("POST /api/v1/projects/{id}/segments", s.requireSession(s.handleCreateSegment))
+	s.mux.HandleFunc("PUT /api/v1/projects/{id}/segments/{sid}", s.requireSession(s.handleUpdateSegment))
+	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/segments/{sid}", s.requireSession(s.handleDeleteSegment))
 
 	// Instance settings
 	s.mux.HandleFunc("GET /api/v1/instance-settings", s.requireSession(s.handleGetInstanceSettings))

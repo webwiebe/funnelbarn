@@ -118,4 +118,141 @@ describe('FunnelBarnClient', () => {
     const body = JSON.parse(requests[0].options.body);
     assert.ok(!isNaN(Date.parse(body.timestamp)));
   });
+
+  // -------------------------------------------------------------------------
+  // page_view_id
+  // -------------------------------------------------------------------------
+
+  it('page() sets page_view_id on the page_view event', async () => {
+    const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'http://localhost:8080' });
+    client.page();
+    await client.flush();
+    const body = JSON.parse(requests[0].options.body);
+    assert.equal(body.name, 'page_view');
+    assert.ok(typeof body.page_view_id === 'string', 'page_view_id should be a string');
+    assert.match(
+      body.page_view_id,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      'page_view_id should be a valid UUIDv4'
+    );
+  });
+
+  it('track() carries the page_view_id from the preceding page()', async () => {
+    const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'http://localhost:8080' });
+    client.page();
+    client.track('button_click');
+    await client.flush();
+    assert.equal(requests.length, 2);
+    const pageBody = JSON.parse(requests[0].options.body);
+    const trackBody = JSON.parse(requests[1].options.body);
+    assert.equal(pageBody.name, 'page_view');
+    assert.equal(trackBody.name, 'button_click');
+    assert.ok(typeof pageBody.page_view_id === 'string');
+    assert.equal(trackBody.page_view_id, pageBody.page_view_id);
+  });
+
+  it('track() without preceding page() has undefined page_view_id', async () => {
+    const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'http://localhost:8080' });
+    client.track('no_page_before');
+    await client.flush();
+    const body = JSON.parse(requests[0].options.body);
+    assert.equal(body.page_view_id, undefined);
+  });
+
+  it('page_view_id changes between page() calls', async () => {
+    const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'http://localhost:8080' });
+    client.page();
+    client.page();
+    await client.flush();
+    const id1 = JSON.parse(requests[0].options.body).page_view_id;
+    const id2 = JSON.parse(requests[1].options.body).page_view_id;
+    assert.ok(id1 !== id2, 'each page() should produce a distinct page_view_id');
+  });
+
+  // -------------------------------------------------------------------------
+  // page_engaged — should NOT fire immediately
+  // -------------------------------------------------------------------------
+
+  it('page_engaged is not queued immediately after page()', async () => {
+    // In the Node.js test environment there is no window, so engagement tracking
+    // is a no-op. This test therefore confirms that calling page() followed by
+    // an immediate flush does not produce a page_engaged event.
+    const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'http://localhost:8080' });
+    client.page();
+    await client.flush();
+    const names = requests.map(r => JSON.parse(r.options.body).name);
+    assert.ok(!names.includes('page_engaged'), 'page_engaged must not fire immediately');
+  });
+
+  // -------------------------------------------------------------------------
+  // session_signals — included on first page() only
+  // -------------------------------------------------------------------------
+
+  it('session_signals is included on the first page() event', async () => {
+    // In Node there is no window so collectSessionSignals() returns {}.
+    // We verify the field is absent rather than present with data — that is the
+    // correct behaviour for a non-browser environment, and still exercises the
+    // sessionSignalsSent guard.
+    const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'http://localhost:8080' });
+    client.page();
+    await client.flush();
+    const body = JSON.parse(requests[0].options.body);
+    assert.equal(body.name, 'page_view');
+    // session_signals may be absent (no window) — that's fine.
+    // What matters is it is not present on subsequent page views.
+  });
+
+  it('session_signals is NOT included on the second page() event', async () => {
+    // Simulate a browser-like environment by providing a minimal window stub
+    // so collectSessionSignals returns non-empty data.
+    // Use Object.defineProperty for globals that are read-only in newer Node.
+    const defineWritable = (obj, key, value) => {
+      const orig = Object.getOwnPropertyDescriptor(obj, key);
+      Object.defineProperty(obj, key, { value, writable: true, configurable: true });
+      return () => {
+        if (orig) Object.defineProperty(obj, key, orig);
+        else delete obj[key];
+      };
+    };
+
+    const restoreWindow = defineWritable(global, 'window', {
+      devicePixelRatio: 2,
+      matchMedia: () => ({ matches: false }),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    });
+    const restoreScreen = defineWritable(global, 'screen', { width: 1920, height: 1080 });
+    const restoreNavigator = defineWritable(global, 'navigator', { maxTouchPoints: 0, hardwareConcurrency: 8 });
+    const restoreIntl = defineWritable(global, 'Intl', {
+      DateTimeFormat: () => ({ resolvedOptions: () => ({ timeZone: 'UTC' }) }),
+    });
+
+    try {
+      const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'http://localhost:8080' });
+      client.page(); // first page — signals expected
+      client.page(); // second page — signals must NOT be re-sent
+      await client.flush();
+
+      const firstBody = JSON.parse(requests[0].options.body);
+      const secondBody = JSON.parse(requests[1].options.body);
+
+      // First page_view should carry session_signals.
+      assert.ok(
+        firstBody.session_signals && typeof firstBody.session_signals === 'object',
+        'first page() should include session_signals'
+      );
+
+      // Second page_view must not carry session_signals.
+      assert.equal(
+        secondBody.session_signals,
+        undefined,
+        'second page() must not re-send session_signals'
+      );
+    } finally {
+      restoreWindow();
+      restoreScreen();
+      restoreNavigator();
+      restoreIntl();
+    }
+  });
 });

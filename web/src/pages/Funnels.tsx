@@ -2,13 +2,70 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { Plus, X, Layers, Pencil, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import Shell from '../components/shell/Shell'
-import { api, ApiError, Funnel, FunnelAnalysis, FunnelStepInput } from '../lib/api'
+import { api, ApiError, Funnel, FunnelAnalysis, FunnelStepInput, Segment, SegmentRule } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { trackEvent } from '../lib/analytics'
 import { reportError } from '../lib/bugbarn'
 
 const LANGS = ['JS', 'React', 'Go', 'Python', 'Swift', 'Kotlin'] as const
 type Lang = typeof LANGS[number]
+
+// ─── Templates ────────────────────────────────────────────────────────────────
+
+interface FunnelTemplate {
+  name: string
+  scope: 'session' | 'page_view'
+  steps: string[]
+}
+
+const FUNNEL_TEMPLATES: FunnelTemplate[] = [
+  {
+    name: 'Page Engagement',
+    scope: 'page_view',
+    steps: ['page_view', 'page_engaged', 'your_goal'],
+  },
+  {
+    name: 'Lead Capture',
+    scope: 'session',
+    steps: ['page_view', 'form_submit'],
+  },
+  {
+    name: 'E-commerce',
+    scope: 'session',
+    steps: ['page_view', 'add_to_cart', 'purchase'],
+  },
+  {
+    name: 'SaaS Signup',
+    scope: 'session',
+    steps: ['page_view', 'signup_started', 'signup_completed'],
+  },
+]
+
+// ─── Segment rule fields / operators ──────────────────────────────────────────
+
+const SEGMENT_FIELDS = [
+  'country_code',
+  'city',
+  'device_type',
+  'browser',
+  'os',
+  'connection_class',
+  'dark_mode',
+  'browser_timezone',
+] as const
+
+const SEGMENT_OPERATORS = [
+  { value: 'eq', label: '= equals' },
+  { value: 'neq', label: '≠ not equals' },
+  { value: 'contains', label: '⊇ contains' },
+  { value: 'not_contains', label: '⊅ not contains' },
+  { value: 'is_null', label: '∅ is null' },
+  { value: 'is_not_null', label: '∃ is not null' },
+] as const
+
+type SegmentOperator = SegmentRule['operator']
+
+// ─── Colours ─────────────────────────────────────────────────────────────────
 
 function ImplementationSnippet({ funnel, apiKey }: { funnel: Funnel; apiKey?: string }) {
   const [copied, setCopied] = useState(false)
@@ -318,6 +375,148 @@ function conversionColor(pct: number) {
   return C.error
 }
 
+// ─── Scope toggle ─────────────────────────────────────────────────────────────
+
+function ScopeToggle({
+  value,
+  onChange,
+}: {
+  value: 'session' | 'page_view'
+  onChange: (v: 'session' | 'page_view') => void
+}) {
+  return (
+    <div style={{ marginBottom: '1.25rem' }}>
+      <label style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 6 }}>Scope</label>
+      <div style={{
+        display: 'inline-flex',
+        background: C.bg,
+        border: `1px solid ${C.border}`,
+        borderRadius: 8,
+        overflow: 'hidden',
+      }}>
+        {(['session', 'page_view'] as const).map((opt) => {
+          const active = value === opt
+          return (
+            <button
+              key={opt}
+              onClick={() => onChange(opt)}
+              style={{
+                padding: '0.45rem 1rem',
+                border: 'none',
+                background: active ? 'rgba(245,158,11,0.18)' : 'transparent',
+                color: active ? C.amber : C.muted,
+                fontWeight: active ? 700 : 400,
+                fontSize: 13,
+                cursor: 'pointer',
+                borderRight: opt === 'session' ? `1px solid ${C.border}` : 'none',
+                transition: 'all 0.15s',
+              }}
+            >
+              {opt === 'session' ? 'Session' : 'Page view'}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── Templates dropdown ───────────────────────────────────────────────────────
+
+function TemplatesButton({
+  onSelect,
+}: {
+  onSelect: (tpl: FunnelTemplate) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          background: 'transparent',
+          border: `1px solid ${C.border}`,
+          borderRadius: 8,
+          color: C.muted,
+          padding: '0.6rem 1.1rem',
+          cursor: 'pointer',
+          fontSize: 14,
+          fontWeight: 600,
+        }}
+      >
+        Templates
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute',
+          top: 'calc(100% + 6px)',
+          right: 0,
+          background: C.surface,
+          border: `1px solid ${C.border}`,
+          borderRadius: 10,
+          boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+          zIndex: 300,
+          minWidth: 260,
+          overflow: 'hidden',
+        }}>
+          {FUNNEL_TEMPLATES.map((tpl) => (
+            <button
+              key={tpl.name}
+              onClick={() => { onSelect(tpl); setOpen(false) }}
+              style={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'left',
+                background: 'none',
+                border: 'none',
+                borderBottom: `1px solid ${C.border}`,
+                padding: '0.75rem 1rem',
+                cursor: 'pointer',
+                color: C.text,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(245,158,11,0.08)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+            >
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{tpl.name}</div>
+              <div style={{ fontSize: 11, color: C.muted }}>
+                {tpl.steps.join(' → ')}
+                <span style={{
+                  marginLeft: 6,
+                  background: 'rgba(245,158,11,0.15)',
+                  color: C.amber,
+                  borderRadius: 4,
+                  padding: '0.1rem 0.4rem',
+                  fontSize: 10,
+                  fontWeight: 600,
+                }}>
+                  {tpl.scope === 'page_view' ? 'page view' : 'session'}
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── EventNameInput ───────────────────────────────────────────────────────────
+
 function EventNameInput({
   value,
   onChange,
@@ -551,20 +750,26 @@ interface StepWithFilters {
   filters: { property: string; value: string }[]
 }
 
+// ─── Create Funnel Modal ───────────────────────────────────────────────────────
+
 function CreateFunnelModal({
   projectId,
   onClose,
   onCreated,
+  initialTemplate,
 }: {
   projectId: string
   onClose: () => void
   onCreated: (f: Funnel) => void
+  initialTemplate?: FunnelTemplate
 }) {
-  const [name, setName] = useState('')
-  const [steps, setSteps] = useState<StepWithFilters[]>([
-    { event_name: '', filters: [] },
-    { event_name: '', filters: [] },
-  ])
+  const [name, setName] = useState(initialTemplate?.name ?? '')
+  const [scope, setScope] = useState<'session' | 'page_view'>(initialTemplate?.scope ?? 'session')
+  const [steps, setSteps] = useState<StepWithFilters[]>(
+    initialTemplate
+      ? initialTemplate.steps.map((s) => ({ event_name: s, filters: [] }))
+      : [{ event_name: '', filters: [] }, { event_name: '', filters: [] }]
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [eventNames, setEventNames] = useState<string[]>([])
@@ -624,7 +829,7 @@ function CreateFunnelModal({
         event_name: s.event_name,
         ...(s.filters.length > 0 ? { filters: s.filters.filter((f) => f.property && f.value) } : {}),
       }))
-      const f = await api.createFunnel(projectId, name, apiSteps)
+      const f = await api.createFunnel(projectId, name, apiSteps, scope)
       trackEvent('funnel_created', { funnel_name: name, step_count: steps.length })
       onCreated(f)
     } catch (e) {
@@ -653,6 +858,8 @@ function CreateFunnelModal({
         width: '100%',
         maxWidth: 500,
         boxShadow: '0 25px 60px rgba(0,0,0,0.5)',
+        maxHeight: '90vh',
+        overflowY: 'auto',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Create funnel</h2>
@@ -696,6 +903,8 @@ function CreateFunnelModal({
             onBlur={(e) => (e.target.style.borderColor = C.border)}
           />
         </div>
+
+        <ScopeToggle value={scope} onChange={setScope} />
 
         <AvailableEventsPanel
           eventNames={eventNames}
@@ -875,6 +1084,8 @@ function CreateFunnelModal({
   )
 }
 
+// ─── Edit Funnel Modal ────────────────────────────────────────────────────────
+
 function EditFunnelModal({
   projectId,
   funnel,
@@ -887,6 +1098,7 @@ function EditFunnelModal({
   onUpdated: (f: Funnel) => void
 }) {
   const [name, setName] = useState(funnel.name)
+  const [scope, setScope] = useState<'session' | 'page_view'>(funnel.scope ?? 'session')
   const [steps, setSteps] = useState<StepWithFilters[]>(
     funnel.steps?.length > 0
       ? funnel.steps.map((s) => ({ event_name: s.event_name, filters: s.filters || [] }))
@@ -958,7 +1170,7 @@ function EditFunnelModal({
         event_name: s.event_name,
         ...(s.filters.length > 0 ? { filters: s.filters.filter((f) => f.property && f.value) } : {}),
       }))
-      const updated = await api.updateFunnel(projectId, funnel.id, { name, steps: apiSteps })
+      const updated = await api.updateFunnel(projectId, funnel.id, { name, steps: apiSteps, scope })
       onUpdated(updated)
     } catch (e) {
       setError(String(e))
@@ -986,6 +1198,8 @@ function EditFunnelModal({
         width: '100%',
         maxWidth: 500,
         boxShadow: '0 25px 60px rgba(0,0,0,0.5)',
+        maxHeight: '90vh',
+        overflowY: 'auto',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Edit funnel</h2>
@@ -1029,6 +1243,8 @@ function EditFunnelModal({
             onBlur={(e) => (e.target.style.borderColor = C.border)}
           />
         </div>
+
+        <ScopeToggle value={scope} onChange={setScope} />
 
         <AvailableEventsPanel
           eventNames={eventNames}
@@ -1208,6 +1424,359 @@ function EditFunnelModal({
   )
 }
 
+// ─── Segment Manager ──────────────────────────────────────────────────────────
+
+function SegmentManager({
+  projectId,
+  segments,
+  onSegmentsChange,
+}: {
+  projectId: string
+  segments: Segment[]
+  onSegmentsChange: (segs: Segment[]) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newRules, setNewRules] = useState<SegmentRule[]>([{ field: 'country_code', operator: 'eq', value: '' }])
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const addRule = () =>
+    setNewRules((r) => [...r, { field: 'country_code', operator: 'eq', value: '' }])
+
+  const removeRule = (i: number) =>
+    setNewRules((r) => r.filter((_, idx) => idx !== i))
+
+  const updateRule = <K extends keyof SegmentRule>(i: number, field: K, val: SegmentRule[K]) =>
+    setNewRules((r) => r.map((rule, idx) => idx === i ? { ...rule, [field]: val } : rule))
+
+  const handleCreate = async () => {
+    if (!newName.trim()) { setError('Name is required'); return }
+    setSaving(true)
+    setError(null)
+    try {
+      const seg = await api.createSegment(projectId, newName, newRules)
+      onSegmentsChange([...segments, seg])
+      setNewName('')
+      setNewRules([{ field: 'country_code', operator: 'eq', value: '' }])
+      setShowCreate(false)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async (seg: Segment) => {
+    if (!window.confirm(`Delete segment "${seg.name}"?`)) return
+    setDeletingId(seg.id)
+    try {
+      await api.deleteSegment(projectId, seg.id)
+      onSegmentsChange(segments.filter((s) => s.id !== seg.id))
+    } catch (e) {
+      alert('Failed to delete: ' + String(e))
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const valueHidden = (op: SegmentOperator) => op === 'is_null' || op === 'is_not_null'
+
+  return (
+    <div style={{
+      marginTop: '2rem',
+      background: C.surface,
+      border: `1px solid ${C.border}`,
+      borderRadius: 12,
+    }}>
+      {/* Header */}
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          width: '100%',
+          background: 'none',
+          border: 'none',
+          padding: '1rem 1.25rem',
+          cursor: 'pointer',
+          color: C.text,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {expanded ? <ChevronDown size={16} color={C.muted} /> : <ChevronRight size={16} color={C.muted} />}
+          <span style={{ fontWeight: 700, fontSize: 15 }}>Segments</span>
+          {segments.length > 0 && (
+            <span style={{
+              background: 'rgba(245,158,11,0.15)',
+              color: C.amber,
+              borderRadius: 99,
+              padding: '0.1rem 0.5rem',
+              fontSize: 12,
+              fontWeight: 600,
+            }}>
+              {segments.length}
+            </span>
+          )}
+        </div>
+        <span style={{ fontSize: 12, color: C.muted }}>Custom segments for funnel analysis</span>
+      </button>
+
+      {expanded && (
+        <div style={{ padding: '0 1.25rem 1.25rem' }}>
+          {/* Existing segments */}
+          {segments.length === 0 && !showCreate && (
+            <p style={{ color: C.muted, fontSize: 13, margin: '0 0 1rem' }}>No segments yet.</p>
+          )}
+          {segments.map((seg) => (
+            <div
+              key={seg.id}
+              style={{
+                background: C.bg,
+                border: `1px solid ${C.border}`,
+                borderRadius: 8,
+                padding: '0.75rem 1rem',
+                marginBottom: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 2 }}>{seg.name}</div>
+                  <div style={{
+                    fontFamily: 'ui-monospace, monospace',
+                    fontSize: 10,
+                    color: C.muted,
+                    marginBottom: 6,
+                    wordBreak: 'break-all',
+                  }}>
+                    ID: {seg.id}
+                  </div>
+                  {seg.rules.map((r, i) => (
+                    <div key={i} style={{ fontSize: 12, color: C.muted, marginBottom: 2 }}>
+                      <span style={{ color: C.text }}>{r.field}</span>
+                      {' '}
+                      <span style={{ color: C.amber }}>{r.operator}</span>
+                      {!valueHidden(r.operator) && (
+                        <> <span style={{ color: C.text }}>{r.value}</span></>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => handleDelete(seg)}
+                  disabled={deletingId === seg.id}
+                  title="Delete segment"
+                  style={{
+                    background: 'none',
+                    border: `1px solid rgba(239,68,68,0.3)`,
+                    borderRadius: 6,
+                    color: C.error,
+                    cursor: deletingId === seg.id ? 'not-allowed' : 'pointer',
+                    padding: '0.3rem 0.5rem',
+                    fontSize: 12,
+                    flexShrink: 0,
+                    opacity: deletingId === seg.id ? 0.5 : 1,
+                  }}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            </div>
+          ))}
+
+          {/* Create new segment */}
+          {showCreate && (
+            <div style={{
+              background: C.bg,
+              border: `1px solid ${C.border}`,
+              borderRadius: 8,
+              padding: '1rem',
+              marginBottom: 8,
+            }}>
+              {error && (
+                <div style={{
+                  background: 'rgba(239,68,68,0.1)',
+                  border: `1px solid rgba(239,68,68,0.3)`,
+                  borderRadius: 6,
+                  padding: '0.5rem 0.75rem',
+                  color: C.error,
+                  fontSize: 13,
+                  marginBottom: '0.75rem',
+                }}>
+                  {error}
+                </div>
+              )}
+              <div style={{ marginBottom: '0.75rem' }}>
+                <label style={{ display: 'block', fontSize: 12, color: C.muted, marginBottom: 4 }}>Name</label>
+                <input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="e.g. EU mobile users"
+                  style={{
+                    width: '100%',
+                    background: C.surface,
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 6,
+                    padding: '0.45rem 0.75rem',
+                    color: C.text,
+                    fontSize: 13,
+                    boxSizing: 'border-box',
+                    outline: 'none',
+                  }}
+                  onFocus={(e) => (e.target.style.borderColor = C.amber)}
+                  onBlur={(e) => (e.target.style.borderColor = C.border)}
+                />
+              </div>
+              <div style={{ marginBottom: '0.75rem' }}>
+                <label style={{ display: 'block', fontSize: 12, color: C.muted, marginBottom: 6 }}>Rules</label>
+                {newRules.map((rule, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                    <select
+                      value={rule.field}
+                      onChange={(e) => updateRule(i, 'field', e.target.value)}
+                      style={{
+                        background: C.surface,
+                        border: `1px solid ${C.border}`,
+                        borderRadius: 6,
+                        color: C.text,
+                        padding: '0.3rem 0.5rem',
+                        fontSize: 12,
+                        outline: 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {SEGMENT_FIELDS.map((f) => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={rule.operator}
+                      onChange={(e) => updateRule(i, 'operator', e.target.value as SegmentOperator)}
+                      style={{
+                        background: C.surface,
+                        border: `1px solid ${C.border}`,
+                        borderRadius: 6,
+                        color: C.text,
+                        padding: '0.3rem 0.5rem',
+                        fontSize: 12,
+                        outline: 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {SEGMENT_OPERATORS.map((op) => (
+                        <option key={op.value} value={op.value}>{op.label}</option>
+                      ))}
+                    </select>
+                    {!valueHidden(rule.operator) && (
+                      <input
+                        value={rule.value}
+                        onChange={(e) => updateRule(i, 'value', e.target.value)}
+                        placeholder="Value"
+                        style={{
+                          background: C.surface,
+                          border: `1px solid ${C.border}`,
+                          borderRadius: 6,
+                          color: C.text,
+                          padding: '0.3rem 0.5rem',
+                          fontSize: 12,
+                          outline: 'none',
+                          width: 100,
+                        }}
+                        onFocus={(e) => (e.target.style.borderColor = C.amber)}
+                        onBlur={(e) => (e.target.style.borderColor = C.border)}
+                      />
+                    )}
+                    {newRules.length > 1 && (
+                      <button
+                        onClick={() => removeRule(i)}
+                        style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 2 }}
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  onClick={addRule}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: C.muted,
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    padding: '2px 0',
+                  }}
+                >
+                  + Add rule
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => { setShowCreate(false); setError(null) }}
+                  style={{
+                    background: 'transparent',
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 6,
+                    color: C.muted,
+                    padding: '0.4rem 0.875rem',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreate}
+                  disabled={saving}
+                  style={{
+                    background: saving ? '#78481a' : C.amber,
+                    border: 'none',
+                    borderRadius: 6,
+                    color: '#0f1117',
+                    padding: '0.4rem 0.875rem',
+                    cursor: saving ? 'not-allowed' : 'pointer',
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                >
+                  {saving ? 'Saving…' : 'Save segment'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!showCreate && (
+            <button
+              onClick={() => setShowCreate(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                background: 'transparent',
+                border: `1px dashed ${C.border}`,
+                borderRadius: 8,
+                color: C.muted,
+                padding: '0.5rem 1rem',
+                cursor: 'pointer',
+                fontSize: 13,
+                width: '100%',
+                justifyContent: 'center',
+              }}
+            >
+              <Plus size={14} /> New segment
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Funnel Detail ────────────────────────────────────────────────────────────
+
 function FunnelDetail({ analysis, activeSegment, apiKey }: { analysis: FunnelAnalysis; activeSegment: string; apiKey?: string }) {
   const hasData = analysis.results && analysis.results.length > 0 && analysis.results[0]?.count > 0
 
@@ -1319,10 +1888,13 @@ function FunnelDetail({ analysis, activeSegment, apiKey }: { analysis: FunnelAna
   )
 }
 
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function Funnels() {
   const { projectId } = useParams<{ projectId?: string }>()
   const { projects } = useProjects()
   const [funnels, setFunnels] = useState<Funnel[]>([])
+  const [segments, setSegments] = useState<Segment[]>([])
   const [selected, setSelected] = useState<Funnel | null>(null)
   const [analysis, setAnalysis] = useState<FunnelAnalysis | null>(null)
   const [analysisLoading, setAnalysisLoading] = useState(false)
@@ -1331,8 +1903,11 @@ export default function Funnels() {
   const [showEdit, setShowEdit] = useState(false)
   const [showDetail, setShowDetail] = useState(false)
   const [activeSegment, setActiveSegment] = useState('all')
+  // activeSegmentId is set when a stored segment is chosen; activeSegment stays 'all' in that case
+  const [activeSegmentId, setActiveSegmentId] = useState<string | undefined>(undefined)
   const [ingestKey, setIngestKey] = useState<string | undefined>(undefined)
   const [deleting, setDeleting] = useState(false)
+  const [pendingTemplate, setPendingTemplate] = useState<FunnelTemplate | undefined>(undefined)
 
   useEffect(() => {
     api.listApiKeys()
@@ -1350,9 +1925,13 @@ export default function Funnels() {
     setAnalysisError(null)
     setShowDetail(false)
     setActiveSegment('all')
+    setActiveSegmentId(undefined)
     api.listFunnels(projectId)
       .then((d) => setFunnels(d.funnels || []))
       .catch((e) => { console.error(e); reportError(e, { source: 'Funnels.listFunnels' }) })
+    api.listSegments(projectId)
+      .then((d) => setSegments(d.segments || []))
+      .catch(() => {})
   }, [projectId])
 
   // Re-fetch analysis whenever selected funnel or active segment changes.
@@ -1361,19 +1940,16 @@ export default function Funnels() {
     setAnalysis(null)
     setAnalysisError(null)
     setAnalysisLoading(true)
-    api.getFunnelAnalysis(projectId, selected.id, activeSegment)
+    api.getFunnelAnalysis(projectId, selected.id, activeSegmentId ? undefined : activeSegment, activeSegmentId)
       .then(setAnalysis)
       .catch((e) => {
         console.error(e)
-        // 404 (deleted funnel / stale URL) and 0 (network blip) are not real
-        // bugs — the user just landed on a URL whose backing record is gone
-        // or their connection dropped. Surface in the UI, don't escalate.
         const isNoise = e instanceof ApiError && (e.status === 404 || e.status === 0)
         if (!isNoise) reportError(e, { source: 'Funnels.getFunnelAnalysis' })
         setAnalysisError(String(e))
       })
       .finally(() => setAnalysisLoading(false))
-  }, [selected, projectId, activeSegment])
+  }, [selected, projectId, activeSegment, activeSegmentId])
 
   const loadAnalysis = (funnel: Funnel) => {
     if (!projectId) return
@@ -1401,6 +1977,21 @@ export default function Funnels() {
       setDeleting(false)
     }
   }
+
+  // Segment selection — preset vs stored
+  const handleSegmentSelect = (presetId: string) => {
+    setActiveSegment(presetId)
+    setActiveSegmentId(undefined)
+  }
+  const handleStoredSegmentSelect = (seg: Segment) => {
+    setActiveSegment('all') // reset preset
+    setActiveSegmentId(seg.id)
+  }
+
+  // Determine label for the currently active segment in FunnelDetail
+  const activeSegmentLabel: string = activeSegmentId
+    ? (segments.find((s) => s.id === activeSegmentId)?.name ?? activeSegmentId)
+    : activeSegment
 
   if (!projectId) {
     return (
@@ -1440,10 +2031,12 @@ export default function Funnels() {
       {showCreate && projectId && (
         <CreateFunnelModal
           projectId={projectId}
-          onClose={() => setShowCreate(false)}
+          initialTemplate={pendingTemplate}
+          onClose={() => { setShowCreate(false); setPendingTemplate(undefined) }}
           onCreated={(f) => {
             setFunnels((prev) => [...prev, f])
             setShowCreate(false)
+            setPendingTemplate(undefined)
             loadAnalysis(f)
           }}
         />
@@ -1458,33 +2051,40 @@ export default function Funnels() {
             setFunnels((prev) => prev.map((f) => f.id === updated.id ? updated : f))
             setSelected(updated)
             setShowEdit(false)
-            // Re-trigger analysis by resetting and letting the effect pick it up.
             setAnalysis(null)
           }}
         />
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', gap: 8, flexWrap: 'wrap' }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.5px', margin: 0 }}>Funnels</h1>
-        <button
-          onClick={() => setShowCreate(true)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            background: C.amber,
-            border: 'none',
-            borderRadius: 8,
-            color: '#0f1117',
-            padding: '0.6rem 1.1rem',
-            cursor: 'pointer',
-            fontSize: 14,
-            fontWeight: 700,
-          }}
-        >
-          <Plus size={16} />
-          Create funnel
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <TemplatesButton
+            onSelect={(tpl) => {
+              setPendingTemplate(tpl)
+              setShowCreate(true)
+            }}
+          />
+          <button
+            onClick={() => { setPendingTemplate(undefined); setShowCreate(true) }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: C.amber,
+              border: 'none',
+              borderRadius: 8,
+              color: '#0f1117',
+              padding: '0.6rem 1.1rem',
+              cursor: 'pointer',
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            <Plus size={16} />
+            Create funnel
+          </button>
+        </div>
       </div>
 
       <div className="funnels-layout" style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '1.5rem' }}>
@@ -1536,6 +2136,19 @@ export default function Funnels() {
                 <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{f.name}</div>
                 <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
                   {f.steps?.length ?? 0} steps
+                  {f.scope && f.scope !== 'session' && (
+                    <span style={{
+                      marginLeft: 6,
+                      background: 'rgba(245,158,11,0.12)',
+                      color: C.amber,
+                      borderRadius: 4,
+                      padding: '0.05rem 0.35rem',
+                      fontSize: 10,
+                      fontWeight: 600,
+                    }}>
+                      page view
+                    </span>
+                  )}
                 </div>
               </div>
             ))
@@ -1632,27 +2245,61 @@ export default function Funnels() {
             </div>
           )}
           {selected && (
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: '1.25rem', maxWidth: '100%', boxSizing: 'border-box' }}>
-              {PRESET_SEGMENTS.map((seg) => (
-                <button
-                  key={seg.id}
-                  onClick={() => setActiveSegment(seg.id)}
-                  title={seg.tip}
-                  style={{
-                    padding: '0.35rem 0.875rem',
-                    borderRadius: 99,
-                    border: `1px solid ${activeSegment === seg.id ? C.amber : C.border}`,
-                    background: activeSegment === seg.id ? 'rgba(245,158,11,0.15)' : 'transparent',
-                    color: activeSegment === seg.id ? C.amber : C.muted,
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    fontWeight: activeSegment === seg.id ? 600 : 400,
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  {seg.label}
-                </button>
-              ))}
+            <div style={{ marginBottom: '1.25rem' }}>
+              {/* Preset segment pills */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxWidth: '100%', boxSizing: 'border-box', marginBottom: segments.length > 0 ? 6 : 0 }}>
+                {PRESET_SEGMENTS.map((seg) => {
+                  const active = !activeSegmentId && activeSegment === seg.id
+                  return (
+                    <button
+                      key={seg.id}
+                      onClick={() => handleSegmentSelect(seg.id)}
+                      title={seg.tip}
+                      style={{
+                        padding: '0.35rem 0.875rem',
+                        borderRadius: 99,
+                        border: `1px solid ${active ? C.amber : C.border}`,
+                        background: active ? 'rgba(245,158,11,0.15)' : 'transparent',
+                        color: active ? C.amber : C.muted,
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        fontWeight: active ? 600 : 400,
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {seg.label}
+                    </button>
+                  )
+                })}
+              </div>
+              {/* Stored segment pills */}
+              {segments.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxWidth: '100%', boxSizing: 'border-box' }}>
+                  {segments.map((seg) => {
+                    const active = activeSegmentId === seg.id
+                    return (
+                      <button
+                        key={seg.id}
+                        onClick={() => handleStoredSegmentSelect(seg)}
+                        title={`Segment: ${seg.name}`}
+                        style={{
+                          padding: '0.35rem 0.875rem',
+                          borderRadius: 99,
+                          border: `1px solid ${active ? C.amber : C.border}`,
+                          background: active ? 'rgba(245,158,11,0.15)' : 'rgba(245,158,11,0.04)',
+                          color: active ? C.amber : C.muted,
+                          cursor: 'pointer',
+                          fontSize: 13,
+                          fontWeight: active ? 600 : 400,
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        {seg.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
           {analysisLoading && (
@@ -1671,10 +2318,19 @@ export default function Funnels() {
             </div>
           )}
           {analysis && !analysisLoading && !analysisError && (
-            <FunnelDetail analysis={analysis} activeSegment={activeSegment} apiKey={ingestKey} />
+            <FunnelDetail analysis={analysis} activeSegment={activeSegmentLabel} apiKey={ingestKey} />
           )}
         </div>
       </div>
+
+      {/* Segment manager */}
+      {projectId && (
+        <SegmentManager
+          projectId={projectId}
+          segments={segments}
+          onSegmentsChange={setSegments}
+        />
+      )}
     </Shell>
   )
 }

@@ -17,19 +17,21 @@ import (
 
 // EventPayload is the JSON body accepted by POST /api/v1/events.
 type EventPayload struct {
-	Name        string         `json:"name"`
-	URL         string         `json:"url"`
-	Referrer    string         `json:"referrer"`
-	UTMSource   string         `json:"utm_source"`
-	UTMMedium   string         `json:"utm_medium"`
-	UTMCampaign string         `json:"utm_campaign"`
-	UTMTerm     string         `json:"utm_term"`
-	UTMContent  string         `json:"utm_content"`
-	Properties  map[string]any `json:"properties"`
-	SessionID   string         `json:"session_id"`
-	UserID      string         `json:"user_id"`
-	UserAgent   string         `json:"user_agent"`
-	Timestamp   time.Time      `json:"timestamp"`
+	Name           string         `json:"name"`
+	URL            string         `json:"url"`
+	Referrer       string         `json:"referrer"`
+	UTMSource      string         `json:"utm_source"`
+	UTMMedium      string         `json:"utm_medium"`
+	UTMCampaign    string         `json:"utm_campaign"`
+	UTMTerm        string         `json:"utm_term"`
+	UTMContent     string         `json:"utm_content"`
+	Properties     map[string]any `json:"properties"`
+	SessionID      string         `json:"session_id"`
+	UserID         string         `json:"user_id"`
+	UserAgent      string         `json:"user_agent"`
+	PageViewID     string         `json:"page_view_id"`
+	SessionSignals map[string]any `json:"session_signals"`
+	Timestamp      time.Time      `json:"timestamp"`
 }
 
 // ProcessRecord decodes and enriches a spool record into a repository.Event.
@@ -119,21 +121,25 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 		Browser:        browser,
 		OS:             osName,
 		DeviceType:     deviceType,
+		PageViewID:     payload.PageViewID,
 		IngestID:       record.IngestID,
 		OccurredAt:     occurredAt,
 		ClientIP:       clientIP,
+	}
+	// Carry session signals through as a transient field for PersistEvent.
+	if len(payload.SessionSignals) > 0 {
+		event.SessionSignalsRaw = payload.SessionSignals
 	}
 
 	return event, nil
 }
 
 // EventPersister is the narrow repository interface PersistEvent requires.
-// *repository.Store satisfies this interface. Defining it here allows the
-// worker to be tested without a real database.
 type EventPersister interface {
 	GetEventByIngestID(ctx context.Context, ingestID string) (*repository.Event, error)
 	InsertEvent(ctx context.Context, e repository.Event) error
 	UpsertSession(ctx context.Context, sess repository.Session) error
+	UpsertSessionSignals(ctx context.Context, sessionID string, signals repository.SessionSignals) error
 }
 
 // PersistEvent stores an event and upserts the associated session.
@@ -189,11 +195,50 @@ func PersistEvent(ctx context.Context, store EventPersister, event repository.Ev
 		sess.ConnectionClass = geo.ConnectionClass
 	}
 	if err := store.UpsertSession(ctx, sess); err != nil {
-		// Non-fatal: log and continue.
 		slog.Warn("upsert session failed", "err", err, "session_id", event.SessionID)
 	}
 
+	// Persist device/browser signals if present (first event of session only).
+	if len(event.SessionSignalsRaw) > 0 {
+		signals := parseSessionSignals(event.SessionSignalsRaw)
+		if err := store.UpsertSessionSignals(ctx, event.SessionID, signals); err != nil {
+			slog.Warn("upsert session signals failed", "err", err, "session_id", event.SessionID)
+		}
+	}
+
 	return nil
+}
+
+func parseSessionSignals(raw map[string]any) repository.SessionSignals {
+	var s repository.SessionSignals
+	if v, ok := raw["screen_width"].(float64); ok {
+		n := int(v)
+		s.ScreenWidth = &n
+	}
+	if v, ok := raw["screen_height"].(float64); ok {
+		n := int(v)
+		s.ScreenHeight = &n
+	}
+	if v, ok := raw["pixel_ratio"].(float64); ok {
+		s.PixelRatio = &v
+	}
+	if v, ok := raw["touch"].(bool); ok {
+		s.Touch = &v
+	}
+	if v, ok := raw["dark_mode"].(bool); ok {
+		s.DarkMode = &v
+	}
+	if v, ok := raw["reduced_motion"].(bool); ok {
+		s.ReducedMotion = &v
+	}
+	if v, ok := raw["browser_timezone"].(string); ok {
+		s.BrowserTimezone = v
+	}
+	if v, ok := raw["cpu_cores"].(float64); ok {
+		n := int(v)
+		s.CPUCores = &n
+	}
+	return s
 }
 
 // SafeProcess wraps ProcessRecord with a panic recovery so that a panicking

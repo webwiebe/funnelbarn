@@ -21,6 +21,17 @@ export interface EventProperties {
   [key: string]: unknown;
 }
 
+interface SessionSignals {
+  screen_width?: number;
+  screen_height?: number;
+  pixel_ratio?: number;
+  touch?: boolean;
+  dark_mode?: boolean;
+  reduced_motion?: boolean;
+  browser_timezone?: string;
+  cpu_cores?: number;
+}
+
 interface EventPayload {
   name: string;
   url?: string;
@@ -34,6 +45,9 @@ interface EventPayload {
   session_id?: string;
   user_id?: string;
   timestamp: string;
+  page_view_id?: string;
+  session_signals?: Record<string, unknown>;
+  vitals?: Record<string, number>;
 }
 
 const SESSION_KEY = "funnelbarn_sid";
@@ -54,6 +68,22 @@ export class FunnelBarnClient {
   private flushTimer?: ReturnType<typeof setInterval>;
   private userId?: string;
 
+  // page_view_id
+  private currentPageViewId: string | undefined;
+
+  // session signals
+  private sessionSignalsSent = false;
+
+  // engagement tracking
+  private engagementTimer?: ReturnType<typeof setTimeout>;
+  private engagementScrollHandler?: () => void;
+  private engagementFired = false;
+
+  // web vitals
+  private pendingVitals: Record<string, number> = {};
+  private vitalsPageViewId: string | undefined;
+  private vitalsFlushed = false;
+
   constructor(options: FunnelBarnOptions) {
     this.apiKey = options.apiKey;
     this.endpoint = options.endpoint.replace(/\/$/, "");
@@ -63,9 +93,55 @@ export class FunnelBarnClient {
 
     this.startFlushTimer();
 
-    // Auto-flush on page unload (browser only).
     if (typeof window !== "undefined") {
+      // Auto-flush on page unload (browser only).
       window.addEventListener("beforeunload", () => this.flush());
+
+      // Register vitals flush listeners once in the constructor.
+      const flushVitals = () => {
+        if (this.vitalsFlushed || !this.vitalsPageViewId) return;
+        if (Object.keys(this.pendingVitals).length === 0) return;
+        this.vitalsFlushed = true;
+        this.queue.push({
+          name: "web_vitals",
+          page_view_id: this.vitalsPageViewId,
+          session_id: this.getOrCreateSessionID(),
+          properties: { ...this.pendingVitals },
+          timestamp: new Date().toISOString(),
+        });
+        this.flush().catch(() => {});
+      };
+
+      if (typeof document !== "undefined") {
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) flushVitals();
+        });
+      }
+      window.addEventListener("beforeunload", flushVitals);
+
+      // LCP observer.
+      try {
+        new PerformanceObserver((list) => {
+          const entries = list.getEntries();
+          if (entries.length) {
+            this.pendingVitals.lcp = Math.round(
+              entries[entries.length - 1].startTime
+            );
+          }
+        }).observe({ type: "largest-contentful-paint", buffered: true });
+      } catch {
+        // Not supported in this environment.
+      }
+
+      // FCP observer.
+      try {
+        new PerformanceObserver((list) => {
+          const e = list.getEntriesByName("first-contentful-paint")[0];
+          if (e) this.pendingVitals.fcp = Math.round(e.startTime);
+        }).observe({ type: "paint", buffered: true });
+      } catch {
+        // Not supported in this environment.
+      }
     }
   }
 
@@ -74,11 +150,42 @@ export class FunnelBarnClient {
    * when running in a browser.
    */
   page(properties?: EventProperties): void {
+    // Generate a new page_view_id for this page view.
+    this.currentPageViewId = this.generateUUID();
+
+    // Clean up engagement tracking from any previous page view.
+    this.cleanupEngagement();
+
+    // Reset web vitals state for this page view.
+    this.pendingVitals = {};
+    this.vitalsPageViewId = this.currentPageViewId;
+    this.vitalsFlushed = false;
+
+    // Collect TTFB synchronously.
+    const vitalsForEvent: Record<string, number> = {};
+    if (typeof performance !== "undefined") {
+      const nav = performance.getEntriesByType(
+        "navigation"
+      )[0] as PerformanceNavigationTiming | undefined;
+      if (nav) {
+        const ttfb = Math.round(nav.responseStart - nav.requestStart);
+        this.pendingVitals.ttfb = ttfb;
+        vitalsForEvent.ttfb = ttfb;
+      }
+    }
+
+    // Collect session signals on the very first page() call.
+    let sessionSignals: SessionSignals | undefined;
+    if (!this.sessionSignalsSent) {
+      this.sessionSignalsSent = true;
+      sessionSignals = this.collectSessionSignals();
+    }
+
     const url = this.detectURL();
     const referrer = this.detectReferrer();
     const utms = this.extractUTMs(url);
 
-    this.queue.push({
+    const payload: EventPayload = {
       name: "page_view",
       url,
       referrer,
@@ -87,7 +194,21 @@ export class FunnelBarnClient {
       session_id: this.getOrCreateSessionID(),
       user_id: this.userId,
       timestamp: new Date().toISOString(),
-    });
+      page_view_id: this.currentPageViewId,
+    };
+
+    if (sessionSignals && Object.keys(sessionSignals).length > 0) {
+      payload.session_signals = sessionSignals as Record<string, unknown>;
+    }
+
+    if (Object.keys(vitalsForEvent).length > 0) {
+      payload.vitals = vitalsForEvent;
+    }
+
+    this.queue.push(payload);
+
+    // Start engagement tracking for this page view.
+    this.startEngagementTracking();
   }
 
   /**
@@ -106,6 +227,7 @@ export class FunnelBarnClient {
       session_id: this.getOrCreateSessionID(),
       user_id: this.userId,
       timestamp: new Date().toISOString(),
+      page_view_id: this.currentPageViewId,
     });
   }
 
@@ -171,7 +293,11 @@ export class FunnelBarnClient {
       }, this.flushInterval);
 
       // Allow Node.js process to exit even if timer is active.
-      if (this.flushTimer && typeof this.flushTimer === "object" && "unref" in this.flushTimer) {
+      if (
+        this.flushTimer &&
+        typeof this.flushTimer === "object" &&
+        "unref" in this.flushTimer
+      ) {
         (this.flushTimer as NodeJS.Timeout).unref();
       }
     }
@@ -183,11 +309,17 @@ export class FunnelBarnClient {
     }
 
     const now = Date.now();
-    const expiry = parseInt(localStorage.getItem(SESSION_EXPIRY_KEY) ?? "0", 10);
+    const expiry = parseInt(
+      localStorage.getItem(SESSION_EXPIRY_KEY) ?? "0",
+      10
+    );
 
     if (now < expiry) {
       // Extend session expiry on activity.
-      localStorage.setItem(SESSION_EXPIRY_KEY, String(now + this.sessionTimeout));
+      localStorage.setItem(
+        SESSION_EXPIRY_KEY,
+        String(now + this.sessionTimeout)
+      );
       return localStorage.getItem(SESSION_KEY) ?? this.generateSessionID();
     }
 
@@ -212,6 +344,120 @@ export class FunnelBarnClient {
       .join("");
   }
 
+  private generateUUID(): string {
+    const bytes = new Uint8Array(16);
+    if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+      crypto.getRandomValues(bytes);
+    } else {
+      for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    }
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+
+  private collectSessionSignals(): SessionSignals {
+    if (typeof window === "undefined") return {};
+    const signals: SessionSignals = {};
+    if (typeof screen !== "undefined") {
+      signals.screen_width = screen.width;
+      signals.screen_height = screen.height;
+    }
+    if (typeof window.devicePixelRatio !== "undefined") {
+      signals.pixel_ratio = window.devicePixelRatio;
+    }
+    if (typeof navigator !== "undefined") {
+      if (typeof navigator.maxTouchPoints !== "undefined") {
+        signals.touch = navigator.maxTouchPoints > 0;
+      }
+      if (typeof navigator.hardwareConcurrency !== "undefined") {
+        signals.cpu_cores = navigator.hardwareConcurrency;
+      }
+    }
+    try {
+      signals.dark_mode = window.matchMedia(
+        "(prefers-color-scheme: dark)"
+      ).matches;
+    } catch {
+      // ignore
+    }
+    try {
+      signals.reduced_motion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+    } catch {
+      // ignore
+    }
+    try {
+      signals.browser_timezone =
+        Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+      // ignore
+    }
+    return signals;
+  }
+
+  private startEngagementTracking(): void {
+    if (typeof window === "undefined") return;
+
+    this.engagementFired = false;
+    const pageViewId = this.currentPageViewId;
+
+    const fireEngagement = () => {
+      if (this.engagementFired) return;
+      this.engagementFired = true;
+      this.cleanupEngagement();
+      this.queue.push({
+        name: "page_engaged",
+        page_view_id: pageViewId,
+        session_id: this.getOrCreateSessionID(),
+        timestamp: new Date().toISOString(),
+      });
+    };
+
+    // 15-second wall-clock timer using 1s ticks.
+    let ticks = 0;
+    const tick = () => {
+      if (this.engagementFired) return;
+      ticks++;
+      if (ticks >= 15) {
+        fireEngagement();
+      } else {
+        this.engagementTimer = setTimeout(tick, 1000);
+      }
+    };
+    this.engagementTimer = setTimeout(tick, 1000);
+
+    // Passive scroll listener — fires when scrolled past 50%.
+    const scrollHandler = () => {
+      const scrollable =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      if (scrollable <= 0) return;
+      if (
+        window.scrollY / scrollable >= 0.5
+      ) {
+        fireEngagement();
+      }
+    };
+    this.engagementScrollHandler = scrollHandler;
+    window.addEventListener("scroll", scrollHandler, { passive: true });
+  }
+
+  private cleanupEngagement(): void {
+    if (this.engagementTimer !== undefined) {
+      clearTimeout(this.engagementTimer);
+      this.engagementTimer = undefined;
+    }
+    if (this.engagementScrollHandler !== undefined && typeof window !== "undefined") {
+      window.removeEventListener("scroll", this.engagementScrollHandler);
+      this.engagementScrollHandler = undefined;
+    }
+  }
+
   private detectURL(): string | undefined {
     if (typeof window !== "undefined" && window.location) {
       return window.location.href;
@@ -231,11 +477,16 @@ export class FunnelBarnClient {
     try {
       const u = new URL(url);
       const result: Partial<EventPayload> = {};
-      if (u.searchParams.get("utm_source")) result.utm_source = u.searchParams.get("utm_source")!;
-      if (u.searchParams.get("utm_medium")) result.utm_medium = u.searchParams.get("utm_medium")!;
-      if (u.searchParams.get("utm_campaign")) result.utm_campaign = u.searchParams.get("utm_campaign")!;
-      if (u.searchParams.get("utm_term")) result.utm_term = u.searchParams.get("utm_term")!;
-      if (u.searchParams.get("utm_content")) result.utm_content = u.searchParams.get("utm_content")!;
+      if (u.searchParams.get("utm_source"))
+        result.utm_source = u.searchParams.get("utm_source")!;
+      if (u.searchParams.get("utm_medium"))
+        result.utm_medium = u.searchParams.get("utm_medium")!;
+      if (u.searchParams.get("utm_campaign"))
+        result.utm_campaign = u.searchParams.get("utm_campaign")!;
+      if (u.searchParams.get("utm_term"))
+        result.utm_term = u.searchParams.get("utm_term")!;
+      if (u.searchParams.get("utm_content"))
+        result.utm_content = u.searchParams.get("utm_content")!;
       return result;
     } catch {
       return {};

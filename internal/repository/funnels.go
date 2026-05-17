@@ -18,6 +18,7 @@ type Funnel struct {
 	ProjectID   string       `json:"project_id"`
 	Name        string       `json:"name"`
 	Description string       `json:"description"`
+	Scope       string       `json:"scope"` // "session" (default) or "page_view"
 	Steps       []FunnelStep `json:"steps"`
 	CreatedAt   time.Time    `json:"created_at"`
 }
@@ -59,8 +60,11 @@ func (s *Store) CreateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	const qf = `INSERT INTO funnels (id, project_id, name, description) VALUES (?, ?, ?, ?)`
-	if _, err := tx.ExecContext(ctx, qf, f.ID, f.ProjectID, f.Name, nullStr(f.Description)); err != nil {
+	if f.Scope == "" {
+		f.Scope = "session"
+	}
+	const qf = `INSERT INTO funnels (id, project_id, name, description, scope) VALUES (?, ?, ?, ?, ?)`
+	if _, err := tx.ExecContext(ctx, qf, f.ID, f.ProjectID, f.Name, nullStr(f.Description), f.Scope); err != nil {
 		return Funnel{}, fmt.Errorf("insert funnel: %w", err)
 	}
 
@@ -94,9 +98,9 @@ func (s *Store) CreateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
 
 // FunnelByID fetches a funnel with all its steps.
 func (s *Store) FunnelByID(ctx context.Context, id string) (Funnel, error) {
-	const qf = `SELECT id, project_id, name, COALESCE(description,''), created_at FROM funnels WHERE id = ?`
+	const qf = `SELECT id, project_id, name, COALESCE(description,''), COALESCE(scope,'session'), created_at FROM funnels WHERE id = ?`
 	var f Funnel
-	if err := s.db.QueryRowContext(ctx, qf, id).Scan(&f.ID, &f.ProjectID, &f.Name, &f.Description, &f.CreatedAt); err != nil {
+	if err := s.db.QueryRowContext(ctx, qf, id).Scan(&f.ID, &f.ProjectID, &f.Name, &f.Description, &f.Scope, &f.CreatedAt); err != nil {
 		return Funnel{}, err
 	}
 
@@ -110,7 +114,7 @@ func (s *Store) FunnelByID(ctx context.Context, id string) (Funnel, error) {
 
 // ListFunnels returns all funnels for a project.
 func (s *Store) ListFunnels(ctx context.Context, projectID string) ([]Funnel, error) {
-	const q = `SELECT id, project_id, name, COALESCE(description,''), created_at FROM funnels WHERE project_id = ? ORDER BY created_at`
+	const q = `SELECT id, project_id, name, COALESCE(description,''), COALESCE(scope,'session'), created_at FROM funnels WHERE project_id = ? ORDER BY created_at`
 	rows, err := s.db.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, err
@@ -120,7 +124,7 @@ func (s *Store) ListFunnels(ctx context.Context, projectID string) ([]Funnel, er
 	var funnels []Funnel
 	for rows.Next() {
 		var f Funnel
-		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Name, &f.Description, &f.CreatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Name, &f.Description, &f.Scope, &f.CreatedAt); err != nil {
 			return nil, err
 		}
 		funnels = append(funnels, f)
@@ -148,7 +152,10 @@ func (s *Store) UpdateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	if _, err := tx.ExecContext(ctx, `UPDATE funnels SET name=?, description=? WHERE id=?`, f.Name, nullStr(f.Description), f.ID); err != nil {
+	if f.Scope == "" {
+		f.Scope = "session"
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE funnels SET name=?, description=?, scope=? WHERE id=?`, f.Name, nullStr(f.Description), f.Scope, f.ID); err != nil {
 		return Funnel{}, fmt.Errorf("update funnel: %w", err)
 	}
 
@@ -261,52 +268,81 @@ func segmentParam(seg *SegmentFilter) (clause string, arg any, needSessionJoin b
 }
 
 // AnalyzeFunnel computes conversion rates for each step of a funnel over a time range.
-// An optional SegmentFilter restricts which events are counted.
-func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time, seg *SegmentFilter) ([]FunnelStepResult, error) {
+// seg is the legacy preset filter; rules are additional stored segment conditions (ANDed together).
+func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time, seg *SegmentFilter, rules ...SegmentRule) ([]FunnelStepResult, error) {
 	if len(f.Steps) == 0 {
 		return nil, nil
 	}
 
-	clause, segArg, needJoin := segmentParam(seg)
+	scope := f.Scope
+	if scope == "" {
+		scope = "session"
+	}
+	pageViewScope := scope == "page_view"
+
+	// Build WHERE clause from preset segment filter.
+	presetClause, presetArg, needJoin := segmentParam(seg)
+
+	// Build WHERE clause from stored segment rules.
+	ruleClause, ruleArgs, rulesNeedJoin := buildSegmentRuleClause(rules)
+	needJoin = needJoin || rulesNeedJoin
+
+	// Combine clauses.
+	var extraClauses []string
+	var extraArgs []any
+	if presetClause != "" {
+		extraClauses = append(extraClauses, presetClause)
+		if presetArg != nil {
+			extraArgs = append(extraArgs, presetArg)
+		}
+	}
+	if ruleClause != "" {
+		extraClauses = append(extraClauses, ruleClause)
+		extraArgs = append(extraArgs, ruleArgs...)
+	}
+	if pageViewScope {
+		extraClauses = append(extraClauses, "e.page_view_id IS NOT NULL")
+	}
+
+	extraWhere := ""
+	if len(extraClauses) > 0 {
+		extraWhere = " AND " + strings.Join(extraClauses, " AND ")
+	}
+
+	// Choose the distinct column based on scope.
+	distinctCol := "e.session_id"
+	if pageViewScope {
+		distinctCol = "e.page_view_id"
+	}
 
 	stepCounts := make([]int64, len(f.Steps))
 	for i, step := range f.Steps {
 		var n int64
 		var q string
 		var args []any
+
 		if needJoin {
 			q = fmt.Sprintf(`
-				SELECT COUNT(DISTINCT e.session_id)
+				SELECT COUNT(DISTINCT %s)
 				FROM events e
 				JOIN sessions s ON s.id = e.session_id
-				WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?
-				  AND %s`, clause)
-			args = []any{f.ProjectID, step.EventName, from, to}
-		} else if clause != "" {
-			q = fmt.Sprintf(`
-				SELECT COUNT(DISTINCT e.session_id)
-				FROM events e
-				WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?
-				  AND %s`, clause)
-			args = []any{f.ProjectID, step.EventName, from, to}
+				WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?%s`,
+				distinctCol, extraWhere)
 		} else {
-			q = `
-				SELECT COUNT(DISTINCT session_id)
-				FROM events
-				WHERE project_id = ? AND name = ? AND occurred_at >= ? AND occurred_at <= ?`
-			args = []any{f.ProjectID, step.EventName, from, to}
+			q = fmt.Sprintf(`
+				SELECT COUNT(DISTINCT %s)
+				FROM events e
+				WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?%s`,
+				distinctCol, extraWhere)
 		}
-		// Append the segment bind parameter if the clause uses a placeholder.
-		if segArg != nil {
-			args = append(args, segArg)
-		}
+		args = append([]any{f.ProjectID, step.EventName, from, to}, extraArgs...)
 
-		// Append step-level property filters.
+		// Step-level property filters.
 		for _, filter := range step.Filters {
 			if !validPropertyName.MatchString(filter.Property) {
-				continue // skip invalid property names to prevent injection
+				continue
 			}
-			q += fmt.Sprintf(" AND json_extract(properties, '$.%s') = ?", filter.Property)
+			q += fmt.Sprintf(" AND json_extract(e.properties, '$.%s') = ?", filter.Property)
 			args = append(args, filter.Value)
 		}
 
@@ -318,13 +354,8 @@ func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time,
 
 	results := make([]FunnelStepResult, len(f.Steps))
 	entry := stepCounts[0]
-
 	for i, step := range f.Steps {
-		r := FunnelStepResult{
-			StepOrder: step.StepOrder,
-			EventName: step.EventName,
-			Count:     stepCounts[i],
-		}
+		r := FunnelStepResult{StepOrder: step.StepOrder, EventName: step.EventName, Count: stepCounts[i]}
 		if entry > 0 {
 			r.Conversion = float64(stepCounts[i]) / float64(entry)
 		}
@@ -333,8 +364,52 @@ func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time,
 		}
 		results[i] = r
 	}
-
 	return results, nil
+}
+
+// buildSegmentRuleClause converts stored segment rules into a SQL WHERE fragment.
+func buildSegmentRuleClause(rules []SegmentRule) (clause string, args []any, needJoin bool) {
+	if len(rules) == 0 {
+		return "", nil, false
+	}
+	sessionFields := map[string]bool{
+		"country_code": true, "city": true, "connection_class": true,
+		"dark_mode": true, "browser_timezone": true,
+	}
+	var parts []string
+	for _, rule := range rules {
+		tableAlias, ok := AllowedSegmentFields[rule.Field]
+		if !ok {
+			continue
+		}
+		if tableAlias == "s" {
+			needJoin = true
+		}
+		col := tableAlias + "." + rule.Field
+		_ = sessionFields // already handled via allowedSegmentFields
+		switch rule.Operator {
+		case "eq":
+			parts = append(parts, col+" = ?")
+			args = append(args, rule.Value)
+		case "neq":
+			parts = append(parts, col+" != ?")
+			args = append(args, rule.Value)
+		case "contains":
+			parts = append(parts, col+" LIKE ?")
+			args = append(args, "%"+rule.Value+"%")
+		case "not_contains":
+			parts = append(parts, col+" NOT LIKE ?")
+			args = append(args, "%"+rule.Value+"%")
+		case "is_null":
+			parts = append(parts, fmt.Sprintf("(%s IS NULL OR %s = '')", col, col))
+		case "is_not_null":
+			parts = append(parts, fmt.Sprintf("(%s IS NOT NULL AND %s != '')", col, col))
+		}
+	}
+	if len(parts) == 0 {
+		return "", nil, false
+	}
+	return strings.Join(parts, " AND "), args, needJoin
 }
 
 // FunnelSegments holds distinct values available for dynamic segment filtering.

@@ -35,7 +35,7 @@ type FunnelRepo interface {
 	ListFunnels(ctx context.Context, projectID string) ([]repository.Funnel, error)
 	UpdateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error)
 	DeleteFunnel(ctx context.Context, id string) error
-	AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter) ([]repository.FunnelStepResult, error)
+	AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, rules ...repository.SegmentRule) ([]repository.FunnelStepResult, error)
 	FunnelSegmentData(ctx context.Context, projectID string) (repository.FunnelSegments, error)
 }
 
@@ -113,10 +113,20 @@ type WidgetRepo interface {
 	WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]repository.PropertyBreakdown, error)
 }
 
+// SegmentRepo is the persistence port for user-defined segments.
+type SegmentRepo interface {
+	CreateSegment(ctx context.Context, seg repository.Segment) (repository.Segment, error)
+	SegmentByID(ctx context.Context, id string) (repository.Segment, error)
+	ListSegments(ctx context.Context, projectID string) ([]repository.Segment, error)
+	UpdateSegment(ctx context.Context, seg repository.Segment) (repository.Segment, error)
+	DeleteSegment(ctx context.Context, id string) error
+}
+
 // EventPersister is the narrow interface worker.PersistEvent requires.
 // It is a subset of EventRepo + SessionRepo to avoid injecting the full store.
 type EventPersister interface {
 	GetEventByIngestID(ctx context.Context, ingestID string) (*repository.Event, error)
 	InsertEvent(ctx context.Context, e repository.Event) error
 	UpsertSession(ctx context.Context, sess repository.Session) error
+	UpsertSessionSignals(ctx context.Context, sessionID string, signals repository.SessionSignals) error
 }

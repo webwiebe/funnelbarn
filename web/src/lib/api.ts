@@ -137,21 +137,24 @@ export const api = {
   listFunnels: (projectId: string) =>
     request<{ funnels: Funnel[] }>(`/api/v1/projects/${projectId}/funnels`),
 
-  createFunnel: (projectId: string, name: string, steps: FunnelStepInput[]) =>
+  createFunnel: (projectId: string, name: string, steps: FunnelStepInput[], scope?: 'session' | 'page_view') =>
     request<Funnel>(`/api/v1/projects/${projectId}/funnels`, {
       method: 'POST',
-      body: JSON.stringify({ name, steps }),
+      body: JSON.stringify({ name, steps, scope: scope ?? 'session' }),
     }),
 
-  getFunnelAnalysis: (projectId: string, funnelId: string, segment?: string) =>
-    request<FunnelAnalysis>(
-      `/api/v1/projects/${projectId}/funnels/${funnelId}/analysis${segment && segment !== 'all' ? `?segment=${encodeURIComponent(segment)}` : ''}`
-    ),
+  getFunnelAnalysis: (projectId: string, funnelId: string, segment?: string, segmentId?: string) => {
+    const params = new URLSearchParams()
+    if (segment && segment !== 'all') params.set('segment', segment)
+    if (segmentId) params.set('segment_id', segmentId)
+    const qs = params.toString()
+    return request<FunnelAnalysis>(`/api/v1/projects/${projectId}/funnels/${funnelId}/analysis${qs ? `?${qs}` : ''}`)
+  },
 
   getFunnelSegments: (projectId: string, funnelId: string) =>
     request<FunnelSegments>(`/api/v1/projects/${projectId}/funnels/${funnelId}/segments`),
 
-  updateFunnel: (projectId: string, funnelId: string, data: { name: string; description?: string; steps: FunnelStepInput[] }) =>
+  updateFunnel: (projectId: string, funnelId: string, data: { name: string; description?: string; scope?: string; steps: FunnelStepInput[] }) =>
     request<Funnel>(`/api/v1/projects/${projectId}/funnels/${funnelId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -276,6 +279,25 @@ export const api = {
   getBatchBreakdowns: (projectId: string) =>
     request<{ results: WidgetBreakdownResult[] }>(`/api/v1/projects/${projectId}/widgets/breakdowns`),
 
+  // Segments
+  listSegments: (projectId: string) =>
+    request<{ segments: Segment[] }>(`/api/v1/projects/${projectId}/segments`),
+
+  createSegment: (projectId: string, name: string, rules: SegmentRule[]) =>
+    request<Segment>(`/api/v1/projects/${projectId}/segments`, {
+      method: 'POST',
+      body: JSON.stringify({ name, rules }),
+    }),
+
+  updateSegment: (projectId: string, segmentId: string, name: string, rules: SegmentRule[]) =>
+    request<Segment>(`/api/v1/projects/${projectId}/segments/${segmentId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name, rules }),
+    }),
+
+  deleteSegment: (projectId: string, segmentId: string) =>
+    request<void>(`/api/v1/projects/${projectId}/segments/${segmentId}`, { method: 'DELETE' }),
+
   // Instance settings
   getInstanceSettings: () =>
     request<{ settings: Record<string, string> }>('/api/v1/instance-settings'),
@@ -335,6 +357,7 @@ export interface Funnel {
   id: string
   name: string
   description?: string
+  scope: 'session' | 'page_view'
   steps: FunnelStep[]
 }
 
@@ -357,6 +380,20 @@ export interface FunnelSegments {
   device_types: string[]
   browsers: string[]
   countries: string[]
+}
+
+export interface SegmentRule {
+  field: string
+  operator: 'eq' | 'neq' | 'contains' | 'not_contains' | 'is_null' | 'is_not_null'
+  value: string
+}
+
+export interface Segment {
+  id: string
+  project_id: string
+  name: string
+  rules: SegmentRule[]
+  created_at: string
 }
 
 export interface ApiKey {

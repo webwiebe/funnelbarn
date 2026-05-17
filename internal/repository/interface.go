@@ -42,8 +42,16 @@ type Querier interface {
 	ListFunnels(ctx context.Context, projectID string) ([]Funnel, error)
 	UpdateFunnel(ctx context.Context, f Funnel) (Funnel, error)
 	DeleteFunnel(ctx context.Context, id string) error
-	AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time, seg *SegmentFilter) ([]FunnelStepResult, error)
+	AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time, seg *SegmentFilter, rules ...SegmentRule) ([]FunnelStepResult, error)
 	FunnelSegmentData(ctx context.Context, projectID string) (FunnelSegments, error)
+
+	// Segments
+	CreateSegment(ctx context.Context, seg Segment) (Segment, error)
+	SegmentByID(ctx context.Context, id string) (Segment, error)
+	ListSegments(ctx context.Context, projectID string) ([]Segment, error)
+	UpdateSegment(ctx context.Context, seg Segment) (Segment, error)
+	DeleteSegment(ctx context.Context, id string) error
+	UpsertSessionSignals(ctx context.Context, sessionID string, signals SessionSignals) error
 
 	// A/B Tests
 	CreateABTest(ctx context.Context, t ABTest) (ABTest, error)

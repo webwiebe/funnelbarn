@@ -12,6 +12,23 @@ func (s *Store) FlagContextKeySuggestions(_ context.Context, _ string) ([]reposi
 
 func (s *Store) AnonymizeSessionGeo(_ context.Context, _ string) error { return nil }
 
+func (s *Store) CreateSegment(_ context.Context, seg repository.Segment) (repository.Segment, error) {
+	return seg, nil
+}
+func (s *Store) SegmentByID(_ context.Context, _ string) (repository.Segment, error) {
+	return repository.Segment{}, nil
+}
+func (s *Store) ListSegments(_ context.Context, _ string) ([]repository.Segment, error) {
+	return nil, nil
+}
+func (s *Store) UpdateSegment(_ context.Context, seg repository.Segment) (repository.Segment, error) {
+	return seg, nil
+}
+func (s *Store) DeleteSegment(_ context.Context, _ string) error { return nil }
+func (s *Store) UpsertSessionSignals(_ context.Context, _ string, _ repository.SessionSignals) error {
+	return nil
+}
+
 func (s *Store) AnonymizeSessionsByIP(_ context.Context, _ string) (int64, error) { return 0, nil }
 
 func (s *Store) GetInstanceSetting(_ context.Context, _ string) (string, bool, error) {

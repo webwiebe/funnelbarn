@@ -30,7 +30,7 @@ type Funnels interface {
 	GetFunnel(ctx context.Context, id string) (repository.Funnel, error)
 	UpdateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error)
 	DeleteFunnel(ctx context.Context, id string) error
-	AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter) ([]repository.FunnelStepResult, error)
+	AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, rules ...repository.SegmentRule) ([]repository.FunnelStepResult, error)
 	FunnelSegmentData(ctx context.Context, projectID string) (repository.FunnelSegments, error)
 }
 
@@ -95,6 +95,15 @@ type Sessions interface {
 	SessionByID(ctx context.Context, id string) (repository.Session, error)
 	ListSessions(ctx context.Context, projectID string, limit, offset int) ([]repository.Session, error)
 	ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error)
+}
+
+// Segments is the interface for user-defined segment operations.
+type Segments interface {
+	CreateSegment(ctx context.Context, projectID, name string, rules []repository.SegmentRule) (repository.Segment, error)
+	ListSegments(ctx context.Context, projectID string) ([]repository.Segment, error)
+	GetSegment(ctx context.Context, id string) (repository.Segment, error)
+	UpdateSegment(ctx context.Context, id, name string, rules []repository.SegmentRule) (repository.Segment, error)
+	DeleteSegment(ctx context.Context, id string) error
 }
 
 // APIKeys is the interface for API key-related operations.

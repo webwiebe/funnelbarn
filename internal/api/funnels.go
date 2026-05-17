@@ -34,6 +34,7 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name        string                  `json:"name"`
 		Description string                  `json:"description"`
+		Scope       string                  `json:"scope"`
 		Steps       []repository.FunnelStep `json:"steps"`
 	}
 	if err := readJSON(r, &body); err != nil {
@@ -48,12 +49,16 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "at least one step is required", http.StatusBadRequest)
 		return
 	}
+	if body.Scope == "" {
+		body.Scope = existing.Scope
+	}
 
 	funnel := repository.Funnel{
 		ID:          funnelID,
 		ProjectID:   projectID,
 		Name:        body.Name,
 		Description: body.Description,
+		Scope:       body.Scope,
 		Steps:       body.Steps,
 	}
 
@@ -126,17 +131,22 @@ func (s *Server) handleCreateFunnel(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name        string                  `json:"name"`
 		Description string                  `json:"description"`
+		Scope       string                  `json:"scope"`
 		Steps       []repository.FunnelStep `json:"steps"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	if body.Scope == "" {
+		body.Scope = "session"
+	}
 
 	funnel := repository.Funnel{
 		ProjectID:   projectID,
 		Name:        body.Name,
 		Description: body.Description,
+		Scope:       body.Scope,
 		Steps:       body.Steps,
 	}
 
@@ -206,8 +216,17 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Parse optional segment filter.
+	// Parse optional preset segment filter.
 	seg := parseSegment(r.URL.Query().Get("segment"))
+
+	// Look up stored segment rules if segment_id provided.
+	var segRules []repository.SegmentRule
+	if segID := r.URL.Query().Get("segment_id"); segID != "" && s.segments != nil {
+		stored, err := s.segments.GetSegment(r.Context(), segID)
+		if err == nil && stored.ProjectID == projectID {
+			segRules = stored.Rules
+		}
+	}
 
 	ctx, span := tracing.StartSpan(r.Context(), "funnels.analyze",
 		attribute.String("project.id", projectID),
@@ -215,7 +234,7 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
-	results, err := s.funnels.AnalyzeFunnel(ctx, funnel, from, to, seg)
+	results, err := s.funnels.AnalyzeFunnel(ctx, funnel, from, to, seg, segRules...)
 	if err != nil {
 		mapServiceError(w, err, "handleFunnelAnalysis")
 		return

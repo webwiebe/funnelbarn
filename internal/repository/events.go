@@ -28,14 +28,16 @@ type Event struct {
 	OS             string    `json:"os"`
 	DeviceType     string    `json:"device_type"`
 	CountryCode    string    `json:"country_code"`
-	IngestID       string    `json:"ingest_id"`
-	OccurredAt     time.Time `json:"occurred_at"`
-	CreatedAt      time.Time `json:"created_at"`
+	PageViewID  string    `json:"page_view_id,omitempty"`
+	IngestID    string    `json:"ingest_id"`
+	OccurredAt  time.Time `json:"occurred_at"`
+	CreatedAt   time.Time `json:"created_at"`
 
-	// ClientIP is a transient field populated by the worker from the spool record.
-	// It is NOT stored in the database; it exists only to pass the real IP to
-	// UpsertSession for geo enrichment.
+	// ClientIP is transient — used to pass the real IP to UpsertSession. Not stored.
 	ClientIP string `json:"-"`
+	// SessionSignalsRaw is transient — device/browser signals from the SDK payload.
+	// Passed to UpsertSessionSignals; not stored directly on the event.
+	SessionSignalsRaw map[string]any `json:"-"`
 }
 
 // InsertEvent writes a new event to the database.
@@ -46,20 +48,20 @@ func (s *Store) InsertEvent(ctx context.Context, e Event) error {
 			url, referrer, referrer_domain,
 			utm_source, utm_medium, utm_campaign, utm_term, utm_content,
 			properties, user_agent, browser, os, device_type, country_code,
-			ingest_id, occurred_at
+			page_view_id, ingest_id, occurred_at
 		) VALUES (
 			?, ?, ?, ?, ?,
 			?, ?, ?,
 			?, ?, ?, ?, ?,
 			?, ?, ?, ?, ?, ?,
-			?, ?
+			?, ?, ?
 		)`
 	_, err := s.db.ExecContext(ctx, q,
 		e.ID, e.ProjectID, e.SessionID, nullStr(e.UserIDHash), e.Name,
 		nullStr(e.URL), nullStr(e.Referrer), nullStr(e.ReferrerDomain),
 		nullStr(e.UTMSource), nullStr(e.UTMMedium), nullStr(e.UTMCampaign), nullStr(e.UTMTerm), nullStr(e.UTMContent),
 		nullStr(e.Properties), nullStr(e.UserAgent), nullStr(e.Browser), nullStr(e.OS), nullStr(e.DeviceType), nullStr(e.CountryCode),
-		e.IngestID, e.OccurredAt,
+		nullStr(e.PageViewID), e.IngestID, e.OccurredAt,
 	)
 	return err
 }

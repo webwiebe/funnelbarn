@@ -36,6 +36,10 @@ func (f *fakeEventStore) UpsertSession(_ context.Context, sess repository.Sessio
 	return nil
 }
 
+func (f *fakeEventStore) UpsertSessionSignals(_ context.Context, _ string, _ repository.SessionSignals) error {
+	return nil
+}
+
 func TestPersistEvent_InsertsEventAndUpsertSession(t *testing.T) {
 	store := &fakeEventStore{}
 	event := repository.Event{

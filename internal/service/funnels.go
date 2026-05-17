@@ -64,8 +64,8 @@ func (svc *FunnelService) DeleteFunnel(ctx context.Context, id string) error {
 	return svc.store.DeleteFunnel(ctx, id)
 }
 
-func (svc *FunnelService) AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter) ([]repository.FunnelStepResult, error) {
-	return svc.store.AnalyzeFunnel(ctx, f, from, to, seg)
+func (svc *FunnelService) AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, rules ...repository.SegmentRule) ([]repository.FunnelStepResult, error) {
+	return svc.store.AnalyzeFunnel(ctx, f, from, to, seg, rules...)
 }
 
 func (svc *FunnelService) FunnelSegmentData(ctx context.Context, projectID string) (repository.FunnelSegments, error) {

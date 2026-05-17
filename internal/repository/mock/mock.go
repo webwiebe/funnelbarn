@@ -353,7 +353,7 @@ func (s *Store) DeleteFunnel(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *Store) AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter) ([]repository.FunnelStepResult, error) {
+func (s *Store) AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, _ ...repository.SegmentRule) ([]repository.FunnelStepResult, error) {
 	// Complex SQL — not mocked for logic tests.
 	return []repository.FunnelStepResult{}, nil
 }

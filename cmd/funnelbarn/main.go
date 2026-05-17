@@ -129,6 +129,7 @@ func run() error {
 	sessionsSvc := service.NewSessionService(store)
 	apikeysSvc := service.NewAPIKeyService(store)
 	widgetsSvc := service.NewWidgetService(store)
+	segmentsSvc := service.NewSegmentService(store)
 
 	eventSpool, err := spool.NewWithLimit(cfg.SpoolDir, cfg.MaxSpoolBytes)
 	if err != nil {
@@ -211,6 +212,7 @@ func run() error {
 	apiServer := api.NewServer(api.ServerConfig{
 		InstanceSettings: store,
 		GeoAnonymizer:    store,
+		Segments:         segmentsSvc,
 		Ingest:              handler,
 		Projects:            projectsSvc,
 		Funnels:             funnelsSvc,
