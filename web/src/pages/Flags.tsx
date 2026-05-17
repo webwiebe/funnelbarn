@@ -6,6 +6,7 @@ import { api } from '../lib/api'
 import type { FeatureFlag, FlagAnalysis, FlagEvaluationResult, TargetingRule, TargetingOperator } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { reportError } from '../lib/bugbarn'
+import { trackEvent } from '../lib/analytics'
 import { Skeleton } from '../components/ui/Skeleton'
 
 const C = {
@@ -127,10 +128,9 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
   const toggleStatus = async () => {
     setToggling(true)
     try {
-      const updated = await api.updateFlag(projectId, flag.id, {
-        ...flag,
-        status: flag.status === 'active' ? 'paused' : 'active',
-      })
+      const nextStatus = flag.status === 'active' ? 'paused' : 'active'
+      const updated = await api.updateFlag(projectId, flag.id, { ...flag, status: nextStatus })
+      trackEvent('flag_toggled', { flag_key: flag.flag_key, status: nextStatus })
       onUpdated(updated)
     } catch (e) {
       reportError(e instanceof Error ? e : new Error(String(e)), { source: 'Flags.toggle' })
@@ -741,6 +741,7 @@ function FlagFormModal({ projectId, flag, onClose, onSaved }: {
       const f = isEdit && flag
         ? await api.updateFlag(projectId, flag.id, body)
         : await api.createFlag(projectId, body)
+      if (!isEdit) trackEvent('flag_created', { flag_key: f.flag_key, flag_type: f.flag_type })
       onSaved(f)
     } catch (e) {
       setError(String(e))

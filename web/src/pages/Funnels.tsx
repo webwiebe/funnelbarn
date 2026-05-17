@@ -1533,6 +1533,7 @@ function SegmentManager({
     setError(null)
     try {
       const seg = await api.createSegment(projectId, newName, newRules)
+      trackEvent('segment_created', { segment_name: seg.name, rule_count: seg.rules.length })
       onSegmentsChange([...segments, seg])
       setNewName('')
       setNewRules([{ field: 'country_code', operator: 'eq', value: '' }])
@@ -2134,7 +2135,14 @@ export default function Funnels() {
     setAnalysisError(null)
     setAnalysisLoading(true)
     api.getFunnelAnalysis(projectId, selected.id, activeSegmentId ? undefined : activeSegment, activeSegmentId)
-      .then(setAnalysis)
+      .then((a) => {
+        setAnalysis(a)
+        trackEvent('funnel_analyzed', {
+          funnel_name: selected.name,
+          scope: selected.scope,
+          segment: activeSegmentId ? 'stored' : (activeSegment !== 'all' ? activeSegment : undefined),
+        })
+      })
       .catch((e) => {
         console.error(e)
         const isNoise = e instanceof ApiError && (e.status === 404 || e.status === 0)
