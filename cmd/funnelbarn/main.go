@@ -213,6 +213,7 @@ func run() error {
 		InstanceSettings: store,
 		GeoAnonymizer:    store,
 		Segments:         segmentsSvc,
+		Distributions:    store,
 		Ingest:              handler,
 		Projects:            projectsSvc,
 		Funnels:             funnelsSvc,

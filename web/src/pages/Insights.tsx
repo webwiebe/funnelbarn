@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { Plus, Trash2, Lightbulb, X, Columns2, Columns3, Square } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api } from '../lib/api'
-import type { DashboardWidget, PropertyBreakdown } from '../lib/api'
+import type { DashboardWidget, PropertyBreakdown, DistributionEntry } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { Skeleton } from '../components/ui/Skeleton'
 
@@ -28,6 +28,7 @@ export default function Insights() {
   const [widgets, setWidgets] = useState<WidgetWithData[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [distributions, setDistributions] = useState<Record<string, DistributionEntry[]>>({})
 
   const fetchAll = useCallback(async () => {
     if (!projectId) return
@@ -44,6 +45,13 @@ export default function Insights() {
   useEffect(() => {
     fetchAll()
   }, [fetchAll])
+
+  useEffect(() => {
+    if (!projectId) return
+    api.getSessionDistributions(projectId)
+      .then((d) => setDistributions(d.distributions ?? {}))
+      .catch(() => {})
+  }, [projectId])
 
   const handleDelete = async (widgetId: string) => {
     if (!projectId) return
@@ -184,6 +192,58 @@ export default function Insights() {
               onResize={() => handleResize(widget.id)}
             />
           ))}
+        </div>
+      )}
+
+      {/* Visitor breakdown section */}
+      {Object.keys(distributions).length > 0 && (
+        <div style={{ marginTop: '2rem' }}>
+          <h2 style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.3px', marginBottom: '1rem' }}>
+            Visitor breakdown
+          </h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem' }}>
+            {[
+              { key: 'device_type', label: 'Device type' },
+              { key: 'browser', label: 'Browser' },
+              { key: 'country_code', label: 'Country' },
+              { key: 'os', label: 'OS' },
+              { key: 'connection_class', label: 'Connection' },
+              { key: 'dark_mode', label: 'Dark mode' },
+            ].filter(({ key }) => distributions[key]?.length).map(({ key, label }) => {
+              const entries = distributions[key]
+              const maxPct = entries[0]?.pct ?? 1
+              return (
+                <div key={key} style={{
+                  background: C.surface,
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 12,
+                  padding: '1rem 1.25rem',
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+                    {label}
+                  </div>
+                  {entries.slice(0, 6).map((e) => (
+                    <div key={e.value} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+                      <div style={{ minWidth: 80, fontSize: 12, color: C.text, textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {e.value}
+                      </div>
+                      <div style={{ flex: 1, height: 12, background: '#2a2d3a', borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%',
+                          width: `${(e.pct / maxPct) * 100}%`,
+                          background: C.amber,
+                          opacity: 0.65,
+                          borderRadius: 3,
+                          transition: 'width 0.5s',
+                        }} />
+                      </div>
+                      <div style={{ fontSize: 11, color: C.muted, minWidth: 28, textAlign: 'right' }}>{e.pct}%</div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

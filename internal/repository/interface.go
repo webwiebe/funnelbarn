@@ -66,6 +66,7 @@ type Querier interface {
 	ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error)
 	AnonymizeSessionGeo(ctx context.Context, sessionID string) error
 	AnonymizeSessionsByIP(ctx context.Context, ip string) (int64, error)
+	SessionDistributions(ctx context.Context, projectID string) (map[string][]DistributionEntry, error)
 
 	// Instance settings
 	GetInstanceSetting(ctx context.Context, key string) (string, bool, error)

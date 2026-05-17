@@ -20,6 +20,25 @@ func (s *Server) handleActiveSessionCount(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"active_sessions": count, "window_minutes": 5})
 }
 
+// handleSessionDistributions returns project-wide value distributions for segment fields.
+func (s *Server) handleSessionDistributions(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		jsonError(w, "project id required", http.StatusBadRequest)
+		return
+	}
+	if s.distributions == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"distributions": map[string]any{}})
+		return
+	}
+	dist, err := s.distributions.SessionDistributions(r.Context(), projectID)
+	if err != nil {
+		mapServiceError(w, err, "handleSessionDistributions")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"distributions": dist})
+}
+
 // handleListSessions returns paginated sessions for a project.
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")

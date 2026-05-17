@@ -13,6 +13,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/iambarn"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
@@ -65,6 +66,12 @@ type ServerConfig struct {
 	InstanceSettings InstanceSettingsRepo
 	GeoAnonymizer    GeoAnonymizer
 	Segments         service.Segments
+	Distributions    DistributionRepo
+}
+
+// DistributionRepo provides session field distribution data.
+type DistributionRepo interface {
+	SessionDistributions(ctx context.Context, projectID string) (map[string][]repository.DistributionEntry, error)
 }
 
 // InstanceSettingsRepo is the narrow interface for reading/writing instance-level settings.
@@ -111,6 +118,7 @@ type Server struct {
 	instanceSettings   InstanceSettingsRepo
 	geoAnonymizer      GeoAnonymizer
 	segments           service.Segments
+	distributions      DistributionRepo
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
@@ -163,6 +171,7 @@ func NewServer(cfg ServerConfig) *Server {
 		instanceSettings:   cfg.InstanceSettings,
 		geoAnonymizer:      cfg.GeoAnonymizer,
 		segments:           cfg.Segments,
+		distributions:      cfg.Distributions,
 	}
 	s.registerRoutes()
 	return s
@@ -250,6 +259,7 @@ func (s *Server) registerRoutes() {
 	// Sessions
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/sessions", s.requireSession(s.handleListSessions))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/sessions/active", s.requireSession(s.handleActiveSessionCount))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/session-distributions", s.requireSession(s.handleSessionDistributions))
 
 	// API keys
 	s.mux.HandleFunc("GET /api/v1/apikeys", s.requireSession(s.handleListAPIKeys))

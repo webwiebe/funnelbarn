@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { Plus, X, Layers, Pencil, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import Shell from '../components/shell/Shell'
-import { api, ApiError, Funnel, FunnelAnalysis, FunnelStepInput, Segment, SegmentRule } from '../lib/api'
+import { api, ApiError, DistributionEntry, Funnel, FunnelAnalysis, FunnelStepInput, Segment, SegmentRule } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { trackEvent } from '../lib/analytics'
 import { reportError } from '../lib/bugbarn'
@@ -1460,6 +1460,38 @@ function EditFunnelModal({
   )
 }
 
+// ─── Distribution Chart ───────────────────────────────────────────────────────
+
+function DistributionChart({ label, entries }: { label: string; entries: { value: string; count: number; pct: number }[] }) {
+  if (!entries || entries.length === 0) return null
+  const max = entries[0]?.pct ?? 1
+  return (
+    <div style={{ marginBottom: '1rem' }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+        {label}
+      </div>
+      {entries.slice(0, 6).map((e) => (
+        <div key={e.value} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <div style={{ minWidth: 90, fontSize: 12, color: '#e2e8f0', textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {e.value}
+          </div>
+          <div style={{ flex: 1, height: 14, background: '#2a2d3a', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%',
+              width: `${(e.pct / max) * 100}%`,
+              background: '#f59e0b',
+              opacity: 0.7,
+              borderRadius: 3,
+              transition: 'width 0.4s',
+            }} />
+          </div>
+          <div style={{ fontSize: 11, color: '#94a3b8', minWidth: 32, textAlign: 'right' }}>{e.pct}%</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Segment Manager ──────────────────────────────────────────────────────────
 
 function SegmentManager({
@@ -1478,6 +1510,13 @@ function SegmentManager({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [distributions, setDistributions] = useState<Record<string, DistributionEntry[]>>({})
+
+  useEffect(() => {
+    api.getSessionDistributions(projectId)
+      .then((d) => setDistributions(d.distributions ?? {}))
+      .catch(() => {})
+  }, [projectId])
 
   const addRule = () =>
     setNewRules((r) => [...r, { field: 'country_code', operator: 'eq', value: '' }])
@@ -1625,8 +1664,28 @@ function SegmentManager({
             </div>
           ))}
 
-          {/* Starter templates — shown only when there are no segments yet */}
-          {segments.length === 0 && !showCreate && (
+          {/* Distribution charts */}
+          {Object.keys(distributions).length > 0 && (
+            <div style={{ marginBottom: '1.5rem' }}>
+              <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 10 }}>
+                Project-wide visitor breakdown
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
+                {[
+                  { key: 'device_type', label: 'Device' },
+                  { key: 'country_code', label: 'Country' },
+                  { key: 'browser', label: 'Browser' },
+                  { key: 'connection_class', label: 'Connection' },
+                  { key: 'dark_mode', label: 'Dark mode' },
+                ].filter(({ key }) => distributions[key]?.length).map(({ key, label }) => (
+                  <DistributionChart key={key} label={label} entries={distributions[key]} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Starter templates */}
+          {!showCreate && (
             <div style={{ marginBottom: '1rem' }}>
               <div style={{ fontSize: 12, color: C.muted, marginBottom: 8, fontWeight: 600 }}>
                 Quick-start templates
@@ -1864,6 +1923,7 @@ function SegmentManager({
 
 function FunnelDetail({ analysis, activeSegment, apiKey }: { analysis: FunnelAnalysis; activeSegment: string; apiKey?: string }) {
   const hasData = analysis.results && analysis.results.length > 0 && analysis.results[0]?.count > 0
+  const [showImpl, setShowImpl] = useState(false)
 
   if (!hasData) {
     return (
@@ -1878,7 +1938,27 @@ function FunnelDetail({ analysis, activeSegment, apiKey }: { analysis: FunnelAna
             This funnel tracks: {analysis.funnel?.steps?.map(s => s.event_name).filter(Boolean).join(' → ') || '(no steps defined)'}
           </div>
         </div>
-        {analysis.funnel && <ImplementationSnippet funnel={analysis.funnel} apiKey={apiKey} />}
+        <div style={{ marginTop: '1.5rem' }}>
+          <button
+            onClick={() => setShowImpl((v) => !v)}
+            style={{
+              background: 'transparent',
+              border: `1px solid ${C.border}`,
+              borderRadius: 8,
+              color: C.muted,
+              padding: '0.5rem 1rem',
+              cursor: 'pointer',
+              fontSize: 13,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <span>{showImpl ? '▲' : '▼'}</span>
+            How to implement
+          </button>
+          {showImpl && analysis.funnel && <ImplementationSnippet funnel={analysis.funnel} apiKey={apiKey} />}
+        </div>
       </div>
     )
   }
@@ -1893,16 +1973,24 @@ function FunnelDetail({ analysis, activeSegment, apiKey }: { analysis: FunnelAna
       <p style={{ color: C.muted, fontSize: 13, marginBottom: '0.75rem' }}>
         {analysis.from?.slice(0, 10)} → {analysis.to?.slice(0, 10)}
       </p>
-      {activeSegment !== 'all' && (
-        <p style={{ color: C.amber, fontSize: 13, marginBottom: '1.25rem', fontWeight: 500 }}>
-          Showing {entryCount.toLocaleString()} sessions · {segLabel} segment
-        </p>
-      )}
-      {activeSegment === 'all' && (
-        <p style={{ color: C.muted, fontSize: 13, marginBottom: '1.25rem' }}>
-          {entryCount.toLocaleString()} sessions total
-        </p>
-      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+        <span style={{ color: C.muted, fontSize: 13 }}>
+          {entryCount.toLocaleString()} {analysis.funnel?.scope === 'page_view' ? 'page views' : 'sessions'}
+        </span>
+        {activeSegment !== 'all' && (
+          <span style={{
+            fontSize: 12,
+            fontWeight: 700,
+            background: 'rgba(245,158,11,0.15)',
+            color: C.amber,
+            border: '1px solid rgba(245,158,11,0.35)',
+            borderRadius: 99,
+            padding: '0.15rem 0.6rem',
+          }}>
+            {segLabel}
+          </span>
+        )}
+      </div>
 
       {analysis.results?.map((step, i) => (
         <div key={step.step_order} style={{ marginBottom: '1.25rem' }}>
@@ -1968,7 +2056,27 @@ function FunnelDetail({ analysis, activeSegment, apiKey }: { analysis: FunnelAna
         </div>
       ))}
 
-      <ImplementationSnippet funnel={analysis.funnel} apiKey={apiKey} />
+      <div style={{ marginTop: '1.5rem' }}>
+        <button
+          onClick={() => setShowImpl((v) => !v)}
+          style={{
+            background: 'transparent',
+            border: `1px solid ${C.border}`,
+            borderRadius: 8,
+            color: C.muted,
+            padding: '0.5rem 1rem',
+            cursor: 'pointer',
+            fontSize: 13,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <span>{showImpl ? '▲' : '▼'}</span>
+          How to implement
+        </button>
+        {showImpl && analysis.funnel && <ImplementationSnippet funnel={analysis.funnel} apiKey={apiKey} />}
+      </div>
     </div>
   )
 }

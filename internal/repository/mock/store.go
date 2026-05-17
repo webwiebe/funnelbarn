@@ -12,6 +12,10 @@ func (s *Store) FlagContextKeySuggestions(_ context.Context, _ string) ([]reposi
 
 func (s *Store) AnonymizeSessionGeo(_ context.Context, _ string) error { return nil }
 
+func (s *Store) SessionDistributions(_ context.Context, _ string) (map[string][]repository.DistributionEntry, error) {
+	return map[string][]repository.DistributionEntry{}, nil
+}
+
 func (s *Store) CreateSegment(_ context.Context, seg repository.Segment) (repository.Segment, error) {
 	return seg, nil
 }

@@ -279,6 +279,10 @@ export const api = {
   getBatchBreakdowns: (projectId: string) =>
     request<{ results: WidgetBreakdownResult[] }>(`/api/v1/projects/${projectId}/widgets/breakdowns`),
 
+  // Session distributions (for segment charts)
+  getSessionDistributions: (projectId: string) =>
+    request<{ distributions: Record<string, DistributionEntry[]> }>(`/api/v1/projects/${projectId}/session-distributions`),
+
   // Segments
   listSegments: (projectId: string) =>
     request<{ segments: Segment[] }>(`/api/v1/projects/${projectId}/segments`),
@@ -386,6 +390,12 @@ export interface SegmentRule {
   field: string
   operator: 'eq' | 'neq' | 'contains' | 'not_contains' | 'is_null' | 'is_not_null'
   value: string
+}
+
+export interface DistributionEntry {
+  value: string
+  count: number
+  pct: number
 }
 
 export interface Segment {
