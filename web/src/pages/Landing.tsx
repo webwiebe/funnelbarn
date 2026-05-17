@@ -94,10 +94,6 @@ function InstallTabs() {
 export default function Landing() {
   const installRef = useRef<HTMLDivElement>(null)
 
-  const scrollToInstall = () => {
-    installRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
-
   return (
     <div style={{
       minHeight: '100vh',
@@ -159,6 +155,8 @@ export default function Landing() {
               textDecoration: 'none',
               fontWeight: 700,
               fontSize: 14,
+              display: 'inline-flex',
+              alignItems: 'center',
             }}
           >
             Sign in
@@ -231,7 +229,7 @@ export default function Landing() {
 
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
             <button
-              onClick={scrollToInstall}
+              onClick={() => window.location.href = '/login'}
               style={{
                 background: C.amber,
                 color: '#0f1117',
