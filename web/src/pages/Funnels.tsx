@@ -43,27 +43,63 @@ const FUNNEL_TEMPLATES: FunnelTemplate[] = [
 
 // ─── Segment rule fields / operators ──────────────────────────────────────────
 
-const SEGMENT_FIELDS = [
-  'country_code',
-  'city',
-  'device_type',
-  'browser',
-  'os',
-  'connection_class',
-  'dark_mode',
-  'browser_timezone',
-] as const
+const SEGMENT_FIELD_META: Record<string, { label: string; placeholder: string; hint: string }> = {
+  country_code:     { label: 'Country code',       placeholder: 'NL, US, DE, FR…',            hint: 'ISO 3166-1 alpha-2 code from visitor IP' },
+  city:             { label: 'City',                placeholder: 'Amsterdam, London…',          hint: 'City resolved from visitor IP (needs geo DB)' },
+  device_type:      { label: 'Device type',         placeholder: 'mobile, desktop, tablet',    hint: 'Detected from browser User-Agent' },
+  browser:          { label: 'Browser',             placeholder: 'Chrome, Firefox, Safari…',   hint: 'Browser name from User-Agent' },
+  os:               { label: 'OS',                  placeholder: 'Windows, macOS, iOS…',       hint: 'Operating system from User-Agent' },
+  connection_class: { label: 'Connection class',    placeholder: 'residential, mobile, datacenter', hint: 'Inferred from ASN — datacenter often means bots or VPNs' },
+  dark_mode:        { label: 'Dark mode',           placeholder: '1  (dark)  or  0  (light)',  hint: 'Collected by the SDK from prefers-color-scheme' },
+  browser_timezone: { label: 'Browser timezone',    placeholder: 'Europe/Amsterdam, UTC…',     hint: 'IANA timezone from Intl.DateTimeFormat, collected by SDK' },
+}
+
+const SEGMENT_FIELDS = Object.keys(SEGMENT_FIELD_META) as (keyof typeof SEGMENT_FIELD_META)[]
 
 const SEGMENT_OPERATORS = [
   { value: 'eq', label: '= equals' },
   { value: 'neq', label: '≠ not equals' },
   { value: 'contains', label: '⊇ contains' },
   { value: 'not_contains', label: '⊅ not contains' },
-  { value: 'is_null', label: '∅ is null' },
-  { value: 'is_not_null', label: '∃ is not null' },
+  { value: 'is_null', label: '∅ is empty' },
+  { value: 'is_not_null', label: '∃ is present' },
 ] as const
 
 type SegmentOperator = SegmentRule['operator']
+
+// Starter segment templates — shown when the project has no segments yet.
+const SEGMENT_TEMPLATES: Array<{ name: string; description: string; rules: SegmentRule[] }> = [
+  {
+    name: 'Mobile visitors',
+    description: 'Phones and tablets only',
+    rules: [{ field: 'device_type', operator: 'eq', value: 'mobile' }],
+  },
+  {
+    name: 'Desktop visitors',
+    description: 'Desktop browsers',
+    rules: [{ field: 'device_type', operator: 'eq', value: 'desktop' }],
+  },
+  {
+    name: 'Dark mode users',
+    description: 'Users with dark mode enabled',
+    rules: [{ field: 'dark_mode', operator: 'eq', value: '1' }],
+  },
+  {
+    name: 'Datacenter / bots',
+    description: 'Traffic from cloud IPs — good to exclude',
+    rules: [{ field: 'connection_class', operator: 'eq', value: 'datacenter' }],
+  },
+  {
+    name: 'Netherlands',
+    description: 'Visitors from NL',
+    rules: [{ field: 'country_code', operator: 'eq', value: 'NL' }],
+  },
+  {
+    name: 'Chrome users',
+    description: 'Chrome browser only',
+    rules: [{ field: 'browser', operator: 'eq', value: 'Chrome' }],
+  },
+]
 
 // ─── Colours ─────────────────────────────────────────────────────────────────
 
@@ -1556,11 +1592,13 @@ function SegmentManager({
                   </div>
                   {seg.rules.map((r, i) => (
                     <div key={i} style={{ fontSize: 12, color: C.muted, marginBottom: 2 }}>
-                      <span style={{ color: C.text }}>{r.field}</span>
+                      <span style={{ color: C.text }}>{SEGMENT_FIELD_META[r.field]?.label ?? r.field}</span>
                       {' '}
-                      <span style={{ color: C.amber }}>{r.operator}</span>
+                      <span style={{ color: C.amber }}>
+                        {SEGMENT_OPERATORS.find((o) => o.value === r.operator)?.label ?? r.operator}
+                      </span>
                       {!valueHidden(r.operator) && (
-                        <> <span style={{ color: C.text }}>{r.value}</span></>
+                        <> <span style={{ color: C.text, fontFamily: '"SF Mono","Fira Code",monospace' }}>{r.value}</span></>
                       )}
                     </div>
                   ))}
@@ -1586,6 +1624,41 @@ function SegmentManager({
               </div>
             </div>
           ))}
+
+          {/* Starter templates — shown only when there are no segments yet */}
+          {segments.length === 0 && !showCreate && (
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 8, fontWeight: 600 }}>
+                Quick-start templates
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 6 }}>
+                {SEGMENT_TEMPLATES.map((tpl) => (
+                  <button
+                    key={tpl.name}
+                    onClick={() => {
+                      setNewName(tpl.name)
+                      setNewRules(tpl.rules.map((r) => ({ ...r })))
+                      setShowCreate(true)
+                    }}
+                    style={{
+                      background: C.bg,
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 8,
+                      padding: '0.6rem 0.75rem',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      transition: 'border-color 0.15s',
+                    }}
+                    onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.borderColor = 'rgba(245,158,11,0.5)')}
+                    onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.borderColor = C.border)}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 2 }}>{tpl.name}</div>
+                    <div style={{ fontSize: 11, color: C.muted }}>{tpl.description}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Create new segment */}
           {showCreate && (
@@ -1615,6 +1688,7 @@ function SegmentManager({
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="e.g. EU mobile users"
+                  autoFocus
                   style={{
                     width: '100%',
                     background: C.surface,
@@ -1632,73 +1706,84 @@ function SegmentManager({
               </div>
               <div style={{ marginBottom: '0.75rem' }}>
                 <label style={{ display: 'block', fontSize: 12, color: C.muted, marginBottom: 6 }}>Rules</label>
-                {newRules.map((rule, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
-                    <select
-                      value={rule.field}
-                      onChange={(e) => updateRule(i, 'field', e.target.value)}
-                      style={{
-                        background: C.surface,
-                        border: `1px solid ${C.border}`,
-                        borderRadius: 6,
-                        color: C.text,
-                        padding: '0.3rem 0.5rem',
-                        fontSize: 12,
-                        outline: 'none',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {SEGMENT_FIELDS.map((f) => (
-                        <option key={f} value={f}>{f}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={rule.operator}
-                      onChange={(e) => updateRule(i, 'operator', e.target.value as SegmentOperator)}
-                      style={{
-                        background: C.surface,
-                        border: `1px solid ${C.border}`,
-                        borderRadius: 6,
-                        color: C.text,
-                        padding: '0.3rem 0.5rem',
-                        fontSize: 12,
-                        outline: 'none',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {SEGMENT_OPERATORS.map((op) => (
-                        <option key={op.value} value={op.value}>{op.label}</option>
-                      ))}
-                    </select>
-                    {!valueHidden(rule.operator) && (
-                      <input
-                        value={rule.value}
-                        onChange={(e) => updateRule(i, 'value', e.target.value)}
-                        placeholder="Value"
-                        style={{
-                          background: C.surface,
-                          border: `1px solid ${C.border}`,
-                          borderRadius: 6,
-                          color: C.text,
-                          padding: '0.3rem 0.5rem',
-                          fontSize: 12,
-                          outline: 'none',
-                          width: 100,
-                        }}
-                        onFocus={(e) => (e.target.style.borderColor = C.amber)}
-                        onBlur={(e) => (e.target.style.borderColor = C.border)}
-                      />
-                    )}
-                    {newRules.length > 1 && (
-                      <button
-                        onClick={() => removeRule(i)}
-                        style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 2 }}
-                      >
-                        <X size={12} />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                {newRules.map((rule, i) => {
+                  const meta = SEGMENT_FIELD_META[rule.field]
+                  return (
+                    <div key={i} style={{ marginBottom: 10 }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <select
+                          value={rule.field}
+                          onChange={(e) => updateRule(i, 'field', e.target.value)}
+                          style={{
+                            background: C.surface,
+                            border: `1px solid ${C.border}`,
+                            borderRadius: 6,
+                            color: C.text,
+                            padding: '0.3rem 0.5rem',
+                            fontSize: 12,
+                            outline: 'none',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {SEGMENT_FIELDS.map((f) => (
+                            <option key={f} value={f}>{SEGMENT_FIELD_META[f]?.label ?? f}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={rule.operator}
+                          onChange={(e) => updateRule(i, 'operator', e.target.value as SegmentOperator)}
+                          style={{
+                            background: C.surface,
+                            border: `1px solid ${C.border}`,
+                            borderRadius: 6,
+                            color: C.text,
+                            padding: '0.3rem 0.5rem',
+                            fontSize: 12,
+                            outline: 'none',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {SEGMENT_OPERATORS.map((op) => (
+                            <option key={op.value} value={op.value}>{op.label}</option>
+                          ))}
+                        </select>
+                        {!valueHidden(rule.operator) && (
+                          <input
+                            value={rule.value}
+                            onChange={(e) => updateRule(i, 'value', e.target.value)}
+                            placeholder={meta?.placeholder ?? 'Value'}
+                            style={{
+                              background: C.surface,
+                              border: `1px solid ${C.border}`,
+                              borderRadius: 6,
+                              color: C.text,
+                              padding: '0.3rem 0.5rem',
+                              fontSize: 12,
+                              outline: 'none',
+                              minWidth: 120,
+                              flex: 1,
+                            }}
+                            onFocus={(e) => (e.target.style.borderColor = C.amber)}
+                            onBlur={(e) => (e.target.style.borderColor = C.border)}
+                          />
+                        )}
+                        {newRules.length > 1 && (
+                          <button
+                            onClick={() => removeRule(i)}
+                            style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 2 }}
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                      {meta && (
+                        <div style={{ fontSize: 11, color: C.muted, marginTop: 3, paddingLeft: 2 }}>
+                          {meta.hint}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
                 <button
                   onClick={addRule}
                   style={{
