@@ -3,6 +3,7 @@ package iambarn
 import (
 	"context"
 	"crypto"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -25,7 +26,7 @@ type Provider struct {
 	redirectURI string
 
 	mu          sync.RWMutex
-	jwksKeys    map[string]*rsa.PublicKey
+	jwksKeys    map[string]crypto.PublicKey // *rsa.PublicKey or ed25519.PublicKey
 	jwksFetched time.Time
 
 	client *http.Client
@@ -160,11 +161,15 @@ func (p *Provider) validateIDToken(ctx context.Context, token string) (*Claims, 
 	if err := json.Unmarshal(headerRaw, &header); err != nil {
 		return nil, fmt.Errorf("parse jwt header: %w", err)
 	}
-	if header.Alg != "RS256" {
+
+	switch header.Alg {
+	case "RS256", "EdDSA":
+		// supported
+	default:
 		return nil, fmt.Errorf("unsupported jwt algorithm: %s", header.Alg)
 	}
 
-	key, err := p.getJWKSKey(ctx, header.Kid)
+	pub, err := p.getJWKSKey(ctx, header.Kid)
 	if err != nil {
 		return nil, fmt.Errorf("get signing key: %w", err)
 	}
@@ -174,9 +179,25 @@ func (p *Provider) validateIDToken(ctx context.Context, token string) (*Claims, 
 		return nil, fmt.Errorf("decode jwt signature: %w", err)
 	}
 	msg := parts[0] + "." + parts[1]
-	digest := sha256.Sum256([]byte(msg))
-	if err := rsa.VerifyPKCS1v15(key, crypto.SHA256, digest[:], sig); err != nil {
-		return nil, fmt.Errorf("jwt signature invalid: %w", err)
+
+	switch header.Alg {
+	case "RS256":
+		rsaKey, ok := pub.(*rsa.PublicKey)
+		if !ok {
+			return nil, fmt.Errorf("key type mismatch for RS256")
+		}
+		digest := sha256.Sum256([]byte(msg))
+		if err := rsa.VerifyPKCS1v15(rsaKey, crypto.SHA256, digest[:], sig); err != nil {
+			return nil, fmt.Errorf("jwt signature invalid: %w", err)
+		}
+	case "EdDSA":
+		edKey, ok := pub.(ed25519.PublicKey)
+		if !ok {
+			return nil, fmt.Errorf("key type mismatch for EdDSA")
+		}
+		if !ed25519.Verify(edKey, []byte(msg), sig) {
+			return nil, fmt.Errorf("jwt signature invalid")
+		}
 	}
 
 	payloadRaw, err := base64.RawURLEncoding.DecodeString(parts[1])
@@ -243,12 +264,16 @@ type jwksJSON struct {
 	Keys []struct {
 		Kid string `json:"kid"`
 		Kty string `json:"kty"`
-		N   string `json:"n"`
-		E   string `json:"e"`
+		// RSA fields
+		N string `json:"n"`
+		E string `json:"e"`
+		// OKP (Ed25519) fields
+		Crv string `json:"crv"`
+		X   string `json:"x"`
 	} `json:"keys"`
 }
 
-func (p *Provider) getJWKSKey(ctx context.Context, kid string) (*rsa.PublicKey, error) {
+func (p *Provider) getJWKSKey(ctx context.Context, kid string) (crypto.PublicKey, error) {
 	p.mu.RLock()
 	key, cached := p.jwksKeys[kid]
 	fresh := time.Since(p.jwksFetched) < time.Hour
@@ -288,22 +313,40 @@ func (p *Provider) fetchJWKS(ctx context.Context) error {
 		return fmt.Errorf("decode jwks: %w", err)
 	}
 
-	keys := make(map[string]*rsa.PublicKey, len(jwks.Keys))
+	keys := make(map[string]crypto.PublicKey, len(jwks.Keys))
 	for _, k := range jwks.Keys {
-		if k.Kty != "RSA" || k.Kid == "" || k.N == "" || k.E == "" {
+		if k.Kid == "" {
 			continue
 		}
-		nBytes, err := base64.RawURLEncoding.DecodeString(k.N)
-		if err != nil {
-			continue
+		switch k.Kty {
+		case "RSA":
+			if k.N == "" || k.E == "" {
+				continue
+			}
+			nBytes, err := base64.RawURLEncoding.DecodeString(k.N)
+			if err != nil {
+				continue
+			}
+			eBytes, err := base64.RawURLEncoding.DecodeString(k.E)
+			if err != nil {
+				continue
+			}
+			n := new(big.Int).SetBytes(nBytes)
+			e := int(new(big.Int).SetBytes(eBytes).Int64())
+			keys[k.Kid] = &rsa.PublicKey{N: n, E: e}
+		case "OKP":
+			if k.Crv != "Ed25519" || k.X == "" {
+				continue
+			}
+			xBytes, err := base64.RawURLEncoding.DecodeString(k.X)
+			if err != nil {
+				continue
+			}
+			if len(xBytes) != ed25519.PublicKeySize {
+				continue
+			}
+			keys[k.Kid] = ed25519.PublicKey(xBytes)
 		}
-		eBytes, err := base64.RawURLEncoding.DecodeString(k.E)
-		if err != nil {
-			continue
-		}
-		n := new(big.Int).SetBytes(nBytes)
-		e := int(new(big.Int).SetBytes(eBytes).Int64())
-		keys[k.Kid] = &rsa.PublicKey{N: n, E: e}
 	}
 
 	p.mu.Lock()
