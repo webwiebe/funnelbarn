@@ -9,6 +9,26 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
+    - host: funnelbarn.staging.wiebe.xyz
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: funnelbarn
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: funnelbarn-web
+                port:
+                  name: http
+    # Legacy host — kept during the migration so existing consumers keep
+    # working until they roll out with the new URL. Drop once everything
+    # has moved over.
     - host: funnelbarn-staging.nijmegen.wiebe.xyz
       http:
         paths:
@@ -28,4 +48,5 @@ spec:
                   name: http
   tls:
     - hosts:
+        - funnelbarn.staging.wiebe.xyz
         - funnelbarn-staging.nijmegen.wiebe.xyz
