@@ -28,11 +28,12 @@ export default function Login() {
   useEffect(() => {
     api.getClientConfig().then((cfg) => {
       setIambarnEnabled(cfg.iambarn_enabled)
-      // If the bugbarn-style confidential OIDC flow is configured server-side,
-      // auto-redirect to the OIDC login URL instead of showing the local form.
-      // The local form is still wired up for the zero-config case.
+      // If the bugbarn-style confidential OIDC flow is configured server-side
+      // AND the legacy IAMBarn PKCE flow is not enabled, auto-redirect to the
+      // OIDC login URL. When both are configured the legacy button-driven flow
+      // takes priority; consolidation is a follow-up.
       const oc = cfg.oidc
-      if (oc?.enabled && oc.loginURL) {
+      if (!cfg.iambarn_enabled && oc?.enabled && oc.loginURL) {
         window.location.assign(oc.loginURL)
       }
     }).catch(() => {
