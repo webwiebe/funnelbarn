@@ -63,6 +63,10 @@ type ServerConfig struct {
 	IAMBarnUsers       IAMBarnUserRepo
 	IAMBarnFlagProject string // dogfood project slug to read the iambarn-enabled flag from
 
+	// OIDC, when non-nil, enables the bugbarn-style confidential-client OIDC
+	// login flow at /api/v1/oidc/{login,callback}. Independent of IAMBarnProvider.
+	OIDC *auth.OIDCClient
+
 	InstanceSettings InstanceSettingsRepo
 	GeoAnonymizer    GeoAnonymizer
 	Segments         service.Segments
@@ -115,6 +119,7 @@ type Server struct {
 	iambarnProvider    *iambarn.Provider
 	iambarnUsers       IAMBarnUserRepo
 	iambarnFlagProject string
+	oidc               *auth.OIDCClient
 	instanceSettings   InstanceSettingsRepo
 	geoAnonymizer      GeoAnonymizer
 	segments           service.Segments
@@ -168,6 +173,7 @@ func NewServer(cfg ServerConfig) *Server {
 		iambarnProvider:    cfg.IAMBarnProvider,
 		iambarnUsers:       cfg.IAMBarnUsers,
 		iambarnFlagProject: cfg.IAMBarnFlagProject,
+		oidc:               cfg.OIDC,
 		instanceSettings:   cfg.InstanceSettings,
 		geoAnonymizer:      cfg.GeoAnonymizer,
 		segments:           cfg.Segments,
@@ -206,6 +212,11 @@ func (s *Server) registerRoutes() {
 	// OIDC (gated by the iambarn-enabled feature flag in handlers)
 	s.mux.Handle("GET /api/v1/auth/oidc/login", s.loginLimiter.middleware(http.HandlerFunc(s.handleOIDCLogin)))
 	s.mux.HandleFunc("GET /api/v1/auth/oidc/callback", s.handleOIDCCallback)
+
+	// OIDC confidential-client flow (gated by FUNNELBARN_OIDC_* env vars).
+	// Independent of the IAMBarn PKCE flow above; both can coexist.
+	s.mux.Handle("GET /api/v1/oidc/login", s.loginLimiter.middleware(http.HandlerFunc(s.handleOIDCConfidentialLogin)))
+	s.mux.HandleFunc("GET /api/v1/oidc/callback", s.handleOIDCConfidentialCallback)
 
 	// Projects
 	s.mux.HandleFunc("GET /api/v1/projects", s.requireSession(s.handleListProjects))

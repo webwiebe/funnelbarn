@@ -209,6 +209,8 @@ func run() error {
 			"flag_project", cfg.DogfoodProject)
 	}
 
+	oidcClient := buildOIDCClient(cfg)
+
 	apiServer := api.NewServer(api.ServerConfig{
 		InstanceSettings:    store,
 		GeoAnonymizer:       store,
@@ -247,6 +249,7 @@ func run() error {
 		IAMBarnProvider:     iambarnProvider,
 		IAMBarnUsers:        store,
 		IAMBarnFlagProject:  cfg.DogfoodProject,
+		OIDC:                oidcClient,
 	})
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)
@@ -282,6 +285,25 @@ func run() error {
 		}
 		return err
 	}
+}
+
+// buildOIDCClient returns an OIDC adapter when all four FUNNELBARN_OIDC_* vars
+// are set, or nil otherwise (in which case the local single-user login and the
+// optional IAMBarn PKCE flow are the auth paths). Discovery is lazy so an
+// unreachable issuer at startup does not crash the process.
+func buildOIDCClient(cfg config.Config) *auth.OIDCClient {
+	oc := auth.OIDCConfig{
+		Issuer:        cfg.OIDCIssuer,
+		ClientID:      cfg.OIDCClientID,
+		ClientSecret:  cfg.OIDCClientSecret,
+		RedirectURL:   cfg.OIDCRedirectURL,
+		RequiredGroup: cfg.OIDCRequiredGroup,
+	}
+	if !oc.Enabled() {
+		return nil
+	}
+	slog.Info("oidc: enabled", "issuer", oc.Issuer, "client_id", oc.ClientID, "required_group", oc.RequiredGroup)
+	return auth.NewOIDCClient(oc)
 }
 
 func newAPIAuthorizer(cfg config.Config, store *repository.Store) (*auth.Authorizer, error) {
