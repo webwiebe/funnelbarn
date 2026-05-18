@@ -12,8 +12,8 @@
 ## Environments
 
 - **Production**: `funnelbarn.wiebe.xyz` (Cloudflare → k3s)
-- **Testing**: `funnelbarn-test.nijmegen.wiebe.xyz` (Caddy @ 192.168.4.111 → k3s)
-- **Staging**: `funnelbarn-staging.nijmegen.wiebe.xyz` (Caddy @ 192.168.4.111 → k3s)
+- **Testing**: `funnelbarn.test.wiebe.xyz` (legacy alias: `funnelbarn-test.nijmegen.wiebe.xyz`, still served)
+- **Staging**: `funnelbarn.staging.wiebe.xyz` (legacy alias: `funnelbarn-staging.nijmegen.wiebe.xyz`, still served)
 - Non-production uses `*.nijmegen.wiebe.xyz` wildcard — Caddy handles TLS, no Cloudflare free-tier limits
 
 ## Workflow

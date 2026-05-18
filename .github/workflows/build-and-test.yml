@@ -235,7 +235,7 @@ jobs:
 
       - name: Run E2E tests
         env:
-          E2E_BASE_URL: https://funnelbarn-test.nijmegen.wiebe.xyz
+          E2E_BASE_URL: https://funnelbarn.test.wiebe.xyz
           # k3s cluster private IP — reachable from the Mac Mini runner
           E2E_CLUSTER_IP: 192.168.4.108
         run: npx playwright test --reporter=list,html
