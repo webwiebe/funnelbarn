@@ -290,6 +290,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	// Redirect GET / on f.* subdomains back to their root domain.
+	// e.g. f.example.com → https://example.com
+	if r.Method == http.MethodGet && r.URL.Path == "/" {
+		host := r.Host
+		if i := strings.IndexByte(host, ':'); i >= 0 {
+			host = host[:i]
+		}
+		if strings.HasPrefix(host, "f.") {
+			http.Redirect(w, r, "https://"+strings.TrimPrefix(host, "f."), http.StatusMovedPermanently)
+			return
+		}
+	}
 	// Apply a reasonable body limit to all routes (ingest has its own per-handler limit).
 	if r.Body != nil && r.URL.Path != "/api/v1/events" {
 		r.Body = http.MaxBytesReader(w, r.Body, 256<<10) // 256 KiB
