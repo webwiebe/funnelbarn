@@ -118,10 +118,10 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
-      - name: Install SDK dependencies and build IIFE bundle
+      - name: Install SDK dependencies and build
         run: |
           npm ci --prefix sdks/js
-          npm run build:iife --prefix sdks/js
+          npm run build --prefix sdks/js
           mkdir -p web/public/sdk
           cp sdks/js/dist/iife/funnelbarn.js web/public/sdk/funnelbarn.js
 
