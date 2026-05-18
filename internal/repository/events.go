@@ -28,10 +28,10 @@ type Event struct {
 	OS             string    `json:"os"`
 	DeviceType     string    `json:"device_type"`
 	CountryCode    string    `json:"country_code"`
-	PageViewID  string    `json:"page_view_id,omitempty"`
-	IngestID    string    `json:"ingest_id"`
-	OccurredAt  time.Time `json:"occurred_at"`
-	CreatedAt   time.Time `json:"created_at"`
+	PageViewID     string    `json:"page_view_id,omitempty"`
+	IngestID       string    `json:"ingest_id"`
+	OccurredAt     time.Time `json:"occurred_at"`
+	CreatedAt      time.Time `json:"created_at"`
 
 	// ClientIP is transient — used to pass the real IP to UpsertSession. Not stored.
 	ClientIP string `json:"-"`

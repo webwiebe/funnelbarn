@@ -210,10 +210,10 @@ func run() error {
 	}
 
 	apiServer := api.NewServer(api.ServerConfig{
-		InstanceSettings: store,
-		GeoAnonymizer:    store,
-		Segments:         segmentsSvc,
-		Distributions:    store,
+		InstanceSettings:    store,
+		GeoAnonymizer:       store,
+		Segments:            segmentsSvc,
+		Distributions:       store,
 		Ingest:              handler,
 		Projects:            projectsSvc,
 		Funnels:             funnelsSvc,

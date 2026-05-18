@@ -37,6 +37,8 @@ const mockApi = vi.hoisted(() => ({
   updateProject: vi.fn(),
   deleteProject: vi.fn(),
   approveProject: vi.fn(),
+  getInstanceSettings: vi.fn(),
+  setInstanceSettings: vi.fn(),
 }))
 
 vi.mock('../lib/api', async (importOriginal) => {
@@ -60,6 +62,7 @@ describe('Settings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockApi.listApiKeys.mockResolvedValue({ api_keys: mockApiKeys })
+    mockApi.getInstanceSettings.mockResolvedValue({ settings: { geo_enabled: 'true' } })
   })
 
   it('renders the Settings heading', async () => {
