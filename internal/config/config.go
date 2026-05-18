@@ -50,6 +50,12 @@ type Config struct {
 	IAMBarnClientID string
 	IAMBarnIssuer   string
 
+	OIDCIssuer        string // FUNNELBARN_OIDC_ISSUER — when all four OIDC vars are set, OIDC login is offered alongside local auth
+	OIDCClientID      string // FUNNELBARN_OIDC_CLIENT_ID
+	OIDCClientSecret  string // FUNNELBARN_OIDC_CLIENT_SECRET
+	OIDCRedirectURL   string // FUNNELBARN_OIDC_REDIRECT_URL
+	OIDCRequiredGroup string // FUNNELBARN_OIDC_REQUIRED_GROUP — defaults to "funnelbarn-users"
+
 	GeoIPCityDB string // path to GeoLite2-City.mmdb; empty = geo disabled
 	GeoIPASNDB  string // path to GeoLite2-ASN.mmdb; empty = skip ASN enrichment
 }
@@ -167,6 +173,12 @@ func Load() Config {
 
 	cfg.IAMBarnClientID = os.Getenv("FUNNELBARN_IAMBARN_CLIENT_ID")
 	cfg.IAMBarnIssuer = getenv("FUNNELBARN_IAMBARN_ISSUER", "https://iam.wiebe.xyz")
+
+	cfg.OIDCIssuer = os.Getenv("FUNNELBARN_OIDC_ISSUER")
+	cfg.OIDCClientID = os.Getenv("FUNNELBARN_OIDC_CLIENT_ID")
+	cfg.OIDCClientSecret = os.Getenv("FUNNELBARN_OIDC_CLIENT_SECRET")
+	cfg.OIDCRedirectURL = os.Getenv("FUNNELBARN_OIDC_REDIRECT_URL")
+	cfg.OIDCRequiredGroup = getenv("FUNNELBARN_OIDC_REQUIRED_GROUP", "funnelbarn-users")
 
 	cfg.GeoIPCityDB = os.Getenv("FUNNELBARN_GEOIP_CITY_DB")
 	cfg.GeoIPASNDB = os.Getenv("FUNNELBARN_GEOIP_ASN_DB")
