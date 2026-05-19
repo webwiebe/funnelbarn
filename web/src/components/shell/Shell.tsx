@@ -33,6 +33,15 @@ export default function Shell({ children, projectId, projectName, projects: proj
   const [iambarnProfileURL, setIambarnProfileURL] = useState<string | null>(null)
 
   useEffect(() => {
+    // Only show the IAMBarn profile link when the session was actually
+    // minted by an OIDC callback — the callback sets a non-HttpOnly
+    // `funnelbarn_auth_method=oidc` cookie. Local password sessions
+    // don't have it, so the menu entry stays hidden for them.
+    const isOIDCSession = typeof document !== 'undefined' &&
+      document.cookie.split(';').some((c) => c.trim() === 'funnelbarn_auth_method=oidc')
+    if (!isOIDCSession) {
+      return
+    }
     let cancelled = false
     api.getClientConfig()
       .then((cfg) => {

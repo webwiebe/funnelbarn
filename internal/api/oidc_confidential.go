@@ -94,6 +94,17 @@ func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.R
 	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, auth.SessionCookie(token, expires, secure))
 	http.SetCookie(w, auth.CSRFCookie(token, expires, secure))
+	// Non-HttpOnly hint so the SPA can show OIDC-specific UI (e.g. the
+	// IAMBarn profile link) only for sessions that actually came from
+	// iambarn. Same expiry as the session.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "funnelbarn_auth_method",
+		Value:    "oidc",
+		Path:     "/",
+		Expires:  expires,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
 	// Clear the short-lived state/nonce cookies.
 	http.SetCookie(w, oidcConfShortLivedCookie(oidcConfStateCookie, "", secure))
 	http.SetCookie(w, oidcConfShortLivedCookie(oidcConfNonceCookie, "", secure))

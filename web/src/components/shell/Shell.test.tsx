@@ -49,6 +49,8 @@ function renderShell(ui: ReactNode = <div>child content</div>, projectId?: strin
 describe('Shell', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Reset auth-method cookie between tests so we can opt in per case.
+    document.cookie = 'funnelbarn_auth_method=; path=/; max-age=0'
     mockGetClientConfig.mockResolvedValue({
       bugbarn_endpoint: '',
       bugbarn_ingest_key: '',
@@ -95,6 +97,7 @@ describe('Shell', () => {
   })
 
   it('does not show "Edit IAMBarn profile" link when iambarn profile_url is not configured', async () => {
+    document.cookie = 'funnelbarn_auth_method=oidc; path=/'
     renderShell()
     // Open the desktop user menu so the dropdown is visible.
     fireEvent.click(screen.getByText('testuser'))
@@ -103,20 +106,38 @@ describe('Shell', () => {
     expect(screen.queryByText('Edit IAMBarn profile')).not.toBeInTheDocument()
   })
 
-  it('shows "Edit IAMBarn profile" link in the user menu when iambarn profile_url is configured', async () => {
+  it('shows "Edit IAMBarn profile" link in the user menu when iambarn profile_url is configured and session is OIDC', async () => {
+    document.cookie = 'funnelbarn_auth_method=oidc; path=/'
     mockGetClientConfig.mockResolvedValue({
       bugbarn_endpoint: '',
       bugbarn_ingest_key: '',
       iambarn_enabled: false,
-      iambarn: { profile_url: 'https://iam.test.wiebe.xyz/admin' },
+      iambarn: { profile_url: 'https://iam.test.wiebe.xyz/admin#profile' },
     })
     renderShell()
     fireEvent.click(screen.getByText('testuser'))
     const link = await screen.findByText('Edit IAMBarn profile')
     const anchor = link.closest('a')
     expect(anchor).not.toBeNull()
-    expect(anchor!.getAttribute('href')).toBe('https://iam.test.wiebe.xyz/admin')
+    expect(anchor!.getAttribute('href')).toBe('https://iam.test.wiebe.xyz/admin#profile')
     expect(anchor!.getAttribute('target')).toBe('_blank')
     expect(anchor!.getAttribute('rel')).toBe('noopener noreferrer')
+  })
+
+  it('does not show "Edit IAMBarn profile" link for local password sessions even when iambarn profile_url is configured', async () => {
+    // No funnelbarn_auth_method cookie — local password session.
+    mockGetClientConfig.mockResolvedValue({
+      bugbarn_endpoint: '',
+      bugbarn_ingest_key: '',
+      iambarn_enabled: false,
+      iambarn: { profile_url: 'https://iam.test.wiebe.xyz/admin#profile' },
+    })
+    renderShell()
+    fireEvent.click(screen.getByText('testuser'))
+    // Give the component effect time; getClientConfig should NOT be called
+    // because the OIDC cookie is absent.
+    await new Promise((r) => setTimeout(r, 0))
+    expect(mockGetClientConfig).not.toHaveBeenCalled()
+    expect(screen.queryByText('Edit IAMBarn profile')).not.toBeInTheDocument()
   })
 })

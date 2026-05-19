@@ -48,7 +48,7 @@ func TestClientConfig_LegacyIAMBarnProviderSetsProfileURL(t *testing.T) {
 	srv, _ := newTestServer(t)
 	srv.iambarnProvider = iambarn.New("https://iam.test.wiebe.xyz/", "test-client", "https://funnelbarn.test/cb")
 	got := getClientConfig(t, srv)
-	want := "https://iam.test.wiebe.xyz/admin"
+	want := "https://iam.test.wiebe.xyz/admin#profile"
 	if got.IAMBarn.ProfileURL != want {
 		t.Errorf("profile_url: got %q, want %q", got.IAMBarn.ProfileURL, want)
 	}
@@ -63,7 +63,7 @@ func TestClientConfig_ConfidentialOIDCSetsProfileURL(t *testing.T) {
 		RedirectURL:  "https://funnelbarn.staging/cb",
 	})
 	got := getClientConfig(t, srv)
-	want := "https://iam.staging.wiebe.xyz/admin"
+	want := "https://iam.staging.wiebe.xyz/admin#profile"
 	if got.IAMBarn.ProfileURL != want {
 		t.Errorf("profile_url: got %q, want %q", got.IAMBarn.ProfileURL, want)
 	}

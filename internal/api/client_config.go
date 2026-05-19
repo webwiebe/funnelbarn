@@ -39,7 +39,7 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		resp.OIDC = oidcOut{Enabled: true, LoginURL: "/api/v1/oidc/login"}
 	}
 	if issuer := s.iambarnIssuer(); issuer != "" {
-		resp.IAMBarn.ProfileURL = strings.TrimRight(issuer, "/") + "/admin"
+		resp.IAMBarn.ProfileURL = strings.TrimRight(issuer, "/") + "/admin#profile"
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
