@@ -1,10 +1,10 @@
-import { ReactNode, useState } from 'react'
+import { ReactNode, useEffect, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { BarChart2, Layers, Radio, Settings, LogOut, User, Flag, Lightbulb, MoreHorizontal } from 'lucide-react'
+import { BarChart2, Layers, Radio, Settings, LogOut, User, Flag, Lightbulb, MoreHorizontal, ExternalLink } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { useProjects } from '../../lib/projects'
 import { ProjectPicker } from '../ui/ProjectPicker'
-import type { Project } from '../../lib/api'
+import { api, type Project } from '../../lib/api'
 
 const C = {
   bg: '#0f1117',
@@ -30,6 +30,19 @@ export default function Shell({ children, projectId, projectName, projects: proj
   const location = useLocation()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [moreSheetOpen, setMoreSheetOpen] = useState(false)
+  const [iambarnProfileURL, setIambarnProfileURL] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    api.getClientConfig()
+      .then((cfg) => {
+        if (!cancelled && cfg.iambarn?.profile_url) {
+          setIambarnProfileURL(cfg.iambarn.profile_url)
+        }
+      })
+      .catch(() => { /* non-fatal — menu item simply hidden */ })
+    return () => { cancelled = true }
+  }, [])
 
   const projects = projectsProp ?? ctxProjects
 
@@ -188,10 +201,37 @@ export default function Shell({ children, projectId, projectName, projects: proj
                 background: C.surface,
                 border: `1px solid ${C.border}`,
                 borderRadius: 8,
-                minWidth: 140,
+                minWidth: 200,
                 boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
                 zIndex: 200,
               }}>
+                {iambarnProfileURL && (
+                  <a
+                    href={iambarnProfileURL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setUserMenuOpen(false)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      width: '100%',
+                      textAlign: 'left',
+                      background: 'transparent',
+                      border: 'none',
+                      borderBottom: `1px solid ${C.border}`,
+                      color: C.text,
+                      padding: '0.6rem 1rem',
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      textDecoration: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <ExternalLink size={14} />
+                    Edit IAMBarn profile
+                  </a>
+                )}
                 <button
                   onClick={handleLogout}
                   style={{
@@ -397,6 +437,30 @@ export default function Shell({ children, projectId, projectName, projects: proj
               <Settings size={18} color={C.muted} />
               Settings
             </Link>
+
+            {/* Edit IAMBarn profile — only when iambarn issuer is configured */}
+            {iambarnProfileURL && (
+              <a
+                href={iambarnProfileURL}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setMoreSheetOpen(false)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '0.75rem 0',
+                  textDecoration: 'none',
+                  color: C.text,
+                  fontSize: 15,
+                  fontWeight: 500,
+                  borderBottom: `1px solid ${C.border}`,
+                }}
+              >
+                <ExternalLink size={18} color={C.muted} />
+                Edit IAMBarn profile
+              </a>
+            )}
 
             {/* Logout */}
             <button

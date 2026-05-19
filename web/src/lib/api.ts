@@ -501,6 +501,9 @@ export interface ClientConfig {
   funnelbarn_api_key?: string
   funnelbarn_project?: string
   iambarn_enabled: boolean
+  iambarn?: {
+    profile_url?: string
+  }
   oidc?: {
     enabled?: boolean
     loginURL?: string
