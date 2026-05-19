@@ -42,6 +42,11 @@ func New(issuer, clientID, redirectURI string) *Provider {
 	}
 }
 
+// Issuer returns the configured issuer URL (no trailing slash).
+func (p *Provider) Issuer() string {
+	return p.issuer
+}
+
 // GenerateVerifier generates a PKCE code_verifier (43 base64url chars from 32 random bytes).
 func GenerateVerifier() (string, error) {
 	b := make([]byte, 32)

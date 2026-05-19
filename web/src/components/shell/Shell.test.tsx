@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import Shell from './Shell'
 import type { ReactNode } from 'react'
 
 const mockLogout = vi.fn()
 const mockNavigate = vi.fn()
+const mockGetClientConfig = vi.fn()
 
 vi.mock('../../lib/auth', () => ({
   useAuth: () => ({
@@ -26,6 +27,12 @@ vi.mock('../../lib/projects', () => ({
   }),
 }))
 
+vi.mock('../../lib/api', () => ({
+  api: {
+    getClientConfig: (...args: unknown[]) => mockGetClientConfig(...args),
+  },
+}))
+
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>()
   return { ...actual, useNavigate: () => mockNavigate }
@@ -40,7 +47,14 @@ function renderShell(ui: ReactNode = <div>child content</div>, projectId?: strin
 }
 
 describe('Shell', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetClientConfig.mockResolvedValue({
+      bugbarn_endpoint: '',
+      bugbarn_ingest_key: '',
+      iambarn_enabled: false,
+    })
+  })
 
   it('renders its children', () => {
     renderShell(<p>Hello world</p>)
@@ -78,5 +92,31 @@ describe('Shell', () => {
 
   it('renders without errors when no projectId is provided', () => {
     expect(() => renderShell()).not.toThrow()
+  })
+
+  it('does not show "Edit IAMBarn profile" link when iambarn profile_url is not configured', async () => {
+    renderShell()
+    // Open the desktop user menu so the dropdown is visible.
+    fireEvent.click(screen.getByText('testuser'))
+    // Give the effect a tick to resolve.
+    await waitFor(() => expect(mockGetClientConfig).toHaveBeenCalled())
+    expect(screen.queryByText('Edit IAMBarn profile')).not.toBeInTheDocument()
+  })
+
+  it('shows "Edit IAMBarn profile" link in the user menu when iambarn profile_url is configured', async () => {
+    mockGetClientConfig.mockResolvedValue({
+      bugbarn_endpoint: '',
+      bugbarn_ingest_key: '',
+      iambarn_enabled: false,
+      iambarn: { profile_url: 'https://iam.test.wiebe.xyz/admin' },
+    })
+    renderShell()
+    fireEvent.click(screen.getByText('testuser'))
+    const link = await screen.findByText('Edit IAMBarn profile')
+    const anchor = link.closest('a')
+    expect(anchor).not.toBeNull()
+    expect(anchor!.getAttribute('href')).toBe('https://iam.test.wiebe.xyz/admin')
+    expect(anchor!.getAttribute('target')).toBe('_blank')
+    expect(anchor!.getAttribute('rel')).toBe('noopener noreferrer')
   })
 })

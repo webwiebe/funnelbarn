@@ -32,6 +32,11 @@ const mockApi = vi.hoisted(() => ({
   createProject: vi.fn(),
   listFunnels: vi.fn(),
   getFunnelAnalysis: vi.fn(),
+  getClientConfig: vi.fn().mockResolvedValue({
+    bugbarn_endpoint: '',
+    bugbarn_ingest_key: '',
+    iambarn_enabled: false,
+  }),
 }))
 
 vi.mock('../lib/api', async (importOriginal) => {
