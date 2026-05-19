@@ -141,6 +141,17 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 
 	http.SetCookie(w, auth.SessionCookie(token, expires, secure))
 	http.SetCookie(w, auth.CSRFCookie(token, expires, secure))
+	// Non-HttpOnly hint so the SPA can show OIDC-specific UI (e.g. the
+	// IAMBarn profile link) only for sessions that actually came from
+	// iambarn. Same expiry as the session.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "funnelbarn_auth_method",
+		Value:    "oidc",
+		Path:     "/",
+		Expires:  expires,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
 
 	slog.InfoContext(r.Context(), "oidc login", "sub", claims.Sub, "display", claims.DisplayName())
 	http.Redirect(w, r, "/dashboard", http.StatusFound)

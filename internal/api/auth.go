@@ -73,6 +73,15 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, auth.ClearSessionCookie(secure))
 	http.SetCookie(w, auth.ClearCSRFCookie(secure))
+	// Clear the auth-method hint set by the OIDC callbacks.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "funnelbarn_auth_method",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "logged out"})
 }
 
