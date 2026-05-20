@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { BarChart2, Layers, Radio, Settings, LogOut, User, Flag, Lightbulb, MoreHorizontal, ExternalLink } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { useProjects } from '../../lib/projects'
-import { ProjectPicker } from '../ui/ProjectPicker'
+import { ProjectPicker, LAST_PROJECT_ID_KEY } from '../ui/ProjectPicker'
 import { api, type Project } from '../../lib/api'
 
 const C = {
@@ -31,6 +31,18 @@ export default function Shell({ children, projectId, projectName, projects: proj
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [moreSheetOpen, setMoreSheetOpen] = useState(false)
   const [iambarnProfileURL, setIambarnProfileURL] = useState<string | null>(null)
+
+  // Remember the active project so that when the user lands on a
+  // non-project-scoped route (e.g. /settings), the picker can show their
+  // last choice instead of defaulting to the alphabetical first.
+  useEffect(() => {
+    if (!projectId) return
+    try {
+      window.localStorage.setItem(LAST_PROJECT_ID_KEY, projectId)
+    } catch {
+      /* ignore — quota / disabled storage */
+    }
+  }, [projectId])
 
   useEffect(() => {
     // Only show the IAMBarn profile link when the session was actually
@@ -113,12 +125,15 @@ export default function Shell({ children, projectId, projectName, projects: proj
         </Link>
 
 
-        {/* Project picker badge (desktop top nav) */}
-        {projects.length > 0 && projectId && (
+        {/* Project picker badge (desktop top nav) — shown on every page that
+            has projects, including non-project-scoped routes like Settings, so
+            the user can switch context from anywhere. */}
+        {projects.length > 0 && (
           <div style={{ marginRight: 8 }}>
             <ProjectPicker
               projects={projects}
               base={location.pathname.split('/')[1] || 'dashboard'}
+              projectId={projectId}
               variant="badge"
             />
           </div>
@@ -415,12 +430,14 @@ export default function Shell({ children, projectId, projectName, projects: proj
               </div>
             </div>
 
-            {/* Project picker — only when there are projects to switch between */}
-            {projects.length > 0 && projectId && (
+            {/* Project picker — show whenever there are projects to switch
+                between, even on non-project-scoped routes like Settings. */}
+            {projects.length > 0 && (
               <div style={{ marginBottom: '0.75rem' }}>
                 <ProjectPicker
                   projects={projects}
                   base={location.pathname.split('/')[1] || 'dashboard'}
+                  projectId={projectId}
                   variant="full"
                   onSelect={() => setMoreSheetOpen(false)}
                 />
