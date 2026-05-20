@@ -19,6 +19,13 @@ spec:
                 name: funnelbarn
                 port:
                   name: http
+          - path: /.well-known/iambarn-theme.json
+            pathType: Exact
+            backend:
+              service:
+                name: funnelbarn
+                port:
+                  name: http
           - path: /
             pathType: Prefix
             backend:
