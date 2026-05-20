@@ -12,17 +12,51 @@ const C = {
   muted: '#94a3b8',
 }
 
+/** localStorage key used to remember the user's last-selected project across pages. */
+export const LAST_PROJECT_ID_KEY = 'funnelbarn:lastProjectId'
+
+/**
+ * Routes that take a `/:projectId` segment. When the picker fires on any other
+ * route (e.g. `/settings`), selecting a project lands the user on
+ * `/dashboard/<id>` — the canonical project-landing page.
+ */
+const PROJECT_SCOPED_BASES = new Set(['dashboard', 'funnels', 'flags', 'insights', 'live'])
+
+function readLastProjectId(): string | undefined {
+  if (typeof window === 'undefined') return undefined
+  try {
+    return window.localStorage.getItem(LAST_PROJECT_ID_KEY) ?? undefined
+  } catch {
+    return undefined
+  }
+}
+
+function writeLastProjectId(id: string) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(LAST_PROJECT_ID_KEY, id)
+  } catch {
+    /* ignore — quota / disabled storage */
+  }
+}
+
 interface ProjectPickerProps {
   projects: Project[]
   /** The base path segment used for navigation, e.g. "dashboard" or "funnels". */
   base: string
+  /**
+   * The currently-active project id, when known. Pages that are not
+   * project-scoped (e.g. Settings) may omit this; the picker then falls back
+   * to the last-selected project from localStorage, then to the first project.
+   */
+  projectId?: string
   /** Callback invoked after a project is selected (e.g. to close a parent sheet). */
   onSelect?: () => void
   /** Compact mode — used in the top nav badge. Full mode — used in "More" sheet. */
   variant?: 'badge' | 'full'
 }
 
-export function ProjectPicker({ projects, base, onSelect, variant = 'badge' }: ProjectPickerProps) {
+export function ProjectPicker({ projects, base, projectId, onSelect, variant = 'badge' }: ProjectPickerProps) {
   const navigate = useNavigate()
   const { projectId: urlProjectId } = useParams<{ projectId?: string }>()
   const [open, setOpen] = useState(false)
@@ -30,7 +64,9 @@ export function ProjectPicker({ projects, base, onSelect, variant = 'badge' }: P
 
   const sortedProjects = [...projects].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
 
-  const currentProject = projects.find((p) => p.id === urlProjectId) ?? projects[0]
+  // Resolve the "current" project: explicit prop > URL param > remembered id > first project.
+  const effectiveProjectId = projectId ?? urlProjectId ?? readLastProjectId()
+  const currentProject = projects.find((p) => p.id === effectiveProjectId) ?? projects[0]
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -47,7 +83,12 @@ export function ProjectPicker({ projects, base, onSelect, variant = 'badge' }: P
   const handleSelect = (project: Project) => {
     setOpen(false)
     onSelect?.()
-    navigate(`/${base}/${project.id}`)
+    writeLastProjectId(project.id)
+    // On project-scoped routes, swap the id inline. Anywhere else (e.g.
+    // /settings) take the user to the project's dashboard, which is the
+    // canonical landing page for a project context.
+    const target = PROJECT_SCOPED_BASES.has(base) ? base : 'dashboard'
+    navigate(`/${target}/${project.id}`)
   }
 
   if (projects.length === 0) return null

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { ProjectPicker } from './ProjectPicker'
+import { ProjectPicker, LAST_PROJECT_ID_KEY } from './ProjectPicker'
 import type { Project } from '../../lib/api'
 
 // ---------------------------------------------------------------------------
@@ -136,5 +136,90 @@ describe('ProjectPicker — full variant', () => {
   it('renders nothing when the project list is empty', () => {
     const { container } = renderPicker('p1', 'full', [])
     expect(container.firstChild).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Non-project-scoped routes (e.g. /settings)
+// ---------------------------------------------------------------------------
+
+describe('ProjectPicker — non-project-scoped routes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.localStorage.clear()
+  })
+
+  function renderSettings(base: string = 'settings') {
+    return render(
+      <MemoryRouter initialEntries={[`/${base}`]}>
+        <Routes>
+          <Route
+            path={`/${base}`}
+            element={<ProjectPicker projects={projects} base={base} variant="badge" />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+
+  it('falls back to the first project when no projectId and nothing in localStorage', () => {
+    renderSettings()
+    // Sorted projects: Alpha, Beta, Gamma — first is Alpha
+    expect(screen.getByText('Alpha')).toBeInTheDocument()
+  })
+
+  it('uses the last-selected project from localStorage when no projectId is provided', () => {
+    window.localStorage.setItem(LAST_PROJECT_ID_KEY, 'p3')
+    renderSettings()
+    expect(screen.getByText('Gamma')).toBeInTheDocument()
+  })
+
+  it('navigates to /dashboard/<id> when picker is on a non-project-scoped route', () => {
+    renderSettings()
+    fireEvent.click(screen.getByRole('button', { name: /switch project/i }))
+    fireEvent.click(screen.getByText('Beta'))
+    expect(mockNavigate).toHaveBeenCalledWith('/dashboard/p2')
+  })
+
+  it('persists the selected project id to localStorage', () => {
+    renderSettings()
+    fireEvent.click(screen.getByRole('button', { name: /switch project/i }))
+    fireEvent.click(screen.getByText('Gamma'))
+    expect(window.localStorage.getItem(LAST_PROJECT_ID_KEY)).toBe('p3')
+  })
+
+  it('keeps inline navigation on project-scoped routes (regression)', () => {
+    // When base is one of the scoped routes (e.g. "insights"), selecting a
+    // project should land on /insights/<id> — not redirect to dashboard.
+    render(
+      <MemoryRouter initialEntries={['/insights/p1']}>
+        <Routes>
+          <Route
+            path="/insights/:projectId"
+            element={<ProjectPicker projects={projects} base="insights" variant="badge" />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /switch project/i }))
+    fireEvent.click(screen.getByText('Beta'))
+    expect(mockNavigate).toHaveBeenCalledWith('/insights/p2')
+  })
+
+  it('prefers the explicit projectId prop over the URL param', () => {
+    render(
+      <MemoryRouter initialEntries={['/dashboard/p1']}>
+        <Routes>
+          <Route
+            path="/dashboard/:projectId"
+            element={
+              <ProjectPicker projects={projects} base="dashboard" projectId="p3" variant="badge" />
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    )
+    // The explicit prop (p3 = Gamma) wins over the URL param (p1 = Alpha).
+    expect(screen.getByText('Gamma')).toBeInTheDocument()
   })
 })
