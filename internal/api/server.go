@@ -200,6 +200,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.Handle("GET /api/v1/setup/{slug}", s.setupLimiter.middleware(http.HandlerFunc(s.handleSetup)))
 	s.mux.HandleFunc("GET /api/v1/client-config", s.handleClientConfig)
+	s.mux.HandleFunc("GET /.well-known/iambarn-theme.json", s.handleThemeManifest)
 
 	// Ingest (API key required)
 	s.mux.Handle("POST /api/v1/events", s.eventsLimiter.middleware(s.ingest))
