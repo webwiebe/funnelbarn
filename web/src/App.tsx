@@ -71,8 +71,12 @@ function RootRedirect() {
     )
   }
 
+  // Authenticated users skip the marketing landing and go straight to their
+  // dashboard. Reuse DefaultProjectRoute so they land on /dashboard/<projectId>
+  // when a default/last-visited project is known, rather than bouncing through
+  // a generic /dashboard hop.
   if (user) {
-    return <Navigate to="/dashboard" replace />
+    return <DefaultProjectRoute base="/dashboard" />
   }
 
   return <Landing />
