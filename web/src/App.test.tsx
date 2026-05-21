@@ -155,3 +155,110 @@ describe('DefaultProjectRoute', () => {
     expect(window.location.pathname).toBe('/dashboard/p2')
   })
 })
+
+// ---------------------------------------------------------------------------
+// RootRedirect tests — guard for the marketing landing route ("/")
+// ---------------------------------------------------------------------------
+
+describe('RootRedirect', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('renders the marketing Landing page for unauthenticated visitors', async () => {
+    mockUseAuth.mockReturnValue({ user: null, isLoading: false })
+    mockUseProjects.mockReturnValue({
+      projects: [],
+      isLoading: false,
+      defaultProjectId: null,
+      refetch: vi.fn(),
+      setDefaultProjectId: vi.fn(),
+    })
+
+    renderAt('/')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('landing-page')).toBeInTheDocument(),
+    )
+    expect(window.location.pathname).toBe('/')
+  })
+
+  it('does not render Landing while auth is still loading', () => {
+    mockUseAuth.mockReturnValue({ user: null, isLoading: true })
+    mockUseProjects.mockReturnValue({
+      projects: [],
+      isLoading: false,
+      defaultProjectId: null,
+      refetch: vi.fn(),
+      setDefaultProjectId: vi.fn(),
+    })
+
+    renderAt('/')
+
+    expect(screen.queryByTestId('landing-page')).toBeNull()
+    expect(screen.queryByTestId('dashboard-page')).toBeNull()
+  })
+
+  it('redirects authenticated users to the default project dashboard', async () => {
+    mockUseAuth.mockReturnValue({ user: loggedInUser, isLoading: false })
+    mockUseProjects.mockReturnValue({
+      projects: [
+        { id: 'p1', name: 'Alpha', slug: 'alpha', status: 'active' },
+        { id: 'p2', name: 'Beta', slug: 'beta', status: 'active' },
+      ],
+      isLoading: false,
+      defaultProjectId: 'p2',
+      refetch: vi.fn(),
+      setDefaultProjectId: vi.fn(),
+    })
+
+    renderAt('/')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('dashboard-page')).toBeInTheDocument(),
+    )
+    expect(window.location.pathname).toBe('/dashboard/p2')
+    // Landing must not render for authenticated users
+    expect(screen.queryByTestId('landing-page')).toBeNull()
+  })
+
+  it('redirects authenticated users to the first project when no default is stored', async () => {
+    mockUseAuth.mockReturnValue({ user: loggedInUser, isLoading: false })
+    mockUseProjects.mockReturnValue({
+      projects: [
+        { id: 'p1', name: 'Alpha', slug: 'alpha', status: 'active' },
+        { id: 'p2', name: 'Beta', slug: 'beta', status: 'active' },
+      ],
+      isLoading: false,
+      defaultProjectId: null,
+      refetch: vi.fn(),
+      setDefaultProjectId: vi.fn(),
+    })
+
+    renderAt('/')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('dashboard-page')).toBeInTheDocument(),
+    )
+    expect(window.location.pathname).toBe('/dashboard/p1')
+    expect(screen.queryByTestId('landing-page')).toBeNull()
+  })
+
+  it('shows the Dashboard empty-state when an authenticated user has no projects', async () => {
+    mockUseAuth.mockReturnValue({ user: loggedInUser, isLoading: false })
+    mockUseProjects.mockReturnValue({
+      projects: [],
+      isLoading: false,
+      defaultProjectId: null,
+      refetch: vi.fn(),
+      setDefaultProjectId: vi.fn(),
+    })
+
+    renderAt('/')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('dashboard-page')).toBeInTheDocument(),
+    )
+    expect(screen.queryByTestId('landing-page')).toBeNull()
+  })
+})
