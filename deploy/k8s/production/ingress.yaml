@@ -36,3 +36,36 @@ spec:
   tls:
     - hosts:
         - funnelbarn.wiebe.xyz
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: funnelbarn-bananasketch-nl
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: f.bananasketch.nl
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: funnelbarn
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: funnelbarn-web
+                port:
+                  name: http
+  tls:
+    - hosts:
+        - f.bananasketch.nl
+      secretName: f-bananasketch-nl-tls
