@@ -4,11 +4,17 @@ Browser + Node.js SDK for [FunnelBarn](https://github.com/wiebe-xyz/funnelbarn) 
 
 ## Installation
 
-> **Not yet published to npm.** The `@funnelbarn/js` name is reserved but no version has been released. The fastest path today is the **CDN script tag** at `https://funnelbarn.wiebe.xyz/sdk.js` (see the `/api/v1/setup/{slug}` page for the exact snippet for your project). For module-based projects, install from git or vendor the built `dist/esm/index.js`:
-
 ```bash
-npm install github:webwiebe/funnelbarn#main --no-save
-# (or vendor sdks/js/dist/ into your project)
+npm install @funnelbarn/js
+```
+
+Or load the CDN script tag — auto-tracks page views on init, no install step:
+
+```html
+<script src="https://funnelbarn.wiebe.xyz/sdk.js"
+  data-api-key="<your-key>"
+  data-project-name="<your-slug>"
+  defer></script>
 ```
 
 ## Usage (browser)

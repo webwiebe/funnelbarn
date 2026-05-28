@@ -35,7 +35,9 @@ jobs:
           # fetch-tags: true above doesn't always pull every tag (depends on the
           # runner's local mirror state), so re-fetch explicitly to be safe.
           git fetch --tags --force origin
-          LATEST_TAG=$(git tag --sort=-v:refname | head -n 1)
+          # Only consider top-level vX.Y.Z tags. The Go module also pushes
+          # sdks/go/vX.Y.Z tags, which would otherwise sort first.
+          LATEST_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)
           if [ -z "${LATEST_TAG}" ]; then
             LATEST_TAG="v0.0.0"
           fi
@@ -58,7 +60,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "${NEW_VERSION}" -m "Release ${NEW_VERSION}"
-          git push origin "${NEW_VERSION}"
+          # Go modules in a monorepo subdirectory need a path-prefixed tag so
+          # `go get github.com/webwiebe/funnelbarn/sdks/go@vX.Y.Z` resolves.
+          GO_TAG="sdks/go/${NEW_VERSION}"
+          git tag -a "${GO_TAG}" -m "Go SDK ${NEW_VERSION}"
+          git push origin "${NEW_VERSION}" "${GO_TAG}"
 
   publish-npm:
     needs: [tag]
@@ -74,6 +80,11 @@ jobs:
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
+      - name: Sync package version to release tag
+        # Keeps package.json's version in sync with the git tag we just cut, so
+        # `npm publish` doesn't 409 with "version already exists" on the second
+        # run. --no-git-tag-version because the tag step already handles tagging.
+        run: npm version "${{ needs.tag.outputs.version_num }}" --no-git-tag-version --allow-same-version
       - run: npm ci
       - run: npm run build
       - name: Publish to npm
@@ -95,6 +106,18 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+      - name: Sync pyproject.toml version to release tag
+        # Same reason as the npm job: PyPI rejects re-uploads of an existing
+        # version, so we rewrite the version line before building.
+        run: |
+          python -c "
+          import re, pathlib
+          p = pathlib.Path('pyproject.toml')
+          text = p.read_text()
+          new = re.sub(r'^version\s*=\s*\".+\"', 'version = \"${{ needs.tag.outputs.version_num }}\"', text, count=1, flags=re.M)
+          p.write_text(new)
+          print(new[:200])
+          "
       - run: pip install build twine
       - run: python -m build
       - name: Publish to PyPI

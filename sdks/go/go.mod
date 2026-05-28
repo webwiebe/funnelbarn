@@ -1,3 +1,3 @@
-module github.com/wiebe-xyz/funnelbarn-go
+module github.com/webwiebe/funnelbarn/sdks/go
 
 go 1.22
