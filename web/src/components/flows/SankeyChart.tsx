@@ -1,6 +1,6 @@
 import { sankey, sankeyLinkHorizontal, SankeyNode, SankeyLink, SankeyGraph } from 'd3-sankey'
 import { type FlowData, type FlowNode, type FlowLink } from '../../lib/api'
-import { C, nodeColor, shortLabel } from './colors'
+import { C, nodeColor } from './colors'
 
 type SNode = SankeyNode<FlowNode, FlowLink>
 type SLink = SankeyLink<FlowNode, FlowLink>
@@ -9,6 +9,22 @@ interface Props {
   data: FlowData
   onNodeClick: (page: string) => void
   width: number
+}
+
+// Strip the domain and show only the last meaningful path segment.
+// For referrer domains and special nodes ("%drop-off)", "(direct)") keep as-is.
+function pathLabel(label: string, maxLen = 14): string {
+  if (label.startsWith('(')) return label
+  try {
+    const { pathname } = new URL(label)
+    if (!pathname || pathname === '/') return '/'
+    const parts = pathname.split('/').filter(Boolean)
+    const segment = parts[parts.length - 1]
+    return segment.length > maxLen ? segment.slice(0, maxLen - 1) + '…' : segment
+  } catch {
+    // Referrer domain or non-URL string
+    return label.length > maxLen ? label.slice(0, maxLen - 1) + '…' : label
+  }
 }
 
 function buildSankeyGraph(data: FlowData): {
@@ -37,12 +53,12 @@ function buildSankeyGraph(data: FlowData): {
 function NodeRect({
   node,
   focusedPage,
-  innerW,
+  innerH,
   onNodeClick,
 }: {
   node: SNode
   focusedPage: string
-  innerW: number
+  innerH: number
   onNodeClick: (page: string) => void
 }) {
   const nd = node as unknown as FlowNode
@@ -54,58 +70,59 @@ function NodeRect({
   const isFocused = nd.depth === 0 && nd.label === focusedPage
   const color = nodeColor(nd.type, isFocused)
   const isClickable = nd.type !== 'exit'
-  const onLeft = x0 < innerW / 2
+  const cx = (x0 + x1) / 2
 
   return (
     <g
       onClick={() => isClickable && onNodeClick(nd.label)}
       style={{ cursor: isClickable ? 'pointer' : 'default' }}
     >
+      {/* Full URL tooltip on hover */}
+      <title>{nd.label}</title>
+
+      {/* Node bar */}
       <rect x={x0} y={y0} width={x1 - x0} height={h} fill={color} opacity={isFocused ? 1 : 0.75} rx={2} />
+
+      {/* Focused-page highlight ring */}
       {isFocused && (
         <rect
-          x={x0 - 1} y={y0 - 1}
-          width={x1 - x0 + 2} height={h + 2}
+          x={x0 - 2} y={y0 - 2}
+          width={x1 - x0 + 4} height={h + 4}
           fill="none" stroke={C.amber} strokeWidth={2} rx={3}
         />
       )}
-      <text
-        x={onLeft ? x0 - 8 : x1 + 8}
-        y={y0 + h / 2}
-        textAnchor={onLeft ? 'end' : 'start'}
-        dominantBaseline="middle"
-        fill={isFocused ? C.amber : C.text}
-        fontSize={11}
-        fontWeight={isFocused ? 700 : 400}
-        style={{ userSelect: 'none' }}
-      >
-        {shortLabel(nd.label)}
-      </text>
-      {h > 16 && (
+
+      {/* Session count badge — top of bar so it's readable even on full-height nodes */}
+      {h > 24 && (
         <text
-          x={(x0 + x1) / 2}
-          y={y0 + h / 2}
+          x={cx} y={y0 + 13}
           textAnchor="middle"
-          dominantBaseline="middle"
           fill="#fff"
-          fontSize={9}
+          fontSize={10}
           fontWeight={600}
           style={{ userSelect: 'none' }}
         >
           {nd.sessions.toLocaleString()}
         </text>
       )}
+
+      {/* Label below the chart area, rotated 45° so adjacent columns don't overlap */}
+      <text
+        transform={`translate(${cx},${innerH + 10}) rotate(45)`}
+        textAnchor="start"
+        dominantBaseline="hanging"
+        fill={isFocused ? C.amber : C.text}
+        fontSize={11}
+        fontWeight={isFocused ? 700 : 400}
+        style={{ userSelect: 'none' }}
+      >
+        {pathLabel(nd.label)}
+      </text>
     </g>
   )
 }
 
-function LinkPath({
-  link,
-  focusedPage,
-}: {
-  link: SLink
-  focusedPage: string
-}) {
+function LinkPath({ link, focusedPage }: { link: SLink; focusedPage: string }) {
   const linkPath = sankeyLinkHorizontal()
   const src = link.source as SNode
   const tgt = link.target as SNode
@@ -120,15 +137,17 @@ function LinkPath({
       d={linkPath(link) ?? ''}
       fill="none"
       stroke={isFocusedLink ? C.amber : C.muted}
-      strokeOpacity={isFocusedLink ? 0.35 : 0.18}
+      strokeOpacity={isFocusedLink ? 0.4 : 0.2}
       strokeWidth={Math.max(1, link.width ?? 1)}
     />
   )
 }
 
 export function SankeyChart({ data, onNodeClick, width }: Props) {
-  const height = Math.max(500, data.nodes.length * 40)
-  const margin = { top: 20, right: 160, bottom: 20, left: 160 }
+  // Small side margins — labels are below the chart now, not to the sides.
+  const margin = { top: 20, right: 50, bottom: 130, left: 50 }
+  // Height grows with node count but stays in a sensible range.
+  const height = Math.max(320, Math.min(data.nodes.length * 28 + 200, 520))
   const innerW = width - margin.left - margin.right
   const innerH = height - margin.top - margin.bottom
 
@@ -144,8 +163,8 @@ export function SankeyChart({ data, onNodeClick, width }: Props) {
   }
 
   const sankeyLayout = sankey<FlowNode & { name: string }, FlowLink>()
-    .nodeWidth(14)
-    .nodePadding(12)
+    .nodeWidth(16)
+    .nodePadding(10)
     .extent([[0, 0], [innerW, innerH]])
 
   let layout: SankeyGraph<FlowNode & { name: string }, FlowLink>
@@ -170,7 +189,7 @@ export function SankeyChart({ data, onNodeClick, width }: Props) {
             key={i}
             node={node as SNode}
             focusedPage={data.focused_page}
-            innerW={innerW}
+            innerH={innerH}
             onNodeClick={onNodeClick}
           />
         ))}
