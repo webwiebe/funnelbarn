@@ -20,7 +20,7 @@ export const LAST_PROJECT_ID_KEY = 'funnelbarn:lastProjectId'
  * route (e.g. `/settings`), selecting a project lands the user on
  * `/dashboard/<id>` — the canonical project-landing page.
  */
-const PROJECT_SCOPED_BASES = new Set(['dashboard', 'funnels', 'flags', 'insights', 'live'])
+const PROJECT_SCOPED_BASES = new Set(['dashboard', 'funnels', 'flags', 'insights', 'live', 'flows'])
 
 function readLastProjectId(): string | undefined {
   if (typeof window === 'undefined') return undefined

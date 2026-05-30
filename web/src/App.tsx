@@ -13,6 +13,7 @@ import Insights from './pages/Insights'
 import Flows from './pages/Flows'
 import FirstRunWizard from './components/wizards/FirstRunWizard'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
+import { LAST_PROJECT_ID_KEY } from './components/ui/ProjectPicker'
 import { trackPageView } from './lib/analytics'
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -84,7 +85,7 @@ function RootRedirect() {
 }
 
 function DefaultProjectRoute({ base }: { base: string }) {
-  const { projects, isLoading, defaultProjectId } = useProjects()
+  const { projects, isLoading } = useProjects()
 
   if (isLoading) {
     return (
@@ -113,9 +114,15 @@ function DefaultProjectRoute({ base }: { base: string }) {
     return <Dashboard />
   }
 
+  // Use the last-visited project — written by Shell on every project-scoped page,
+  // so it's always the project the user was just looking at. Falls back to the
+  // first project in the list when no history exists (fresh install).
+  let lastId: string | null = null
+  try { lastId = localStorage.getItem(LAST_PROJECT_ID_KEY) } catch { /* quota / private mode */ }
+
   const target =
-    defaultProjectId && projects.some((p) => p.id === defaultProjectId)
-      ? defaultProjectId
+    (lastId && projects.some((p) => p.id === lastId))
+      ? lastId
       : projects[0].id
 
   return <Navigate to={`${base}/${target}`} replace />
