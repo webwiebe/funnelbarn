@@ -40,25 +40,13 @@ test.describe('API: OIDC login endpoint gating', () => {
 // ── Browser tests (Chromium UA contains "Chrome") ───────────────────────────
 
 test.describe('iambarn login page', () => {
-  test('shows Continue with IAMBarn button in Chrome', async ({ page }) => {
+  test('auto-redirects to IAMBarn authorization endpoint in Chrome', async ({ page }) => {
     await page.context().clearCookies()
+    // When iambarn_enabled is true, the login page redirects immediately.
+    // waitUntil: 'commit' captures the URL as soon as the navigation commits
+    // (before the remote IAMBarn page fully loads).
     await page.goto('/login')
-    await expect(page.getByText('Continue with IAMBarn')).toBeVisible({ timeout: 5000 })
-  })
-
-  test('IAMBarn button redirects to IAMBarn authorization endpoint', async ({ page }) => {
-    await page.context().clearCookies()
-    await page.goto('/login')
-    await expect(page.getByText('Continue with IAMBarn')).toBeVisible()
-
-    // Navigate and grab the redirect URL before the IAMBarn page loads.
-    await page.getByText('Continue with IAMBarn').click()
-    // waitUntil: 'commit' captures the URL as soon as the navigation is
-    // committed (before the remote page fully loads), so this works even
-    // if iam.wiebe.xyz isn't reachable from the runner.
     await page.waitForURL(/iam\.wiebe\.xyz/, { waitUntil: 'commit', timeout: 10000 })
-    // IAMBarn shows its own login page first; the OAuth params are nested
-    // in the redirect_uri query param — so we check the full URL string.
     const url = page.url()
     expect(url).toContain('iam.wiebe.xyz')
     expect(url).toContain('code_challenge')
@@ -121,10 +109,8 @@ test.describe('Full IAMBarn credential flow', () => {
   test('logs in via IAMBarn and lands on /dashboard', async ({ page }) => {
     test.setTimeout(30_000)
     await page.context().clearCookies()
+    // Login page auto-redirects to IAMBarn when iambarn_enabled is true.
     await page.goto('/login')
-    await page.getByText('Continue with IAMBarn').click()
-
-    // Wait for IAMBarn login page.
     await page.waitForURL(/iam\.wiebe\.xyz/, { waitUntil: 'commit', timeout: 10_000 })
 
     // IAMBarn uses email + password form.
@@ -149,7 +135,6 @@ test.describe('Full IAMBarn credential flow', () => {
     test.setTimeout(30_000)
     await page.context().clearCookies()
     await page.goto('/login')
-    await page.getByText('Continue with IAMBarn').click()
     await page.waitForURL(/iam\.wiebe\.xyz/, { waitUntil: 'commit', timeout: 10_000 })
 
     await page.locator('input[name="email"]').fill(email!)

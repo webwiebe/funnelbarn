@@ -9,22 +9,24 @@ test.describe('auth', () => {
   })
 
   test('login and redirect to dashboard', async ({ page }) => {
-    // Clear storage state to simulate logged-out user
     await page.context().clearCookies()
-    await page.goto('/login')
-    await page.getByLabel('Username').fill('wiebe')
-    await page.getByLabel('Password').fill('wiebe')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    // Authenticate via the API — works regardless of which auth mode the login
+    // UI shows (local form, IAMBarn redirect, or other OIDC provider).
+    const res = await page.request.post('/api/v1/login', {
+      data: { username: 'wiebe', password: 'wiebe' },
+    })
+    expect(res.ok()).toBe(true)
+    await page.goto('/dashboard')
     await expect(page).toHaveURL(/\/dashboard/)
   })
 
   test('logout redirects to landing', async ({ page }) => {
-    // Clear storage state to simulate logged-out user, then log in
     await page.context().clearCookies()
-    await page.goto('/login')
-    await page.getByLabel('Username').fill('wiebe')
-    await page.getByLabel('Password').fill('wiebe')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    const res = await page.request.post('/api/v1/login', {
+      data: { username: 'wiebe', password: 'wiebe' },
+    })
+    expect(res.ok()).toBe(true)
+    await page.goto('/dashboard')
     await expect(page).toHaveURL(/\/dashboard/)
 
     // Open user menu and logout
