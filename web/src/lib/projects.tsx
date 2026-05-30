@@ -3,6 +3,7 @@ import { api, ApiError, Project } from './api'
 import { reportError } from './bugbarn'
 
 const STORAGE_KEY = 'funnelbarn_default_project'
+const ENV_STORAGE_KEY = 'funnelbarn_environment'
 
 interface ProjectContextValue {
   projects: Project[]
@@ -10,6 +11,8 @@ interface ProjectContextValue {
   refetch: () => void
   defaultProjectId: string | null
   setDefaultProjectId: (id: string) => void
+  selectedEnvironment: string
+  setSelectedEnvironment: (env: string) => void
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null)
@@ -20,10 +23,22 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const [defaultProjectId, setDefaultProjectIdState] = useState<string | null>(
     () => localStorage.getItem(STORAGE_KEY)
   )
+  const [selectedEnvironment, setSelectedEnvironmentState] = useState<string>(
+    () => localStorage.getItem(ENV_STORAGE_KEY) ?? ''
+  )
 
   const setDefaultProjectId = useCallback((id: string) => {
     setDefaultProjectIdState(id)
     localStorage.setItem(STORAGE_KEY, id)
+  }, [])
+
+  const setSelectedEnvironment = useCallback((env: string) => {
+    setSelectedEnvironmentState(env)
+    if (env) {
+      localStorage.setItem(ENV_STORAGE_KEY, env)
+    } else {
+      localStorage.removeItem(ENV_STORAGE_KEY)
+    }
   }, [])
 
   const refetch = useCallback(() => {
@@ -46,7 +61,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   useEffect(() => { refetch() }, [refetch])
 
   return (
-    <ProjectContext.Provider value={{ projects, isLoading, refetch, defaultProjectId, setDefaultProjectId }}>
+    <ProjectContext.Provider value={{ projects, isLoading, refetch, defaultProjectId, setDefaultProjectId, selectedEnvironment, setSelectedEnvironment }}>
       {children}
     </ProjectContext.Provider>
   )

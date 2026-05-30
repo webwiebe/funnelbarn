@@ -98,6 +98,25 @@ func (s *Server) handleEventPropertyValues(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]any{"values": vals})
 }
 
+// handleEnvironments returns the distinct canonical environment values recorded for a project.
+func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		jsonError(w, "project id required", http.StatusBadRequest)
+		return
+	}
+
+	envs, err := s.events.DistinctEnvironments(r.Context(), projectID)
+	if err != nil {
+		mapServiceError(w, err, "handleEnvironments")
+		return
+	}
+	if envs == nil {
+		envs = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"environments": envs})
+}
+
 // handleListEvents returns a paginated list of events for a project.
 func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")

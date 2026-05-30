@@ -18,6 +18,8 @@ vi.mock('../lib/projects', () => ({
     isLoading: false,
     refetch: vi.fn(),
     defaultProjectId: 'p1',
+    selectedEnvironment: '',
+    setSelectedEnvironment: vi.fn(),
   }),
 }))
 
@@ -32,6 +34,7 @@ const mockApi = vi.hoisted(() => ({
   createProject: vi.fn(),
   listFunnels: vi.fn(),
   getFunnelAnalysis: vi.fn(),
+  getEnvironments: vi.fn().mockResolvedValue({ environments: [] }),
   getClientConfig: vi.fn().mockResolvedValue({
     bugbarn_endpoint: '',
     bugbarn_ingest_key: '',
@@ -108,7 +111,7 @@ describe('Dashboard', () => {
   it('calls getDashboard with the correct project id', async () => {
     renderDashboard('p1')
     await waitFor(() =>
-      expect(mockApi.getDashboard).toHaveBeenCalledWith('p1', expect.any(String)),
+      expect(mockApi.getDashboard).toHaveBeenCalledWith('p1', expect.any(String), expect.any(String)),
     )
   })
 

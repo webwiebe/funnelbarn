@@ -232,6 +232,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-names", s.requireSession(s.handleEventNames))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-properties", s.requireSession(s.handleEventProperties))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-property-values", s.requireSession(s.handleEventPropertyValues))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/environments", s.requireSession(s.handleEnvironments))
 
 	// Funnels
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels", s.requireSession(s.handleListFunnels))

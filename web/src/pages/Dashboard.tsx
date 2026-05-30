@@ -95,7 +95,7 @@ function StatCard({
 export default function Dashboard() {
   const { projectId } = useParams<{ projectId?: string }>()
   const navigate = useNavigate()
-  const { projects, refetch: refetchProjects } = useProjects()
+  const { projects, refetch: refetchProjects, selectedEnvironment } = useProjects()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -128,11 +128,11 @@ export default function Dashboard() {
     if (!projectId) return
     setLoading(true)
     setError(null)
-    api.getDashboard(projectId, range)
+    api.getDashboard(projectId, range, selectedEnvironment)
       .then(setData)
       .catch((e: unknown) => { reportError(e, { source: 'Dashboard.getDashboard' }); setError(String(e)) })
       .finally(() => setLoading(false))
-  }, [projectId, range])
+  }, [projectId, range, selectedEnvironment])
 
   useEffect(() => {
     if (!projectId) return

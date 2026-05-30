@@ -42,6 +42,7 @@ func (s *Server) handlePageFlows(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page := r.URL.Query().Get("page")
+	env := r.URL.Query().Get("environment")
 
 	depth := 5
 	if v := r.URL.Query().Get("depth"); v != "" {
@@ -62,7 +63,7 @@ func (s *Server) handlePageFlows(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
-	result, err := s.events.PageFlows(ctx, projectID, page, depth, from, to)
+	result, err := s.events.PageFlows(ctx, projectID, page, depth, from, to, env)
 	if err != nil {
 		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handlePageFlows")
