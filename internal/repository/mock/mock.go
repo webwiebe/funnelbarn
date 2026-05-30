@@ -575,6 +575,10 @@ func (s *Store) PopulatedMetadataColumns(_ context.Context, _, _ string) ([]stri
 	return nil, nil
 }
 
+func (s *Store) PageFlows(_ context.Context, _ string, _ string, _ int, _, _ time.Time) (repository.PageFlowResult, error) {
+	return repository.PageFlowResult{Nodes: []repository.FlowNode{}, Links: []repository.FlowLink{}}, nil
+}
+
 func (s *Store) PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
