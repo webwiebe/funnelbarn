@@ -785,7 +785,7 @@ func TestStore_CountEvents(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	n, err := s.CountEvents(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	n, err := s.CountEvents(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), n)
 }
@@ -811,7 +811,7 @@ func TestStore_TopPages(t *testing.T) {
 	err = s.InsertEvent(ctx, e2)
 	require.NoError(t, err)
 
-	pages, err := s.TopPages(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10)
+	pages, err := s.TopPages(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, pages)
 	// Home should be first with 3 views.
@@ -876,7 +876,7 @@ func TestStore_TopReferrers(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	refs, err := s.TopReferrers(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10)
+	refs, err := s.TopReferrers(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, refs)
 }
@@ -896,7 +896,7 @@ func TestStore_UniqueSessionCount(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	n, err := s.UniqueSessionCount(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	n, err := s.UniqueSessionCount(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), n)
 }
@@ -910,7 +910,7 @@ func TestStore_DailyEventCounts(t *testing.T) {
 
 	now := time.Now().UTC()
 	// No events inserted — query on empty range returns empty series without error.
-	series, err := s.DailyEventCounts(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	series, err := s.DailyEventCounts(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), "")
 	require.NoError(t, err)
 	assert.Empty(t, series)
 }
@@ -929,7 +929,7 @@ func TestStore_BounceRate(t *testing.T) {
 	err = s.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	rate, err := s.BounceRate(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	rate, err := s.BounceRate(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), "")
 	require.NoError(t, err)
 	assert.Equal(t, 1.0, rate) // 100% bounce rate
 }
@@ -948,7 +948,7 @@ func TestStore_TopBrowsers(t *testing.T) {
 	err = s.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	browsers, err := s.TopBrowsers(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10)
+	browsers, err := s.TopBrowsers(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, browsers)
 }
@@ -967,7 +967,7 @@ func TestStore_TopDeviceTypes(t *testing.T) {
 	err = s.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	devices, err := s.TopDeviceTypes(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	devices, err := s.TopDeviceTypes(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, devices)
 }
@@ -1083,7 +1083,7 @@ func TestStore_DailyUniqueSessions(t *testing.T) {
 
 	now := time.Now().UTC()
 	// No events inserted — query on empty range returns empty series without error.
-	series, err := s.DailyUniqueSessions(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	series, err := s.DailyUniqueSessions(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), "")
 	require.NoError(t, err)
 	assert.Empty(t, series)
 }
@@ -1109,7 +1109,7 @@ func TestStore_AvgEventsPerSession(t *testing.T) {
 	err = s.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	avg, err := s.AvgEventsPerSession(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	avg, err := s.AvgEventsPerSession(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), "")
 	require.NoError(t, err)
 	assert.InDelta(t, 1.5, avg, 0.01)
 }
@@ -1130,7 +1130,7 @@ func TestStore_TopEventNames(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	names, err := s.TopEventNames(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10)
+	names, err := s.TopEventNames(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10, "")
 	require.NoError(t, err)
 	require.Len(t, names, 1)
 	assert.Equal(t, "page-view", names[0].Name)
@@ -1151,7 +1151,7 @@ func TestStore_TopUTMSources(t *testing.T) {
 	err = s.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	srcs, err := s.TopUTMSources(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10)
+	srcs, err := s.TopUTMSources(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, srcs)
 }
@@ -1218,7 +1218,7 @@ func TestStore_TopCountries(t *testing.T) {
 	err = s.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	countries, err := s.TopCountries(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10)
+	countries, err := s.TopCountries(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, countries)
 }
@@ -1237,7 +1237,7 @@ func TestStore_TopOSSystems(t *testing.T) {
 	err = s.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	oss, err := s.TopOSSystems(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10)
+	oss, err := s.TopOSSystems(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, oss)
 }
@@ -1256,7 +1256,7 @@ func TestStore_TopUTMCampaigns(t *testing.T) {
 	err = s.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	campaigns, err := s.TopUTMCampaigns(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10)
+	campaigns, err := s.TopUTMCampaigns(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, campaigns)
 }
@@ -1275,7 +1275,7 @@ func TestStore_TopUTMMediums(t *testing.T) {
 	err = s.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	mediums, err := s.TopUTMMediums(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10)
+	mediums, err := s.TopUTMMediums(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, mediums)
 }
@@ -1293,7 +1293,7 @@ func TestStore_CountNewEvents(t *testing.T) {
 	err = s.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	n, err := s.CountNewEvents(ctx, p.ID, now.Add(-time.Hour))
+	n, err := s.CountNewEvents(ctx, p.ID, now.Add(-time.Hour), "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), n)
 }

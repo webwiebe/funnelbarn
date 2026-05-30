@@ -24,12 +24,15 @@ vi.mock('../../lib/projects', () => ({
     refetch: vi.fn(),
     defaultProjectId: 'proj-123',
     setDefaultProjectId: vi.fn(),
+    selectedEnvironment: '',
+    setSelectedEnvironment: vi.fn(),
   }),
 }))
 
 vi.mock('../../lib/api', () => ({
   api: {
     getClientConfig: (...args: unknown[]) => mockGetClientConfig(...args),
+    getEnvironments: vi.fn().mockResolvedValue({ environments: [] }),
   },
 }))
 

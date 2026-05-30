@@ -22,6 +22,7 @@ type Session struct {
 	UTMCampaign string    `json:"utm_campaign"`
 	DeviceType  string    `json:"device_type"`
 	CountryCode string    `json:"country_code"`
+	Environment string    `json:"environment,omitempty"`
 
 	// Geo fields — populated from IP on first event, nullable, clearable on request.
 	IP              string  `json:"ip,omitempty"`
@@ -43,9 +44,9 @@ func (s *Store) UpsertSession(ctx context.Context, sess Session) error {
 			id, project_id, first_seen_at, last_seen_at, event_count,
 			entry_url, exit_url, referrer,
 			utm_source, utm_medium, utm_campaign,
-			device_type, country_code,
+			device_type, country_code, environment,
 			ip, city, region, latitude, longitude, timezone, asn_org, connection_class
-		) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			last_seen_at = excluded.last_seen_at,
 			event_count  = event_count + 1,
@@ -54,7 +55,7 @@ func (s *Store) UpsertSession(ctx context.Context, sess Session) error {
 		sess.ID, sess.ProjectID, sess.FirstSeenAt, sess.LastSeenAt,
 		nullStr(sess.EntryURL), nullStr(sess.ExitURL),
 		nullStr(sess.Referrer), nullStr(sess.UTMSource), nullStr(sess.UTMMedium), nullStr(sess.UTMCampaign),
-		nullStr(sess.DeviceType), nullStr(sess.CountryCode),
+		nullStr(sess.DeviceType), nullStr(sess.CountryCode), sess.Environment,
 		nullStr(sess.IP), nullStr(sess.City), nullStr(sess.Region),
 		nullFloat(sess.Latitude), nullFloat(sess.Longitude),
 		nullStr(sess.Timezone), nullStr(sess.ASNOrg), nullStr(sess.ConnectionClass),

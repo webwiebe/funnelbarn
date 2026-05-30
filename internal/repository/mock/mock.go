@@ -487,64 +487,68 @@ func (s *Store) ListEvents(ctx context.Context, projectID string, limit, offset 
 	return all, nil
 }
 
-func (s *Store) CountEvents(ctx context.Context, projectID string, from, to time.Time) (int64, error) {
+func (s *Store) CountEvents(ctx context.Context, projectID string, from, to time.Time, env string) (int64, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var n int64
 	for _, e := range s.events {
-		if e.ProjectID == projectID && !e.OccurredAt.Before(from) && !e.OccurredAt.After(to) {
+		if e.ProjectID == projectID && !e.OccurredAt.Before(from) && !e.OccurredAt.After(to) && (env == "" || e.Environment == env) {
 			n++
 		}
 	}
 	return n, nil
 }
 
-func (s *Store) TopPages(ctx context.Context, projectID string, from, to time.Time, limit int) ([]repository.PageStat, error) {
+func (s *Store) TopPages(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]repository.PageStat, error) {
 	return []repository.PageStat{}, nil
 }
 
-func (s *Store) TopReferrers(ctx context.Context, projectID string, from, to time.Time, limit int) ([]repository.ReferrerStat, error) {
+func (s *Store) TopReferrers(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]repository.ReferrerStat, error) {
 	return []repository.ReferrerStat{}, nil
 }
 
-func (s *Store) DailyEventCounts(ctx context.Context, projectID string, from, to time.Time) ([]repository.TimeSeriesPoint, error) {
+func (s *Store) DailyEventCounts(_ context.Context, _ string, _, _ time.Time, _ string) ([]repository.TimeSeriesPoint, error) {
 	return []repository.TimeSeriesPoint{}, nil
 }
 
-func (s *Store) HourlyEventCounts(ctx context.Context, projectID string, from, to time.Time) ([]repository.TimeSeriesPoint, error) {
+func (s *Store) HourlyEventCounts(_ context.Context, _ string, _, _ time.Time, _ string) ([]repository.TimeSeriesPoint, error) {
 	return []repository.TimeSeriesPoint{}, nil
 }
 
-func (s *Store) DailyUniqueSessions(ctx context.Context, projectID string, from, to time.Time) ([]repository.TimeSeriesPoint, error) {
+func (s *Store) DailyUniqueSessions(_ context.Context, _ string, _, _ time.Time, _ string) ([]repository.TimeSeriesPoint, error) {
 	return []repository.TimeSeriesPoint{}, nil
 }
 
-func (s *Store) TopBrowsers(ctx context.Context, projectID string, from, to time.Time, limit int) ([]repository.BrowserStat, error) {
+func (s *Store) TopBrowsers(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]repository.BrowserStat, error) {
 	return []repository.BrowserStat{}, nil
 }
 
-func (s *Store) TopDeviceTypes(ctx context.Context, projectID string, from, to time.Time) ([]repository.DeviceStat, error) {
+func (s *Store) TopDeviceTypes(_ context.Context, _ string, _, _ time.Time, _ string) ([]repository.DeviceStat, error) {
 	return []repository.DeviceStat{}, nil
 }
 
-func (s *Store) TopEventNames(ctx context.Context, projectID string, from, to time.Time, limit int) ([]repository.EventNameStat, error) {
+func (s *Store) TopEventNames(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]repository.EventNameStat, error) {
 	return []repository.EventNameStat{}, nil
 }
 
-func (s *Store) TopUTMSources(ctx context.Context, projectID string, from, to time.Time, limit int) ([]repository.UTMStat, error) {
+func (s *Store) TopUTMSources(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]repository.UTMStat, error) {
 	return []repository.UTMStat{}, nil
 }
 
-func (s *Store) BounceRate(ctx context.Context, projectID string, from, to time.Time) (float64, error) {
+func (s *Store) BounceRate(_ context.Context, _ string, _, _ time.Time, _ string) (float64, error) {
 	return 0, nil
 }
 
-func (s *Store) AvgEventsPerSession(ctx context.Context, projectID string, from, to time.Time) (float64, error) {
+func (s *Store) AvgEventsPerSession(_ context.Context, _ string, _, _ time.Time, _ string) (float64, error) {
 	return 0, nil
 }
 
-func (s *Store) UniqueSessionCount(ctx context.Context, projectID string, from, to time.Time) (int64, error) {
+func (s *Store) UniqueSessionCount(_ context.Context, _ string, _, _ time.Time, _ string) (int64, error) {
 	return 0, nil
+}
+
+func (s *Store) DistinctEnvironments(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
 }
 
 func (s *Store) GetEventByIngestID(ctx context.Context, ingestID string) (*repository.Event, error) {
@@ -575,7 +579,7 @@ func (s *Store) PopulatedMetadataColumns(_ context.Context, _, _ string) ([]stri
 	return nil, nil
 }
 
-func (s *Store) PageFlows(_ context.Context, _ string, _ string, _ int, _, _ time.Time) (repository.PageFlowResult, error) {
+func (s *Store) PageFlows(_ context.Context, _ string, _ string, _ int, _, _ time.Time, _ string) (repository.PageFlowResult, error) {
 	return repository.PageFlowResult{Nodes: []repository.FlowNode{}, Links: []repository.FlowLink{}}, nil
 }
 

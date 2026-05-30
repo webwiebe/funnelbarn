@@ -91,7 +91,7 @@ func TestCountEvents(t *testing.T) {
 	from := time.Now().UTC().Add(-time.Hour)
 	to := time.Now().UTC().Add(time.Hour)
 
-	n, err := s.CountEvents(ctx, p.ID, from, to)
+	n, err := s.CountEvents(ctx, p.ID, from, to, "")
 	require.NoError(t, err)
 	require.EqualValues(t, 2, n)
 }
@@ -108,7 +108,7 @@ func TestTopPages(t *testing.T) {
 	from := time.Now().UTC().Add(-time.Hour)
 	to := time.Now().UTC().Add(time.Hour)
 
-	pages, err := s.TopPages(ctx, p.ID, from, to, 10)
+	pages, err := s.TopPages(ctx, p.ID, from, to, 10, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, pages)
 	require.Equal(t, "https://example.com/home", pages[0].URL)
@@ -125,7 +125,7 @@ func TestTopReferrers(t *testing.T) {
 	from := time.Now().UTC().Add(-time.Hour)
 	to := time.Now().UTC().Add(time.Hour)
 
-	refs, err := s.TopReferrers(ctx, p.ID, from, to, 10)
+	refs, err := s.TopReferrers(ctx, p.ID, from, to, 10, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, refs)
 	require.Equal(t, "google.com", refs[0].Domain)
@@ -143,7 +143,7 @@ func TestUniqueSessionCount(t *testing.T) {
 	from := time.Now().UTC().Add(-time.Hour)
 	to := time.Now().UTC().Add(time.Hour)
 
-	n, err := s.UniqueSessionCount(ctx, p.ID, from, to)
+	n, err := s.UniqueSessionCount(ctx, p.ID, from, to, "")
 	require.NoError(t, err)
 	require.EqualValues(t, 2, n)
 }
@@ -176,7 +176,7 @@ func TestTopBrowsers(t *testing.T) {
 	from := time.Now().UTC().Add(-time.Hour)
 	to := time.Now().UTC().Add(time.Hour)
 
-	browsers, err := s.TopBrowsers(ctx, p.ID, from, to, 5)
+	browsers, err := s.TopBrowsers(ctx, p.ID, from, to, 5, "")
 	require.NoError(t, err)
 	_ = browsers
 }
@@ -191,7 +191,7 @@ func TestTopDeviceTypes(t *testing.T) {
 	from := time.Now().UTC().Add(-time.Hour)
 	to := time.Now().UTC().Add(time.Hour)
 
-	devs, err := s.TopDeviceTypes(ctx, p.ID, from, to)
+	devs, err := s.TopDeviceTypes(ctx, p.ID, from, to, "")
 	require.NoError(t, err)
 	_ = devs
 }
@@ -208,7 +208,7 @@ func TestTopEventNames(t *testing.T) {
 	from := time.Now().UTC().Add(-time.Hour)
 	to := time.Now().UTC().Add(time.Hour)
 
-	names, err := s.TopEventNames(ctx, p.ID, from, to, 10)
+	names, err := s.TopEventNames(ctx, p.ID, from, to, 10, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, names)
 	require.Equal(t, "signup", names[0].Name)
@@ -235,7 +235,7 @@ func TestTopUTMSources(t *testing.T) {
 	from := time.Now().UTC().Add(-time.Hour)
 	to := time.Now().UTC().Add(time.Hour)
 
-	srcs, err := s.TopUTMSources(ctx, p.ID, from, to, 5)
+	srcs, err := s.TopUTMSources(ctx, p.ID, from, to, 5, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, srcs)
 	require.Equal(t, "newsletter", srcs[0].Value)
@@ -254,7 +254,7 @@ func TestBounceRate(t *testing.T) {
 	from := time.Now().UTC().Add(-time.Hour)
 	to := time.Now().UTC().Add(time.Hour)
 
-	rate, err := s.BounceRate(ctx, p.ID, from, to)
+	rate, err := s.BounceRate(ctx, p.ID, from, to, "")
 	require.NoError(t, err)
 	// 1 out of 2 sessions = 0.5
 	require.InDelta(t, 0.5, rate, 0.01)
@@ -272,7 +272,7 @@ func TestAvgEventsPerSession(t *testing.T) {
 	from := time.Now().UTC().Add(-time.Hour)
 	to := time.Now().UTC().Add(time.Hour)
 
-	avg, err := s.AvgEventsPerSession(ctx, p.ID, from, to)
+	avg, err := s.AvgEventsPerSession(ctx, p.ID, from, to, "")
 	require.NoError(t, err)
 	// 3 events / 2 sessions = 1.5
 	require.InDelta(t, 1.5, avg, 0.01)
