@@ -59,6 +59,7 @@ import React from 'react'
 // Pull DefaultProjectRoute out by re-rendering App at the /dashboard path.
 // Because all providers and pages are mocked, only the routing logic is exercised.
 import App from './App'
+import { LAST_PROJECT_ID_KEY } from './components/ui/ProjectPicker'
 
 function renderAt(path: string) {
   // Patch window.location to the desired path before rendering
@@ -75,6 +76,7 @@ const loggedInUser = { id: 'u1', username: 'admin', has_projects: true }
 describe('DefaultProjectRoute', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     // Default: user is authenticated
     mockUseAuth.mockReturnValue({ user: loggedInUser, isLoading: false })
   })
@@ -135,7 +137,29 @@ describe('DefaultProjectRoute', () => {
     expect(window.location.pathname).toBe('/dashboard/p1')
   })
 
-  it('redirects to the defaultProject when it is set and valid', async () => {
+  it('redirects to the last-visited project when set in localStorage', async () => {
+    localStorage.setItem(LAST_PROJECT_ID_KEY, 'p2')
+    mockUseProjects.mockReturnValue({
+      projects: [
+        { id: 'p1', name: 'Alpha', slug: 'alpha', status: 'active' },
+        { id: 'p2', name: 'Beta', slug: 'beta', status: 'active' },
+      ],
+      isLoading: false,
+      defaultProjectId: null,
+      refetch: vi.fn(),
+      setDefaultProjectId: vi.fn(),
+    })
+
+    renderAt('/dashboard')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('dashboard-page')).toBeInTheDocument(),
+    )
+    expect(window.location.pathname).toBe('/dashboard/p2')
+  })
+
+  it('falls back to explicit default when no last-visited is stored', async () => {
+    // No localStorage entry — simulates fresh session / first login.
     mockUseProjects.mockReturnValue({
       projects: [
         { id: 'p1', name: 'Alpha', slug: 'alpha', status: 'active' },
@@ -154,6 +178,28 @@ describe('DefaultProjectRoute', () => {
     )
     expect(window.location.pathname).toBe('/dashboard/p2')
   })
+
+  it('last-visited takes priority over explicit default', async () => {
+    localStorage.setItem(LAST_PROJECT_ID_KEY, 'p1')
+    mockUseProjects.mockReturnValue({
+      projects: [
+        { id: 'p1', name: 'Alpha', slug: 'alpha', status: 'active' },
+        { id: 'p2', name: 'Beta', slug: 'beta', status: 'active' },
+      ],
+      isLoading: false,
+      defaultProjectId: 'p2', // explicit default differs from last-visited
+      refetch: vi.fn(),
+      setDefaultProjectId: vi.fn(),
+    })
+
+    renderAt('/dashboard')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('dashboard-page')).toBeInTheDocument(),
+    )
+    // last-visited (p1) wins over explicit default (p2)
+    expect(window.location.pathname).toBe('/dashboard/p1')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -163,6 +209,7 @@ describe('DefaultProjectRoute', () => {
 describe('RootRedirect', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
   })
 
   it('renders the marketing Landing page for unauthenticated visitors', async () => {
@@ -199,7 +246,8 @@ describe('RootRedirect', () => {
     expect(screen.queryByTestId('dashboard-page')).toBeNull()
   })
 
-  it('redirects authenticated users to the default project dashboard', async () => {
+  it('redirects authenticated users to the last-visited project', async () => {
+    localStorage.setItem(LAST_PROJECT_ID_KEY, 'p2')
     mockUseAuth.mockReturnValue({ user: loggedInUser, isLoading: false })
     mockUseProjects.mockReturnValue({
       projects: [
@@ -207,7 +255,7 @@ describe('RootRedirect', () => {
         { id: 'p2', name: 'Beta', slug: 'beta', status: 'active' },
       ],
       isLoading: false,
-      defaultProjectId: 'p2',
+      defaultProjectId: null,
       refetch: vi.fn(),
       setDefaultProjectId: vi.fn(),
     })

@@ -85,7 +85,7 @@ function RootRedirect() {
 }
 
 function DefaultProjectRoute({ base }: { base: string }) {
-  const { projects, isLoading } = useProjects()
+  const { projects, isLoading, defaultProjectId } = useProjects()
 
   if (isLoading) {
     return (
@@ -114,16 +114,18 @@ function DefaultProjectRoute({ base }: { base: string }) {
     return <Dashboard />
   }
 
-  // Use the last-visited project — written by Shell on every project-scoped page,
-  // so it's always the project the user was just looking at. Falls back to the
-  // first project in the list when no history exists (fresh install).
+  // Priority: last-visited > explicit default > first project.
+  // LAST_PROJECT_ID_KEY is written by Shell on every project-scoped page, so it
+  // always reflects where the user just was. defaultProjectId is the persistent
+  // preference from Settings — used as a fallback when there is no recent history
+  // (e.g. fresh session or first login).
   let lastId: string | null = null
   try { lastId = localStorage.getItem(LAST_PROJECT_ID_KEY) } catch { /* quota / private mode */ }
 
   const target =
-    (lastId && projects.some((p) => p.id === lastId))
-      ? lastId
-      : projects[0].id
+    (lastId && projects.some((p) => p.id === lastId)) ? lastId :
+    (defaultProjectId && projects.some((p) => p.id === defaultProjectId)) ? defaultProjectId :
+    projects[0].id
 
   return <Navigate to={`${base}/${target}`} replace />
 }
