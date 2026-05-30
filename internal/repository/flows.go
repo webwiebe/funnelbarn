@@ -114,7 +114,7 @@ func (s *Store) flowTotalSessions(ctx context.Context, projectID, page string, f
 SELECT COUNT(DISTINCT session_id)
 FROM events
 WHERE project_id = ?
-    AND event_name = 'page_view'
+    AND name = 'page_view'
     AND occurred_at >= ? AND occurred_at <= ?
     AND url = ?`
 	var n int64
@@ -137,7 +137,7 @@ WITH page_seq AS (
         ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY occurred_at) AS pos
     FROM events
     WHERE project_id = ?
-        AND event_name = 'page_view'
+        AND name = 'page_view'
         AND occurred_at >= ? AND occurred_at <= ?
         AND url IS NOT NULL AND url != ''
 ),
@@ -194,7 +194,7 @@ WITH page_seq AS (
         ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY occurred_at) AS pos
     FROM events
     WHERE project_id = ?
-        AND event_name = 'page_view'
+        AND name = 'page_view'
         AND occurred_at >= ? AND occurred_at <= ?
         AND url IS NOT NULL AND url != ''
 ),
@@ -228,7 +228,7 @@ WITH page_seq AS (
         ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY occurred_at) AS pos
     FROM events
     WHERE project_id = ?
-        AND event_name = 'page_view'
+        AND name = 'page_view'
         AND occurred_at >= ? AND occurred_at <= ?
         AND url IS NOT NULL AND url != ''
 ),
