@@ -4,6 +4,7 @@ import { BarChart2, Layers, Radio, Settings, LogOut, User, Flag, Lightbulb, More
 import { useAuth } from '../../lib/auth'
 import { useProjects } from '../../lib/projects'
 import { ProjectPicker, LAST_PROJECT_ID_KEY } from '../ui/ProjectPicker'
+import { EnvironmentPicker } from '../ui/EnvironmentPicker'
 import { api, type Project } from '../../lib/api'
 
 const C = {
@@ -131,13 +132,20 @@ export default function Shell({ children, projectId, projectName, projects: proj
             has projects, including non-project-scoped routes like Settings, so
             the user can switch context from anywhere. */}
         {projects.length > 0 && (
-          <div style={{ marginRight: 8 }}>
+          <div style={{ marginRight: 4 }}>
             <ProjectPicker
               projects={projects}
               base={location.pathname.split('/')[1] || 'dashboard'}
               projectId={projectId}
               variant="badge"
             />
+          </div>
+        )}
+        {/* Environment picker — only visible when the active project has recorded
+            environments (i.e. at least one event with a non-empty environment field). */}
+        {projectId && (
+          <div style={{ marginRight: 8 }}>
+            <EnvironmentPicker projectId={projectId} />
           </div>
         )}
         {/* Fallback static badge when no projects loaded yet but name is known */}

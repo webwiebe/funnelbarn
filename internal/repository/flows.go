@@ -37,7 +37,7 @@ type PageFlowResult struct {
 // PageFlows returns a Sankey flow graph centered on the given page within the
 // time range. If page is empty the most-visited page is used. depth controls
 // how many hops before and after the focused page are included (max 10).
-func (s *Store) PageFlows(ctx context.Context, projectID, page string, depth int, from, to time.Time) (PageFlowResult, error) {
+func (s *Store) PageFlows(ctx context.Context, projectID, page string, depth int, from, to time.Time, env string) (PageFlowResult, error) {
 	ctx, span := tracing.StartSpan(ctx, "repository.PageFlows",
 		attribute.String("project.id", projectID),
 		attribute.String("page", page),
@@ -50,7 +50,7 @@ func (s *Store) PageFlows(ctx context.Context, projectID, page string, depth int
 	}
 
 	if page == "" {
-		top, err := s.TopPages(ctx, projectID, from, to, 1)
+		top, err := s.TopPages(ctx, projectID, from, to, 1, env)
 		if err != nil {
 			tracing.RecordError(span, err)
 			return PageFlowResult{}, err
@@ -62,7 +62,7 @@ func (s *Store) PageFlows(ctx context.Context, projectID, page string, depth int
 		span.SetAttributes(attribute.String("page.resolved", page))
 	}
 
-	totalSessions, err := s.flowTotalSessions(ctx, projectID, page, from, to)
+	totalSessions, err := s.flowTotalSessions(ctx, projectID, page, from, to, env)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return PageFlowResult{}, err
@@ -71,19 +71,19 @@ func (s *Store) PageFlows(ctx context.Context, projectID, page string, depth int
 		return PageFlowResult{FocusedPage: page, Nodes: []FlowNode{}, Links: []FlowLink{}}, nil
 	}
 
-	transitions, err := s.flowTransitions(ctx, projectID, page, depth, from, to)
+	transitions, err := s.flowTransitions(ctx, projectID, page, depth, from, to, env)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return PageFlowResult{}, err
 	}
 
-	exitCount, err := s.flowExitCount(ctx, projectID, page, from, to)
+	exitCount, err := s.flowExitCount(ctx, projectID, page, from, to, env)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return PageFlowResult{}, err
 	}
 
-	entryReferrers, err := s.flowEntryReferrers(ctx, projectID, page, from, to)
+	entryReferrers, err := s.flowEntryReferrers(ctx, projectID, page, from, to, env)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return PageFlowResult{}, err
@@ -106,7 +106,7 @@ type flowEntryReferrer struct {
 	Sessions int64
 }
 
-func (s *Store) flowTotalSessions(ctx context.Context, projectID, page string, from, to time.Time) (int64, error) {
+func (s *Store) flowTotalSessions(ctx context.Context, projectID, page string, from, to time.Time, env string) (int64, error) {
 	ctx, span := tracing.StartSpan(ctx, "repository.flows.totalSessions")
 	defer span.End()
 
@@ -116,16 +116,17 @@ FROM events
 WHERE project_id = ?
     AND name = 'page_view'
     AND occurred_at >= ? AND occurred_at <= ?
-    AND url = ?`
+    AND url = ?
+    AND (? = '' OR environment = ?)`
 	var n int64
-	err := s.db.QueryRowContext(ctx, q, projectID, from, to, page).Scan(&n)
+	err := s.db.QueryRowContext(ctx, q, projectID, from, to, page, env, env).Scan(&n)
 	if err != nil {
 		tracing.RecordError(span, err)
 	}
 	return n, err
 }
 
-func (s *Store) flowTransitions(ctx context.Context, projectID, page string, depth int, from, to time.Time) ([]flowTransition, error) {
+func (s *Store) flowTransitions(ctx context.Context, projectID, page string, depth int, from, to time.Time, env string) ([]flowTransition, error) {
 	ctx, span := tracing.StartSpan(ctx, "repository.flows.transitions",
 		attribute.Int("depth", depth),
 	)
@@ -140,6 +141,7 @@ WITH page_seq AS (
         AND name = 'page_view'
         AND occurred_at >= ? AND occurred_at <= ?
         AND url IS NOT NULL AND url != ''
+        AND (? = '' OR environment = ?)
 ),
 focused AS (
     SELECT session_id, MIN(pos) AS target_pos
@@ -160,7 +162,7 @@ GROUP BY a.url, a.depth, b.url, b.depth
 ORDER BY COUNT(DISTINCT a.session_id) DESC
 LIMIT 500`, depth, depth)
 
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, page)
+	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env, page)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return nil, err
@@ -184,7 +186,7 @@ LIMIT 500`, depth, depth)
 	return out, nil
 }
 
-func (s *Store) flowExitCount(ctx context.Context, projectID, page string, from, to time.Time) (int64, error) {
+func (s *Store) flowExitCount(ctx context.Context, projectID, page string, from, to time.Time, env string) (int64, error) {
 	ctx, span := tracing.StartSpan(ctx, "repository.flows.exitCount")
 	defer span.End()
 
@@ -197,6 +199,7 @@ WITH page_seq AS (
         AND name = 'page_view'
         AND occurred_at >= ? AND occurred_at <= ?
         AND url IS NOT NULL AND url != ''
+        AND (? = '' OR environment = ?)
 ),
 focused AS (
     SELECT session_id, MIN(pos) AS target_pos
@@ -210,14 +213,14 @@ LEFT JOIN page_seq nxt
     ON nxt.session_id = f.session_id AND nxt.pos = f.target_pos + 1
 WHERE nxt.session_id IS NULL`
 	var n int64
-	err := s.db.QueryRowContext(ctx, q, projectID, from, to, page).Scan(&n)
+	err := s.db.QueryRowContext(ctx, q, projectID, from, to, env, env, page).Scan(&n)
 	if err != nil {
 		tracing.RecordError(span, err)
 	}
 	return n, err
 }
 
-func (s *Store) flowEntryReferrers(ctx context.Context, projectID, page string, from, to time.Time) ([]flowEntryReferrer, error) {
+func (s *Store) flowEntryReferrers(ctx context.Context, projectID, page string, from, to time.Time, env string) ([]flowEntryReferrer, error) {
 	ctx, span := tracing.StartSpan(ctx, "repository.flows.entryReferrers")
 	defer span.End()
 
@@ -231,6 +234,7 @@ WITH page_seq AS (
         AND name = 'page_view'
         AND occurred_at >= ? AND occurred_at <= ?
         AND url IS NOT NULL AND url != ''
+        AND (? = '' OR environment = ?)
 ),
 focused AS (
     SELECT session_id, MIN(pos) AS target_pos
@@ -248,7 +252,7 @@ GROUP BY referrer
 ORDER BY COUNT(DISTINCT f.session_id) DESC
 LIMIT 20`
 
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, page)
+	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env, page)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return nil, err

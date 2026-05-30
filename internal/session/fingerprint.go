@@ -7,17 +7,19 @@ import (
 	"strings"
 )
 
-// Fingerprint generates an anonymous session ID from the remote address and
-// user-agent. No cookie is required. The fingerprint is SHA256(ip + "|" + ua)
-// truncated to 32 hex characters.
+// Fingerprint generates an anonymous session ID from the remote address,
+// user-agent, and environment. No cookie is required. The fingerprint is
+// SHA256(ip + "|" + ua + "|" + env) truncated to 32 hex characters.
 //
 // The IP is stripped to /24 (IPv4) or /48 (IPv6) before hashing to provide
 // a degree of k-anonymity while still being stable within a session.
-func Fingerprint(remoteAddr, userAgent string) string {
+// Including environment prevents sessions from bleeding across environments
+// when the same API key is used for dev, staging, and production.
+func Fingerprint(remoteAddr, userAgent, environment string) string {
 	ip := extractIP(remoteAddr)
 	normalized := normalizeIP(ip)
 
-	h := sha256.Sum256([]byte(normalized + "|" + userAgent))
+	h := sha256.Sum256([]byte(normalized + "|" + userAgent + "|" + environment))
 	return fmt.Sprintf("%x", h[:16]) // 32 hex chars
 }
 

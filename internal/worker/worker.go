@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
+	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/session"
@@ -32,6 +33,7 @@ type EventPayload struct {
 	PageViewID     string         `json:"page_view_id"`
 	SessionSignals map[string]any `json:"session_signals"`
 	Timestamp      time.Time      `json:"timestamp"`
+	Environment    string         `json:"environment"`
 }
 
 // ProcessRecord decodes and enriches a spool record into a repository.Event.
@@ -56,10 +58,13 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 		occurredAt = record.ReceivedAt
 	}
 
+	// Normalize environment to a canonical value.
+	env := environment.Normalize(payload.Environment)
+
 	// Derive session ID.
 	sessionID := payload.SessionID
 	if sessionID == "" || !session.IsValidSessionID(sessionID) {
-		sessionID = session.Fingerprint(record.RemoteAddr, payload.UserAgent)
+		sessionID = session.Fingerprint(record.RemoteAddr, payload.UserAgent, env)
 	}
 
 	// Extract UTM from URL if not provided directly.
@@ -125,6 +130,7 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 		IngestID:       record.IngestID,
 		OccurredAt:     occurredAt,
 		ClientIP:       clientIP,
+		Environment:    env,
 	}
 	// Carry session signals through as a transient field for PersistEvent.
 	if len(payload.SessionSignals) > 0 {
@@ -182,6 +188,7 @@ func PersistEvent(ctx context.Context, store EventPersister, event repository.Ev
 		UTMCampaign: event.UTMCampaign,
 		DeviceType:  event.DeviceType,
 		CountryCode: event.CountryCode,
+		Environment: event.Environment,
 	}
 	if geo != nil {
 		sess.CountryCode = geo.CountryCode

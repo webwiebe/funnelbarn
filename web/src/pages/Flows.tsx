@@ -1,6 +1,7 @@
 import { useParams } from 'react-router-dom'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { api, type FlowData } from '../lib/api'
+import { useProjects } from '../lib/projects'
 import Shell from '../components/shell/Shell'
 import { SankeyChart } from '../components/flows/SankeyChart'
 import { FlowBreadcrumb } from '../components/flows/FlowBreadcrumb'
@@ -66,6 +67,7 @@ function ChartPlaceholder({ loading, error }: { loading: boolean; error: string 
 
 export default function Flows() {
   const { projectId } = useParams<{ projectId: string }>()
+  const { selectedEnvironment } = useProjects()
   const [range, setRange] = useState<Range>('7d')
   const [data, setData] = useState<FlowData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -79,14 +81,14 @@ export default function Flows() {
     setLoading(true)
     setError(null)
     try {
-      const result = await api.getPageFlows(projectId, { range, page, depth: 5 })
+      const result = await api.getPageFlows(projectId, { range, page, depth: 5, environment: selectedEnvironment || undefined })
       setData(result)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load flow data')
     } finally {
       setLoading(false)
     }
-  }, [projectId, range])
+  }, [projectId, range, selectedEnvironment])
 
   useEffect(() => {
     setHistory([])

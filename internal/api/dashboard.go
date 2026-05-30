@@ -42,31 +42,33 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	env := r.URL.Query().Get("environment")
+
 	ctx, span := tracing.StartSpan(r.Context(), "dashboard.aggregate",
 		attribute.String("project.id", projectID),
 		attribute.String("range", rangeParam),
 	)
 	defer span.End()
 
-	totalEvents, err := s.events.CountEvents(ctx, projectID, from, to)
+	totalEvents, err := s.events.CountEvents(ctx, projectID, from, to, env)
 	if err != nil {
 		mapServiceError(w, err, "handleDashboard.countEvents")
 		return
 	}
 
-	uniqueSessions, err := s.events.UniqueSessionCount(ctx, projectID, from, to)
+	uniqueSessions, err := s.events.UniqueSessionCount(ctx, projectID, from, to, env)
 	if err != nil {
 		mapServiceError(w, err, "handleDashboard.uniqueSessionCount")
 		return
 	}
 
-	topPages, err := s.events.TopPages(ctx, projectID, from, to, 10)
+	topPages, err := s.events.TopPages(ctx, projectID, from, to, 10, env)
 	if err != nil {
 		mapServiceError(w, err, "handleDashboard.topPages")
 		return
 	}
 
-	topReferrers, err := s.events.TopReferrers(ctx, projectID, from, to, 10)
+	topReferrers, err := s.events.TopReferrers(ctx, projectID, from, to, 10, env)
 	if err != nil {
 		mapServiceError(w, err, "handleDashboard.topReferrers")
 		return
@@ -74,52 +76,52 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	var timeSeries []repository.TimeSeriesPoint
 	if rangeParam == "24h" || rangeParam == "7d" {
-		timeSeries, err = s.events.HourlyEventCounts(ctx, projectID, from, to)
+		timeSeries, err = s.events.HourlyEventCounts(ctx, projectID, from, to, env)
 	} else {
-		timeSeries, err = s.events.DailyEventCounts(ctx, projectID, from, to)
+		timeSeries, err = s.events.DailyEventCounts(ctx, projectID, from, to, env)
 	}
 	if err != nil {
 		mapServiceError(w, err, "handleDashboard.eventCounts")
 		return
 	}
 
-	sessionTimeSeries, err := s.events.DailyUniqueSessions(ctx, projectID, from, to)
+	sessionTimeSeries, err := s.events.DailyUniqueSessions(ctx, projectID, from, to, env)
 	if err != nil {
 		mapServiceError(w, err, "handleDashboard.dailyUniqueSessions")
 		return
 	}
 
-	topBrowsers, err := s.events.TopBrowsers(ctx, projectID, from, to, 5)
+	topBrowsers, err := s.events.TopBrowsers(ctx, projectID, from, to, 5, env)
 	if err != nil {
 		mapServiceError(w, err, "handleDashboard.topBrowsers")
 		return
 	}
 
-	deviceTypes, err := s.events.TopDeviceTypes(ctx, projectID, from, to)
+	deviceTypes, err := s.events.TopDeviceTypes(ctx, projectID, from, to, env)
 	if err != nil {
 		mapServiceError(w, err, "handleDashboard.topDeviceTypes")
 		return
 	}
 
-	topEventNames, err := s.events.TopEventNames(ctx, projectID, from, to, 10)
+	topEventNames, err := s.events.TopEventNames(ctx, projectID, from, to, 10, env)
 	if err != nil {
 		mapServiceError(w, err, "handleDashboard.topEventNames")
 		return
 	}
 
-	topUTMSources, err := s.events.TopUTMSources(ctx, projectID, from, to, 5)
+	topUTMSources, err := s.events.TopUTMSources(ctx, projectID, from, to, 5, env)
 	if err != nil {
 		mapServiceError(w, err, "handleDashboard.topUTMSources")
 		return
 	}
 
-	bounceRate, err := s.events.BounceRate(ctx, projectID, from, to)
+	bounceRate, err := s.events.BounceRate(ctx, projectID, from, to, env)
 	if err != nil {
 		mapServiceError(w, err, "handleDashboard.bounceRate")
 		return
 	}
 
-	avgEventsPerSession, err := s.events.AvgEventsPerSession(ctx, projectID, from, to)
+	avgEventsPerSession, err := s.events.AvgEventsPerSession(ctx, projectID, from, to, env)
 	if err != nil {
 		mapServiceError(w, err, "handleDashboard.avgEventsPerSession")
 		return

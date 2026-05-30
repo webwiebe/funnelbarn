@@ -126,8 +126,15 @@ export const api = {
     }),
 
   // Dashboard
-  getDashboard: (projectId: string, range = '7d') =>
-    request<DashboardData>(`/api/v1/projects/${projectId}/dashboard?range=${range}`),
+  getDashboard: (projectId: string, range = '7d', env = '') => {
+    const qs = new URLSearchParams({ range })
+    if (env) qs.set('environment', env)
+    return request<DashboardData>(`/api/v1/projects/${projectId}/dashboard?${qs}`)
+  },
+
+  // Environments
+  getEnvironments: (projectId: string) =>
+    request<{ environments: string[] }>(`/api/v1/projects/${projectId}/environments`),
 
   // Events
   getEvents: (projectId: string, limit = 20) =>
@@ -320,13 +327,14 @@ export const api = {
     }),
 
   // Page flows
-  getPageFlows: (projectId: string, params: { page?: string; range?: string; from?: string; to?: string; depth?: number }) => {
+  getPageFlows: (projectId: string, params: { page?: string; range?: string; from?: string; to?: string; depth?: number; environment?: string }) => {
     const qs = new URLSearchParams()
     if (params.page) qs.set('page', params.page)
     if (params.range) qs.set('range', params.range)
     if (params.from) qs.set('from', params.from)
     if (params.to) qs.set('to', params.to)
     if (params.depth) qs.set('depth', String(params.depth))
+    if (params.environment) qs.set('environment', params.environment)
     const q = qs.toString()
     return request<FlowData>(`/api/v1/projects/${projectId}/flows${q ? `?${q}` : ''}`)
   },

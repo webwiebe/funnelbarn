@@ -9,7 +9,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestFingerprint_ReturnsHex32(t *testing.T) {
-	fp := Fingerprint("192.168.1.42:54321", "Mozilla/5.0 Chrome/124")
+	fp := Fingerprint("192.168.1.42:54321", "Mozilla/5.0 Chrome/124", "production")
 	if len(fp) != 32 {
 		t.Errorf("expected 32 hex chars, got %d: %q", len(fp), fp)
 	}
@@ -19,16 +19,16 @@ func TestFingerprint_ReturnsHex32(t *testing.T) {
 }
 
 func TestFingerprint_Deterministic(t *testing.T) {
-	a := Fingerprint("10.0.0.5:8080", "some-ua")
-	b := Fingerprint("10.0.0.5:8080", "some-ua")
+	a := Fingerprint("10.0.0.5:8080", "some-ua", "production")
+	b := Fingerprint("10.0.0.5:8080", "some-ua", "production")
 	if a != b {
 		t.Errorf("Fingerprint not deterministic: %q != %q", a, b)
 	}
 }
 
 func TestFingerprint_DifferentInputsDifferentOutput(t *testing.T) {
-	a := Fingerprint("10.0.0.5:8080", "ua-1")
-	b := Fingerprint("10.0.0.5:8080", "ua-2")
+	a := Fingerprint("10.0.0.5:8080", "ua-1", "production")
+	b := Fingerprint("10.0.0.5:8080", "ua-2", "production")
 	if a == b {
 		t.Error("different UAs should produce different fingerprints")
 	}
@@ -40,14 +40,14 @@ func TestFingerprint_DifferentInputsDifferentOutput(t *testing.T) {
 
 func TestFingerprint_IPv4AnonymizationSlash24(t *testing.T) {
 	// 192.168.1.5 and 192.168.1.99 share /24 prefix → same fingerprint.
-	fpA := Fingerprint("192.168.1.5:1000", "ua")
-	fpB := Fingerprint("192.168.1.99:2000", "ua")
+	fpA := Fingerprint("192.168.1.5:1000", "ua", "production")
+	fpB := Fingerprint("192.168.1.99:2000", "ua", "production")
 	if fpA != fpB {
 		t.Errorf("IPv4 /24: same subnet should fingerprint identically, got %q vs %q", fpA, fpB)
 	}
 
 	// Different /24 subnet → different fingerprint.
-	fpC := Fingerprint("192.168.2.5:1000", "ua")
+	fpC := Fingerprint("192.168.2.5:1000", "ua", "production")
 	if fpA == fpC {
 		t.Errorf("IPv4: different /24 subnets should produce different fingerprints")
 	}
@@ -55,7 +55,7 @@ func TestFingerprint_IPv4AnonymizationSlash24(t *testing.T) {
 
 func TestFingerprint_IPv4WithoutPort(t *testing.T) {
 	// When remoteAddr has no port, it should still work.
-	fp := Fingerprint("10.0.0.1", "ua")
+	fp := Fingerprint("10.0.0.1", "ua", "production")
 	if len(fp) != 32 {
 		t.Errorf("expected 32 chars, got %d: %q", len(fp), fp)
 	}
@@ -63,9 +63,9 @@ func TestFingerprint_IPv4WithoutPort(t *testing.T) {
 
 func TestFingerprint_IPv4LastOctetIgnored(t *testing.T) {
 	// Simpler: check a few specific IPs in 172.16.0.x — all map to same /24.
-	base := Fingerprint("172.16.0.1:9000", "ua")
+	base := Fingerprint("172.16.0.1:9000", "ua", "production")
 	for _, suffix := range []string{"2", "100", "200", "255"} {
-		fp := Fingerprint("172.16.0."+suffix+":9000", "ua")
+		fp := Fingerprint("172.16.0."+suffix+":9000", "ua", "production")
 		if fp != base {
 			t.Errorf("172.16.0.%s should match 172.16.0.1 (same /24), got different fingerprint", suffix)
 		}
@@ -78,14 +78,14 @@ func TestFingerprint_IPv4LastOctetIgnored(t *testing.T) {
 
 func TestFingerprint_IPv6AnonymizationSlash48(t *testing.T) {
 	// 2001:db8:1234::1 and 2001:db8:1234::2 share /48.
-	fpA := Fingerprint("[2001:db8:1234::1]:80", "ua")
-	fpB := Fingerprint("[2001:db8:1234::2]:80", "ua")
+	fpA := Fingerprint("[2001:db8:1234::1]:80", "ua", "production")
+	fpB := Fingerprint("[2001:db8:1234::2]:80", "ua", "production")
 	if fpA != fpB {
 		t.Errorf("IPv6 /48: same prefix should fingerprint identically, got %q vs %q", fpA, fpB)
 	}
 
 	// Different /48 prefix → different fingerprint.
-	fpC := Fingerprint("[2001:db8:5678::1]:80", "ua")
+	fpC := Fingerprint("[2001:db8:5678::1]:80", "ua", "production")
 	if fpA == fpC {
 		t.Errorf("IPv6: different /48 prefixes should produce different fingerprints")
 	}
@@ -93,7 +93,7 @@ func TestFingerprint_IPv6AnonymizationSlash48(t *testing.T) {
 
 func TestFingerprint_IPv6NoBrackets(t *testing.T) {
 	// Without brackets+port (raw IPv6 addr as remoteAddr).
-	fp := Fingerprint("::1", "ua")
+	fp := Fingerprint("::1", "ua", "production")
 	if len(fp) != 32 {
 		t.Errorf("expected 32 chars, got %d: %q", len(fp), fp)
 	}
@@ -171,8 +171,16 @@ func TestIsValidSessionID(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFingerprint_IsValidSessionID(t *testing.T) {
-	fp := Fingerprint("203.0.113.10:12345", "Mozilla/5.0")
+	fp := Fingerprint("203.0.113.10:12345", "Mozilla/5.0", "production")
 	if !IsValidSessionID(fp) {
 		t.Errorf("Fingerprint result %q should be a valid session ID", fp)
+	}
+}
+
+func TestFingerprint_DifferentEnvironmentsDifferentOutput(t *testing.T) {
+	prod := Fingerprint("10.0.0.5:8080", "ua", "production")
+	dev := Fingerprint("10.0.0.5:8080", "ua", "development")
+	if prod == dev {
+		t.Error("different environments should produce different fingerprints")
 	}
 }

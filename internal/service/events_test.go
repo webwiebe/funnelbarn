@@ -61,7 +61,7 @@ func TestEventService_CountEvents(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	n, err := evSvc.CountEvents(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	n, err := evSvc.CountEvents(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), n)
 }
@@ -88,7 +88,7 @@ func TestEventService_TopPages(t *testing.T) {
 	err = evSvc.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	pages, err := evSvc.TopPages(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10)
+	pages, err := evSvc.TopPages(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, pages)
 }
@@ -116,7 +116,7 @@ func TestEventService_UniqueSessionCount(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	n, err := evSvc.UniqueSessionCount(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	n, err := evSvc.UniqueSessionCount(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), n)
 }
@@ -143,7 +143,7 @@ func TestEventService_BounceRate(t *testing.T) {
 	err = evSvc.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	rate, err := evSvc.BounceRate(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	rate, err := evSvc.BounceRate(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), "")
 	require.NoError(t, err)
 	assert.Equal(t, 1.0, rate)
 }
@@ -197,7 +197,7 @@ func TestEventService_TopReferrers(t *testing.T) {
 	err = evSvc.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	refs, err := evSvc.TopReferrers(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10)
+	refs, err := evSvc.TopReferrers(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, refs)
 }
@@ -225,7 +225,7 @@ func TestEventService_AvgEventsPerSession(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	avg, err := evSvc.AvgEventsPerSession(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	avg, err := evSvc.AvgEventsPerSession(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), "")
 	require.NoError(t, err)
 	assert.Equal(t, 2.0, avg)
 }
@@ -252,7 +252,7 @@ func TestEventService_TopBrowsers(t *testing.T) {
 	err = evSvc.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	browsers, err := evSvc.TopBrowsers(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10)
+	browsers, err := evSvc.TopBrowsers(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, browsers)
 }
@@ -279,7 +279,7 @@ func TestEventService_TopDeviceTypes(t *testing.T) {
 	err = evSvc.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	devices, err := evSvc.TopDeviceTypes(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	devices, err := evSvc.TopDeviceTypes(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, devices)
 }
@@ -305,7 +305,7 @@ func TestEventService_TopEventNames(t *testing.T) {
 	err = evSvc.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	names, err := evSvc.TopEventNames(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10)
+	names, err := evSvc.TopEventNames(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, names)
 }
@@ -332,7 +332,7 @@ func TestEventService_TopUTMSources(t *testing.T) {
 	err = evSvc.InsertEvent(ctx, e)
 	require.NoError(t, err)
 
-	srcs, err := evSvc.TopUTMSources(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10)
+	srcs, err := evSvc.TopUTMSources(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), 10, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, srcs)
 }
@@ -348,7 +348,7 @@ func TestEventService_DailyEventCounts(t *testing.T) {
 
 	now := time.Now().UTC()
 	// No events — verify no error
-	_, err = evSvc.DailyEventCounts(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	_, err = evSvc.DailyEventCounts(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), "")
 	require.NoError(t, err)
 }
 
@@ -363,6 +363,6 @@ func TestEventService_DailyUniqueSessions(t *testing.T) {
 
 	now := time.Now().UTC()
 	// No events — verify no error
-	_, err = evSvc.DailyUniqueSessions(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	_, err = evSvc.DailyUniqueSessions(ctx, p.ID, now.Add(-time.Hour), now.Add(time.Hour), "")
 	require.NoError(t, err)
 }
