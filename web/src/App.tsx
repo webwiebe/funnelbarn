@@ -13,6 +13,7 @@ import Insights from './pages/Insights'
 import Flows from './pages/Flows'
 import FirstRunWizard from './components/wizards/FirstRunWizard'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
+import { LAST_PROJECT_ID_KEY } from './components/ui/ProjectPicker'
 import { trackPageView } from './lib/analytics'
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -113,10 +114,18 @@ function DefaultProjectRoute({ base }: { base: string }) {
     return <Dashboard />
   }
 
+  // Priority: last-visited > explicit default > first project.
+  // LAST_PROJECT_ID_KEY is written by Shell on every project-scoped page, so it
+  // always reflects where the user just was. defaultProjectId is the persistent
+  // preference from Settings — used as a fallback when there is no recent history
+  // (e.g. fresh session or first login).
+  let lastId: string | null = null
+  try { lastId = localStorage.getItem(LAST_PROJECT_ID_KEY) } catch { /* quota / private mode */ }
+
   const target =
-    defaultProjectId && projects.some((p) => p.id === defaultProjectId)
-      ? defaultProjectId
-      : projects[0].id
+    (lastId && projects.some((p) => p.id === lastId)) ? lastId :
+    (defaultProjectId && projects.some((p) => p.id === defaultProjectId)) ? defaultProjectId :
+    projects[0].id
 
   return <Navigate to={`${base}/${target}`} replace />
 }

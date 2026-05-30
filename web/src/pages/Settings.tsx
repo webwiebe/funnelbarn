@@ -36,7 +36,7 @@ function ScopeBadge({ scope }: { scope: string }) {
 }
 
 export default function Settings() {
-  const { projects, refetch: refetchProjects } = useProjects()
+  const { projects, refetch: refetchProjects, defaultProjectId, setDefaultProjectId } = useProjects()
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(true)
   const [newKeyName, setNewKeyName] = useState('')
@@ -382,6 +382,53 @@ export default function Settings() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Default project selector */}
+      {activeProjects.length > 1 && (
+        <div style={{
+          background: C.surface,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          overflow: 'hidden',
+          marginBottom: '2rem',
+        }}>
+          <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${C.border}` }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Default project</div>
+            <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
+              Shown first on login and when navigating to a page without a project in the URL.
+            </div>
+          </div>
+          <div style={{ padding: '1rem 1.5rem', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {activeProjects.map((p) => {
+              const isDefault = (defaultProjectId ?? activeProjects[0]?.id) === p.id
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => setDefaultProjectId(p.id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '0.45rem 0.875rem',
+                    borderRadius: 8,
+                    border: `1px solid ${isDefault ? C.amber : C.border}`,
+                    background: isDefault ? 'rgba(245,158,11,0.1)' : 'transparent',
+                    color: isDefault ? C.amber : C.muted,
+                    fontSize: 13,
+                    fontWeight: isDefault ? 600 : 400,
+                    cursor: isDefault ? 'default' : 'pointer',
+                    transition: 'all 0.15s',
+                    minHeight: 'unset',
+                  }}
+                >
+                  {isDefault && <CheckCircle size={13} />}
+                  {p.name}
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
 
