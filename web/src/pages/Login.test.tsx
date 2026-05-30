@@ -5,6 +5,7 @@ import Login from './Login'
 
 const mockLogin = vi.fn()
 const mockNavigate = vi.fn()
+const mockGetClientConfig = vi.fn()
 
 vi.mock('../lib/auth', () => ({
   useAuth: () => ({
@@ -31,6 +32,19 @@ vi.mock('react-router-dom', async (importOriginal) => {
   return { ...actual, useNavigate: () => mockNavigate }
 })
 
+// Mock the api module so getClientConfig resolves immediately and doesn't
+// trigger SSO redirects. Individual tests can override via mockGetClientConfig.
+vi.mock('../lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/api')>()
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      getClientConfig: (...args: unknown[]) => mockGetClientConfig(...args),
+    },
+  }
+})
+
 function renderLogin() {
   return render(
     <MemoryRouter>
@@ -42,18 +56,20 @@ function renderLogin() {
 describe('Login', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Default: no SSO configured — show the local form.
+    mockGetClientConfig.mockResolvedValue({ iambarn_enabled: false })
   })
 
-  it('renders the sign-in form', () => {
+  it('renders the sign-in form', async () => {
     renderLogin()
-    expect(screen.getByLabelText(/username/i)).toBeInTheDocument()
+    expect(await screen.findByLabelText(/username/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
   })
 
-  it('shows the FunnelBarn brand', () => {
+  it('shows the FunnelBarn brand', async () => {
     renderLogin()
-    expect(screen.getByText('Funnel')).toBeInTheDocument()
+    expect(await screen.findByText('Funnel')).toBeInTheDocument()
     expect(screen.getByText('Barn')).toBeInTheDocument()
   })
 
@@ -61,7 +77,7 @@ describe('Login', () => {
     mockLogin.mockResolvedValue(undefined)
     renderLogin()
 
-    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'admin' } })
+    fireEvent.change(await screen.findByLabelText(/username/i), { target: { value: 'admin' } })
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'secret' } })
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
 
@@ -72,7 +88,7 @@ describe('Login', () => {
     mockLogin.mockResolvedValue(undefined)
     renderLogin()
 
-    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'admin' } })
+    fireEvent.change(await screen.findByLabelText(/username/i), { target: { value: 'admin' } })
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'secret' } })
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
 
@@ -84,7 +100,7 @@ describe('Login', () => {
     mockLogin.mockRejectedValue(new ApiError(401, 'Unauthorized'))
     renderLogin()
 
-    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'admin' } })
+    fireEvent.change(await screen.findByLabelText(/username/i), { target: { value: 'admin' } })
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'wrong' } })
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
 
@@ -98,7 +114,7 @@ describe('Login', () => {
     mockLogin.mockRejectedValue(new ApiError(500, 'Server error'))
     renderLogin()
 
-    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'admin' } })
+    fireEvent.change(await screen.findByLabelText(/username/i), { target: { value: 'admin' } })
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'secret' } })
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
 
@@ -112,7 +128,7 @@ describe('Login', () => {
     mockLogin.mockReturnValue(new Promise<void>((r) => { resolve = r }))
     renderLogin()
 
-    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'admin' } })
+    fireEvent.change(await screen.findByLabelText(/username/i), { target: { value: 'admin' } })
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'secret' } })
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
 
@@ -120,5 +136,14 @@ describe('Login', () => {
       expect(screen.getByRole('button', { name: /signing in/i })).toBeDisabled(),
     )
     resolve!()
+  })
+
+  it('does not render the form when SSO is configured', async () => {
+    mockGetClientConfig.mockResolvedValue({ iambarn_enabled: true })
+    renderLogin()
+    // Spinner or redirect view — form inputs must not be present.
+    await waitFor(() =>
+      expect(screen.queryByLabelText(/username/i)).not.toBeInTheDocument(),
+    )
   })
 })
