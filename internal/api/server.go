@@ -227,6 +227,7 @@ func (s *Server) registerRoutes() {
 
 	// Dashboard & analytics (session required)
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/dashboard", s.requireSession(s.handleDashboard))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flows", s.requireSession(s.handlePageFlows))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/events", s.requireSession(s.handleListEvents))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-names", s.requireSession(s.handleEventNames))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-properties", s.requireSession(s.handleEventProperties))

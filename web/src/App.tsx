@@ -10,6 +10,7 @@ import Live from './pages/Live'
 import Settings from './pages/Settings'
 import Flags from './pages/Flags'
 import Insights from './pages/Insights'
+import Flows from './pages/Flows'
 import FirstRunWizard from './components/wizards/FirstRunWizard'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { trackPageView } from './lib/analytics'
@@ -176,6 +177,14 @@ function AppRoutes() {
         <Route
           path="/insights/:projectId"
           element={<ProtectedRoute><Insights /></ProtectedRoute>}
+        />
+        <Route
+          path="/flows"
+          element={<ProtectedRoute><DefaultProjectRoute base="/flows" /></ProtectedRoute>}
+        />
+        <Route
+          path="/flows/:projectId"
+          element={<ProtectedRoute><Flows /></ProtectedRoute>}
         />
         <Route
           path="/live"

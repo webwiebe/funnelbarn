@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { BarChart2, Layers, Radio, Settings, LogOut, User, Flag, Lightbulb, MoreHorizontal, ExternalLink } from 'lucide-react'
+import { BarChart2, Layers, Radio, Settings, LogOut, User, Flag, Lightbulb, MoreHorizontal, ExternalLink, GitBranch } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { useProjects } from '../../lib/projects'
 import { ProjectPicker, LAST_PROJECT_ID_KEY } from '../ui/ProjectPicker'
@@ -78,6 +78,7 @@ export default function Shell({ children, projectId, projectName, projects: proj
 
   const navLinks = [
     { to: projectId ? `/dashboard/${projectId}` : '/dashboard', label: 'Overview', icon: <BarChart2 size={16} /> },
+    { to: projectId ? `/flows/${projectId}` : '/flows', label: 'Flows', icon: <GitBranch size={16} /> },
     { to: projectId ? `/funnels/${projectId}` : '/funnels', label: 'Funnels', icon: <Layers size={16} /> },
     { to: projectId ? `/flags/${projectId}` : '/flags', label: 'Flags', icon: <Flag size={16} /> },
     { to: projectId ? `/insights/${projectId}` : '/insights', label: 'Insights', icon: <Lightbulb size={16} /> },
@@ -88,6 +89,7 @@ export default function Shell({ children, projectId, projectName, projects: proj
   // Bottom tabs (excludes Settings — that goes in More sheet)
   const bottomTabs = [
     { to: projectId ? `/dashboard/${projectId}` : '/dashboard', label: 'Overview', icon: BarChart2 },
+    { to: projectId ? `/flows/${projectId}` : '/flows', label: 'Flows', icon: GitBranch },
     { to: projectId ? `/funnels/${projectId}` : '/funnels', label: 'Funnels', icon: Layers },
     { to: projectId ? `/flags/${projectId}` : '/flags', label: 'Flags', icon: Flag },
     { to: projectId ? `/insights/${projectId}` : '/insights', label: 'Insights', icon: Lightbulb },

@@ -83,6 +83,7 @@ type EventRepo interface {
 	DistinctEventProperties(ctx context.Context, projectID, eventName string) ([]string, error)
 	DistinctPropertyValues(ctx context.Context, projectID, eventName, property string, limit int) ([]string, error)
 	PopulatedMetadataColumns(ctx context.Context, projectID, eventName string) ([]string, error)
+	PageFlows(ctx context.Context, projectID, page string, depth int, from, to time.Time) (repository.PageFlowResult, error)
 }
 
 // SessionRepo is the persistence port for sessions.

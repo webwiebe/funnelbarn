@@ -97,3 +97,7 @@ func (svc *EventService) DistinctPropertyValues(ctx context.Context, projectID, 
 func (svc *EventService) PopulatedMetadataColumns(ctx context.Context, projectID, eventName string) ([]string, error) {
 	return svc.store.PopulatedMetadataColumns(ctx, projectID, eventName)
 }
+
+func (svc *EventService) PageFlows(ctx context.Context, projectID, page string, depth int, from, to time.Time) (repository.PageFlowResult, error) {
+	return svc.store.PageFlows(ctx, projectID, page, depth, from, to)
+}
