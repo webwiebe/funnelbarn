@@ -18,6 +18,8 @@ vi.mock('../lib/projects', () => ({
     isLoading: false,
     refetch: vi.fn(),
     defaultProjectId: 'p1',
+    selectedEnvironment: '',
+    setSelectedEnvironment: vi.fn(),
   }),
 }))
 
