@@ -148,13 +148,8 @@ func (s *Server) clientIP(r *http.Request) string {
 		return remoteIP
 	}
 
-	if idx := strings.IndexByte(xff, ','); idx >= 0 {
-		xff = strings.TrimSpace(xff[:idx])
-	} else {
-		xff = strings.TrimSpace(xff)
-	}
-	if xff != "" {
-		return xff
+	if hop := firstXFF(xff); hop != "" {
+		return hop
 	}
 	return remoteIP
 }
@@ -190,15 +185,18 @@ func (rl *rateLimiter) middlewareWithIP(next http.Handler, extractIP func(*http.
 	})
 }
 
+// firstXFF returns the trimmed first hop from a raw X-Forwarded-For header value.
+func firstXFF(xff string) string {
+	if idx := strings.IndexByte(xff, ','); idx >= 0 {
+		return strings.TrimSpace(xff[:idx])
+	}
+	return strings.TrimSpace(xff)
+}
+
 func defaultClientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if idx := strings.IndexByte(xff, ','); idx >= 0 {
-			xff = strings.TrimSpace(xff[:idx])
-		} else {
-			xff = strings.TrimSpace(xff)
-		}
-		if xff != "" {
-			return xff
+		if hop := firstXFF(xff); hop != "" {
+			return hop
 		}
 	}
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
