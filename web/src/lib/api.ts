@@ -318,6 +318,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(params),
     }),
+
+  // Page flows
+  getPageFlows: (projectId: string, params: { page?: string; range?: string; from?: string; to?: string; depth?: number }) => {
+    const qs = new URLSearchParams()
+    if (params.page) qs.set('page', params.page)
+    if (params.range) qs.set('range', params.range)
+    if (params.from) qs.set('from', params.from)
+    if (params.to) qs.set('to', params.to)
+    if (params.depth) qs.set('depth', String(params.depth))
+    const q = qs.toString()
+    return request<FlowData>(`/api/v1/projects/${projectId}/flows${q ? `?${q}` : ''}`)
+  },
 }
 
 // Types
@@ -491,6 +503,27 @@ export interface ContextKeySuggestion {
   context_key: string
   seen_count: number
   pct: number
+}
+
+export interface FlowNode {
+  id: string
+  label: string
+  type: 'page' | 'referrer' | 'exit'
+  depth: number
+  sessions: number
+}
+
+export interface FlowLink {
+  source: string
+  target: string
+  value: number
+}
+
+export interface FlowData {
+  focused_page: string
+  total_sessions: number
+  nodes: FlowNode[]
+  links: FlowLink[]
 }
 
 export interface ClientConfig {
