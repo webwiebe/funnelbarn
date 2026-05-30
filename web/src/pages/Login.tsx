@@ -4,16 +4,7 @@ import { useAuth } from '../lib/auth'
 import { useProjects } from '../lib/projects'
 import { api, ApiError } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
-
-const C = {
-  bg: '#0f1117',
-  surface: '#1a1d27',
-  border: '#2a2d3a',
-  amber: '#f59e0b',
-  text: '#e2e8f0',
-  muted: '#94a3b8',
-  error: '#ef4444',
-}
+import { C } from '../lib/theme'
 
 type AuthMode =
   | { kind: 'loading' }

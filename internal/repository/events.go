@@ -199,19 +199,20 @@ type TimeSeriesPoint struct {
 	Count int64  `json:"count"`
 }
 
-// TopUTMSources returns the most common UTM sources.
-func (s *Store) TopUTMSources(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
+// topUTMColumn executes the common UTM breakdown query for the given column.
+// column is an internal constant (utm_source, utm_medium, utm_campaign) — never user input.
+func topUTMColumn(ctx context.Context, db *sql.DB, projectID, column, env string, from, to time.Time, limit int) ([]UTMStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
-	const q = `
-		SELECT COALESCE(utm_source, '(none)'), COUNT(*) as count
+	q := fmt.Sprintf(`
+		SELECT COALESCE(%s, '(none)'), COUNT(*) as count
 		FROM events
-		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ? AND utm_source != '' AND (? = '' OR environment = ?)
-		GROUP BY utm_source
+		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ? AND %s != '' AND (? = '' OR environment = ?)
+		GROUP BY %s
 		ORDER BY count DESC
-		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env, limit)
+		LIMIT ?`, column, column, column)
+	rows, err := db.QueryContext(ctx, q, projectID, from, to, env, env, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -226,6 +227,11 @@ func (s *Store) TopUTMSources(ctx context.Context, projectID string, from, to ti
 		stats = append(stats, us)
 	}
 	return stats, rows.Err()
+}
+
+// TopUTMSources returns the most common UTM sources.
+func (s *Store) TopUTMSources(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
+	return topUTMColumn(ctx, s.db, projectID, "utm_source", env, from, to, limit)
 }
 
 // UTMStat is a UTM value with count.
@@ -447,60 +453,12 @@ type OSStat struct {
 
 // TopUTMCampaigns returns breakdown by UTM campaign.
 func (s *Store) TopUTMCampaigns(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
-	if limit <= 0 {
-		limit = 10
-	}
-	const q = `
-		SELECT COALESCE(utm_campaign, '(none)'), COUNT(*) as count
-		FROM events
-		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ? AND utm_campaign != '' AND (? = '' OR environment = ?)
-		GROUP BY utm_campaign
-		ORDER BY count DESC
-		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var stats []UTMStat
-	for rows.Next() {
-		var us UTMStat
-		if err := rows.Scan(&us.Value, &us.Count); err != nil {
-			return nil, err
-		}
-		stats = append(stats, us)
-	}
-	return stats, rows.Err()
+	return topUTMColumn(ctx, s.db, projectID, "utm_campaign", env, from, to, limit)
 }
 
 // TopUTMMediums returns breakdown by UTM medium.
 func (s *Store) TopUTMMediums(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
-	if limit <= 0 {
-		limit = 10
-	}
-	const q = `
-		SELECT COALESCE(utm_medium, '(none)'), COUNT(*) as count
-		FROM events
-		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ? AND utm_medium != '' AND (? = '' OR environment = ?)
-		GROUP BY utm_medium
-		ORDER BY count DESC
-		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var stats []UTMStat
-	for rows.Next() {
-		var us UTMStat
-		if err := rows.Scan(&us.Value, &us.Count); err != nil {
-			return nil, err
-		}
-		stats = append(stats, us)
-	}
-	return stats, rows.Err()
+	return topUTMColumn(ctx, s.db, projectID, "utm_medium", env, from, to, limit)
 }
 
 // DailyEventCounts returns daily event counts for a project over a time range.

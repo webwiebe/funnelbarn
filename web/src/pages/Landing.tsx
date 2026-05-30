@@ -1,15 +1,7 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BarChart2, Shield, Zap, GitBranch, Server, TrendingUp } from 'lucide-react'
-
-const C = {
-  bg: '#0f1117',
-  surface: '#1a1d27',
-  border: '#2a2d3a',
-  amber: '#f59e0b',
-  text: '#e2e8f0',
-  muted: '#94a3b8',
-}
+import { C } from '../lib/theme'
 
 const features = [
   { icon: <BarChart2 size={22} color="#f59e0b" />, title: 'Funnel Analysis', desc: 'Visualize drop-off at every step. See exactly where users leave your conversion flow.' },

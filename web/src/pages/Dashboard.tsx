@@ -10,17 +10,8 @@ import { api, DashboardData } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { trackEvent } from '../lib/analytics'
 import { reportError } from '../lib/bugbarn'
-
-const C = {
-  bg: '#0f1117',
-  surface: '#1a1d27',
-  border: '#2a2d3a',
-  amber: '#f59e0b',
-  text: '#e2e8f0',
-  muted: '#94a3b8',
-  success: '#10b981',
-  error: '#ef4444',
-}
+import { C } from '../lib/theme'
+import { Skeleton } from '../components/ui/Skeleton'
 
 const PIE_COLORS = ['#f59e0b', '#10b981', '#6366f1', '#ec4899', '#3b82f6', '#8b5cf6']
 
@@ -30,17 +21,13 @@ const RANGES = [
   { label: '30d', value: '30d' },
 ]
 
-function Skeleton({ width = '100%', height = 20 }: { width?: string | number; height?: number | string }) {
-  return (
-    <div style={{
-      width,
-      height,
-      background: 'linear-gradient(90deg, #1a1d27 25%, #22263a 50%, #1a1d27 75%)',
-      backgroundSize: '200% 100%',
-      animation: 'shimmer 1.5s infinite',
-      borderRadius: 6,
-    }} />
-  )
+function calcTrend(ts: { count: number }[] | undefined): number | undefined {
+  if (!ts || ts.length < 2) return undefined
+  const mid = Math.floor(ts.length / 2)
+  const prev = ts.slice(0, mid).reduce((s, p) => s + p.count, 0)
+  const curr = ts.slice(mid).reduce((s, p) => s + p.count, 0)
+  if (prev === 0) return undefined
+  return ((curr - prev) / prev) * 100
 }
 
 function StatCard({
@@ -176,25 +163,10 @@ export default function Dashboard() {
   const maxViews = data?.top_pages ? Math.max(...data.top_pages.map((p) => p.views)) : 1
 
   // Compute real trends from time-series data (first vs last half of period)
-  const eventsTrend = (() => {
-    const ts = data?.events_time_series
-    if (!ts || ts.length < 2) return undefined
-    const mid = Math.floor(ts.length / 2)
-    const prev = ts.slice(0, mid).reduce((s, p) => s + p.count, 0)
-    const curr = ts.slice(mid).reduce((s, p) => s + p.count, 0)
-    if (prev === 0) return undefined
-    return ((curr - prev) / prev) * 100
-  })()
-
-  const sessionsTrend = (() => {
-    const ts = (data as (DashboardData & { sessions_time_series?: { time: string; count: number }[] }) | null)?.sessions_time_series
-    if (!ts || ts.length < 2) return undefined
-    const mid = Math.floor(ts.length / 2)
-    const prev = ts.slice(0, mid).reduce((s, p) => s + p.count, 0)
-    const curr = ts.slice(mid).reduce((s, p) => s + p.count, 0)
-    if (prev === 0) return undefined
-    return ((curr - prev) / prev) * 100
-  })()
+  const eventsTrend = calcTrend(data?.events_time_series)
+  const sessionsTrend = calcTrend(
+    (data as (DashboardData & { sessions_time_series?: { time: string; count: number }[] }) | null)?.sessions_time_series
+  )
 
   const createModal = showCreateProject ? (
     <div style={{
@@ -350,10 +322,6 @@ export default function Dashboard() {
   return (
     <Shell projectId={projectId} projectName={projectName}>
       <style>{`
-        @keyframes shimmer {
-          0% { background-position: 200% 0; }
-          100% { background-position: -200% 0; }
-        }
         @media (max-width: 767px) {
           .stat-cards-grid { grid-template-columns: 1fr 1fr !important; }
           .bottom-row-grid { grid-template-columns: 1fr !important; }
