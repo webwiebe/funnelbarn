@@ -19,7 +19,3 @@ export function nodeColor(type: string, isFocused: boolean): string {
   return C.indigo
 }
 
-export function shortLabel(label: string, maxLen = 28): string {
-  if (label.length <= maxLen) return label
-  return '…' + label.slice(-(maxLen - 1))
-}
