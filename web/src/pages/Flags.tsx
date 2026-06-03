@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Flag, Plus, X, Pause, Play, Pencil, Trash2 } from 'lucide-react'
 import Shell from '../components/shell/Shell'
@@ -198,7 +198,7 @@ function FlagPlayground({ projectId, flag }: { projectId: string; flag: FeatureF
 
   // Debounced live evaluation. Triggers on every change to flag_key, default,
   // or context (300ms quiet period).
-  const debounceRef = { current: undefined as number | undefined }
+  const debounceRef = useRef<number | undefined>(undefined)
   useEffect(() => {
     if (!flagKey.trim()) {
       setResult(null)
