@@ -6,7 +6,7 @@ FunnelBarn replaces Mixpanel, Amplitude, or Fathom for teams who want to own the
 
 ## 🐣 Tamagotchi
 
-[![FunnelBarn Tamagotchi](https://tamagotchi.nijmegen.wiebe.xyz/api/v1/pets/webwiebe/funnelbarn/badge.svg)](https://tamagotchi.nijmegen.wiebe.xyz/pets/webwiebe/funnelbarn)
+[![FunnelBarn Tamagotchi](https://tamagotchi.wiebe.xyz/api/v1/pets/webwiebe/funnelbarn/badge.svg)](https://tamagotchi.wiebe.xyz/pets/webwiebe/funnelbarn)
 
 ## Features
 
