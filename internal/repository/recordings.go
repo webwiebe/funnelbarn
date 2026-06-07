@@ -142,14 +142,12 @@ func (s *Store) ListRecordings(ctx context.Context, projectID string, opts Recor
 	return out, rows.Err()
 }
 
-// ListOldRecordings returns recording IDs and project slugs older than the given threshold.
-// The SessionID field is re-used to store the project slug (for R2 key construction).
+// ListOldRecordings returns recordings older than the given threshold (by created_at).
 func (s *Store) ListOldRecordings(ctx context.Context, before time.Time) ([]Recording, error) {
 	const q = `
-		SELECT r.id, r.project_id, p.slug AS project_slug, r.chunk_count
-		FROM recordings r
-		JOIN projects p ON p.id = r.project_id
-		WHERE r.created_at < ?
+		SELECT id, project_id, chunk_count
+		FROM recordings
+		WHERE started_at < ?
 		LIMIT 500`
 	rows, err := s.db.QueryContext(ctx, q, before)
 	if err != nil {
@@ -159,8 +157,7 @@ func (s *Store) ListOldRecordings(ctx context.Context, before time.Time) ([]Reco
 	var out []Recording
 	for rows.Next() {
 		var r Recording
-		// Scan slug into SessionID as a temporary carrier for the R2 prefix.
-		if err := rows.Scan(&r.ID, &r.ProjectID, &r.SessionID, &r.ChunkCount); err != nil {
+		if err := rows.Scan(&r.ID, &r.ProjectID, &r.ChunkCount); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -180,7 +177,7 @@ func (s *Store) FlagEvaluationsForSession(ctx context.Context, sessionID, projec
 	const q = `
 		SELECT f.name, fe.variant, fe.created_at
 		FROM flag_evaluations fe
-		JOIN flags f ON f.id = fe.flag_id
+		JOIN feature_flags f ON f.id = fe.flag_id
 		WHERE fe.session_id = ? AND fe.project_id = ?
 		ORDER BY fe.created_at ASC`
 	rows, err := s.db.QueryContext(ctx, q, sessionID, projectID)

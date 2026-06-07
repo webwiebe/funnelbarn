@@ -57,7 +57,7 @@ func (svc *RecordingService) IngestChunk(ctx context.Context, chunk RecordingChu
 		return fmt.Errorf("recordings: compress chunk: %w", err)
 	}
 
-	key := chunkKey(chunk.ProjectSlug, chunk.RecordingID, chunk.ChunkIndex)
+	key := chunkKey(chunk.ProjectID, chunk.RecordingID, chunk.ChunkIndex)
 	if err := svc.storage.Put(ctx, key, compressed); err != nil {
 		return fmt.Errorf("recordings: upload chunk: %w", err)
 	}
@@ -73,8 +73,8 @@ func (svc *RecordingService) IngestChunk(ctx context.Context, chunk RecordingChu
 		StartedAt:   chunk.StartedAt,
 		EndedAt:     &endedAt,
 		UserAgent:   chunk.UserAgent,
-		DeviceType:  detectDeviceType(chunk.UserAgent),
-		IsBot:       detectBot(chunk.UserAgent),
+		DeviceType:  DetectDeviceType(chunk.UserAgent),
+		IsBot:       DetectBot(chunk.UserAgent),
 		PageURL:     chunk.PageURL,
 	}
 	return svc.store.UpsertRecording(ctx, rec)
@@ -91,10 +91,8 @@ func (svc *RecordingService) PurgeOldRecordings(ctx context.Context, retentionDa
 		return fmt.Errorf("recordings: list old: %w", err)
 	}
 	for _, rec := range recs {
-		// rec.SessionID carries the project slug (set by ListOldRecordings).
-		projectSlug := rec.SessionID
 		for i := 0; i < rec.ChunkCount; i++ {
-			key := chunkKey(projectSlug, rec.ID, i)
+			key := chunkKey(rec.ProjectID, rec.ID, i)
 			_ = svc.storage.Delete(ctx, key)
 		}
 		if err := svc.store.DeleteRecording(ctx, rec.ID); err != nil {
@@ -165,8 +163,8 @@ func chunkKey(projectSlug, recordingID string, index int) string {
 	return fmt.Sprintf("recordings/%s/%s/%05d.json.gz", projectSlug, recordingID, index)
 }
 
-// detectDeviceType returns "mobile", "tablet", or "desktop" from a User-Agent string.
-func detectDeviceType(ua string) string {
+// DetectDeviceType returns "mobile", "tablet", or "desktop" from a User-Agent string.
+func DetectDeviceType(ua string) string {
 	ua = strings.ToLower(ua)
 	if strings.Contains(ua, "ipad") || strings.Contains(ua, "tablet") ||
 		(strings.Contains(ua, "android") && !strings.Contains(ua, "mobile")) {
@@ -180,8 +178,8 @@ func detectDeviceType(ua string) string {
 	return "desktop"
 }
 
-// detectBot returns true when the User-Agent looks like a bot/crawler.
-func detectBot(ua string) bool {
+// DetectBot returns true when the User-Agent looks like a bot/crawler.
+func DetectBot(ua string) bool {
 	if ua == "" {
 		return false
 	}
