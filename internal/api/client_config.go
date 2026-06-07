@@ -17,17 +17,17 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		ProfileURL string `json:"profile_url,omitempty"`
 	}
 	type response struct {
-		BugbarnEndpoint          string     `json:"bugbarn_endpoint"`
-		BugbarnIngestKey         string     `json:"bugbarn_ingest_key"`
-		BugbarnProject           string     `json:"bugbarn_project,omitempty"`
-		FunnelbarnEndpoint       string     `json:"funnelbarn_endpoint,omitempty"`
-		FunnelbarnAPIKey         string     `json:"funnelbarn_api_key,omitempty"`
-		FunnelbarnProject        string     `json:"funnelbarn_project,omitempty"`
-		FunnelbarnRecording      bool       `json:"funnelbarn_recording,omitempty"`
-		FunnelbarnRecordingRate  float64    `json:"funnelbarn_recording_rate,omitempty"`
-		IAMBarnEnabled           bool       `json:"iambarn_enabled"`
-		IAMBarn                  iambarnOut `json:"iambarn,omitempty"`
-		OIDC                     oidcOut    `json:"oidc"`
+		BugbarnEndpoint         string     `json:"bugbarn_endpoint"`
+		BugbarnIngestKey        string     `json:"bugbarn_ingest_key"`
+		BugbarnProject          string     `json:"bugbarn_project,omitempty"`
+		FunnelbarnEndpoint      string     `json:"funnelbarn_endpoint,omitempty"`
+		FunnelbarnAPIKey        string     `json:"funnelbarn_api_key,omitempty"`
+		FunnelbarnProject       string     `json:"funnelbarn_project,omitempty"`
+		FunnelbarnRecording     bool       `json:"funnelbarn_recording,omitempty"`
+		FunnelbarnRecordingRate float64    `json:"funnelbarn_recording_rate,omitempty"`
+		IAMBarnEnabled          bool       `json:"iambarn_enabled"`
+		IAMBarn                 iambarnOut `json:"iambarn,omitempty"`
+		OIDC                    oidcOut    `json:"oidc"`
 	}
 	resp := response{
 		BugbarnEndpoint:    s.bugbarnEndpoint,
