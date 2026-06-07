@@ -11,15 +11,16 @@ type AuthMode =
   | { kind: 'redirect'; url: string }   // any configured OIDC/SSO provider
   | { kind: 'local' }                   // username + password only
 
-function useAuthMode(): { mode: AuthMode; authError: boolean } {
+function useAuthMode(): { mode: AuthMode; authError: boolean; localAuthAvailable: boolean } {
   const [mode, setMode] = useState<AuthMode>({ kind: 'loading' })
+  const [localAuthAvailable, setLocalAuthAvailable] = useState(false)
   const authError = new URLSearchParams(window.location.search).get('error') === 'auth_failed'
 
   useEffect(() => {
     api.getClientConfig().then((cfg) => {
+      setLocalAuthAvailable(cfg.local_auth_available ?? false)
       if (cfg.iambarn_enabled) {
         setMode({ kind: 'redirect', url: '/api/v1/auth/oidc/login' })
-        // Only auto-redirect when there's no error to display.
         if (!authError) {
           window.location.assign('/api/v1/auth/oidc/login')
         }
@@ -37,7 +38,7 @@ function useAuthMode(): { mode: AuthMode; authError: boolean } {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  return { mode, authError }
+  return { mode, authError, localAuthAvailable }
 }
 
 
@@ -85,7 +86,13 @@ function Card({ children }: { children: React.ReactNode }) {
   )
 }
 
-function RedirectView({ url, authError }: { url: string; authError: boolean }) {
+function RedirectView({ url, authError, localAuthAvailable }: { url: string; authError: boolean; localAuthAvailable: boolean }) {
+  const [showLocalForm, setShowLocalForm] = useState(false)
+
+  if (showLocalForm) {
+    return <LocalLoginForm />
+  }
+
   return (
     <Card>
       {authError ? (
@@ -100,7 +107,7 @@ function RedirectView({ url, authError }: { url: string; authError: boolean }) {
             marginBottom: '1.25rem',
             textAlign: 'center',
           }}>
-            Login failed. Please try again.
+            SSO login failed. Please try again.
           </div>
           <a
             href={url}
@@ -121,6 +128,28 @@ function RedirectView({ url, authError }: { url: string; authError: boolean }) {
           >
             Try again
           </a>
+          {localAuthAvailable && (
+            <button
+              onClick={() => setShowLocalForm(true)}
+              style={{
+                display: 'block',
+                width: '100%',
+                marginTop: '0.75rem',
+                background: 'none',
+                border: `1px solid ${C.border}`,
+                borderRadius: 8,
+                padding: '0.75rem',
+                color: C.muted,
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: 'pointer',
+                textAlign: 'center',
+                boxSizing: 'border-box',
+              }}
+            >
+              Sign in with password instead
+            </button>
+          )}
         </>
       ) : (
         <div style={{ textAlign: 'center', color: C.muted, fontSize: 14 }}>
@@ -273,7 +302,7 @@ function LocalLoginForm() {
 
 export default function Login() {
   const { user, isLoading } = useAuth()
-  const { mode, authError } = useAuthMode()
+  const { mode, authError, localAuthAvailable } = useAuthMode()
 
   if (!isLoading && user) {
     return <Navigate to="/dashboard" replace />
@@ -295,7 +324,7 @@ export default function Login() {
   }
 
   if (mode.kind === 'redirect') {
-    return <RedirectView url={mode.url} authError={authError} />
+    return <RedirectView url={mode.url} authError={authError} localAuthAvailable={localAuthAvailable} />
   }
 
   return <LocalLoginForm />

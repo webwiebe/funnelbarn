@@ -28,6 +28,7 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		IAMBarnEnabled          bool       `json:"iambarn_enabled"`
 		IAMBarn                 iambarnOut `json:"iambarn,omitempty"`
 		OIDC                    oidcOut    `json:"oidc"`
+		LocalAuthAvailable      bool       `json:"local_auth_available"`
 	}
 	resp := response{
 		BugbarnEndpoint:    s.bugbarnEndpoint,
@@ -37,6 +38,7 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		FunnelbarnAPIKey:   s.dogfoodAPIKey,
 		FunnelbarnProject:  s.dogfoodProject,
 		IAMBarnEnabled:     s.iambarnFlagEnabled(r.Context(), map[string]any{"user_agent": r.Header.Get("User-Agent")}),
+		LocalAuthAvailable: s.userAuth != nil && s.userAuth.Enabled(),
 	}
 
 	// Expose recording config when recording is enabled and settings are available.
