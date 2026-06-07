@@ -742,3 +742,30 @@ func (s *Store) PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, er
 	}
 	return result.RowsAffected()
 }
+
+// SessionsForPage returns distinct session IDs that have at least one event
+// with the given URL within the time range. Used to link flow nodes to recordings.
+func (s *Store) SessionsForPage(ctx context.Context, projectID, page string, from, to time.Time, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	const q = `
+		SELECT DISTINCT session_id
+		FROM events
+		WHERE project_id = ? AND url = ? AND occurred_at >= ? AND occurred_at <= ?
+		LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, projectID, page, from, to, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}

@@ -6,6 +6,8 @@
  * with a 30-minute idle timeout (browser only).
  */
 
+import { record } from "rrweb";
+
 export interface FunnelBarnOptions {
   apiKey: string;
   endpoint: string;
@@ -15,6 +17,10 @@ export interface FunnelBarnOptions {
   flushInterval?: number;
   /** Session idle timeout in ms (default: 30 minutes) */
   sessionTimeout?: number;
+  /** Enable session recording (default: false) */
+  recording?: boolean;
+  /** Recording chunk flush interval in ms (default: 10000) */
+  recordingChunkMs?: number;
 }
 
 export interface EventProperties {
@@ -84,6 +90,15 @@ export class FunnelBarnClient {
   private vitalsPageViewId: string | undefined;
   private vitalsFlushed = false;
 
+  // session recording
+  private rrwebStop?: () => void;
+  private rrwebBuffer: unknown[] = [];
+  private recordingId = '';
+  private recordingChunkIndex = 0;
+  private recordingStartedAt = '';
+  private recordingStartMs = 0;
+  private recordingTimer?: ReturnType<typeof setInterval>;
+
   constructor(options: FunnelBarnOptions) {
     this.apiKey = options.apiKey;
     this.endpoint = options.endpoint.replace(/\/$/, "");
@@ -118,6 +133,21 @@ export class FunnelBarnClient {
         });
       }
       window.addEventListener("beforeunload", flushVitals);
+
+      // Session recording.
+      if (options.recording) {
+        this.recordingId = this.generateSessionID();
+        this.recordingStartedAt = new Date().toISOString();
+        this.recordingStartMs = Date.now();
+        this.rrwebStop = record({
+          emit: (event) => { this.rrwebBuffer.push(event); },
+          maskInputOptions: { password: true },
+          blockClass: 'fb-block',
+        });
+        const chunkMs = options.recordingChunkMs ?? 10_000;
+        this.recordingTimer = setInterval(() => { this.flushRecordingChunk().catch(() => {}); }, chunkMs);
+        window.addEventListener('beforeunload', () => { this.flushRecordingChunk().catch(() => {}); });
+      }
 
       // LCP observer.
       try {
@@ -455,6 +485,31 @@ export class FunnelBarnClient {
     if (this.engagementScrollHandler !== undefined && typeof window !== "undefined") {
       window.removeEventListener("scroll", this.engagementScrollHandler);
       this.engagementScrollHandler = undefined;
+    }
+  }
+
+  private async flushRecordingChunk(): Promise<void> {
+    const events = this.rrwebBuffer.splice(0);
+    if (!events.length) return;
+    try {
+      await fetch(`${this.endpoint}/api/v1/recordings/chunk`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-funnelbarn-api-key': this.apiKey,
+        },
+        body: JSON.stringify({
+          recording_id: this.recordingId,
+          session_id: this.getOrCreateSessionID(),
+          chunk_index: this.recordingChunkIndex++,
+          events,
+          started_at: this.recordingStartedAt,
+          duration_ms: Date.now() - this.recordingStartMs,
+        }),
+        keepalive: true,
+      });
+    } catch {
+      // best-effort
     }
   }
 

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { BarChart2, Layers, Radio, Flag, Lightbulb, MoreHorizontal, GitBranch } from 'lucide-react'
+import { BarChart2, Layers, Radio, Flag, Lightbulb, MoreHorizontal, GitBranch, Video } from 'lucide-react'
 import { C } from '../../lib/theme'
 
 interface BottomTab {
@@ -22,6 +22,7 @@ export function BottomTabBar({ projectId, onMoreOpen, isActive }: BottomTabBarPr
     { to: projectId ? `/flags/${projectId}` : '/flags', label: 'Flags', icon: Flag },
     { to: projectId ? `/insights/${projectId}` : '/insights', label: 'Insights', icon: Lightbulb },
     { to: projectId ? `/live/${projectId}` : '/live', label: 'Live', icon: Radio },
+    { to: projectId ? `/sessions/${projectId}` : '/sessions', label: 'Sessions', icon: Video },
   ]
 
   return (

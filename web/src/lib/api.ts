@@ -338,6 +338,48 @@ export const api = {
     const q = qs.toString()
     return request<FlowData>(`/api/v1/projects/${projectId}/flows${q ? `?${q}` : ''}`)
   },
+
+  // Recordings
+  listRecordings: (projectId: string, params: {
+    limit?: number; offset?: number; environment?: string; session_ids?: string[]
+    device_type?: string; human_only?: boolean; page_url?: string
+  } = {}) => {
+    const qs = new URLSearchParams()
+    if (params.limit) qs.set('limit', String(params.limit))
+    if (params.offset) qs.set('offset', String(params.offset))
+    if (params.environment) qs.set('environment', params.environment)
+    if (params.session_ids?.length) qs.set('session_ids', params.session_ids.join(','))
+    if (params.device_type) qs.set('device_type', params.device_type)
+    if (params.human_only) qs.set('human_only', 'true')
+    if (params.page_url) qs.set('page_url', params.page_url)
+    const q = qs.toString()
+    return request<{ recordings: Recording[]; limit: number; offset: number }>(
+      `/api/v1/projects/${projectId}/recordings${q ? `?${q}` : ''}`
+    )
+  },
+
+  getRecordingChunk: (projectId: string, recordingId: string, index: number) =>
+    request<unknown[]>(`/api/v1/projects/${projectId}/recordings/${recordingId}/chunks/${index}`),
+
+  getRecordingFlags: (projectId: string, recordingId: string) =>
+    request<{ evaluations: FlagEvaluationEntry[] }>(`/api/v1/projects/${projectId}/recordings/${recordingId}/flags`),
+
+  getFunnelStepSessions: (projectId: string, funnelId: string, step: number, params: { from?: string; to?: string } = {}) => {
+    const qs = new URLSearchParams()
+    if (params.from) qs.set('from', params.from)
+    if (params.to) qs.set('to', params.to)
+    const q = qs.toString()
+    return request<{ session_ids: string[] }>(
+      `/api/v1/projects/${projectId}/funnels/${funnelId}/steps/${step}/sessions${q ? `?${q}` : ''}`
+    )
+  },
+
+  getFlowPageSessions: (projectId: string, page: string, params: { from?: string; to?: string } = {}) => {
+    const qs = new URLSearchParams({ page })
+    if (params.from) qs.set('from', params.from)
+    if (params.to) qs.set('to', params.to)
+    return request<{ session_ids: string[] }>(`/api/v1/projects/${projectId}/flows/sessions?${qs}`)
+  },
 }
 
 // Types
@@ -534,6 +576,26 @@ export interface FlowData {
   links: FlowLink[]
 }
 
+export interface Recording {
+  id: string
+  project_id: string
+  session_id: string
+  environment: string
+  chunk_count: number
+  duration_ms: number
+  started_at: string
+  ended_at?: string
+  device_type: string
+  is_bot: boolean
+  page_url?: string
+}
+
+export interface FlagEvaluationEntry {
+  flag_name: string
+  variant: string
+  evaluated_at: string
+}
+
 export interface ClientConfig {
   bugbarn_endpoint: string
   bugbarn_ingest_key: string
@@ -541,6 +603,8 @@ export interface ClientConfig {
   funnelbarn_endpoint?: string
   funnelbarn_api_key?: string
   funnelbarn_project?: string
+  funnelbarn_recording?: boolean
+  funnelbarn_recording_rate?: number
   iambarn_enabled: boolean
   iambarn?: {
     profile_url?: string

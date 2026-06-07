@@ -71,6 +71,7 @@ type ServerConfig struct {
 	GeoAnonymizer    GeoAnonymizer
 	Segments         service.Segments
 	Distributions    DistributionRepo
+	Recordings       service.Recordings
 }
 
 // DistributionRepo provides session field distribution data.
@@ -124,6 +125,7 @@ type Server struct {
 	geoAnonymizer      GeoAnonymizer
 	segments           service.Segments
 	distributions      DistributionRepo
+	recordings         service.Recordings
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
@@ -178,6 +180,7 @@ func NewServer(cfg ServerConfig) *Server {
 		geoAnonymizer:      cfg.GeoAnonymizer,
 		segments:           cfg.Segments,
 		distributions:      cfg.Distributions,
+		recordings:         cfg.Recordings,
 	}
 	s.registerRoutes()
 	return s
@@ -204,6 +207,7 @@ func (s *Server) registerRoutes() {
 
 	// Ingest (API key required)
 	s.mux.Handle("POST /api/v1/events", s.eventsLimiter.middleware(s.ingest))
+	s.mux.Handle("POST /api/v1/recordings/chunk", s.eventsLimiter.middleware(http.HandlerFunc(s.handleIngestRecordingChunk)))
 
 	// Auth
 	s.mux.Handle("POST /api/v1/login", s.loginLimiter.middleware(http.HandlerFunc(s.handleLogin)))
@@ -274,6 +278,13 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/sessions", s.requireSession(s.handleListSessions))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/sessions/active", s.requireSession(s.handleActiveSessionCount))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/session-distributions", s.requireSession(s.handleSessionDistributions))
+
+	// Recordings
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/recordings", s.requireSession(s.handleListRecordings))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/recordings/{rid}/chunks/{index}", s.requireSession(s.handleGetRecordingChunk))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/recordings/{rid}/flags", s.requireSession(s.handleGetRecordingFlags))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels/{fid}/steps/{step}/sessions", s.requireSession(s.handleFunnelStepSessions))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flows/sessions", s.requireSession(s.handleFlowPageSessions))
 
 	// API keys
 	s.mux.HandleFunc("GET /api/v1/apikeys", s.requireSession(s.handleListAPIKeys))

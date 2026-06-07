@@ -11,6 +11,7 @@ import Settings from './pages/Settings'
 import Flags from './pages/Flags'
 import Insights from './pages/Insights'
 import Flows from './pages/Flows'
+import Sessions from './pages/Sessions'
 import FirstRunWizard from './components/wizards/FirstRunWizard'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { LAST_PROJECT_ID_KEY } from './components/ui/ProjectPicker'
@@ -202,6 +203,14 @@ function AppRoutes() {
         <Route
           path="/live/:projectId"
           element={<ProtectedRoute><Live /></ProtectedRoute>}
+        />
+        <Route
+          path="/sessions"
+          element={<ProtectedRoute><DefaultProjectRoute base="/sessions" /></ProtectedRoute>}
+        />
+        <Route
+          path="/sessions/:projectId"
+          element={<ProtectedRoute><Sessions /></ProtectedRoute>}
         />
         <Route
           path="/settings"

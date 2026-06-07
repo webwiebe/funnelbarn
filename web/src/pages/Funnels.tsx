@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
-import { useParams } from 'react-router-dom'
-import { Plus, Layers, Pencil, Trash2, ChevronDown } from 'lucide-react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { Plus, Layers, Pencil, Trash2, ChevronDown, Video } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api, ApiError, Funnel, FunnelAnalysis, Segment } from '../lib/api'
 import { useProjects } from '../lib/projects'
@@ -119,7 +119,7 @@ function TemplatesButton({
 
 // ─── Funnel Detail ────────────────────────────────────────────────────────────
 
-function FunnelDetail({ analysis, activeSegment, apiKey }: { analysis: FunnelAnalysis; activeSegment: string; apiKey?: string }) {
+function FunnelDetail({ analysis, activeSegment, apiKey, onWatchRecordings }: { analysis: FunnelAnalysis; activeSegment: string; apiKey?: string; onWatchRecordings?: (step: number) => void }) {
   const hasData = analysis.results && analysis.results.length > 0 && analysis.results[0]?.count > 0
   const [showImpl, setShowImpl] = useState(false)
 
@@ -250,6 +250,19 @@ function FunnelDetail({ analysis, activeSegment, apiKey }: { analysis: FunnelAna
               <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>{step.count.toLocaleString()}</div>
               <div style={{ fontSize: 12, color: C.muted }}>users</div>
             </div>
+            {onWatchRecordings && (
+              <button
+                title="Watch recordings for this step"
+                onClick={() => onWatchRecordings(step.step_order)}
+                style={{
+                  background: 'none', border: `1px solid ${C.border}`, borderRadius: 6,
+                  color: C.muted, cursor: 'pointer', padding: '4px 6px',
+                  display: 'flex', alignItems: 'center',
+                }}
+              >
+                <Video size={13} />
+              </button>
+            )}
           </div>
         </div>
       ))}
@@ -284,6 +297,7 @@ function FunnelDetail({ analysis, activeSegment, apiKey }: { analysis: FunnelAna
 export default function Funnels() {
   const { projectId } = useParams<{ projectId?: string }>()
   const { projects } = useProjects()
+  const navigate = useNavigate()
   const [funnels, setFunnels] = useState<Funnel[]>([])
   const [segments, setSegments] = useState<Segment[]>([])
   const [selected, setSelected] = useState<Funnel | null>(null)
@@ -716,7 +730,14 @@ export default function Funnels() {
             </div>
           )}
           {analysis && !analysisLoading && !analysisError && (
-            <FunnelDetail analysis={analysis} activeSegment={activeSegmentLabel} apiKey={ingestKey} />
+            <FunnelDetail
+              analysis={analysis}
+              activeSegment={activeSegmentLabel}
+              apiKey={ingestKey}
+              onWatchRecordings={(step) => projectId && analysis?.funnel?.id && navigate(
+                `/sessions/${projectId}?funnel=${analysis.funnel.id}&step=${step}`
+              )}
+            />
           )}
         </div>
       </div>

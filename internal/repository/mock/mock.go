@@ -362,6 +362,14 @@ func (s *Store) FunnelSegmentData(ctx context.Context, projectID string) (reposi
 	return repository.FunnelSegments{}, nil
 }
 
+func (s *Store) SessionsAtStep(_ context.Context, _ repository.Funnel, _ int, _, _ time.Time, _ int) ([]string, error) {
+	return nil, nil
+}
+
+func (s *Store) SessionsForPage(_ context.Context, _, _ string, _, _ time.Time, _ int) ([]string, error) {
+	return nil, nil
+}
+
 // ── A/B Tests ─────────────────────────────────────────────────────────────────
 
 func (s *Store) CreateABTest(ctx context.Context, t repository.ABTest) (repository.ABTest, error) {
