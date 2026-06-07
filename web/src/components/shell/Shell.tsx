@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { BarChart2, Layers, Radio, Settings, Flag, Lightbulb, GitBranch } from 'lucide-react'
+import { BarChart2, Layers, Radio, Settings, Flag, Lightbulb, GitBranch, Video } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { useProjects } from '../../lib/projects'
 import { LAST_PROJECT_ID_KEY } from '../ui/ProjectPicker'
@@ -79,6 +79,7 @@ export default function Shell({ children, projectId, projectName, projects: proj
     { to: projectId ? `/flags/${projectId}` : '/flags', label: 'Flags', icon: <Flag size={16} /> },
     { to: projectId ? `/insights/${projectId}` : '/insights', label: 'Insights', icon: <Lightbulb size={16} /> },
     { to: projectId ? `/live/${projectId}` : '/live', label: 'Live', icon: <Radio size={16} /> },
+    { to: projectId ? `/sessions/${projectId}` : '/sessions', label: 'Sessions', icon: <Video size={16} /> },
     { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
   ]
 

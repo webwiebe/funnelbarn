@@ -26,6 +26,7 @@
     "test": "npm run build && node --test test/sdk.test.mjs"
   },
   "devDependencies": {
+    "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-typescript": "^12.0.0",
     "@types/node": "^22.0.0",
     "rollup": "^4.0.0",
@@ -35,7 +36,15 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "keywords": ["analytics", "funnelbarn", "self-hosted", "privacy"],
+  "keywords": [
+    "analytics",
+    "funnelbarn",
+    "self-hosted",
+    "privacy"
+  ],
   "license": "MIT",
-  "homepage": "https://github.com/wiebe-xyz/funnelbarn"
+  "homepage": "https://github.com/wiebe-xyz/funnelbarn",
+  "dependencies": {
+    "rrweb": "^2.0.1"
+  }
 }

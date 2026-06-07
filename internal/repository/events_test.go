@@ -729,3 +729,77 @@ func TestAnalyzeFunnel_WithEqSegment(t *testing.T) {
 	require.NoError(t, err)
 	_ = results2
 }
+
+func TestStore_SessionsForPage(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	p, err := s.CreateProject(ctx, "Page Sess", "page-sess")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	insertEvent(t, s, p.ID, "sess-pg-1", "page_view", "https://example.com/pricing")
+	insertEvent(t, s, p.ID, "sess-pg-1", "click", "https://example.com/pricing")
+	insertEvent(t, s, p.ID, "sess-pg-2", "page_view", "https://example.com/home")
+
+	from := now.Add(-time.Hour)
+	to := now.Add(time.Hour)
+
+	ids, err := s.SessionsForPage(ctx, p.ID, "https://example.com/pricing", from, to, 10)
+	require.NoError(t, err)
+	require.Len(t, ids, 1)
+	require.Equal(t, "sess-pg-1", ids[0])
+}
+
+func TestStore_DistinctEnvironments(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	p, err := s.CreateProject(ctx, "Envs", "envs")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	for _, env := range []string{"production", "staging", "staging"} {
+		e := repository.Event{
+			ID:          randomHex(t),
+			ProjectID:   p.ID,
+			SessionID:   "sess-env",
+			Name:        "page_view",
+			URL:         "https://example.com/",
+			OccurredAt:  now,
+			IngestID:    randomHex(t),
+			Environment: env,
+		}
+		require.NoError(t, s.InsertEvent(ctx, e))
+	}
+
+	envs, err := s.DistinctEnvironments(ctx, p.ID)
+	require.NoError(t, err)
+	require.Len(t, envs, 2)
+}
+
+func TestStore_DistinctEventNames(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	p, err := s.CreateProject(ctx, "Events", "events")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	for _, name := range []string{"page_view", "click", "page_view"} {
+		e := repository.Event{
+			ID:         randomHex(t),
+			ProjectID:  p.ID,
+			SessionID:  "sess-names",
+			Name:       name,
+			URL:        "https://example.com/",
+			OccurredAt: now,
+			IngestID:   randomHex(t),
+		}
+		require.NoError(t, s.InsertEvent(ctx, e))
+	}
+
+	names, err := s.DistinctEventNames(ctx, p.ID)
+	require.NoError(t, err)
+	require.Len(t, names, 2)
+}

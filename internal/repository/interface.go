@@ -44,6 +44,7 @@ type Querier interface {
 	DeleteFunnel(ctx context.Context, id string) error
 	AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time, seg *SegmentFilter, rules ...SegmentRule) ([]FunnelStepResult, error)
 	FunnelSegmentData(ctx context.Context, projectID string) (FunnelSegments, error)
+	SessionsAtStep(ctx context.Context, f Funnel, stepOrder int, from, to time.Time, limit int) ([]string, error)
 
 	// Segments
 	CreateSegment(ctx context.Context, seg Segment) (Segment, error)
@@ -90,6 +91,7 @@ type Querier interface {
 	AvgEventsPerSession(ctx context.Context, projectID string, from, to time.Time, env string) (float64, error)
 	UniqueSessionCount(ctx context.Context, projectID string, from, to time.Time, env string) (int64, error)
 	GetEventByIngestID(ctx context.Context, ingestID string) (*Event, error)
+	SessionsForPage(ctx context.Context, projectID, page string, from, to time.Time, limit int) ([]string, error)
 	DistinctEventNames(ctx context.Context, projectID string) ([]string, error)
 	DistinctEventProperties(ctx context.Context, projectID, eventName string) ([]string, error)
 	DistinctPropertyValues(ctx context.Context, projectID, eventName, property string, limit int) ([]string, error)
@@ -108,6 +110,14 @@ type Querier interface {
 	CountConversionsByVariant(ctx context.Context, flagID, conversionEvent, projectID string, from, to time.Time) (map[string]int64, error)
 	PurgeOldEvaluations(ctx context.Context, cutoff time.Time) (int64, error)
 	FlagContextKeySuggestions(ctx context.Context, projectID string) ([]ContextKeySuggestion, error)
+
+	// Recordings
+	UpsertRecording(ctx context.Context, r Recording) error
+	GetRecording(ctx context.Context, id string) (Recording, error)
+	ListRecordings(ctx context.Context, projectID string, opts RecordingListOpts) ([]Recording, error)
+	ListOldRecordings(ctx context.Context, before time.Time) ([]Recording, error)
+	DeleteRecording(ctx context.Context, id string) error
+	FlagEvaluationsForSession(ctx context.Context, sessionID, projectID string) ([]FlagEvaluationEntry, error)
 
 	// Widgets
 	CreateWidget(ctx context.Context, w DashboardWidget) (DashboardWidget, error)

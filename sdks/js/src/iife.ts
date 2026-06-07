@@ -39,7 +39,8 @@ if (typeof document !== "undefined") {
     if (apiKey) {
       const endpoint = script.getAttribute("data-endpoint") || script.src.replace(/\/sdk\.js.*$/, "");
       const projectName = script.getAttribute("data-project-name") ?? undefined;
-      init({ apiKey, endpoint, projectName });
+      const recording = script.getAttribute("data-recording") === "true";
+      init({ apiKey, endpoint, projectName, recording });
       page();
     }
   }

@@ -40,6 +40,7 @@ function useAuthMode(): { mode: AuthMode; authError: boolean } {
   return { mode, authError }
 }
 
+
 function Card({ children }: { children: React.ReactNode }) {
   return (
     <div style={{

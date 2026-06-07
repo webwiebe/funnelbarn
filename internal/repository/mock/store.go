@@ -2,6 +2,7 @@ package mock
 
 import (
 	"context"
+	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
@@ -43,4 +44,19 @@ func (s *Store) SetInstanceSetting(_ context.Context, _, _ string) error { retur
 
 func (s *Store) GetAllInstanceSettings(_ context.Context) (map[string]string, error) {
 	return map[string]string{}, nil
+}
+
+func (s *Store) UpsertRecording(_ context.Context, _ repository.Recording) error { return nil }
+func (s *Store) GetRecording(_ context.Context, _ string) (repository.Recording, error) {
+	return repository.Recording{}, nil
+}
+func (s *Store) ListRecordings(_ context.Context, _ string, _ repository.RecordingListOpts) ([]repository.Recording, error) {
+	return nil, nil
+}
+func (s *Store) ListOldRecordings(_ context.Context, _ time.Time) ([]repository.Recording, error) {
+	return nil, nil
+}
+func (s *Store) DeleteRecording(_ context.Context, _ string) error { return nil }
+func (s *Store) FlagEvaluationsForSession(_ context.Context, _, _ string) ([]repository.FlagEvaluationEntry, error) {
+	return nil, nil
 }

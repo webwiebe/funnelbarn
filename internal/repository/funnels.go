@@ -367,6 +367,98 @@ func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time,
 	return results, nil
 }
 
+// SessionsAtStep returns distinct session IDs that completed step stepOrder
+// (1-based) but did NOT complete step stepOrder+1. If stepOrder equals the
+// total number of steps, it returns sessions that completed all steps (converters).
+func (s *Store) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int, from, to time.Time, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if stepOrder < 1 || stepOrder > len(f.Steps) {
+		return nil, fmt.Errorf("step_order %d out of range [1, %d]", stepOrder, len(f.Steps))
+	}
+	// Find the step definition (steps are stored 1-based).
+	var targetStep FunnelStep
+	for _, st := range f.Steps {
+		if st.StepOrder == stepOrder {
+			targetStep = st
+			break
+		}
+	}
+
+	// Sessions that reached this step.
+	const reachedQ = `
+		SELECT DISTINCT session_id
+		FROM events
+		WHERE project_id = ? AND name = ? AND occurred_at >= ? AND occurred_at <= ?`
+	rows, err := s.db.QueryContext(ctx, reachedQ, f.ProjectID, targetStep.EventName, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("SessionsAtStep reached: %w", err)
+	}
+	reached := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		reached[id] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// If this is the last step, return all converters.
+	if stepOrder == len(f.Steps) {
+		out := make([]string, 0, len(reached))
+		for id := range reached {
+			out = append(out, id)
+			if len(out) >= limit {
+				break
+			}
+		}
+		return out, nil
+	}
+
+	// Otherwise subtract sessions that also reached the next step.
+	var nextStep FunnelStep
+	for _, st := range f.Steps {
+		if st.StepOrder == stepOrder+1 {
+			nextStep = st
+			break
+		}
+	}
+	const nextQ = `
+		SELECT DISTINCT session_id
+		FROM events
+		WHERE project_id = ? AND name = ? AND occurred_at >= ? AND occurred_at <= ?`
+	nextRows, err := s.db.QueryContext(ctx, nextQ, f.ProjectID, nextStep.EventName, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("SessionsAtStep next: %w", err)
+	}
+	defer nextRows.Close()
+	for nextRows.Next() {
+		var id string
+		if err := nextRows.Scan(&id); err != nil {
+			return nil, err
+		}
+		delete(reached, id)
+	}
+	if err := nextRows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]string, 0, len(reached))
+	for id := range reached {
+		out = append(out, id)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
 // buildSegmentRuleClause converts stored segment rules into a SQL WHERE fragment.
 func buildSegmentRuleClause(rules []SegmentRule) (clause string, args []any, needJoin bool) {
 	if len(rules) == 0 {

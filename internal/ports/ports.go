@@ -37,6 +37,7 @@ type FunnelRepo interface {
 	DeleteFunnel(ctx context.Context, id string) error
 	AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, rules ...repository.SegmentRule) ([]repository.FunnelStepResult, error)
 	FunnelSegmentData(ctx context.Context, projectID string) (repository.FunnelSegments, error)
+	SessionsAtStep(ctx context.Context, f repository.Funnel, stepOrder int, from, to time.Time, limit int) ([]string, error)
 }
 
 // ABTestRepo is the persistence port for A/B tests.
@@ -85,6 +86,7 @@ type EventRepo interface {
 	PopulatedMetadataColumns(ctx context.Context, projectID, eventName string) ([]string, error)
 	PageFlows(ctx context.Context, projectID, page string, depth int, from, to time.Time, env string) (repository.PageFlowResult, error)
 	DistinctEnvironments(ctx context.Context, projectID string) ([]string, error)
+	SessionsForPage(ctx context.Context, projectID, page string, from, to time.Time, limit int) ([]string, error)
 }
 
 // SessionRepo is the persistence port for sessions.
@@ -122,6 +124,16 @@ type SegmentRepo interface {
 	ListSegments(ctx context.Context, projectID string) ([]repository.Segment, error)
 	UpdateSegment(ctx context.Context, seg repository.Segment) (repository.Segment, error)
 	DeleteSegment(ctx context.Context, id string) error
+}
+
+// RecordingRepo is the persistence port for session recordings.
+type RecordingRepo interface {
+	UpsertRecording(ctx context.Context, r repository.Recording) error
+	GetRecording(ctx context.Context, id string) (repository.Recording, error)
+	ListRecordings(ctx context.Context, projectID string, opts repository.RecordingListOpts) ([]repository.Recording, error)
+	ListOldRecordings(ctx context.Context, before time.Time) ([]repository.Recording, error)
+	DeleteRecording(ctx context.Context, id string) error
+	FlagEvaluationsForSession(ctx context.Context, sessionID, projectID string) ([]repository.FlagEvaluationEntry, error)
 }
 
 // EventPersister is the narrow interface worker.PersistEvent requires.

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -33,6 +34,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
+	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 	"github.com/wiebe-xyz/funnelbarn/internal/worker"
 )
@@ -137,6 +139,17 @@ func run() error {
 	}
 	defer eventSpool.Close()
 
+	var recordingsSvc service.Recordings
+	if cfg.R2Endpoint != "" && cfg.R2AccessKeyID != "" && cfg.R2SecretAccessKey != "" && cfg.R2Bucket != "" {
+		r2, r2err := storage.NewR2(cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
+		if r2err != nil {
+			slog.Warn("session recording disabled: failed to initialize R2 storage", "err", r2err)
+		} else {
+			recordingsSvc = service.NewRecordingService(store, store, store, r2)
+			slog.Info("session recording enabled", "bucket", cfg.R2Bucket)
+		}
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -187,7 +200,7 @@ func run() error {
 		}
 	}
 
-	go runBackgroundWorker(ctx, cfg, store, eventSpool, geoLookup)
+	go runBackgroundWorker(ctx, cfg, store, eventSpool, geoLookup, recordingsSvc)
 
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
 	if err != nil {
@@ -250,6 +263,7 @@ func run() error {
 		IAMBarnUsers:        store,
 		IAMBarnFlagProject:  cfg.DogfoodProject,
 		OIDC:                oidcClient,
+		Recordings:          recordingsSvc,
 	})
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)
@@ -325,7 +339,7 @@ const (
 	workerRotateThreshold = 64 << 20 // 64 MiB
 )
 
-func runBackgroundWorker(ctx context.Context, cfg config.Config, store *repository.Store, eventSpool *spool.Spool, geoLookup *geoip.Lookup) {
+func runBackgroundWorker(ctx context.Context, cfg config.Config, store *repository.Store, eventSpool *spool.Spool, geoLookup *geoip.Lookup, recordings service.Recordings) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -359,6 +373,19 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 					slog.Error("purge old evaluations", "err", err)
 				} else if ne > 0 {
 					slog.Info("purged old evaluations", "count", ne, "before", cutoff.Format(time.DateOnly))
+				}
+			}
+			if recordings != nil {
+				retentionDays := 90 // default
+				if v, ok, _ := store.GetInstanceSetting(ctx, "recording_retention_days"); ok {
+					if n, err := strconv.Atoi(v); err == nil && n > 0 {
+						retentionDays = n
+					}
+				}
+				if err := recordings.PurgeOldRecordings(ctx, retentionDays); err != nil {
+					slog.Error("purge old recordings", "err", err)
+				} else {
+					slog.Debug("recording retention purge complete", "retention_days", retentionDays)
 				}
 			}
 		case <-ticker.C:

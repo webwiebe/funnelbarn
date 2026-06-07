@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Globe, ShieldOff } from 'lucide-react'
+import { Globe, ShieldOff, Video } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api, ApiKey } from '../lib/api'
 import { useProjects } from '../lib/projects'
@@ -28,6 +28,12 @@ export default function Settings() {
   // Data collection / geo settings
   const [geoEnabled, setGeoEnabled] = useState(true)
   const [savingGeo, setSavingGeo] = useState(false)
+
+  // Recording settings
+  const [recordingEnabled, setRecordingEnabled] = useState(false)
+  const [recordingSampleRate, setRecordingSampleRate] = useState(100)
+  const [recordingRetentionDays, setRecordingRetentionDays] = useState(90)
+  const [savingRecording, setSavingRecording] = useState(false)
   const [anonymizeInput, setAnonymizeInput] = useState('')
   const [anonymizing, setAnonymizing] = useState(false)
   const [anonymizeResult, setAnonymizeResult] = useState<string | null>(null)
@@ -42,7 +48,14 @@ export default function Settings() {
 
   useEffect(() => {
     api.getInstanceSettings()
-      .then((d) => setGeoEnabled(d.settings?.geo_enabled !== 'false'))
+      .then((d) => {
+        setGeoEnabled(d.settings?.geo_enabled !== 'false')
+        setRecordingEnabled(d.settings?.recording_enabled === 'true')
+        const rate = parseFloat(d.settings?.recording_sample_rate ?? '1')
+        setRecordingSampleRate(isNaN(rate) ? 100 : Math.round(rate * 100))
+        const ret = parseInt(d.settings?.recording_retention_days ?? '90', 10)
+        setRecordingRetentionDays(isNaN(ret) ? 90 : ret)
+      })
       .catch(() => {})
   }, [])
 
@@ -56,6 +69,21 @@ export default function Settings() {
       setError(String(e))
     } finally {
       setSavingGeo(false)
+    }
+  }
+
+  const handleSaveRecordingSettings = async () => {
+    setSavingRecording(true)
+    try {
+      await api.setInstanceSettings({
+        recording_enabled: recordingEnabled ? 'true' : 'false',
+        recording_sample_rate: String(recordingSampleRate / 100),
+        recording_retention_days: String(recordingRetentionDays),
+      })
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setSavingRecording(false)
     }
   }
 
@@ -347,6 +375,121 @@ export default function Settings() {
               {anonymizing ? 'Anonymizing…' : 'Anonymize'}
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Session Recordings */}
+      <div style={{
+        background: C.surface,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        overflow: 'hidden',
+        marginBottom: '2rem',
+      }}>
+        <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Video size={16} color={C.amber} />
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Session Recordings</div>
+          </div>
+          <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
+            Control dogfood self-recording on the FunnelBarn dashboard itself. Requires R2 credentials to be configured.
+          </div>
+        </div>
+
+        {/* Enable toggle */}
+        <div style={{
+          padding: '1.25rem 1.5rem', borderBottom: `1px solid ${C.border}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
+        }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 3 }}>Enable recording</div>
+            <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
+              When enabled, visitor sessions on the FunnelBarn dashboard are recorded using rrweb.
+            </div>
+          </div>
+          <button
+            onClick={() => setRecordingEnabled((v) => !v)}
+            style={{
+              position: 'relative', width: 44, height: 24, borderRadius: 99, border: 'none',
+              background: recordingEnabled ? C.amber : C.border, cursor: 'pointer', transition: 'background 0.2s',
+              flexShrink: 0,
+            }}
+          >
+            <span style={{
+              position: 'absolute', top: 3, left: recordingEnabled ? 23 : 3,
+              width: 18, height: 18, borderRadius: '50%',
+              background: recordingEnabled ? '#0f1117' : C.muted, transition: 'left 0.2s',
+            }} />
+          </button>
+        </div>
+
+        {/* Sample rate */}
+        <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 3 }}>
+            Sample rate: <span style={{ color: C.amber }}>{recordingSampleRate}%</span>
+          </div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, lineHeight: 1.5 }}>
+            Percentage of sessions to record. 100% records all sessions; lower values reduce storage usage.
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {[10, 25, 50, 100].map((pct) => (
+              <button
+                key={pct}
+                onClick={() => setRecordingSampleRate(pct)}
+                style={{
+                  padding: '4px 14px', borderRadius: 99, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  border: `1px solid ${recordingSampleRate === pct ? C.amber : C.border}`,
+                  background: recordingSampleRate === pct ? 'rgba(245,158,11,0.1)' : 'none',
+                  color: recordingSampleRate === pct ? C.amber : C.muted,
+                }}
+              >
+                {pct}%
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Retention */}
+        <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 3 }}>
+            Retention: <span style={{ color: C.amber }}>{recordingRetentionDays} days</span>
+          </div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, lineHeight: 1.5 }}>
+            Recordings older than this are automatically deleted from R2 and the database during nightly cleanup.
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {[7, 14, 30, 60, 90].map((days) => (
+              <button
+                key={days}
+                onClick={() => setRecordingRetentionDays(days)}
+                style={{
+                  padding: '4px 14px', borderRadius: 99, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  border: `1px solid ${recordingRetentionDays === days ? C.amber : C.border}`,
+                  background: recordingRetentionDays === days ? 'rgba(245,158,11,0.1)' : 'none',
+                  color: recordingRetentionDays === days ? C.amber : C.muted,
+                }}
+              >
+                {days}d
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Save */}
+        <div style={{ padding: '1rem 1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={handleSaveRecordingSettings}
+            disabled={savingRecording}
+            style={{
+              background: savingRecording ? C.surface : 'rgba(245,158,11,0.15)',
+              border: `1px solid rgba(245,158,11,0.4)`,
+              borderRadius: 8, color: C.amber,
+              padding: '0.55rem 1.25rem', cursor: savingRecording ? 'not-allowed' : 'pointer',
+              fontSize: 13, fontWeight: 700,
+            }}
+          >
+            {savingRecording ? 'Saving…' : 'Save recording settings'}
+          </button>
         </div>
       </div>
     </Shell>

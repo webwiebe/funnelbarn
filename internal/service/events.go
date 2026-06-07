@@ -105,3 +105,7 @@ func (svc *EventService) PageFlows(ctx context.Context, projectID, page string, 
 func (svc *EventService) DistinctEnvironments(ctx context.Context, projectID string) ([]string, error) {
 	return svc.store.DistinctEnvironments(ctx, projectID)
 }
+
+func (svc *EventService) SessionsForPage(ctx context.Context, projectID, page string, from, to time.Time) ([]string, error) {
+	return svc.store.SessionsForPage(ctx, projectID, page, from, to, 100)
+}

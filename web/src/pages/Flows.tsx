@@ -1,5 +1,6 @@
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { Video } from 'lucide-react'
 import { api, type FlowData } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import Shell from '../components/shell/Shell'
@@ -68,6 +69,7 @@ function ChartPlaceholder({ loading, error }: { loading: boolean; error: string 
 export default function Flows() {
   const { projectId } = useParams<{ projectId: string }>()
   const { selectedEnvironment } = useProjects()
+  const navigate = useNavigate()
   const [range, setRange] = useState<Range>('7d')
   const [data, setData] = useState<FlowData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -154,11 +156,29 @@ export default function Flows() {
         }}>
           {hasData && data && (
             <>
-              <FlowStatsBar
-                focusedPage={data.focused_page}
-                totalSessions={data.total_sessions}
-                nodeCount={data.nodes.length}
-              />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                <FlowStatsBar
+                  focusedPage={data.focused_page}
+                  totalSessions={data.total_sessions}
+                  nodeCount={data.nodes.length}
+                />
+                {data.focused_page && (
+                  <button
+                    title="Watch recordings for sessions on this page"
+                    onClick={() => projectId && navigate(
+                      `/sessions/${projectId}?page=${encodeURIComponent(data.focused_page)}`
+                    )}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      background: 'none', border: `1px solid ${C.border}`, borderRadius: 6,
+                      color: C.muted, cursor: 'pointer', padding: '5px 10px', fontSize: 12,
+                    }}
+                  >
+                    <Video size={13} />
+                    Watch recordings
+                  </button>
+                )}
+              </div>
               <FlowLegend />
               <div style={{ marginBottom: 16 }} />
             </>

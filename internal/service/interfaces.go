@@ -79,6 +79,7 @@ type Events interface {
 	PopulatedMetadataColumns(ctx context.Context, projectID, eventName string) ([]string, error)
 	PageFlows(ctx context.Context, projectID, page string, depth int, from, to time.Time, env string) (repository.PageFlowResult, error)
 	DistinctEnvironments(ctx context.Context, projectID string) ([]string, error)
+	SessionsForPage(ctx context.Context, projectID, page string, from, to time.Time) ([]string, error)
 }
 
 // Widgets is the interface for dashboard widget operations.
@@ -106,6 +107,18 @@ type Segments interface {
 	GetSegment(ctx context.Context, id string) (repository.Segment, error)
 	UpdateSegment(ctx context.Context, id, name string, rules []repository.SegmentRule) (repository.Segment, error)
 	DeleteSegment(ctx context.Context, id string) error
+}
+
+// Recordings is the interface for session recording operations.
+type Recordings interface {
+	IngestChunk(ctx context.Context, chunk RecordingChunk) error
+	ListRecordings(ctx context.Context, projectID string, opts repository.RecordingListOpts) ([]repository.Recording, error)
+	GetChunk(ctx context.Context, projectID, recordingID string, index int) ([]byte, error)
+	GetRecordingSessionID(ctx context.Context, projectID, recordingID string) (string, error)
+	FlagEvaluationsForSession(ctx context.Context, projectID, sessionID string) ([]repository.FlagEvaluationEntry, error)
+	SessionsAtStep(ctx context.Context, funnelID, projectID string, stepOrder int, from, to time.Time) ([]string, error)
+	SessionsForPage(ctx context.Context, projectID, page string, from, to time.Time) ([]string, error)
+	PurgeOldRecordings(ctx context.Context, retentionDays int) error
 }
 
 // APIKeys is the interface for API key-related operations.

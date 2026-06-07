@@ -1,4 +1,5 @@
 import typescript from "@rollup/plugin-typescript";
+import { nodeResolve } from "@rollup/plugin-node-resolve";
 
 export default {
   input: "src/iife.ts",
@@ -10,6 +11,7 @@ export default {
     inlineDynamicImports: true,
   },
   plugins: [
+    nodeResolve({ browser: true }),
     typescript({
       tsconfig: "./tsconfig.json",
       // Override module settings for IIFE (rollup handles module bundling)

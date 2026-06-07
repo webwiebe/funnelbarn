@@ -18,7 +18,14 @@ async function loadConfig(): Promise<void> {
     const apiKey: string = cfg.funnelbarn_api_key ?? ''
     const projectName: string = cfg.funnelbarn_project ?? ''
     if (!endpoint || !apiKey) return
-    client = new FunnelBarnClient({ endpoint, apiKey, projectName })
+
+    // Enable session recording when configured, respecting the sample rate.
+    const recordingEnabled: boolean = cfg.funnelbarn_recording === true
+    const sampleRate: number = typeof cfg.funnelbarn_recording_rate === 'number'
+      ? cfg.funnelbarn_recording_rate : 1.0
+    const recording = recordingEnabled && Math.random() < sampleRate
+
+    client = new FunnelBarnClient({ endpoint, apiKey, projectName, recording })
   } catch {
     // Config fetch failed — tracking disabled.
   }
