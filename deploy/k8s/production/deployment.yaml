@@ -113,6 +113,30 @@ spec:
                   optional: true
             - name: FUNNELBARN_DOGFOOD_PROJECT
               value: funnelbarn
+            - name: FUNNELBARN_R2_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_R2_ENDPOINT
+                  optional: true
+            - name: FUNNELBARN_R2_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_R2_ACCESS_KEY_ID
+                  optional: true
+            - name: FUNNELBARN_R2_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_R2_SECRET_ACCESS_KEY
+                  optional: true
+            - name: FUNNELBARN_R2_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_R2_BUCKET
+                  optional: true
             - name: FUNNELBARN_SPANBARN_ENDPOINT
               valueFrom:
                 secretKeyRef:
