@@ -67,11 +67,12 @@ type ServerConfig struct {
 	// login flow at /api/v1/oidc/{login,callback}. Independent of IAMBarnProvider.
 	OIDC *auth.OIDCClient
 
-	InstanceSettings InstanceSettingsRepo
-	GeoAnonymizer    GeoAnonymizer
-	Segments         service.Segments
-	Distributions    DistributionRepo
-	Recordings       service.Recordings
+	InstanceSettings  InstanceSettingsRepo
+	GeoAnonymizer     GeoAnonymizer
+	Segments          service.Segments
+	Distributions     DistributionRepo
+	Recordings        service.Recordings
+	RecordingSettings ProjectRecordingSettingsRepo
 }
 
 // DistributionRepo provides session field distribution data.
@@ -126,6 +127,7 @@ type Server struct {
 	segments           service.Segments
 	distributions      DistributionRepo
 	recordings         service.Recordings
+	recordingSettings  ProjectRecordingSettingsRepo
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
@@ -181,6 +183,7 @@ func NewServer(cfg ServerConfig) *Server {
 		segments:           cfg.Segments,
 		distributions:      cfg.Distributions,
 		recordings:         cfg.Recordings,
+		recordingSettings:  cfg.RecordingSettings,
 	}
 	s.registerRoutes()
 	return s
@@ -285,6 +288,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/recordings/{rid}/flags", s.requireSession(s.handleGetRecordingFlags))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels/{fid}/steps/{step}/sessions", s.requireSession(s.handleFunnelStepSessions))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/flows/sessions", s.requireSession(s.handleFlowPageSessions))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/recording-settings", s.requireSession(s.handleGetProjectRecordingSettings))
+	s.mux.HandleFunc("PUT /api/v1/projects/{id}/recording-settings", s.requireSession(s.handleUpdateProjectRecordingSettings))
+
+	// SDK recording config (API key auth, public — returns effective config for the project)
+	s.mux.HandleFunc("GET /api/v1/recording-config", s.handleGetRecordingConfig)
 
 	// API keys
 	s.mux.HandleFunc("GET /api/v1/apikeys", s.requireSession(s.handleListAPIKeys))

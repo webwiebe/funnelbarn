@@ -364,6 +364,18 @@ export const api = {
   getRecordingFlags: (projectId: string, recordingId: string) =>
     request<{ evaluations: FlagEvaluationEntry[] }>(`/api/v1/projects/${projectId}/recordings/${recordingId}/flags`),
 
+  getProjectRecordingSettings: (projectId: string) =>
+    request<ProjectRecordingSettings>(`/api/v1/projects/${projectId}/recording-settings`),
+
+  updateProjectRecordingSettings: (
+    projectId: string,
+    settings: { enabled: boolean | null; sample_rate: number | null; rules: RecordingRule[] }
+  ) =>
+    request<void>(`/api/v1/projects/${projectId}/recording-settings`, {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
+
   getFunnelStepSessions: (projectId: string, funnelId: string, step: number, params: { from?: string; to?: string } = {}) => {
     const qs = new URLSearchParams()
     if (params.from) qs.set('from', params.from)
@@ -588,6 +600,19 @@ export interface Recording {
   device_type: string
   is_bot: boolean
   page_url?: string
+}
+
+export interface RecordingRule {
+  pattern: string
+  action: 'capture' | 'ignore'
+}
+
+export interface ProjectRecordingSettings {
+  enabled: boolean | null
+  sample_rate: number | null
+  rules: RecordingRule[]
+  effective_enabled: boolean
+  effective_rate: number
 }
 
 export interface FlagEvaluationEntry {
