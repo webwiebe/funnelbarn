@@ -8,6 +8,11 @@
 
 import { record } from "rrweb";
 
+export interface RecordingRule {
+  pattern: string;
+  action: 'capture' | 'ignore';
+}
+
 export interface FunnelBarnOptions {
   apiKey: string;
   endpoint: string;
@@ -17,10 +22,14 @@ export interface FunnelBarnOptions {
   flushInterval?: number;
   /** Session idle timeout in ms (default: 30 minutes) */
   sessionTimeout?: number;
-  /** Enable session recording (default: false) */
+  /** Enable session recording by default (default: false). Server config can override. */
   recording?: boolean;
   /** Recording chunk flush interval in ms (default: 10000) */
   recordingChunkMs?: number;
+  /** URL path patterns to always capture (checked before server rules) */
+  recordInclude?: string[];
+  /** URL path patterns to always ignore (checked before server rules) */
+  recordExclude?: string[];
 }
 
 export interface EventProperties {
@@ -98,6 +107,8 @@ export class FunnelBarnClient {
   private recordingStartedAt = '';
   private recordingStartMs = 0;
   private recordingTimer?: ReturnType<typeof setInterval>;
+  private recordingOptions: FunnelBarnOptions;
+  private serverRecordingRules: RecordingRule[] = [];
 
   constructor(options: FunnelBarnOptions) {
     this.apiKey = options.apiKey;
@@ -105,6 +116,7 @@ export class FunnelBarnClient {
     this.projectName = options.projectName;
     this.flushInterval = options.flushInterval ?? 5000;
     this.sessionTimeout = options.sessionTimeout ?? SESSION_TIMEOUT_DEFAULT;
+    this.recordingOptions = options;
 
     this.startFlushTimer();
 
@@ -134,20 +146,12 @@ export class FunnelBarnClient {
       }
       window.addEventListener("beforeunload", flushVitals);
 
-      // Session recording.
+      // Session recording — start locally if requested, then apply server overrides async.
       if (options.recording) {
-        this.recordingId = this.generateSessionID();
-        this.recordingStartedAt = new Date().toISOString();
-        this.recordingStartMs = Date.now();
-        this.rrwebStop = record({
-          emit: (event) => { this.rrwebBuffer.push(event); },
-          maskInputOptions: { password: true },
-          blockClass: 'fb-block',
-        });
-        const chunkMs = options.recordingChunkMs ?? 10_000;
-        this.recordingTimer = setInterval(() => { this.flushRecordingChunk().catch(() => {}); }, chunkMs);
-        window.addEventListener('beforeunload', () => { this.flushRecordingChunk().catch(() => {}); });
+        this.startRecording(options.recordingChunkMs);
       }
+      // Fetch server recording config and apply overrides (does not block init).
+      this.applyServerRecordingConfig(options.recordingChunkMs).catch(() => {});
 
       // LCP observer.
       try {
@@ -488,7 +492,102 @@ export class FunnelBarnClient {
     }
   }
 
+  private startRecording(chunkMs?: number): void {
+    if (this.rrwebStop) return; // already running
+    this.recordingId = this.generateSessionID();
+    this.recordingStartedAt = new Date().toISOString();
+    this.recordingStartMs = Date.now();
+    this.rrwebStop = record({
+      emit: (event) => { this.rrwebBuffer.push(event); },
+      maskInputOptions: { password: true },
+      blockClass: 'fb-block',
+    });
+    const interval = chunkMs ?? 10_000;
+    this.recordingTimer = setInterval(() => { this.flushRecordingChunk().catch(() => {}); }, interval);
+    window.addEventListener('beforeunload', () => { this.flushRecordingChunk().catch(() => {}); });
+  }
+
+  private stopRecording(): void {
+    if (this.rrwebStop) {
+      this.rrwebStop();
+      this.rrwebStop = undefined;
+    }
+    if (this.recordingTimer !== undefined) {
+      clearInterval(this.recordingTimer);
+      this.recordingTimer = undefined;
+    }
+    this.rrwebBuffer = [];
+  }
+
+  private async applyServerRecordingConfig(chunkMs?: number): Promise<void> {
+    try {
+      const resp = await fetch(`${this.endpoint}/api/v1/recording-config`, {
+        headers: { 'x-funnelbarn-api-key': this.apiKey },
+      });
+      if (!resp.ok) return;
+      const cfg = await resp.json() as { enabled: boolean; sample_rate: number; rules: RecordingRule[] };
+      this.serverRecordingRules = cfg.rules ?? [];
+
+      // Apply sample-rate decision: skip recording if random roll is above rate.
+      const rate = cfg.sample_rate ?? 1;
+      const sampled = Math.random() < rate;
+
+      if (cfg.enabled && sampled && !this.rrwebStop) {
+        this.startRecording(chunkMs);
+      } else if (!cfg.enabled && this.rrwebStop) {
+        this.stopRecording();
+      }
+    } catch {
+      // best-effort — local config remains in effect
+    }
+  }
+
+  // matchesPattern checks a URL path against a glob pattern.
+  // * matches any single path segment, ** matches any number of segments.
+  private matchesPattern(pattern: string, path: string): boolean {
+    const escaped = pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*\*/g, '\x00')
+      .replace(/\*/g, '[^/]*')
+      .replace(/\x00/g, '.*');
+    try {
+      return new RegExp(`^${escaped}$`).test(path);
+    } catch {
+      return false;
+    }
+  }
+
+  // shouldRecordCurrentPage checks SDK-local and server rules to decide
+  // whether to flush recording events for the current page.
+  private shouldRecordCurrentPage(): boolean {
+    if (typeof window === 'undefined') return true;
+    const path = window.location.pathname;
+    const opts = this.recordingOptions;
+
+    // SDK-local include/exclude (checked first, highest priority).
+    for (const p of opts.recordExclude ?? []) {
+      if (this.matchesPattern(p, path)) return false;
+    }
+    for (const p of opts.recordInclude ?? []) {
+      if (this.matchesPattern(p, path)) return true;
+    }
+
+    // Server rules (first match wins).
+    for (const rule of this.serverRecordingRules) {
+      if (this.matchesPattern(rule.pattern, path)) {
+        return rule.action === 'capture';
+      }
+    }
+
+    return true; // default: capture
+  }
+
   private async flushRecordingChunk(): Promise<void> {
+    if (!this.shouldRecordCurrentPage()) {
+      // Discard buffered events for this page — don't send them.
+      this.rrwebBuffer = [];
+      return;
+    }
     const events = this.rrwebBuffer.splice(0);
     if (!events.length) return;
     try {

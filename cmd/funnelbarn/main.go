@@ -264,6 +264,7 @@ func run() error {
 		IAMBarnFlagProject:  cfg.DogfoodProject,
 		OIDC:                oidcClient,
 		Recordings:          recordingsSvc,
+		RecordingSettings:   store,
 	})
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)

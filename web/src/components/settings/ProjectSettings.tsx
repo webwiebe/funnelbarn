@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Trash2, Save, CheckCircle, Link, X } from 'lucide-react'
 import { api, Project } from '../../lib/api'
 import { CopyButton } from '../ui/CopyButton'
+import { ProjectRecordingSettings } from './ProjectRecordingSettings'
 
 const C = {
   bg: '#0f1117',
@@ -385,6 +386,7 @@ export function ProjectSettings({
                   Saved!
                 </div>
               )}
+              <ProjectRecordingSettings projectId={p.id} />
               {deleteProjectConfirm === p.id && (
                 <div style={{
                   width: '100%',
