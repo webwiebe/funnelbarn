@@ -80,6 +80,14 @@ test.describe('API: projects', () => {
     // The API serialises Go struct fields with their original casing (no json tags on Project)
     expect(body.Slug ?? body.slug).toBe(slug)
     expect(body.Name ?? body.name).toBe('E2E Test Project')
+
+    // Clean up — delete the project so the dropdown doesn't accumulate duplicates.
+    const projectId = body.ID ?? body.id
+    if (projectId) {
+      await request.delete(`/api/v1/projects/${projectId}`, {
+        headers: { 'X-FunnelBarn-CSRF': csrf },
+      })
+    }
   })
 })
 
