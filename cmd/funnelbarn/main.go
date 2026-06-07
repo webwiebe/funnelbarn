@@ -140,8 +140,8 @@ func run() error {
 	defer eventSpool.Close()
 
 	var recordingsSvc service.Recordings
-	if cfg.R2AccountID != "" && cfg.R2AccessKeyID != "" && cfg.R2SecretAccessKey != "" && cfg.R2Bucket != "" {
-		r2, r2err := storage.NewR2(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
+	if cfg.R2Endpoint != "" && cfg.R2AccessKeyID != "" && cfg.R2SecretAccessKey != "" && cfg.R2Bucket != "" {
+		r2, r2err := storage.NewR2(cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
 		if r2err != nil {
 			slog.Warn("session recording disabled: failed to initialize R2 storage", "err", r2err)
 		} else {

@@ -17,17 +17,16 @@ type R2Store struct {
 	bucket string
 }
 
-// NewR2 creates an R2Store pointed at the given Cloudflare account.
-// The endpoint is derived from accountID: https://{accountID}.r2.cloudflarestorage.com
-func NewR2(accountID, accessKeyID, secretAccessKey, bucket string) (*R2Store, error) {
-	if accountID == "" || accessKeyID == "" || secretAccessKey == "" || bucket == "" {
-		return nil, fmt.Errorf("storage: all R2 credentials and bucket name are required")
+// NewR2 creates an R2Store. endpoint must be the full R2 endpoint URL
+// (e.g. https://<accountID>.eu.r2.cloudflarestorage.com for EU jurisdiction buckets).
+func NewR2(endpoint, accessKeyID, secretAccessKey, bucket string) (*R2Store, error) {
+	if endpoint == "" || accessKeyID == "" || secretAccessKey == "" || bucket == "" {
+		return nil, fmt.Errorf("storage: R2 endpoint, credentials and bucket name are required")
 	}
-	endpoint := fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID)
 	client := s3.New(s3.Options{
-		Region:      "auto",
+		Region:       "auto",
 		BaseEndpoint: aws.String(endpoint),
-		Credentials: credentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, ""),
+		Credentials:  credentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, ""),
 	})
 	return &R2Store{client: client, bucket: bucket}, nil
 }

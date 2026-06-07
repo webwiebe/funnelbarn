@@ -63,6 +63,7 @@ type Config struct {
 	R2AccessKeyID     string // FUNNELBARN_R2_ACCESS_KEY_ID
 	R2SecretAccessKey string // FUNNELBARN_R2_SECRET_ACCESS_KEY
 	R2Bucket          string // FUNNELBARN_R2_BUCKET — bucket name for recordings
+	R2Endpoint        string // FUNNELBARN_R2_ENDPOINT — full endpoint URL (required for EU jurisdiction buckets)
 }
 
 // Load reads config from config files and environment variables.
@@ -192,6 +193,7 @@ func Load() Config {
 	cfg.R2AccessKeyID = os.Getenv("FUNNELBARN_R2_ACCESS_KEY_ID")
 	cfg.R2SecretAccessKey = os.Getenv("FUNNELBARN_R2_SECRET_ACCESS_KEY")
 	cfg.R2Bucket = os.Getenv("FUNNELBARN_R2_BUCKET")
+	cfg.R2Endpoint = os.Getenv("FUNNELBARN_R2_ENDPOINT")
 
 	cfg.SetupRatePerMinute = 10
 	cfg.SetupRateBurst = 5
