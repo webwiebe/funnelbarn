@@ -606,6 +606,7 @@ export interface ClientConfig {
   funnelbarn_recording?: boolean
   funnelbarn_recording_rate?: number
   iambarn_enabled: boolean
+  local_auth_available?: boolean
   iambarn?: {
     profile_url?: string
   }
