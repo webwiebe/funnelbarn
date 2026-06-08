@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -44,6 +45,13 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 	chunk.UserAgent = r.Header.Get("User-Agent")
 
 	if err := s.recordings.IngestChunk(r.Context(), chunk); err != nil {
+		slog.ErrorContext(r.Context(), "ingest recording chunk failed",
+			"error", err, "handled", false,
+			"recording_id", chunk.RecordingID,
+			"project_id", chunk.ProjectID,
+			"chunk_index", chunk.ChunkIndex,
+			"request_id", RequestIDFromContext(r.Context()),
+		)
 		jsonError(w, "failed to ingest chunk", http.StatusInternalServerError)
 		return
 	}
@@ -126,10 +134,18 @@ func (s *Server) handleGetRecordingChunk(w http.ResponseWriter, r *http.Request)
 
 	data, err := s.recordings.GetChunk(r.Context(), projectID, recordingID, index)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		errStr := err.Error()
+		if strings.Contains(errStr, "not found") || strings.Contains(errStr, "NoSuchKey") || strings.Contains(errStr, "404") {
 			jsonError(w, "not found", http.StatusNotFound)
 			return
 		}
+		slog.ErrorContext(r.Context(), "fetch recording chunk failed",
+			"error", err, "handled", false,
+			"recording_id", recordingID,
+			"project_id", projectID,
+			"chunk_index", index,
+			"request_id", RequestIDFromContext(r.Context()),
+		)
 		jsonError(w, "failed to fetch chunk", http.StatusInternalServerError)
 		return
 	}
