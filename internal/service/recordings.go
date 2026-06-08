@@ -64,18 +64,19 @@ func (svc *RecordingService) IngestChunk(ctx context.Context, chunk RecordingChu
 
 	endedAt := chunk.StartedAt.Add(time.Duration(chunk.DurationMs) * time.Millisecond)
 	rec := repository.Recording{
-		ID:          chunk.RecordingID,
-		ProjectID:   chunk.ProjectID,
-		SessionID:   chunk.SessionID,
-		Environment: chunk.Environment,
-		ChunkCount:  chunk.ChunkIndex + 1,
-		DurationMs:  chunk.DurationMs,
-		StartedAt:   chunk.StartedAt,
-		EndedAt:     &endedAt,
-		UserAgent:   chunk.UserAgent,
-		DeviceType:  DetectDeviceType(chunk.UserAgent),
-		IsBot:       DetectBot(chunk.UserAgent),
-		PageURL:     chunk.PageURL,
+		ID:              chunk.RecordingID,
+		ProjectID:       chunk.ProjectID,
+		SessionID:       chunk.SessionID,
+		Environment:     chunk.Environment,
+		FirstChunkIndex: chunk.ChunkIndex,
+		ChunkCount:      1,
+		DurationMs:      chunk.DurationMs,
+		StartedAt:       chunk.StartedAt,
+		EndedAt:         &endedAt,
+		UserAgent:       chunk.UserAgent,
+		DeviceType:      DetectDeviceType(chunk.UserAgent),
+		IsBot:           DetectBot(chunk.UserAgent),
+		PageURL:         chunk.PageURL,
 	}
 	return svc.store.UpsertRecording(ctx, rec)
 }

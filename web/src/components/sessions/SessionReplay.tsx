@@ -35,11 +35,17 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
       if (!playerRef.current) return
       try {
         const allEvents: unknown[] = []
-        for (let i = 0; i < recording.chunk_count; i++) {
-          setProgress(Math.round((i / recording.chunk_count) * 100))
-          const chunk = await api.getRecordingChunk(projectId, recording.id, i)
-          if (cancelled) return
-          allEvents.push(...chunk)
+        const start = recording.first_chunk_index ?? 0
+        const end = start + recording.chunk_count
+        for (let i = start; i < end; i++) {
+          setProgress(Math.round(((i - start) / recording.chunk_count) * 100))
+          try {
+            const chunk = await api.getRecordingChunk(projectId, recording.id, i)
+            if (cancelled) return
+            allEvents.push(...chunk)
+          } catch {
+            // chunk missing in storage — skip and continue
+          }
         }
         setProgress(100)
 
