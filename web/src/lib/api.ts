@@ -593,6 +593,7 @@ export interface Recording {
   project_id: string
   session_id: string
   environment: string
+  first_chunk_index: number
   chunk_count: number
   duration_ms: number
   started_at: string

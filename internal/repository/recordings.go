@@ -10,19 +10,20 @@ import (
 
 // Recording holds metadata for a session recording.
 type Recording struct {
-	ID          string     `json:"id"`
-	ProjectID   string     `json:"project_id"`
-	SessionID   string     `json:"session_id"`
-	Environment string     `json:"environment"`
-	ChunkCount  int        `json:"chunk_count"`
-	DurationMs  int64      `json:"duration_ms"`
-	StartedAt   time.Time  `json:"started_at"`
-	EndedAt     *time.Time `json:"ended_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	DeviceType  string     `json:"device_type"`
-	UserAgent   string     `json:"user_agent,omitempty"`
-	IsBot       bool       `json:"is_bot"`
-	PageURL     string     `json:"page_url,omitempty"`
+	ID              string     `json:"id"`
+	ProjectID       string     `json:"project_id"`
+	SessionID       string     `json:"session_id"`
+	Environment     string     `json:"environment"`
+	FirstChunkIndex int        `json:"first_chunk_index"`
+	ChunkCount      int        `json:"chunk_count"`
+	DurationMs      int64      `json:"duration_ms"`
+	StartedAt       time.Time  `json:"started_at"`
+	EndedAt         *time.Time `json:"ended_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	DeviceType      string     `json:"device_type"`
+	UserAgent       string     `json:"user_agent,omitempty"`
+	IsBot           bool       `json:"is_bot"`
+	PageURL         string     `json:"page_url,omitempty"`
 }
 
 // FlagEvaluationEntry is a flag evaluation linked to a session.
@@ -44,16 +45,17 @@ type RecordingListOpts struct {
 }
 
 // UpsertRecording inserts a new recording or updates an existing one's
-// chunk count, duration, and ended_at timestamp. Metadata fields
-// (device_type, user_agent, is_bot, page_url) are set only on insert.
+// chunk count, duration, and ended_at timestamp. first_chunk_index and
+// metadata fields (device_type, user_agent, is_bot, page_url) are set
+// only on insert and never overwritten.
 func (s *Store) UpsertRecording(ctx context.Context, r Recording) error {
 	const q = `
 		INSERT INTO recordings
-			(id, project_id, session_id, environment, chunk_count, duration_ms, started_at, ended_at,
+			(id, project_id, session_id, environment, first_chunk_index, chunk_count, duration_ms, started_at, ended_at,
 			 device_type, user_agent, is_bot, page_url)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
-			chunk_count = excluded.chunk_count,
+			chunk_count = chunk_count + 1,
 			duration_ms = excluded.duration_ms,
 			ended_at    = excluded.ended_at`
 	var endedAt interface{}
@@ -66,7 +68,7 @@ func (s *Store) UpsertRecording(ctx context.Context, r Recording) error {
 	}
 	_, err := s.db.ExecContext(ctx, q,
 		r.ID, r.ProjectID, r.SessionID, r.Environment,
-		r.ChunkCount, r.DurationMs, r.StartedAt, endedAt,
+		r.FirstChunkIndex, r.DurationMs, r.StartedAt, endedAt,
 		r.DeviceType, r.UserAgent, isBot, r.PageURL,
 	)
 	return err
@@ -75,7 +77,7 @@ func (s *Store) UpsertRecording(ctx context.Context, r Recording) error {
 // GetRecording fetches a single recording by ID.
 func (s *Store) GetRecording(ctx context.Context, id string) (Recording, error) {
 	const q = `
-		SELECT id, project_id, session_id, environment, chunk_count, duration_ms, started_at, ended_at, created_at,
+		SELECT id, project_id, session_id, environment, first_chunk_index, chunk_count, duration_ms, started_at, ended_at, created_at,
 		       device_type, user_agent, is_bot, page_url
 		FROM recordings WHERE id = ?`
 	return scanRecording(s.db.QueryRowContext(ctx, q, id))
@@ -117,7 +119,7 @@ func (s *Store) ListRecordings(ctx context.Context, projectID string, opts Recor
 	offset := opts.Offset
 
 	q := fmt.Sprintf(`
-		SELECT id, project_id, session_id, environment, chunk_count, duration_ms, started_at, ended_at, created_at,
+		SELECT id, project_id, session_id, environment, first_chunk_index, chunk_count, duration_ms, started_at, ended_at, created_at,
 		       device_type, user_agent, is_bot, page_url
 		FROM recordings
 		WHERE %s
@@ -203,7 +205,7 @@ func scanRecording(row *sql.Row) (Recording, error) {
 	var isBot int
 	err := row.Scan(
 		&r.ID, &r.ProjectID, &r.SessionID, &r.Environment,
-		&r.ChunkCount, &r.DurationMs, &r.StartedAt, &endedAt, &r.CreatedAt,
+		&r.FirstChunkIndex, &r.ChunkCount, &r.DurationMs, &r.StartedAt, &endedAt, &r.CreatedAt,
 		&r.DeviceType, &r.UserAgent, &isBot, &r.PageURL,
 	)
 	if endedAt.Valid {
@@ -219,7 +221,7 @@ func scanRecordingRow(scan func(...any) error) (Recording, error) {
 	var isBot int
 	err := scan(
 		&r.ID, &r.ProjectID, &r.SessionID, &r.Environment,
-		&r.ChunkCount, &r.DurationMs, &r.StartedAt, &endedAt, &r.CreatedAt,
+		&r.FirstChunkIndex, &r.ChunkCount, &r.DurationMs, &r.StartedAt, &endedAt, &r.CreatedAt,
 		&r.DeviceType, &r.UserAgent, &isBot, &r.PageURL,
 	)
 	if endedAt.Valid {

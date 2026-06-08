@@ -12,17 +12,18 @@ import (
 
 func makeRecording(projectID, sessionID string, start time.Time) repository.Recording {
 	return repository.Recording{
-		ID:          "placeholder", // caller must override
-		ProjectID:   projectID,
-		SessionID:   sessionID,
-		Environment: "testing",
-		ChunkCount:  1,
-		DurationMs:  5000,
-		StartedAt:   start,
-		DeviceType:  "desktop",
-		UserAgent:   "Mozilla/5.0",
-		IsBot:       false,
-		PageURL:     "https://example.com/",
+		ID:              "placeholder", // caller must override
+		ProjectID:       projectID,
+		SessionID:       sessionID,
+		Environment:     "testing",
+		FirstChunkIndex: 0,
+		ChunkCount:      1,
+		DurationMs:      5000,
+		StartedAt:       start,
+		DeviceType:      "desktop",
+		UserAgent:       "Mozilla/5.0",
+		IsBot:           false,
+		PageURL:         "https://example.com/",
 	}
 }
 
@@ -61,17 +62,42 @@ func TestRecording_UpsertUpdatesProgress(t *testing.T) {
 	rec.ID = "rec-upd"
 	require.NoError(t, s.UpsertRecording(ctx, rec))
 
-	// Second upsert with different chunk_count/duration — metadata stays the same.
-	rec.ChunkCount = 5
+	// Each successful ingest increments chunk_count by 1; metadata stays the same.
 	rec.DurationMs = 50000
 	rec.DeviceType = "mobile" // should NOT be updated
+	require.NoError(t, s.UpsertRecording(ctx, rec))
 	require.NoError(t, s.UpsertRecording(ctx, rec))
 
 	got, err := s.GetRecording(ctx, "rec-upd")
 	require.NoError(t, err)
-	assert.Equal(t, 5, got.ChunkCount)
+	assert.Equal(t, 3, got.ChunkCount) // 1 insert + 2 upserts
 	assert.Equal(t, int64(50000), got.DurationMs)
 	assert.Equal(t, "desktop", got.DeviceType) // unchanged from first insert
+}
+
+func TestRecording_FirstChunkIndexPreserved(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	p, err := s.CreateProject(ctx, "First Chunk", "first-chunk")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	// Simulates chunk 0 being lost — first successful ingest is chunk index 1.
+	rec := makeRecording(p.ID, "sess-fc", now)
+	rec.ID = "rec-fc"
+	rec.FirstChunkIndex = 1
+	require.NoError(t, s.UpsertRecording(ctx, rec))
+
+	// Second chunk (index 2) arrives — first_chunk_index must NOT change.
+	rec.FirstChunkIndex = 2
+	rec.DurationMs = 20000
+	require.NoError(t, s.UpsertRecording(ctx, rec))
+
+	got, err := s.GetRecording(ctx, "rec-fc")
+	require.NoError(t, err)
+	assert.Equal(t, 1, got.FirstChunkIndex) // preserved from first insert
+	assert.Equal(t, 2, got.ChunkCount)
 }
 
 func TestRecording_ListRecordings(t *testing.T) {
