@@ -494,15 +494,15 @@ export class FunnelBarnClient {
 
   private startRecording(chunkMs?: number): void {
     if (this.rrwebStop) return; // already running
-    this.recordingId = this.generateSessionID();
-    this.recordingStartedAt = new Date().toISOString();
-    this.recordingStartMs = Date.now();
-    // Reset per-recording state. A new recording always starts at chunk 0
-    // with an empty buffer so the rrweb full snapshot (the first emitted
-    // event) lands in chunk_index=0. Without this, a stop→start cycle would
-    // leave recordingChunkIndex at its previous value and the new recording
-    // would lose its snapshot at the server (first_chunk_index >= 1).
-    this.recordingChunkIndex = 0;
+    // Resume an in-progress recording from a previous page in this tab, or
+    // start fresh. rrweb always emits a full snapshot at record() time, so
+    // the new page's snapshot lands in the next chunk of the same recording.
+    if (!this.resumeRecordingState()) {
+      this.recordingId = this.generateSessionID();
+      this.recordingStartedAt = new Date().toISOString();
+      this.recordingStartMs = Date.now();
+      this.recordingChunkIndex = 0;
+    }
     this.rrwebBuffer = [];
     this.rrwebStop = record({
       emit: (event) => { this.rrwebBuffer.push(event); },
@@ -511,7 +511,50 @@ export class FunnelBarnClient {
     });
     const interval = chunkMs ?? 10_000;
     this.recordingTimer = setInterval(() => { this.flushRecordingChunk().catch(() => {}); }, interval);
-    window.addEventListener('beforeunload', () => { this.flushRecordingChunk(true).catch(() => {}); });
+    window.addEventListener('beforeunload', () => {
+      // Persist state so the next page can continue this recording.
+      this.saveRecordingState();
+      this.flushRecordingChunk(true).catch(() => {});
+    });
+  }
+
+  // Returns true and restores recording state if a valid in-progress recording
+  // exists in sessionStorage (cleared automatically when the tab closes).
+  private resumeRecordingState(): boolean {
+    try {
+      const raw = sessionStorage.getItem('funnelbarn_rec');
+      if (!raw) return false;
+      const state = JSON.parse(raw) as {
+        recordingId: string;
+        chunkIndex: number;
+        startedAt: string;
+        elapsedMs: number;
+      };
+      if (state.elapsedMs > 30 * 60 * 1000) {
+        sessionStorage.removeItem('funnelbarn_rec');
+        return false;
+      }
+      this.recordingId = state.recordingId;
+      this.recordingChunkIndex = state.chunkIndex;
+      this.recordingStartedAt = state.startedAt;
+      this.recordingStartMs = Date.now() - state.elapsedMs;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private saveRecordingState(): void {
+    try {
+      sessionStorage.setItem('funnelbarn_rec', JSON.stringify({
+        recordingId: this.recordingId,
+        chunkIndex: this.recordingChunkIndex,
+        startedAt: this.recordingStartedAt,
+        elapsedMs: Date.now() - this.recordingStartMs,
+      }));
+    } catch {
+      // sessionStorage unavailable (e.g. some private-browsing configurations)
+    }
   }
 
   private stopRecording(): void {
@@ -525,6 +568,7 @@ export class FunnelBarnClient {
     }
     this.rrwebBuffer = [];
     this.recordingChunkIndex = 0;
+    try { sessionStorage.removeItem('funnelbarn_rec'); } catch {}
   }
 
   private async applyServerRecordingConfig(chunkMs?: number): Promise<void> {

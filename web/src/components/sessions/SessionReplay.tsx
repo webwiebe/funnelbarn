@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Flag } from 'lucide-react'
+import { X, Flag, Play, Pause } from 'lucide-react'
 import { Replayer } from 'rrweb'
 import 'rrweb/dist/style.css'
 import { api, type Recording, type FlagEvaluationEntry } from '../../lib/api'
@@ -24,10 +24,14 @@ function formatTime(iso: string): string {
 export function SessionReplay({ projectId, recording, onClose }: Props) {
   const playerRef = useRef<HTMLDivElement>(null)
   const replayerRef = useRef<Replayer | null>(null)
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval>>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [flags, setFlags] = useState<FlagEvaluationEntry[]>([])
   const [progress, setProgress] = useState(0)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [currentMs, setCurrentMs] = useState(0)
+  const [totalMs, setTotalMs] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -82,6 +86,16 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
         })
         replayerRef.current = replayer
 
+        const meta = replayer.getMetaData()
+        if (!cancelled) setTotalMs(meta.totalTime)
+
+        replayer.on('finish', () => {
+          if (cancelled) return
+          clearInterval(progressIntervalRef.current)
+          setIsPlaying(false)
+          setCurrentMs(meta.totalTime)
+        })
+
         function applyScale() {
           const container = playerRef.current
           if (!container) return
@@ -104,7 +118,13 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
         ro.observe(playerRef.current)
 
         replayer.play()
-        setLoading(false)
+        if (!cancelled) {
+          setIsPlaying(true)
+          setLoading(false)
+          progressIntervalRef.current = setInterval(() => {
+            setCurrentMs(replayerRef.current?.getCurrentTime() ?? 0)
+          }, 200)
+        }
       } catch {
         if (!cancelled) setError('Failed to load recording')
       }
@@ -120,8 +140,37 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
       cancelled = true
       replayerRef.current?.pause()
       ro?.disconnect()
+      clearInterval(progressIntervalRef.current)
     }
   }, [projectId, recording])
+
+  function togglePlayPause() {
+    const r = replayerRef.current
+    if (!r) return
+    if (isPlaying) {
+      r.pause()
+      setIsPlaying(false)
+      clearInterval(progressIntervalRef.current)
+    } else {
+      r.play(currentMs)
+      setIsPlaying(true)
+      progressIntervalRef.current = setInterval(() => {
+        setCurrentMs(replayerRef.current?.getCurrentTime() ?? 0)
+      }, 200)
+    }
+  }
+
+  function handleSeek(e: React.ChangeEvent<HTMLInputElement>) {
+    const ms = Number(e.target.value)
+    setCurrentMs(ms)
+    const r = replayerRef.current
+    if (!r) return
+    if (isPlaying) {
+      r.play(ms)
+    } else {
+      r.pause(ms)
+    }
+  }
 
   return (
     <div
@@ -168,30 +217,63 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
 
         {/* Body */}
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
-          {/* Player area */}
-          <div style={{ flex: 1, position: 'relative', background: '#000', overflow: 'hidden' }}>
-            {(loading || error) && (
-              <div style={{
-                position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center', gap: 16, color: C.muted,
-                zIndex: 1,
-              }}>
-                {!error && (
-                  <div style={{
-                    width: 200, height: 4, background: C.surface, borderRadius: 2, overflow: 'hidden',
-                  }}>
+          {/* Player column */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            {/* Player area */}
+            <div style={{ flex: 1, position: 'relative', background: '#000', overflow: 'hidden' }}>
+              {(loading || error) && (
+                <div style={{
+                  position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center', gap: 16, color: C.muted,
+                  zIndex: 1,
+                }}>
+                  {!error && (
                     <div style={{
-                      height: '100%', background: C.amber, borderRadius: 2,
-                      width: `${progress}%`, transition: 'width 0.2s',
-                    }} />
-                  </div>
-                )}
-                <span style={{ fontSize: 13, maxWidth: 320, textAlign: 'center' }}>
-                  {error ?? `Loading chunks… ${progress}%`}
+                      width: 200, height: 4, background: C.surface, borderRadius: 2, overflow: 'hidden',
+                    }}>
+                      <div style={{
+                        height: '100%', background: C.amber, borderRadius: 2,
+                        width: `${progress}%`, transition: 'width 0.2s',
+                      }} />
+                    </div>
+                  )}
+                  <span style={{ fontSize: 13, maxWidth: 320, textAlign: 'center' }}>
+                    {error ?? `Loading chunks… ${progress}%`}
+                  </span>
+                </div>
+              )}
+              <div ref={playerRef} style={{ width: '100%', height: '100%', position: 'relative' }} />
+            </div>
+
+            {/* Playback controls */}
+            {!loading && !error && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '0.4rem 1rem', borderTop: `1px solid ${C.border}`,
+                background: C.surface, flexShrink: 0,
+              }}>
+                <button
+                  onClick={togglePlayPause}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: C.text, padding: 4, flexShrink: 0, display: 'flex', alignItems: 'center',
+                  }}
+                >
+                  {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+                </button>
+                <span style={{ fontSize: 12, color: C.muted, flexShrink: 0, minWidth: 90 }}>
+                  {formatDuration(currentMs)} / {formatDuration(totalMs)}
                 </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={totalMs || 1}
+                  value={currentMs}
+                  onChange={handleSeek}
+                  style={{ flex: 1, cursor: 'pointer', accentColor: C.amber }}
+                />
               </div>
             )}
-            <div ref={playerRef} style={{ width: '100%', height: '100%', position: 'relative' }} />
           </div>
 
           {/* Sidebar — flag evaluations */}
