@@ -511,7 +511,7 @@ export class FunnelBarnClient {
     });
     const interval = chunkMs ?? 10_000;
     this.recordingTimer = setInterval(() => { this.flushRecordingChunk().catch(() => {}); }, interval);
-    window.addEventListener('beforeunload', () => { this.flushRecordingChunk().catch(() => {}); });
+    window.addEventListener('beforeunload', () => { this.flushRecordingChunk(true).catch(() => {}); });
   }
 
   private stopRecording(): void {
@@ -590,14 +590,14 @@ export class FunnelBarnClient {
     return true; // default: capture
   }
 
-  private async flushRecordingChunk(): Promise<void> {
+  private async flushRecordingChunk(useKeepalive = false): Promise<void> {
     if (!this.shouldRecordCurrentPage()) {
-      // Discard buffered events for this page — don't send them.
       this.rrwebBuffer = [];
       return;
     }
     const events = this.rrwebBuffer.splice(0);
     if (!events.length) return;
+    const chunkIndex = this.recordingChunkIndex++;
     try {
       await fetch(`${this.endpoint}/api/v1/recordings/chunk`, {
         method: 'POST',
@@ -608,16 +608,22 @@ export class FunnelBarnClient {
         body: JSON.stringify({
           recording_id: this.recordingId,
           session_id: this.getOrCreateSessionID(),
-          chunk_index: this.recordingChunkIndex++,
+          chunk_index: chunkIndex,
           events,
           started_at: this.recordingStartedAt,
           duration_ms: Date.now() - this.recordingStartMs,
           page_url: typeof window !== 'undefined' ? window.location.href : undefined,
         }),
-        keepalive: true,
+        // keepalive has a 64 KB body limit per the Fetch spec — rrweb full
+        // snapshots are 1-5 MB so we only use it for the final unload flush
+        // where the body is a small incremental tail.
+        keepalive: useKeepalive,
       });
     } catch {
-      // best-effort
+      // On failure, push events back to the front so the next flush retries
+      // them — most importantly this preserves the full snapshot (chunk 0).
+      this.rrwebBuffer.unshift(...events);
+      this.recordingChunkIndex--;
     }
   }
 
