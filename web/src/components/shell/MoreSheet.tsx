@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Settings, LogOut, User, ExternalLink } from 'lucide-react'
+import { Settings, LogOut, User, ExternalLink, Flag, Radio, Lightbulb } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { ProjectPicker } from '../ui/ProjectPicker'
 import { type Project } from '../../lib/api'
@@ -105,6 +105,33 @@ export function MoreSheet({ projectId, projects, iambarnProfileURL, onClose, onL
             />
           </div>
         )}
+
+        {/* Overflow nav links */}
+        {[
+          { to: projectId ? `/flags/${projectId}` : '/flags', label: 'Flags', icon: Flag },
+          { to: projectId ? `/live/${projectId}` : '/live', label: 'Live', icon: Radio },
+          { to: projectId ? `/insights/${projectId}` : '/insights', label: 'Insights', icon: Lightbulb },
+        ].map(({ to, label, icon: Icon }) => (
+          <Link
+            key={to}
+            to={to}
+            onClick={onClose}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '0.75rem 0',
+              textDecoration: 'none',
+              color: C.text,
+              fontSize: 15,
+              fontWeight: 500,
+              borderBottom: `1px solid ${C.border}`,
+            }}
+          >
+            <Icon size={18} color={C.muted} />
+            {label}
+          </Link>
+        ))}
 
         {/* Settings link */}
         <Link
