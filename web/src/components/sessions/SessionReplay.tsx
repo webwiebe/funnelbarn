@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { X, Flag } from 'lucide-react'
-import { Replayer } from 'rrweb'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { X, Flag, Play, Pause, SkipBack, SkipForward } from 'lucide-react'
+import { Replayer, ReplayerEvents } from 'rrweb'
 import 'rrweb/dist/style.css'
 import { api, type Recording, type FlagEvaluationEntry } from '../../lib/api'
 import { C } from '../../lib/theme'
@@ -21,6 +21,14 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleString()
 }
 
+// m:ss clock for the scrubber (distinct from formatDuration's "1m 5s" style).
+function formatClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 export function SessionReplay({ projectId, recording, onClose }: Props) {
   const playerRef = useRef<HTMLDivElement>(null)
   const replayerRef = useRef<Replayer | null>(null)
@@ -28,6 +36,10 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [flags, setFlags] = useState<FlagEvaluationEntry[]>([])
   const [progress, setProgress] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const [currentMs, setCurrentMs] = useState(0)
+  const [totalMs, setTotalMs] = useState(0)
+  const [speed, setSpeed] = useState(1)
 
   useEffect(() => {
     let cancelled = false
@@ -108,7 +120,15 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
         ro = new ResizeObserver(applyScale)
         ro.observe(playerRef.current)
 
+        const meta = replayer.getMetaData()
+        setTotalMs(meta.totalTime)
+        replayer.on(ReplayerEvents.Finish, () => {
+          setPlaying(false)
+          setCurrentMs(meta.totalTime)
+        })
+
         replayer.play()
+        setPlaying(true)
         setLoading(false)
       } catch {
         if (!cancelled) setError('Failed to load recording')
@@ -127,6 +147,51 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
       ro?.disconnect()
     }
   }, [projectId, recording])
+
+  // Advance the scrubber while playing. 100ms is smooth enough for a progress
+  // bar without re-rendering the modal on every animation frame.
+  useEffect(() => {
+    if (!playing) return
+    const id = setInterval(() => {
+      const r = replayerRef.current
+      if (r) setCurrentMs(Math.min(r.getCurrentTime(), totalMs))
+    }, 100)
+    return () => clearInterval(id)
+  }, [playing, totalMs])
+
+  function seek(ms: number) {
+    const r = replayerRef.current
+    if (!r) return
+    const clamped = Math.max(0, Math.min(ms, totalMs))
+    // play(offset) seeks-and-plays; pause(offset) seeks-and-holds the frame.
+    if (playing) r.play(clamped)
+    else r.pause(clamped)
+    setCurrentMs(clamped)
+  }
+
+  function togglePlay() {
+    const r = replayerRef.current
+    if (!r) return
+    if (playing) {
+      r.pause()
+      setPlaying(false)
+    } else {
+      // Restart from the beginning if we're sitting at the end.
+      const from = currentMs >= totalMs ? 0 : currentMs
+      r.play(from)
+      setPlaying(true)
+    }
+  }
+
+  function changeSpeed(s: number) {
+    replayerRef.current?.setConfig({ speed: s })
+    setSpeed(s)
+  }
+
+  const iconBtn: CSSProperties = {
+    background: 'none', border: 'none', cursor: 'pointer', color: C.text,
+    padding: 4, display: 'flex', alignItems: 'center', borderRadius: 6,
+  }
 
   return (
     <div
@@ -173,30 +238,73 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
 
         {/* Body */}
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
-          {/* Player area */}
-          <div style={{ flex: 1, position: 'relative', background: '#000', overflow: 'hidden' }}>
-            {(loading || error) && (
-              <div style={{
-                position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center', gap: 16, color: C.muted,
-                zIndex: 1,
-              }}>
-                {!error && (
-                  <div style={{
-                    width: 200, height: 4, background: C.surface, borderRadius: 2, overflow: 'hidden',
-                  }}>
+          {/* Player column: viewport + controls */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            <div style={{ flex: 1, position: 'relative', background: '#000', overflow: 'hidden' }}>
+              {(loading || error) && (
+                <div style={{
+                  position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center', gap: 16, color: C.muted,
+                  zIndex: 1,
+                }}>
+                  {!error && (
                     <div style={{
-                      height: '100%', background: C.amber, borderRadius: 2,
-                      width: `${progress}%`, transition: 'width 0.2s',
-                    }} />
-                  </div>
-                )}
-                <span style={{ fontSize: 13, maxWidth: 320, textAlign: 'center' }}>
-                  {error ?? `Loading chunks… ${progress}%`}
+                      width: 200, height: 4, background: C.surface, borderRadius: 2, overflow: 'hidden',
+                    }}>
+                      <div style={{
+                        height: '100%', background: C.amber, borderRadius: 2,
+                        width: `${progress}%`, transition: 'width 0.2s',
+                      }} />
+                    </div>
+                  )}
+                  <span style={{ fontSize: 13, maxWidth: 320, textAlign: 'center' }}>
+                    {error ?? `Loading chunks… ${progress}%`}
+                  </span>
+                </div>
+              )}
+              <div ref={playerRef} style={{ width: '100%', height: '100%', position: 'relative' }} />
+            </div>
+
+            {/* Playback controls */}
+            {!loading && !error && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '0.5rem 1rem', borderTop: `1px solid ${C.border}`,
+                background: C.surface, flexShrink: 0,
+              }}>
+                <button onClick={() => seek(currentMs - 10000)} title="Back 10s" style={iconBtn}>
+                  <SkipBack size={16} />
+                </button>
+                <button onClick={togglePlay} title={playing ? 'Pause' : 'Play'} style={iconBtn}>
+                  {playing ? <Pause size={18} /> : <Play size={18} />}
+                </button>
+                <button onClick={() => seek(currentMs + 10000)} title="Forward 10s" style={iconBtn}>
+                  <SkipForward size={16} />
+                </button>
+                <span style={{
+                  fontSize: 12, color: C.muted, fontVariantNumeric: 'tabular-nums',
+                  minWidth: 92, textAlign: 'center',
+                }}>
+                  {formatClock(currentMs)} / {formatClock(totalMs)}
                 </span>
+                <input
+                  type="range" min={0} max={totalMs || 0} value={Math.min(currentMs, totalMs || 0)}
+                  onChange={(e) => seek(Number(e.target.value))}
+                  style={{ flex: 1, accentColor: C.amber, cursor: 'pointer' }}
+                />
+                <select
+                  value={speed}
+                  onChange={(e) => changeSpeed(Number(e.target.value))}
+                  title="Playback speed"
+                  style={{
+                    background: C.bg, color: C.text, border: `1px solid ${C.border}`,
+                    borderRadius: 6, fontSize: 12, padding: '3px 6px', cursor: 'pointer',
+                  }}
+                >
+                  {[0.5, 1, 2, 4, 8].map((s) => <option key={s} value={s}>{s}x</option>)}
+                </select>
               </div>
             )}
-            <div ref={playerRef} style={{ width: '100%', height: '100%', position: 'relative' }} />
           </div>
 
           {/* Sidebar — flag evaluations */}
