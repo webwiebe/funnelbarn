@@ -256,7 +256,11 @@ func requestLogger(next http.Handler) http.Handler {
 		}
 
 		elapsed := time.Since(start)
-		slog.InfoContext(ctx, "request",
+		// Level the access log by status so 5xx (and unexpected 4xx like 413/
+		// 429 on hot ingest paths) surface through the slog -> BugBarn pipe.
+		// Without this, the per-handler bug from the recording-chunk 413
+		// incident stays invisible at the middleware layer.
+		attrs := []any{
 			"request_id", requestID,
 			"method", r.Method,
 			"path", r.URL.Path,
@@ -265,7 +269,24 @@ func requestLogger(next http.Handler) http.Handler {
 			"latency_ms", elapsed.Milliseconds(),
 			"remote_addr", r.RemoteAddr,
 			"user_agent", ua,
-		)
+		}
+		switch {
+		case status >= 500:
+			// handled=false: an unexpected server failure that should
+			// trigger an alert. The per-handler slog.Error already gave
+			// the root cause; this is the request envelope.
+			attrs = append(attrs, "handled", false)
+			slog.ErrorContext(ctx, "request failed", attrs...)
+		case status == http.StatusRequestEntityTooLarge,
+			status == http.StatusTooManyRequests:
+			// 413/429 used to silently swallow real failures (the
+			// recording-chunk MaxBytesReader bug). Warn surfaces them
+			// to BugBarn without flooding it on every 4xx.
+			attrs = append(attrs, "handled", true)
+			slog.WarnContext(ctx, "request rejected", attrs...)
+		default:
+			slog.InfoContext(ctx, "request", attrs...)
+		}
 
 		statusStr := strconv.Itoa(status)
 		metrics.HTTPRequests.WithLabelValues(r.Method, r.URL.Path, statusStr).Inc()

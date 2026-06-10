@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -94,7 +95,14 @@ func (svc *RecordingService) PurgeOldRecordings(ctx context.Context, retentionDa
 	for _, rec := range recs {
 		for i := 0; i < rec.ChunkCount; i++ {
 			key := chunkKey(rec.ProjectID, rec.ID, i)
-			_ = svc.storage.Delete(ctx, key)
+			if delErr := svc.storage.Delete(ctx, key); delErr != nil {
+				// Don't abort the purge — a failed chunk delete leaves an
+				// R2 orphan but the row will be removed below. Warn so we
+				// can correlate orphans with storage outages later.
+				slog.WarnContext(ctx, "recordings: purge chunk delete failed",
+					"err", delErr, "handled", true,
+					"recording_id", rec.ID, "chunk_index", i, "key", key)
+			}
 		}
 		if err := svc.store.DeleteRecording(ctx, rec.ID); err != nil {
 			return fmt.Errorf("recordings: delete row %s: %w", rec.ID, err)

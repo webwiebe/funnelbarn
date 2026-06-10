@@ -223,7 +223,13 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 	var segRules []repository.SegmentRule
 	if segID := r.URL.Query().Get("segment_id"); segID != "" && s.segments != nil {
 		stored, err := s.segments.GetSegment(r.Context(), segID)
-		if err == nil && stored.ProjectID == projectID {
+		if err != nil {
+			// Non-fatal: analyse without the segment filter. Warn so a
+			// broken UI dropdown (e.g. stale segment_id) is visible.
+			slog.WarnContext(r.Context(), "funnel: segment lookup failed",
+				"err", err, "handled", true,
+				"segment_id", segID, "project_id", projectID)
+		} else if stored.ProjectID == projectID {
 			segRules = stored.Rules
 		}
 	}
@@ -236,6 +242,7 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 
 	results, err := s.funnels.AnalyzeFunnel(ctx, funnel, from, to, seg, segRules...)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleFunnelAnalysis")
 		return
 	}

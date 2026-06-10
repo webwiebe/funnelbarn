@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -155,14 +156,20 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 			attribute.String("flag.reason", "TARGETING_MATCH"),
 			attribute.String("flag.rule_name", ruleName),
 		)
-		_ = svc.store.RecordEvaluation(ctx, repository.FlagEvaluation{
+		if recErr := svc.store.RecordEvaluation(ctx, repository.FlagEvaluation{
 			FlagID:      flag.ID,
 			ProjectID:   flag.ProjectID,
 			Variant:     variant,
 			ContextHash: hashContext(targetingKey),
 			SessionID:   sessionID,
 			ContextKeys: ctxKeys,
-		})
+		}); recErr != nil {
+			// Best-effort: an evaluation already happened, we just lost the
+			// analytics row. Warn so silent storage failures surface.
+			slog.WarnContext(ctx, "flag: record evaluation (targeting)",
+				"err", recErr, "handled", true,
+				"flag_id", flag.ID, "project_id", flag.ProjectID)
+		}
 		return FlagEvalResult{
 			Value:        val,
 			Variant:      variant,
@@ -180,14 +187,18 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 		attribute.String("flag.reason", "SPLIT"),
 	)
 
-	_ = svc.store.RecordEvaluation(ctx, repository.FlagEvaluation{
+	if recErr := svc.store.RecordEvaluation(ctx, repository.FlagEvaluation{
 		FlagID:      flag.ID,
 		ProjectID:   flag.ProjectID,
 		Variant:     variant,
 		ContextHash: hashContext(targetingKey),
 		SessionID:   sessionID,
 		ContextKeys: ctxKeys,
-	})
+	}); recErr != nil {
+		slog.WarnContext(ctx, "flag: record evaluation (split)",
+			"err", recErr, "handled", true,
+			"flag_id", flag.ID, "project_id", flag.ProjectID)
+	}
 
 	return FlagEvalResult{
 		Value:   val,
@@ -214,6 +225,7 @@ func (svc *FlagService) AnalyzeFlag(ctx context.Context, flag repository.Feature
 	if flag.ConversionEvent != "" {
 		conversions, err = svc.store.CountConversionsByVariant(ctx, flag.ID, flag.ConversionEvent, flag.ProjectID, from, to)
 		if err != nil {
+			tracing.RecordError(span, err)
 			return nil, fmt.Errorf("count conversions: %w", err)
 		}
 	}

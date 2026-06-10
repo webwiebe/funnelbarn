@@ -105,7 +105,14 @@ func Middleware(next http.Handler) http.Handler {
 		}
 		span.SetAttributes(semconv.HTTPStatusCode(rw.status))
 		if rw.status >= 500 {
-			span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", rw.status))
+			// Record an error event in addition to the status so SpanBarn
+			// surfaces it as an exception (handled=false 5xx) rather than
+			// a silently-error-statused span. Per-handler code is expected
+			// to call span.RecordError on the underlying err; this is the
+			// envelope-level fallback for handlers that don't.
+			err := fmt.Errorf("HTTP %d", rw.status)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 		}
 	})
 }

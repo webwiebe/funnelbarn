@@ -112,6 +112,13 @@ func (h *Handler) APIKeyProjectScope(r *http.Request) (projectID string, scope s
 // ServeHTTP handles POST /api/v1/events.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.auth == nil || h.spool == nil {
+		// Service mis-configuration: a 503 here means the process is up but
+		// ingest is not wired correctly. Surface to BugBarn.
+		slog.ErrorContext(r.Context(), "ingest unavailable: handler not initialised",
+			"handled", false,
+			"has_auth", h != nil && h.auth != nil,
+			"has_spool", h != nil && h.spool != nil,
+		)
 		jsonErr(w, "ingest unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -126,6 +133,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	projectID, _, ok := h.APIKeyProjectScope(r)
 	if !ok {
+		// Routine condition (rotated keys, misconfigured clients) — Warn so
+		// a sudden spike is visible in BugBarn without flooding it.
+		slog.WarnContext(r.Context(), "ingest: unauthorized",
+			"user_agent", r.Header.Get("User-Agent"),
+		)
 		jsonErr(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -136,9 +148,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
+			// 413s used to be silent on the recording-chunk endpoint and
+			// caused weeks of lost data. Surface them everywhere.
+			slog.ErrorContext(r.Context(), "ingest body too large",
+				"err", err, "handled", false,
+				"project_id", projectID,
+				"content_length", r.ContentLength,
+				"limit_bytes", h.maxBodyBytes,
+				"user_agent", r.Header.Get("User-Agent"),
+			)
 			jsonErr(w, "request body too large", http.StatusRequestEntityTooLarge)
 			return
 		}
+		slog.WarnContext(r.Context(), "ingest: unable to read body",
+			"err", err, "handled", true,
+			"project_id", projectID,
+		)
 		jsonErr(w, "unable to read request body", http.StatusBadRequest)
 		return
 	}
@@ -172,6 +197,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case h.queue <- record:
 		metrics.EventsIngested.Inc()
 	default:
+		// Queue saturation is a real operational signal — events get dropped
+		// silently on the client side after a 429, so make it visible.
+		queueErr := errors.New("ingest in-memory queue is full")
+		tracing.RecordError(span, queueErr)
+		slog.ErrorContext(r.Context(), "ingest queue full, dropping event",
+			"err", queueErr, "handled", false,
+			"project_id", projectID,
+			"ingest_id", ingestID,
+			"queue_cap", cap(h.queue),
+		)
 		w.Header().Set("Retry-After", "1")
 		jsonErr(w, "ingest queue full", http.StatusTooManyRequests)
 		return
@@ -223,6 +258,10 @@ func extractClientIP(r *http.Request) string {
 func generateIngestID() string {
 	var raw [12]byte
 	if _, err := rand.Read(raw[:]); err != nil {
+		// crypto/rand failing is a system-level problem (no entropy source).
+		// Log it so we know — the timestamp fallback keeps ingest working.
+		slog.Error("crypto/rand failed; using timestamp fallback for ingest id",
+			"err", err, "handled", true)
 		return time.Now().UTC().Format("20060102T150405.000000000Z") + "-fallback"
 	}
 	return hex.EncodeToString(raw[:])

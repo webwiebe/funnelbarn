@@ -268,6 +268,21 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 		if strings.Contains(err.Error(), "flag not found") {
 			errorCode = "FLAG_NOT_FOUND"
 		}
+		// FLAG_NOT_FOUND is normal client behaviour; everything else (DB
+		// failure, JSON corruption) is a real server problem that was
+		// previously hidden behind a 200 OK + reason=ERROR. Surface those.
+		if errorCode == "FLAG_NOT_FOUND" {
+			slog.DebugContext(r.Context(), "flag evaluate: not found",
+				"project_id", projectID, "flag_key", body.FlagKey)
+		} else {
+			slog.ErrorContext(r.Context(), "flag evaluate failed",
+				"err", err, "handled", false,
+				"project_id", projectID,
+				"flag_key", body.FlagKey,
+				"error_code", errorCode,
+				"request_id", RequestIDFromContext(r.Context()),
+			)
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"value":      body.DefaultValue,
 			"variant":    "",
