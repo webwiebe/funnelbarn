@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -10,6 +11,14 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
+
+// maxRecordingChunkBytes caps the size of a single recording-chunk POST body.
+// The first chunk of any rrweb recording contains a full DOM snapshot, which is
+// commonly 1-5 MiB and can exceed that on content-heavy pages. The previous
+// default cap of 256 KiB silently truncated the snapshot, causing the server to
+// reject chunk 0 with a JSON parse error and leaving every recording with
+// first_chunk_index >= 1 (snapshot lost forever).
+const maxRecordingChunkBytes = 10 << 20 // 10 MiB
 
 func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Request) {
 	if s.recordings == nil {
@@ -29,8 +38,14 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxRecordingChunkBytes)
 	var chunk service.RecordingChunk
 	if err := readJSON(r, &chunk); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			jsonError(w, "recording chunk too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		jsonError(w, "invalid json", http.StatusBadRequest)
 		return
 	}
