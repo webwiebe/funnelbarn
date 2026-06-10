@@ -28,6 +28,12 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 
 	projectID, _, ok := s.ingest.APIKeyProjectScope(r)
 	if !ok {
+		// Warn rather than Error: invalid API keys happen routinely (rotated
+		// keys, misconfigured clients) but a sudden surge points at trouble.
+		slog.WarnContext(r.Context(), "recording chunk: unauthorized",
+			"user_agent", r.Header.Get("User-Agent"),
+			"request_id", RequestIDFromContext(r.Context()),
+		)
 		jsonError(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -43,9 +49,28 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 	if err := readJSON(r, &chunk); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
+			// Surface 413s to BugBarn — this used to be the silent failure
+			// mode where the SDK retried/abandoned and we never knew.
+			slog.ErrorContext(r.Context(), "recording chunk rejected: body too large",
+				"err", err, "handled", false,
+				"project_id", projectID,
+				"content_length", r.ContentLength,
+				"limit_bytes", int64(maxRecordingChunkBytes),
+				"user_agent", r.Header.Get("User-Agent"),
+				"request_id", RequestIDFromContext(r.Context()),
+			)
 			jsonError(w, "recording chunk too large", http.StatusRequestEntityTooLarge)
 			return
 		}
+		// JSON parse errors on this endpoint are unusual (the SDK is the only
+		// producer); log them so we can spot SDK regressions.
+		slog.WarnContext(r.Context(), "recording chunk rejected: invalid json",
+			"err", err, "handled", true,
+			"project_id", projectID,
+			"content_length", r.ContentLength,
+			"user_agent", r.Header.Get("User-Agent"),
+			"request_id", RequestIDFromContext(r.Context()),
+		)
 		jsonError(w, "invalid json", http.StatusBadRequest)
 		return
 	}

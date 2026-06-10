@@ -50,27 +50,35 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
+	// recordOnErr surfaces an error onto the span and falls through to the
+	// standard service-error mapper. Without span.RecordError, trace search
+	// in SpanBarn lists these spans as "ok" even though the request 5xx'd.
+	recordOnErr := func(err error, op string) bool {
+		if err == nil {
+			return false
+		}
+		tracing.RecordError(span, err)
+		mapServiceError(w, err, op)
+		return true
+	}
+
 	totalEvents, err := s.events.CountEvents(ctx, projectID, from, to, env)
-	if err != nil {
-		mapServiceError(w, err, "handleDashboard.countEvents")
+	if recordOnErr(err, "handleDashboard.countEvents") {
 		return
 	}
 
 	uniqueSessions, err := s.events.UniqueSessionCount(ctx, projectID, from, to, env)
-	if err != nil {
-		mapServiceError(w, err, "handleDashboard.uniqueSessionCount")
+	if recordOnErr(err, "handleDashboard.uniqueSessionCount") {
 		return
 	}
 
 	topPages, err := s.events.TopPages(ctx, projectID, from, to, 10, env)
-	if err != nil {
-		mapServiceError(w, err, "handleDashboard.topPages")
+	if recordOnErr(err, "handleDashboard.topPages") {
 		return
 	}
 
 	topReferrers, err := s.events.TopReferrers(ctx, projectID, from, to, 10, env)
-	if err != nil {
-		mapServiceError(w, err, "handleDashboard.topReferrers")
+	if recordOnErr(err, "handleDashboard.topReferrers") {
 		return
 	}
 
@@ -80,50 +88,42 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	} else {
 		timeSeries, err = s.events.DailyEventCounts(ctx, projectID, from, to, env)
 	}
-	if err != nil {
-		mapServiceError(w, err, "handleDashboard.eventCounts")
+	if recordOnErr(err, "handleDashboard.eventCounts") {
 		return
 	}
 
 	sessionTimeSeries, err := s.events.DailyUniqueSessions(ctx, projectID, from, to, env)
-	if err != nil {
-		mapServiceError(w, err, "handleDashboard.dailyUniqueSessions")
+	if recordOnErr(err, "handleDashboard.dailyUniqueSessions") {
 		return
 	}
 
 	topBrowsers, err := s.events.TopBrowsers(ctx, projectID, from, to, 5, env)
-	if err != nil {
-		mapServiceError(w, err, "handleDashboard.topBrowsers")
+	if recordOnErr(err, "handleDashboard.topBrowsers") {
 		return
 	}
 
 	deviceTypes, err := s.events.TopDeviceTypes(ctx, projectID, from, to, env)
-	if err != nil {
-		mapServiceError(w, err, "handleDashboard.topDeviceTypes")
+	if recordOnErr(err, "handleDashboard.topDeviceTypes") {
 		return
 	}
 
 	topEventNames, err := s.events.TopEventNames(ctx, projectID, from, to, 10, env)
-	if err != nil {
-		mapServiceError(w, err, "handleDashboard.topEventNames")
+	if recordOnErr(err, "handleDashboard.topEventNames") {
 		return
 	}
 
 	topUTMSources, err := s.events.TopUTMSources(ctx, projectID, from, to, 5, env)
-	if err != nil {
-		mapServiceError(w, err, "handleDashboard.topUTMSources")
+	if recordOnErr(err, "handleDashboard.topUTMSources") {
 		return
 	}
 
 	bounceRate, err := s.events.BounceRate(ctx, projectID, from, to, env)
-	if err != nil {
-		mapServiceError(w, err, "handleDashboard.bounceRate")
+	if recordOnErr(err, "handleDashboard.bounceRate") {
 		return
 	}
 
 	avgEventsPerSession, err := s.events.AvgEventsPerSession(ctx, projectID, from, to, env)
-	if err != nil {
-		mapServiceError(w, err, "handleDashboard.avgEventsPerSession")
+	if recordOnErr(err, "handleDashboard.avgEventsPerSession") {
 		return
 	}
 

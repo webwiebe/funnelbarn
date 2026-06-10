@@ -79,6 +79,9 @@ func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.R
 		return
 	}
 	if s.sessionManager == nil {
+		// Misconfiguration: OIDC enabled but no session manager wired.
+		slog.ErrorContext(r.Context(), "oidc: session manager not configured",
+			"handled", false, "sub", claims.Subject)
 		jsonError(w, "session unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -88,6 +91,8 @@ func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.R
 	}
 	token, expires, err := s.sessionManager.Create(username)
 	if err != nil {
+		slog.ErrorContext(r.Context(), "oidc: failed to create session",
+			"err", err, "handled", false, "sub", claims.Subject, "username", username)
 		jsonError(w, "session unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -129,6 +134,12 @@ func oidcConfShortLivedCookie(name, value string, secure bool) *http.Cookie {
 
 func oidcConfRandomToken() string {
 	buf := make([]byte, 24)
-	_, _ = rand.Read(buf)
+	if _, err := rand.Read(buf); err != nil {
+		// crypto/rand failure here would mean OIDC state/nonce tokens lose
+		// entropy. Log loudly so it surfaces in BugBarn — the caller still
+		// gets a token, but security relies on this not happening silently.
+		slog.Error("oidc: crypto/rand failed generating state/nonce",
+			"err", err, "handled", false)
+	}
 	return base64.RawURLEncoding.EncodeToString(buf)
 }
