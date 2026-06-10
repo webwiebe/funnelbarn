@@ -149,6 +149,116 @@ func TestRecordingService_IngestChunk_BotDetection(t *testing.T) {
 	assert.Equal(t, "desktop", rec.DeviceType)
 }
 
+func TestRecordingService_IngestChunk_SnapshotDetection(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	storage := newMemStorage()
+
+	projSvc := service.NewProjectService(store)
+	p, err := projSvc.CreateProject(ctx, "Snap", "snap")
+	require.NoError(t, err)
+
+	svc := service.NewRecordingService(store, store, store, storage)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	// Chunk 0 carries only a meta event (type 4) — not yet playable.
+	require.NoError(t, svc.IngestChunk(ctx, service.RecordingChunk{
+		RecordingID: "rec-snap", SessionID: "sess-snap", ChunkIndex: 0,
+		Events:    json.RawMessage(`[{"type":4,"data":{"width":1280,"height":720}}]`),
+		StartedAt: now, DurationMs: 1000, ProjectSlug: "snap", ProjectID: p.ID, UserAgent: "Mozilla/5.0",
+	}))
+	rec, err := store.GetRecording(ctx, "rec-snap")
+	require.NoError(t, err)
+	assert.False(t, rec.HasSnapshot, "meta-only chunk must not mark the recording playable")
+
+	// Chunk 1 carries the full snapshot (type 2) — now playable, and the flag sticks.
+	require.NoError(t, svc.IngestChunk(ctx, service.RecordingChunk{
+		RecordingID: "rec-snap", SessionID: "sess-snap", ChunkIndex: 1,
+		Events:    json.RawMessage(`[{"type":2,"data":{"node":{}}},{"type":3,"data":{}}]`),
+		StartedAt: now, DurationMs: 11000, ProjectSlug: "snap", ProjectID: p.ID, UserAgent: "Mozilla/5.0",
+	}))
+	rec, err = store.GetRecording(ctx, "rec-snap")
+	require.NoError(t, err)
+	assert.True(t, rec.HasSnapshot, "a chunk with a type-2 event must mark the recording playable")
+	assert.Equal(t, 0, rec.FirstChunkIndex)
+	assert.Equal(t, 1, rec.LastChunkIndex)
+}
+
+func TestRecordingService_PurgeBrokenRecordings(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	storage := newMemStorage()
+
+	projSvc := service.NewProjectService(store)
+	p, err := projSvc.CreateProject(ctx, "PurgeBroken", "purgebroken")
+	require.NoError(t, err)
+
+	svc := service.NewRecordingService(store, store, store, storage)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	// Playable recording (has a full snapshot).
+	require.NoError(t, svc.IngestChunk(ctx, service.RecordingChunk{
+		RecordingID: "rec-keep", SessionID: "sess-keep", ChunkIndex: 0,
+		Events:    json.RawMessage(`[{"type":2,"data":{}}]`),
+		StartedAt: now, DurationMs: 1000, ProjectSlug: "purgebroken", ProjectID: p.ID, UserAgent: "Mozilla/5.0",
+	}))
+	// Broken recording (snapshot never arrived).
+	require.NoError(t, svc.IngestChunk(ctx, service.RecordingChunk{
+		RecordingID: "rec-drop", SessionID: "sess-drop", ChunkIndex: 1,
+		Events:    json.RawMessage(`[{"type":3,"data":{}}]`),
+		StartedAt: now, DurationMs: 1000, ProjectSlug: "purgebroken", ProjectID: p.ID, UserAgent: "Mozilla/5.0",
+	}))
+
+	n, err := svc.PurgeBrokenRecordings(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+
+	_, err = store.GetRecording(ctx, "rec-drop")
+	assert.Error(t, err, "broken recording row should be deleted")
+	_, err = store.GetRecording(ctx, "rec-keep")
+	assert.NoError(t, err, "playable recording must be preserved")
+
+	// The broken recording's chunk should be gone from storage; the good one stays.
+	n2, err := svc.PurgeBrokenRecordings(ctx) // idempotent — second run finds nothing
+	require.NoError(t, err)
+	assert.Equal(t, 0, n2)
+	keys := storage.keys()
+	for _, k := range keys {
+		assert.NotContains(t, k, "rec-drop", "broken recording chunks should be purged from storage")
+	}
+}
+
+func TestRecordingService_DeleteRecording_ProjectScope(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	storage := newMemStorage()
+
+	projSvc := service.NewProjectService(store)
+	p, err := projSvc.CreateProject(ctx, "DelScope", "delscope")
+	require.NoError(t, err)
+
+	svc := service.NewRecordingService(store, store, store, storage)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	require.NoError(t, svc.IngestChunk(ctx, service.RecordingChunk{
+		RecordingID: "rec-delscope", SessionID: "sess-delscope", ChunkIndex: 0,
+		Events:    json.RawMessage(`[{"type":2,"data":{}}]`),
+		StartedAt: now, DurationMs: 1000, ProjectSlug: "delscope", ProjectID: p.ID, UserAgent: "Mozilla/5.0",
+	}))
+
+	// Wrong project must not be able to delete.
+	err = svc.DeleteRecording(ctx, "some-other-project", "rec-delscope")
+	require.Error(t, err)
+	_, err = store.GetRecording(ctx, "rec-delscope")
+	require.NoError(t, err, "recording must survive a cross-project delete attempt")
+
+	// Correct project deletes the row and its chunks.
+	require.NoError(t, svc.DeleteRecording(ctx, p.ID, "rec-delscope"))
+	_, err = store.GetRecording(ctx, "rec-delscope")
+	assert.Error(t, err)
+	assert.Empty(t, storage.keys(), "chunk objects should be removed on delete")
+}
+
 func TestRecordingService_GetChunk(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

@@ -37,10 +37,15 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
       if (!playerRef.current) return
       try {
         const allEvents: unknown[] = []
+        // Iterate the explicit stored span [first, last] inclusive. Relying on
+        // first + chunk_count breaks when chunks arrive out of order, retry, or
+        // leave gaps; last_chunk_index is the true upper bound. Fall back to the
+        // count-based span for legacy rows predating last_chunk_index.
         const start = recording.first_chunk_index ?? 0
-        const end = start + recording.chunk_count
-        for (let i = start; i < end; i++) {
-          setProgress(Math.round(((i - start) / recording.chunk_count) * 100))
+        const end = recording.last_chunk_index || (start + recording.chunk_count - 1)
+        const span = Math.max(end - start + 1, 1)
+        for (let i = start; i <= end; i++) {
+          setProgress(Math.round(((i - start) / span) * 100))
           try {
             const chunk = await api.getRecordingChunk(projectId, recording.id, i)
             if (cancelled) return

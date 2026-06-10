@@ -27,16 +27,30 @@ test('sessions list shows recordings', async ({ page }) => {
   await expect(row).toBeVisible({ timeout: 5000 })
 })
 
+test('sessions list exposes replay status and a delete control', async ({ page }) => {
+  await page.goto(`/sessions/${PROJECT_ID}`)
+  await expect(page.getByText(/\d+ shown/)).toBeVisible({ timeout: 15000 })
+
+  // The Replay column header and a per-row delete control must be present.
+  await expect(page.getByText('Replay', { exact: true })).toBeVisible({ timeout: 5000 })
+  await expect(page.locator('button[title="Delete recording"]').first()).toBeVisible({ timeout: 5000 })
+})
+
 test('replay player is scaled and visible — not a black screen', async ({ page }) => {
   await page.goto(`/sessions/${PROJECT_ID}`)
 
   // Wait for recordings to load
   await expect(page.getByText(/\d+ shown/)).toBeVisible({ timeout: 15000 })
 
-  // Click the first recording row
+  // Click the first playable recording row (cursor:pointer is only set when a
+  // snapshot exists, so this also skips unplayable rows).
   const row = page.locator('div[style*="cursor: pointer"]').first()
   await expect(row).toBeVisible({ timeout: 5000 })
   await row.click()
+
+  // The "snapshot missing" failure must never appear for a playable recording —
+  // this guards the chunk-span fix (first..last inclusive).
+  await expect(page.getByText(/initial page snapshot is missing/)).toHaveCount(0)
 
   // The modal + rrweb wrapper must appear
   const wrapper = page.locator('.replayer-wrapper').first()

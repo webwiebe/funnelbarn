@@ -196,6 +196,35 @@ func (s *Server) handleGetRecordingChunk(w http.ResponseWriter, r *http.Request)
 	w.Write(data) //nolint:errcheck
 }
 
+func (s *Server) handleDeleteRecording(w http.ResponseWriter, r *http.Request) {
+	if s.recordings == nil {
+		jsonError(w, "session recording not configured", http.StatusServiceUnavailable)
+		return
+	}
+	projectID := r.PathValue("id")
+	recordingID := r.PathValue("rid")
+	if projectID == "" || recordingID == "" {
+		jsonError(w, "project id and recording id are required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.recordings.DeleteRecording(r.Context(), projectID, recordingID); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			jsonError(w, "not found", http.StatusNotFound)
+			return
+		}
+		slog.ErrorContext(r.Context(), "delete recording failed",
+			"error", err, "handled", false,
+			"recording_id", recordingID,
+			"project_id", projectID,
+			"request_id", RequestIDFromContext(r.Context()),
+		)
+		jsonError(w, "failed to delete recording", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleGetRecordingFlags(w http.ResponseWriter, r *http.Request) {
 	if s.recordings == nil {
 		jsonError(w, "session recording not configured", http.StatusServiceUnavailable)

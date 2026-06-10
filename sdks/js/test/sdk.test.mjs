@@ -233,8 +233,11 @@ describe('FunnelBarnClient', () => {
       client.page(); // second page — signals must NOT be re-sent
       await client.flush();
 
-      const firstBody = JSON.parse(requests[0].options.body);
-      const secondBody = JSON.parse(requests[1].options.body);
+      // With window defined, the constructor also fires a GET to
+      // /recording-config (no body), so select only the event POSTs.
+      const eventReqs = requests.filter((r) => r.url.endsWith('/api/v1/events'));
+      const firstBody = JSON.parse(eventReqs[0].options.body);
+      const secondBody = JSON.parse(eventReqs[1].options.body);
 
       // First page_view should carry session_signals.
       assert.ok(

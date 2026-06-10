@@ -100,6 +100,67 @@ func TestRecording_FirstChunkIndexPreserved(t *testing.T) {
 	assert.Equal(t, 2, got.ChunkCount)
 }
 
+func TestRecording_OutOfOrderChunksKeepSnapshotInSpan(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	p, err := s.CreateProject(ctx, "OOO Chunks", "ooo-chunks")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+
+	// A small later chunk (index 1) wins the upload race and inserts the row.
+	later := makeRecording(p.ID, "sess-ooo", now)
+	later.ID = "rec-ooo"
+	later.FirstChunkIndex = 1
+	later.LastChunkIndex = 1
+	later.HasSnapshot = false
+	require.NoError(t, s.UpsertRecording(ctx, later))
+
+	// The large snapshot chunk (index 0) lands afterwards.
+	snapshot := makeRecording(p.ID, "sess-ooo", now)
+	snapshot.ID = "rec-ooo"
+	snapshot.FirstChunkIndex = 0
+	snapshot.LastChunkIndex = 0
+	snapshot.HasSnapshot = true
+	require.NoError(t, s.UpsertRecording(ctx, snapshot))
+
+	got, err := s.GetRecording(ctx, "rec-ooo")
+	require.NoError(t, err)
+	assert.Equal(t, 0, got.FirstChunkIndex, "first_chunk_index must track the lowest index, not arrival order")
+	assert.Equal(t, 1, got.LastChunkIndex, "last_chunk_index must track the highest index")
+	assert.True(t, got.HasSnapshot, "has_snapshot must stick once the snapshot chunk lands")
+	assert.Equal(t, 2, got.ChunkCount)
+}
+
+func TestRecording_ListBrokenRecordings(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	p, err := s.CreateProject(ctx, "Broken", "broken")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+
+	good := makeRecording(p.ID, "sess-good", now)
+	good.ID = "rec-good"
+	good.HasSnapshot = true
+	require.NoError(t, s.UpsertRecording(ctx, good))
+
+	broken := makeRecording(p.ID, "sess-broken", now)
+	broken.ID = "rec-broken"
+	broken.FirstChunkIndex = 1
+	broken.LastChunkIndex = 1
+	broken.HasSnapshot = false
+	require.NoError(t, s.UpsertRecording(ctx, broken))
+
+	recs, err := s.ListBrokenRecordings(ctx)
+	require.NoError(t, err)
+	require.Len(t, recs, 1)
+	assert.Equal(t, "rec-broken", recs[0].ID)
+	assert.Equal(t, p.ID, recs[0].ProjectID)
+}
+
 func TestRecording_ListRecordings(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)

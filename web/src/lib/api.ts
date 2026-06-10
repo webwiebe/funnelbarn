@@ -361,6 +361,9 @@ export const api = {
   getRecordingChunk: (projectId: string, recordingId: string, index: number) =>
     request<unknown[]>(`/api/v1/projects/${projectId}/recordings/${recordingId}/chunks/${index}`),
 
+  deleteRecording: (projectId: string, recordingId: string) =>
+    request<void>(`/api/v1/projects/${projectId}/recordings/${recordingId}`, { method: 'DELETE' }),
+
   getRecordingFlags: (projectId: string, recordingId: string) =>
     request<{ evaluations: FlagEvaluationEntry[] }>(`/api/v1/projects/${projectId}/recordings/${recordingId}/flags`),
 
@@ -594,7 +597,9 @@ export interface Recording {
   session_id: string
   environment: string
   first_chunk_index: number
+  last_chunk_index: number
   chunk_count: number
+  has_snapshot: boolean
   duration_ms: number
   started_at: string
   ended_at?: string

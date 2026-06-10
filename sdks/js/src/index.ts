@@ -69,6 +69,19 @@ const SESSION_KEY = "funnelbarn_sid";
 const SESSION_EXPIRY_KEY = "funnelbarn_sid_exp";
 const SESSION_TIMEOUT_DEFAULT = 30 * 60 * 1000; // 30 min
 
+// Per-tab recording continuity. Persisted to sessionStorage on unload so a
+// full-page navigation resumes the same recording instead of starting a new
+// one — a visitor's whole journey becomes a single, continuous replay.
+const RECORDING_STATE_KEY = "funnelbarn_rec";
+
+interface RecordingState {
+  id: string;
+  chunkIndex: number;
+  startedAt: string;
+  elapsedMs: number;
+  savedAt: number;
+}
+
 /**
  * FunnelBarnClient is the main analytics client.
  */
@@ -107,6 +120,7 @@ export class FunnelBarnClient {
   private recordingStartedAt = '';
   private recordingStartMs = 0;
   private recordingTimer?: ReturnType<typeof setInterval>;
+  private recordingSnapshotFlushed = false;
   private recordingOptions: FunnelBarnOptions;
   private serverRecordingRules: RecordingRule[] = [];
 
@@ -494,24 +508,103 @@ export class FunnelBarnClient {
 
   private startRecording(chunkMs?: number): void {
     if (this.rrwebStop) return; // already running
-    this.recordingId = this.generateSessionID();
-    this.recordingStartedAt = new Date().toISOString();
-    this.recordingStartMs = Date.now();
-    // Reset per-recording state. A new recording always starts at chunk 0
-    // with an empty buffer so the rrweb full snapshot (the first emitted
-    // event) lands in chunk_index=0. Without this, a stop→start cycle would
-    // leave recordingChunkIndex at its previous value and the new recording
-    // would lose its snapshot at the server (first_chunk_index >= 1).
-    this.recordingChunkIndex = 0;
-    this.rrwebBuffer = [];
+
+    // Resume the same recording across a full-page navigation when a recent
+    // state was persisted on the previous page's unload. This keeps a visitor's
+    // journey as one continuous replay (same recording_id, monotonically
+    // increasing chunk_index). The rrweb full snapshot emitted on the new page
+    // becomes a later chunk of the same recording, which the player re-anchors
+    // on. When there is nothing to resume we start fresh at chunk 0.
+    const resumed = this.resumeRecordingState();
+    if (resumed) {
+      this.recordingId = resumed.id;
+      this.recordingChunkIndex = resumed.chunkIndex;
+      this.recordingStartedAt = resumed.startedAt;
+      this.recordingStartMs = Date.now() - resumed.elapsedMs;
+    } else {
+      this.recordingId = this.generateSessionID();
+      this.recordingStartedAt = new Date().toISOString();
+      this.recordingStartMs = Date.now();
+      // A fresh recording always starts at chunk 0 with an empty buffer so the
+      // rrweb full snapshot (the first emitted event) lands in chunk_index=0.
+      this.recordingChunkIndex = 0;
+      this.rrwebBuffer = [];
+    }
+    this.recordingSnapshotFlushed = false;
+
     this.rrwebStop = record({
-      emit: (event) => { this.rrwebBuffer.push(event); },
+      emit: (event) => {
+        this.rrwebBuffer.push(event);
+        // The full snapshot (type 2) is the one event the player can't replay
+        // without. Flush it immediately via a normal fetch (no keepalive size
+        // cap) so short visits — ones that never reach the periodic tick or
+        // only fire beforeunload — don't silently drop it.
+        if (!this.recordingSnapshotFlushed && (event as { type?: number }).type === 2) {
+          this.recordingSnapshotFlushed = true;
+          this.flushRecordingChunk().catch(() => {});
+        }
+      },
       maskInputOptions: { password: true },
       blockClass: 'fb-block',
     });
     const interval = chunkMs ?? 10_000;
     this.recordingTimer = setInterval(() => { this.flushRecordingChunk().catch(() => {}); }, interval);
-    window.addEventListener('beforeunload', () => { this.flushRecordingChunk(true).catch(() => {}); });
+    window.addEventListener('beforeunload', this.handleRecordingUnload);
+  }
+
+  private handleRecordingUnload = (): void => {
+    // Persist continuity state first, then flush the incremental tail. The tail
+    // is small, so keepalive (64 KB cap) is safe here; the snapshot already left
+    // earlier via a normal fetch.
+    this.saveRecordingState();
+    this.flushRecordingChunk(true).catch(() => {});
+  };
+
+  private saveRecordingState(): void {
+    if (typeof sessionStorage === "undefined" || !this.recordingId) return;
+    const state: RecordingState = {
+      id: this.recordingId,
+      chunkIndex: this.recordingChunkIndex,
+      startedAt: this.recordingStartedAt,
+      elapsedMs: Date.now() - this.recordingStartMs,
+      savedAt: Date.now(),
+    };
+    try {
+      sessionStorage.setItem(RECORDING_STATE_KEY, JSON.stringify(state));
+    } catch {
+      // sessionStorage may be full or unavailable — continuity is best-effort.
+    }
+  }
+
+  private resumeRecordingState(): RecordingState | null {
+    if (typeof sessionStorage === "undefined") return null;
+    let raw: string | null;
+    try {
+      raw = sessionStorage.getItem(RECORDING_STATE_KEY);
+    } catch {
+      return null;
+    }
+    if (!raw) return null;
+    try {
+      const state = JSON.parse(raw) as RecordingState;
+      // Discard stale state so a tab left idle past the session window starts a
+      // new recording rather than stitching onto an abandoned one.
+      if (!state.id || Date.now() - state.savedAt > this.sessionTimeout) {
+        return null;
+      }
+      return state;
+    } catch {
+      return null;
+    }
+  }
+
+  private clearRecordingState(): void {
+    if (typeof sessionStorage === "undefined") return;
+    try {
+      sessionStorage.removeItem(RECORDING_STATE_KEY);
+    } catch {
+      // ignore
+    }
   }
 
   private stopRecording(): void {
@@ -523,8 +616,13 @@ export class FunnelBarnClient {
       clearInterval(this.recordingTimer);
       this.recordingTimer = undefined;
     }
+    if (typeof window !== "undefined") {
+      window.removeEventListener('beforeunload', this.handleRecordingUnload);
+    }
+    this.clearRecordingState();
     this.rrwebBuffer = [];
     this.recordingChunkIndex = 0;
+    this.recordingSnapshotFlushed = false;
   }
 
   private async applyServerRecordingConfig(chunkMs?: number): Promise<void> {

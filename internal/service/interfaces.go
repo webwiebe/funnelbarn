@@ -119,6 +119,8 @@ type Recordings interface {
 	SessionsAtStep(ctx context.Context, funnelID, projectID string, stepOrder int, from, to time.Time) ([]string, error)
 	SessionsForPage(ctx context.Context, projectID, page string, from, to time.Time) ([]string, error)
 	PurgeOldRecordings(ctx context.Context, retentionDays int) error
+	PurgeBrokenRecordings(ctx context.Context) (int, error)
+	DeleteRecording(ctx context.Context, projectID, recordingID string) error
 }
 
 // APIKeys is the interface for API key-related operations.

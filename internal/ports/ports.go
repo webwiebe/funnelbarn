@@ -132,6 +132,7 @@ type RecordingRepo interface {
 	GetRecording(ctx context.Context, id string) (repository.Recording, error)
 	ListRecordings(ctx context.Context, projectID string, opts repository.RecordingListOpts) ([]repository.Recording, error)
 	ListOldRecordings(ctx context.Context, before time.Time) ([]repository.Recording, error)
+	ListBrokenRecordings(ctx context.Context) ([]repository.Recording, error)
 	DeleteRecording(ctx context.Context, id string) error
 	FlagEvaluationsForSession(ctx context.Context, sessionID, projectID string) ([]repository.FlagEvaluationEntry, error)
 }
