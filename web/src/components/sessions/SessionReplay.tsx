@@ -30,6 +30,7 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
 
   useEffect(() => {
     let cancelled = false
+    let ro: ResizeObserver | null = null
 
     async function loadAndPlay() {
       if (!playerRef.current) return
@@ -51,6 +52,27 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
 
         if (!playerRef.current || cancelled) return
 
+        if (allEvents.length === 0) {
+          setError('Recording data not found — chunks may still be uploading or were never stored.')
+          return
+        }
+
+        // rrweb requires a full-snapshot event (type 2) to reconstruct the page
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const hasSnapshot = allEvents.some((e: any) => e?.type === 2)
+        if (!hasSnapshot) {
+          setError('Recording is incomplete — the initial page snapshot is missing.')
+          return
+        }
+
+        // Read recorded viewport dimensions from the meta event (type 4).
+        // rrweb v2's raw Replayer sets the iframe to these exact pixel dimensions
+        // with no built-in scaling, so we must scale manually.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const metaEvent = allEvents.find((e: any) => e?.type === 4) as any
+        const recordedWidth: number = metaEvent?.data?.width ?? 1280
+        const recordedHeight: number = metaEvent?.data?.height ?? 720
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const replayer = new Replayer(allEvents as any, {
           root: playerRef.current,
@@ -58,6 +80,28 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
           skipInactive: true,
         })
         replayerRef.current = replayer
+
+        function applyScale() {
+          const container = playerRef.current
+          if (!container) return
+          const wrapper = container.querySelector<HTMLElement>('.replayer-wrapper')
+          if (!wrapper) return
+          const scale = Math.min(
+            container.clientWidth / recordedWidth,
+            container.clientHeight / recordedHeight,
+          )
+          wrapper.style.transformOrigin = 'top left'
+          wrapper.style.transform = `scale(${scale})`
+          wrapper.style.position = 'absolute'
+          wrapper.style.top = '0'
+          wrapper.style.left = '0'
+        }
+
+        // Give rrweb one frame to build the .replayer-wrapper DOM before scaling
+        requestAnimationFrame(() => setTimeout(applyScale, 0))
+        ro = new ResizeObserver(applyScale)
+        ro.observe(playerRef.current)
+
         replayer.play()
         setLoading(false)
       } catch {
@@ -74,6 +118,7 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
     return () => {
       cancelled = true
       replayerRef.current?.pause()
+      ro?.disconnect()
     }
   }, [projectId, recording])
 
@@ -124,25 +169,28 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
           {/* Player area */}
           <div style={{ flex: 1, position: 'relative', background: '#000', overflow: 'hidden' }}>
-            {loading && (
+            {(loading || error) && (
               <div style={{
                 position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center', gap: 16, color: C.muted,
+                zIndex: 1,
               }}>
-                <div style={{
-                  width: 200, height: 4, background: C.surface, borderRadius: 2, overflow: 'hidden',
-                }}>
+                {!error && (
                   <div style={{
-                    height: '100%', background: C.amber, borderRadius: 2,
-                    width: `${progress}%`, transition: 'width 0.2s',
-                  }} />
-                </div>
-                <span style={{ fontSize: 13 }}>
+                    width: 200, height: 4, background: C.surface, borderRadius: 2, overflow: 'hidden',
+                  }}>
+                    <div style={{
+                      height: '100%', background: C.amber, borderRadius: 2,
+                      width: `${progress}%`, transition: 'width 0.2s',
+                    }} />
+                  </div>
+                )}
+                <span style={{ fontSize: 13, maxWidth: 320, textAlign: 'center' }}>
                   {error ?? `Loading chunks… ${progress}%`}
                 </span>
               </div>
             )}
-            <div ref={playerRef} style={{ width: '100%', height: '100%' }} />
+            <div ref={playerRef} style={{ width: '100%', height: '100%', position: 'relative' }} />
           </div>
 
           {/* Sidebar — flag evaluations */}
