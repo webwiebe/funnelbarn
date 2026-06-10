@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { Video, ChevronLeft, ChevronRight, Monitor, Smartphone, Tablet, Bot, User } from 'lucide-react'
+import { Video, VideoOff, Trash2, ChevronLeft, ChevronRight, Monitor, Smartphone, Tablet, Bot, User } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { SessionReplay } from '../components/sessions/SessionReplay'
 import { api, type Recording } from '../lib/api'
@@ -128,6 +128,19 @@ export default function Sessions() {
     void load(0, filters)
   }, [load, filters])
 
+  const handleDelete = useCallback(async (rec: Recording) => {
+    if (!projectId) return
+    if (!window.confirm('Delete this recording? This cannot be undone.')) return
+    // Optimistically drop the row; reload from the server on failure so the UI
+    // never lies about what's stored.
+    setRecordings((prev) => prev.filter((r) => r.id !== rec.id))
+    try {
+      await api.deleteRecording(projectId, rec.id)
+    } catch {
+      void load(offset, filters)
+    }
+  }, [projectId, load, offset, filters])
+
   const projectName = projects.find((p) => p.id === projectId)?.name
 
   const filterLabel = funnelId && stepParam
@@ -243,7 +256,7 @@ export default function Sessions() {
             {/* Table header */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 90px 90px 110px 90px 40px',
+              gridTemplateColumns: '1fr 90px 90px 110px 90px 110px',
               padding: '0.5rem 1.5rem',
               fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase',
               borderBottom: `1px solid ${C.border}`,
@@ -253,19 +266,19 @@ export default function Sessions() {
               <span>Device</span>
               <span>Environment</span>
               <span>Traffic</span>
-              <span />
+              <span>Replay</span>
             </div>
 
             {recordings.map((rec) => (
               <div
                 key={rec.id}
-                onClick={() => setSelected(rec)}
+                onClick={() => { if (rec.has_snapshot) setSelected(rec) }}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '1fr 90px 90px 110px 90px 40px',
+                  gridTemplateColumns: '1fr 90px 90px 110px 90px 110px',
                   padding: '0.75rem 1.5rem',
                   borderBottom: `1px solid ${C.border}`,
-                  cursor: 'pointer',
+                  cursor: rec.has_snapshot ? 'pointer' : 'default',
                   transition: 'background 0.1s',
                   alignItems: 'center',
                 }}
@@ -300,8 +313,31 @@ export default function Sessions() {
                   {rec.is_bot ? <Bot size={12} /> : <User size={12} />}
                   <span>{rec.is_bot ? 'Bot' : 'Human'}</span>
                 </div>
-                <div style={{ color: C.muted }}>
-                  <Video size={14} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {rec.has_snapshot ? (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.muted, fontSize: 12 }}>
+                      <Video size={14} /> Play
+                    </span>
+                  ) : (
+                    <span
+                      title="No initial snapshot was captured — this recording can't be replayed."
+                      style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.muted, fontSize: 11, opacity: 0.7 }}
+                    >
+                      <VideoOff size={14} /> No replay
+                    </span>
+                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); void handleDelete(rec) }}
+                    title="Delete recording"
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: C.muted, padding: 2, display: 'flex', alignItems: 'center',
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = C.error }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = C.muted }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               </div>
             ))}

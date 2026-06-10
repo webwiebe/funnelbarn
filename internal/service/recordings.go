@@ -70,7 +70,9 @@ func (svc *RecordingService) IngestChunk(ctx context.Context, chunk RecordingChu
 		SessionID:       chunk.SessionID,
 		Environment:     chunk.Environment,
 		FirstChunkIndex: chunk.ChunkIndex,
+		LastChunkIndex:  chunk.ChunkIndex,
 		ChunkCount:      1,
+		HasSnapshot:     containsFullSnapshot(chunk.Events),
 		DurationMs:      chunk.DurationMs,
 		StartedAt:       chunk.StartedAt,
 		EndedAt:         &endedAt,
@@ -111,9 +113,81 @@ func (svc *RecordingService) PurgeOldRecordings(ctx context.Context, retentionDa
 	return nil
 }
 
+// PurgeBrokenRecordings deletes recordings that can never play back (no full
+// snapshot ever stored, or no chunks) from both R2 and SQLite. It is idempotent
+// and safe to run on every retention cycle. Returns the number of rows removed.
+func (svc *RecordingService) PurgeBrokenRecordings(ctx context.Context) (int, error) {
+	recs, err := svc.store.ListBrokenRecordings(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("recordings: list broken: %w", err)
+	}
+	for _, rec := range recs {
+		svc.deleteChunks(ctx, rec.ProjectID, rec.ID, rec.LastChunkIndex, rec.ChunkCount)
+		if err := svc.store.DeleteRecording(ctx, rec.ID); err != nil {
+			return 0, fmt.Errorf("recordings: delete broken row %s: %w", rec.ID, err)
+		}
+	}
+	return len(recs), nil
+}
+
+// DeleteRecording removes a single recording (R2 chunks + SQLite row) after
+// verifying it belongs to the given project.
+func (svc *RecordingService) DeleteRecording(ctx context.Context, projectID, recordingID string) error {
+	rec, err := svc.store.GetRecording(ctx, recordingID)
+	if err != nil {
+		return fmt.Errorf("recordings: get recording: %w", err)
+	}
+	if rec.ProjectID != projectID {
+		return fmt.Errorf("recordings: not found")
+	}
+	svc.deleteChunks(ctx, rec.ProjectID, rec.ID, rec.LastChunkIndex, rec.ChunkCount)
+	return svc.store.DeleteRecording(ctx, rec.ID)
+}
+
+// deleteChunks best-effort removes a recording's R2 chunk objects. It spans the
+// inclusive 0..lastChunkIndex range (falling back to chunkCount for legacy rows
+// without a recorded span) so out-of-order or sparse indices are still covered.
+// A failed delete is logged but never aborts the caller — a stray R2 orphan is
+// preferable to leaving the SQLite row behind.
+func (svc *RecordingService) deleteChunks(ctx context.Context, projectSlug, recordingID string, lastChunkIndex, chunkCount int) {
+	upper := lastChunkIndex
+	if upper < chunkCount-1 {
+		upper = chunkCount - 1
+	}
+	for i := 0; i <= upper; i++ {
+		key := chunkKey(projectSlug, recordingID, i)
+		if delErr := svc.storage.Delete(ctx, key); delErr != nil {
+			slog.WarnContext(ctx, "recordings: chunk delete failed",
+				"err", delErr, "handled", true,
+				"recording_id", recordingID, "chunk_index", i, "key", key)
+		}
+	}
+}
+
 // ListRecordings returns recordings for a project with optional filters.
 func (svc *RecordingService) ListRecordings(ctx context.Context, projectID string, opts repository.RecordingListOpts) ([]repository.Recording, error) {
 	return svc.store.ListRecordings(ctx, projectID, opts)
+}
+
+// containsFullSnapshot reports whether the raw rrweb event array holds a
+// full-snapshot event (type 2) — the event the player needs to reconstruct the
+// page. Used to mark a recording playable as soon as its snapshot lands.
+func containsFullSnapshot(events json.RawMessage) bool {
+	if len(events) == 0 {
+		return false
+	}
+	var decoded []struct {
+		Type int `json:"type"`
+	}
+	if err := json.Unmarshal(events, &decoded); err != nil {
+		return false
+	}
+	for _, e := range decoded {
+		if e.Type == 2 {
+			return true
+		}
+	}
+	return false
 }
 
 // GetChunk fetches, decompresses, and returns the raw JSON event array for one chunk.

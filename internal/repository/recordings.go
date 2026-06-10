@@ -15,7 +15,9 @@ type Recording struct {
 	SessionID       string     `json:"session_id"`
 	Environment     string     `json:"environment"`
 	FirstChunkIndex int        `json:"first_chunk_index"`
+	LastChunkIndex  int        `json:"last_chunk_index"`
 	ChunkCount      int        `json:"chunk_count"`
+	HasSnapshot     bool       `json:"has_snapshot"`
 	DurationMs      int64      `json:"duration_ms"`
 	StartedAt       time.Time  `json:"started_at"`
 	EndedAt         *time.Time `json:"ended_at,omitempty"`
@@ -44,20 +46,25 @@ type RecordingListOpts struct {
 	Offset      int
 }
 
-// UpsertRecording inserts a new recording or updates an existing one's
-// chunk count, duration, and ended_at timestamp. first_chunk_index and
-// metadata fields (device_type, user_agent, is_bot, page_url) are set
-// only on insert and never overwritten.
+// UpsertRecording inserts a new recording or folds another chunk into an
+// existing one. The playable span is tracked as first_chunk_index (the lowest
+// chunk index seen) and last_chunk_index (the highest); both use min/max so a
+// chunk arriving out of order can never strand the snapshot. has_snapshot is
+// sticky once any chunk carrying the rrweb full snapshot lands. Metadata fields
+// (device_type, user_agent, is_bot, page_url) are set only on insert.
 func (s *Store) UpsertRecording(ctx context.Context, r Recording) error {
 	const q = `
 		INSERT INTO recordings
-			(id, project_id, session_id, environment, first_chunk_index, chunk_count, duration_ms, started_at, ended_at,
-			 device_type, user_agent, is_bot, page_url)
-		VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+			(id, project_id, session_id, environment, first_chunk_index, last_chunk_index, chunk_count, has_snapshot,
+			 duration_ms, started_at, ended_at, device_type, user_agent, is_bot, page_url)
+		VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
-			chunk_count = chunk_count + 1,
-			duration_ms = excluded.duration_ms,
-			ended_at    = excluded.ended_at`
+			first_chunk_index = min(first_chunk_index, excluded.first_chunk_index),
+			last_chunk_index  = max(last_chunk_index, excluded.last_chunk_index),
+			chunk_count       = chunk_count + 1,
+			has_snapshot      = max(has_snapshot, excluded.has_snapshot),
+			duration_ms       = max(duration_ms, excluded.duration_ms),
+			ended_at          = excluded.ended_at`
 	var endedAt interface{}
 	if r.EndedAt != nil {
 		endedAt = *r.EndedAt
@@ -66,9 +73,14 @@ func (s *Store) UpsertRecording(ctx context.Context, r Recording) error {
 	if r.IsBot {
 		isBot = 1
 	}
+	hasSnapshot := 0
+	if r.HasSnapshot {
+		hasSnapshot = 1
+	}
 	_, err := s.db.ExecContext(ctx, q,
 		r.ID, r.ProjectID, r.SessionID, r.Environment,
-		r.FirstChunkIndex, r.DurationMs, r.StartedAt, endedAt,
+		r.FirstChunkIndex, r.LastChunkIndex, hasSnapshot,
+		r.DurationMs, r.StartedAt, endedAt,
 		r.DeviceType, r.UserAgent, isBot, r.PageURL,
 	)
 	return err
@@ -77,7 +89,7 @@ func (s *Store) UpsertRecording(ctx context.Context, r Recording) error {
 // GetRecording fetches a single recording by ID.
 func (s *Store) GetRecording(ctx context.Context, id string) (Recording, error) {
 	const q = `
-		SELECT id, project_id, session_id, environment, first_chunk_index, chunk_count, duration_ms, started_at, ended_at, created_at,
+		SELECT id, project_id, session_id, environment, first_chunk_index, last_chunk_index, chunk_count, has_snapshot, duration_ms, started_at, ended_at, created_at,
 		       device_type, user_agent, is_bot, page_url
 		FROM recordings WHERE id = ?`
 	return scanRecording(s.db.QueryRowContext(ctx, q, id))
@@ -119,7 +131,7 @@ func (s *Store) ListRecordings(ctx context.Context, projectID string, opts Recor
 	offset := opts.Offset
 
 	q := fmt.Sprintf(`
-		SELECT id, project_id, session_id, environment, first_chunk_index, chunk_count, duration_ms, started_at, ended_at, created_at,
+		SELECT id, project_id, session_id, environment, first_chunk_index, last_chunk_index, chunk_count, has_snapshot, duration_ms, started_at, ended_at, created_at,
 		       device_type, user_agent, is_bot, page_url
 		FROM recordings
 		WHERE %s
@@ -167,6 +179,32 @@ func (s *Store) ListOldRecordings(ctx context.Context, before time.Time) ([]Reco
 	return out, rows.Err()
 }
 
+// ListBrokenRecordings returns recordings that can never play back — those
+// whose rrweb full snapshot never reached storage (has_snapshot = 0) or that
+// hold no chunks at all. last_chunk_index/chunk_count are returned so callers
+// can clean up any orphaned R2 chunks.
+func (s *Store) ListBrokenRecordings(ctx context.Context) ([]Recording, error) {
+	const q = `
+		SELECT id, project_id, last_chunk_index, chunk_count
+		FROM recordings
+		WHERE has_snapshot = 0 OR chunk_count = 0
+		LIMIT 500`
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Recording
+	for rows.Next() {
+		var r Recording
+		if err := rows.Scan(&r.ID, &r.ProjectID, &r.LastChunkIndex, &r.ChunkCount); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // DeleteRecording deletes a recording row by ID.
 func (s *Store) DeleteRecording(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM recordings WHERE id = ?`, id)
@@ -200,33 +238,22 @@ func (s *Store) FlagEvaluationsForSession(ctx context.Context, sessionID, projec
 }
 
 func scanRecording(row *sql.Row) (Recording, error) {
-	var r Recording
-	var endedAt sql.NullTime
-	var isBot int
-	err := row.Scan(
-		&r.ID, &r.ProjectID, &r.SessionID, &r.Environment,
-		&r.FirstChunkIndex, &r.ChunkCount, &r.DurationMs, &r.StartedAt, &endedAt, &r.CreatedAt,
-		&r.DeviceType, &r.UserAgent, &isBot, &r.PageURL,
-	)
-	if endedAt.Valid {
-		r.EndedAt = &endedAt.Time
-	}
-	r.IsBot = isBot != 0
-	return r, err
+	return scanRecordingRow(row.Scan)
 }
 
 func scanRecordingRow(scan func(...any) error) (Recording, error) {
 	var r Recording
 	var endedAt sql.NullTime
-	var isBot int
+	var isBot, hasSnapshot int
 	err := scan(
 		&r.ID, &r.ProjectID, &r.SessionID, &r.Environment,
-		&r.FirstChunkIndex, &r.ChunkCount, &r.DurationMs, &r.StartedAt, &endedAt, &r.CreatedAt,
+		&r.FirstChunkIndex, &r.LastChunkIndex, &r.ChunkCount, &hasSnapshot, &r.DurationMs, &r.StartedAt, &endedAt, &r.CreatedAt,
 		&r.DeviceType, &r.UserAgent, &isBot, &r.PageURL,
 	)
 	if endedAt.Valid {
 		r.EndedAt = &endedAt.Time
 	}
 	r.IsBot = isBot != 0
+	r.HasSnapshot = hasSnapshot != 0
 	return r, err
 }

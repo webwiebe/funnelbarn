@@ -388,6 +388,11 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				} else {
 					slog.Debug("recording retention purge complete", "retention_days", retentionDays)
 				}
+				if n, err := recordings.PurgeBrokenRecordings(ctx); err != nil {
+					slog.Error("purge broken recordings", "err", err)
+				} else if n > 0 {
+					slog.Info("purged unplayable recordings", "count", n)
+				}
 			}
 		case <-ticker.C:
 			entries, err := spool.ReadRecordsFrom(spool.Path(cfg.SpoolDir), offset)
