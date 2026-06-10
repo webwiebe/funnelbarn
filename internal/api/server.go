@@ -335,8 +335,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// Apply a reasonable body limit to all routes (ingest has its own per-handler limit).
-	if r.Body != nil && r.URL.Path != "/api/v1/events" {
+	// Apply a reasonable body limit to all routes. Ingest and recording-chunk
+	// endpoints have their own per-handler limits because their payloads can
+	// legitimately exceed the default cap (rrweb full snapshots are routinely
+	// several MB, well above 256 KiB).
+	if r.Body != nil && r.URL.Path != "/api/v1/events" && r.URL.Path != "/api/v1/recordings/chunk" {
 		r.Body = http.MaxBytesReader(w, r.Body, 256<<10) // 256 KiB
 	}
 	// Apply middleware: requestLogger (innermost) → securityHeaders → tracing → dispatch.

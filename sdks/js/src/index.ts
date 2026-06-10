@@ -497,6 +497,13 @@ export class FunnelBarnClient {
     this.recordingId = this.generateSessionID();
     this.recordingStartedAt = new Date().toISOString();
     this.recordingStartMs = Date.now();
+    // Reset per-recording state. A new recording always starts at chunk 0
+    // with an empty buffer so the rrweb full snapshot (the first emitted
+    // event) lands in chunk_index=0. Without this, a stop→start cycle would
+    // leave recordingChunkIndex at its previous value and the new recording
+    // would lose its snapshot at the server (first_chunk_index >= 1).
+    this.recordingChunkIndex = 0;
+    this.rrwebBuffer = [];
     this.rrwebStop = record({
       emit: (event) => { this.rrwebBuffer.push(event); },
       maskInputOptions: { password: true },
@@ -517,6 +524,7 @@ export class FunnelBarnClient {
       this.recordingTimer = undefined;
     }
     this.rrwebBuffer = [];
+    this.recordingChunkIndex = 0;
   }
 
   private async applyServerRecordingConfig(chunkMs?: number): Promise<void> {
