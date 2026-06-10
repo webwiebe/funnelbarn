@@ -604,6 +604,7 @@ export class FunnelBarnClient {
           events,
           started_at: this.recordingStartedAt,
           duration_ms: Date.now() - this.recordingStartMs,
+          page_url: typeof window !== 'undefined' ? window.location.href : undefined,
         }),
         keepalive: true,
       });
