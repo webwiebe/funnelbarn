@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { X, Flag } from 'lucide-react'
 import { Replayer } from 'rrweb'
+import 'rrweb/dist/style.css'
 import { api, type Recording, type FlagEvaluationEntry } from '../../lib/api'
 import { C } from '../../lib/theme'
 
