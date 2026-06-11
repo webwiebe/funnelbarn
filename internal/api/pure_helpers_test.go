@@ -12,10 +12,10 @@ import (
 
 func TestZTestTwoProportions(t *testing.T) {
 	cases := []struct {
-		name          string
+		name           string
 		n1, x1, n2, x2 int64
-		wantZero      bool
-		wantSig       bool
+		wantZero       bool
+		wantSig        bool
 	}{
 		{"zero sample n1", 0, 0, 100, 50, true, false},
 		{"zero sample n2", 100, 50, 0, 0, true, false},
