@@ -128,9 +128,11 @@ export default function Sessions() {
     void load(0, filters)
   }, [load, filters])
 
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+
   const handleDelete = useCallback(async (rec: Recording) => {
     if (!projectId) return
-    if (!window.confirm('Delete this recording? This cannot be undone.')) return
+    setPendingDeleteId(null)
     // Optimistically drop the row; reload from the server on failure so the UI
     // never lies about what's stored.
     setRecordings((prev) => prev.filter((r) => r.id !== rec.id))
@@ -269,78 +271,118 @@ export default function Sessions() {
               <span>Replay</span>
             </div>
 
-            {recordings.map((rec) => (
-              <div
-                key={rec.id}
-                onClick={() => { if (rec.has_snapshot) setSelected(rec) }}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 90px 90px 110px 90px 110px',
-                  padding: '0.75rem 1.5rem',
-                  borderBottom: `1px solid ${C.border}`,
-                  cursor: rec.has_snapshot ? 'pointer' : 'default',
-                  transition: 'background 0.1s',
-                  alignItems: 'center',
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)' }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
-              >
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(rec.started_at)}</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                    {rec.page_url ? new URL(rec.page_url).pathname : rec.session_id.slice(0, 12) + '…'}
+            {recordings.map((rec) => {
+              if (pendingDeleteId === rec.id) {
+                return (
+                  <div
+                    key={rec.id}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      padding: '0.75rem 1.5rem',
+                      borderBottom: `1px solid ${C.border}`,
+                      background: 'rgba(239,68,68,0.04)',
+                    }}
+                  >
+                    <button
+                      onClick={(e) => { e.stopPropagation(); void handleDelete(rec) }}
+                      style={{
+                        fontSize: 12, padding: '4px 14px', borderRadius: 6,
+                        background: C.error, color: '#fff', border: 'none',
+                        cursor: 'pointer', fontWeight: 600, flexShrink: 0,
+                      }}
+                    >
+                      Confirm delete
+                    </button>
+                    <span style={{ fontSize: 12, color: C.muted }}>
+                      Delete this recording? This cannot be undone.
+                    </span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setPendingDeleteId(null) }}
+                      style={{
+                        marginLeft: 'auto', fontSize: 12, padding: '4px 14px', borderRadius: 6,
+                        background: 'none', color: C.muted,
+                        border: `1px solid ${C.border}`, cursor: 'pointer', flexShrink: 0,
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )
+              }
+
+              return (
+                <div
+                  key={rec.id}
+                  onClick={() => { if (rec.has_snapshot) setSelected(rec) }}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 90px 90px 110px 90px 110px',
+                    padding: '0.75rem 1.5rem',
+                    borderBottom: `1px solid ${C.border}`,
+                    cursor: rec.has_snapshot ? 'pointer' : 'default',
+                    transition: 'background 0.1s',
+                    alignItems: 'center',
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)' }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                >
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(rec.started_at)}</div>
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                      {rec.page_url ? new URL(rec.page_url).pathname : rec.session_id.slice(0, 12) + '…'}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 13, color: C.text }}>{formatDuration(rec.duration_ms)}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.muted }}>
+                    <DeviceIcon type={rec.device_type} />
+                    <span style={{ textTransform: 'capitalize' }}>{rec.device_type || 'desktop'}</span>
+                  </div>
+                  <div>
+                    {rec.environment ? (
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
+                        background: 'rgba(245,158,11,0.08)', color: C.amber,
+                        border: `1px solid rgba(245,158,11,0.2)`,
+                      }}>
+                        {rec.environment}
+                      </span>
+                    ) : (
+                      <span style={{ color: C.muted, fontSize: 12 }}>—</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: C.muted }}>
+                    {rec.is_bot ? <Bot size={12} /> : <User size={12} />}
+                    <span>{rec.is_bot ? 'Bot' : 'Human'}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {rec.has_snapshot ? (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.muted, fontSize: 12 }}>
+                        <Video size={14} /> Play
+                      </span>
+                    ) : (
+                      <span
+                        title="No initial snapshot was captured — this recording can't be replayed."
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.muted, fontSize: 11, opacity: 0.7 }}
+                      >
+                        <VideoOff size={14} /> No replay
+                      </span>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setPendingDeleteId(rec.id) }}
+                      title="Delete recording"
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: C.muted, padding: 2, display: 'flex', alignItems: 'center',
+                      }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = C.error }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = C.muted }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 </div>
-                <div style={{ fontSize: 13, color: C.text }}>{formatDuration(rec.duration_ms)}</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.muted }}>
-                  <DeviceIcon type={rec.device_type} />
-                  <span style={{ textTransform: 'capitalize' }}>{rec.device_type || 'desktop'}</span>
-                </div>
-                <div>
-                  {rec.environment ? (
-                    <span style={{
-                      fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
-                      background: 'rgba(245,158,11,0.08)', color: C.amber,
-                      border: `1px solid rgba(245,158,11,0.2)`,
-                    }}>
-                      {rec.environment}
-                    </span>
-                  ) : (
-                    <span style={{ color: C.muted, fontSize: 12 }}>—</span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: C.muted }}>
-                  {rec.is_bot ? <Bot size={12} /> : <User size={12} />}
-                  <span>{rec.is_bot ? 'Bot' : 'Human'}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {rec.has_snapshot ? (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.muted, fontSize: 12 }}>
-                      <Video size={14} /> Play
-                    </span>
-                  ) : (
-                    <span
-                      title="No initial snapshot was captured — this recording can't be replayed."
-                      style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.muted, fontSize: 11, opacity: 0.7 }}
-                    >
-                      <VideoOff size={14} /> No replay
-                    </span>
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); void handleDelete(rec) }}
-                    title="Delete recording"
-                    style={{
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      color: C.muted, padding: 2, display: 'flex', alignItems: 'center',
-                    }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = C.error }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = C.muted }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
 
             {/* Pagination */}
             <div style={{
