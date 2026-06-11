@@ -128,9 +128,13 @@ export default function Sessions() {
     void load(0, filters)
   }, [load, filters])
 
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkPendingDelete, setBulkPendingDelete] = useState(false)
+
   const handleDelete = useCallback(async (rec: Recording) => {
     if (!projectId) return
-    if (!window.confirm('Delete this recording? This cannot be undone.')) return
+    setPendingDeleteId(null)
     // Optimistically drop the row; reload from the server on failure so the UI
     // never lies about what's stored.
     setRecordings((prev) => prev.filter((r) => r.id !== rec.id))
@@ -140,6 +144,37 @@ export default function Sessions() {
       void load(offset, filters)
     }
   }, [projectId, load, offset, filters])
+
+  const handleBulkDelete = useCallback(async () => {
+    if (!projectId) return
+    const ids = [...selectedIds]
+    setBulkPendingDelete(false)
+    setSelectedIds(new Set())
+    setRecordings((prev) => prev.filter((r) => !ids.includes(r.id)))
+    try {
+      await Promise.all(ids.map((id) => api.deleteRecording(projectId, id)))
+    } catch {
+      void load(offset, filters)
+    }
+  }, [projectId, selectedIds, load, offset, filters])
+
+  const toggleSelect = (id: string) => {
+    setPendingDeleteId(null)
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const allSelected = recordings.length > 0 && selectedIds.size === recordings.length
+  const someSelected = selectedIds.size > 0 && !allSelected
+
+  const toggleSelectAll = () => {
+    setPendingDeleteId(null)
+    setSelectedIds(allSelected ? new Set() : new Set(recordings.map((r) => r.id)))
+  }
 
   const projectName = projects.find((p) => p.id === projectId)?.name
 
@@ -162,6 +197,8 @@ export default function Sessions() {
   const updateFilter = <K extends keyof FilterState>(key: K, value: FilterState[K]) => {
     setFilters((prev) => ({ ...prev, [key]: value }))
     setOffset(0)
+    setSelectedIds(new Set())
+    setBulkPendingDelete(false)
   }
 
   return (
@@ -231,11 +268,68 @@ export default function Sessions() {
           padding: '1rem 1.5rem', borderBottom: `1px solid ${C.border}`,
           fontSize: 14, fontWeight: 700,
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          background: bulkPendingDelete ? 'rgba(239,68,68,0.04)' : undefined,
         }}>
-          <span>Recordings</span>
-          <span style={{ fontSize: 12, color: C.muted, fontWeight: 400 }}>
-            {loading ? 'Loading…' : `${recordings.length} shown`}
-          </span>
+          {bulkPendingDelete ? (
+            <>
+              <button
+                onClick={() => { void handleBulkDelete() }}
+                style={{
+                  fontSize: 12, padding: '4px 14px', borderRadius: 6,
+                  background: C.error, color: '#fff', border: 'none',
+                  cursor: 'pointer', fontWeight: 600,
+                }}
+              >
+                Confirm delete {selectedIds.size} recording{selectedIds.size !== 1 ? 's' : ''}
+              </button>
+              <button
+                onClick={() => setBulkPendingDelete(false)}
+                style={{
+                  fontSize: 12, padding: '4px 14px', borderRadius: 6,
+                  background: 'none', color: C.muted,
+                  border: `1px solid ${C.border}`, cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </>
+          ) : selectedIds.size > 0 ? (
+            <>
+              <span style={{ fontSize: 13, color: C.muted, fontWeight: 400 }}>
+                {selectedIds.size} selected
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  onClick={() => { setSelectedIds(new Set()); setBulkPendingDelete(false) }}
+                  style={{
+                    fontSize: 12, padding: '4px 10px', borderRadius: 6,
+                    background: 'none', color: C.muted,
+                    border: `1px solid ${C.border}`, cursor: 'pointer',
+                  }}
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={() => setBulkPendingDelete(true)}
+                  style={{
+                    fontSize: 12, padding: '4px 12px', borderRadius: 6,
+                    background: 'none', color: C.error,
+                    border: `1px solid ${C.error}`, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600,
+                  }}
+                >
+                  <Trash2 size={12} /> Delete {selectedIds.size}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <span>Recordings</span>
+              <span style={{ fontSize: 12, color: C.muted, fontWeight: 400 }}>
+                {loading ? 'Loading…' : `${recordings.length} shown`}
+              </span>
+            </>
+          )}
         </div>
 
         {loading ? (
@@ -256,11 +350,21 @@ export default function Sessions() {
             {/* Table header */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 90px 90px 110px 90px 110px',
+              gridTemplateColumns: '32px 1fr 90px 90px 110px 90px 110px',
               padding: '0.5rem 1.5rem',
               fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase',
               borderBottom: `1px solid ${C.border}`,
+              alignItems: 'center',
             }}>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={(el) => { if (el) el.indeterminate = someSelected }}
+                  onChange={toggleSelectAll}
+                  style={{ cursor: 'pointer', accentColor: C.amber }}
+                />
+              </div>
               <span>Started</span>
               <span>Duration</span>
               <span>Device</span>
@@ -269,78 +373,130 @@ export default function Sessions() {
               <span>Replay</span>
             </div>
 
-            {recordings.map((rec) => (
-              <div
-                key={rec.id}
-                onClick={() => { if (rec.has_snapshot) setSelected(rec) }}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 90px 90px 110px 90px 110px',
-                  padding: '0.75rem 1.5rem',
-                  borderBottom: `1px solid ${C.border}`,
-                  cursor: rec.has_snapshot ? 'pointer' : 'default',
-                  transition: 'background 0.1s',
-                  alignItems: 'center',
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)' }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
-              >
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(rec.started_at)}</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                    {rec.page_url ? new URL(rec.page_url).pathname : rec.session_id.slice(0, 12) + '…'}
+            {recordings.map((rec) => {
+              if (pendingDeleteId === rec.id) {
+                return (
+                  <div
+                    key={rec.id}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      padding: '0.75rem 1.5rem',
+                      borderBottom: `1px solid ${C.border}`,
+                      background: 'rgba(239,68,68,0.04)',
+                    }}
+                  >
+                    <button
+                      onClick={(e) => { e.stopPropagation(); void handleDelete(rec) }}
+                      style={{
+                        fontSize: 12, padding: '4px 14px', borderRadius: 6,
+                        background: C.error, color: '#fff', border: 'none',
+                        cursor: 'pointer', fontWeight: 600, flexShrink: 0,
+                      }}
+                    >
+                      Confirm delete
+                    </button>
+                    <span style={{ fontSize: 12, color: C.muted }}>
+                      Delete this recording? This cannot be undone.
+                    </span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setPendingDeleteId(null) }}
+                      style={{
+                        marginLeft: 'auto', fontSize: 12, padding: '4px 14px', borderRadius: 6,
+                        background: 'none', color: C.muted,
+                        border: `1px solid ${C.border}`, cursor: 'pointer', flexShrink: 0,
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )
+              }
+
+              return (
+                <div
+                  key={rec.id}
+                  onClick={() => { if (rec.has_snapshot) setSelected(rec) }}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '32px 1fr 90px 90px 110px 90px 110px',
+                    padding: '0.75rem 1.5rem',
+                    borderBottom: `1px solid ${C.border}`,
+                    cursor: rec.has_snapshot ? 'pointer' : 'default',
+                    transition: 'background 0.1s',
+                    alignItems: 'center',
+                    background: selectedIds.has(rec.id) ? 'rgba(245,158,11,0.04)' : undefined,
+                  }}
+                  onMouseEnter={(e) => { if (!selectedIds.has(rec.id)) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)' }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = selectedIds.has(rec.id) ? 'rgba(245,158,11,0.04)' : 'transparent' }}
+                >
+                  <div
+                    style={{ display: 'flex', alignItems: 'center' }}
+                    onClick={(e) => { e.stopPropagation(); toggleSelect(rec.id) }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(rec.id)}
+                      onChange={() => toggleSelect(rec.id)}
+                      style={{ cursor: 'pointer', accentColor: C.amber }}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(rec.started_at)}</div>
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                      {rec.page_url ? new URL(rec.page_url).pathname : rec.session_id.slice(0, 12) + '…'}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 13, color: C.text }}>{formatDuration(rec.duration_ms)}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.muted }}>
+                    <DeviceIcon type={rec.device_type} />
+                    <span style={{ textTransform: 'capitalize' }}>{rec.device_type || 'desktop'}</span>
+                  </div>
+                  <div>
+                    {rec.environment ? (
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
+                        background: 'rgba(245,158,11,0.08)', color: C.amber,
+                        border: `1px solid rgba(245,158,11,0.2)`,
+                      }}>
+                        {rec.environment}
+                      </span>
+                    ) : (
+                      <span style={{ color: C.muted, fontSize: 12 }}>—</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: C.muted }}>
+                    {rec.is_bot ? <Bot size={12} /> : <User size={12} />}
+                    <span>{rec.is_bot ? 'Bot' : 'Human'}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {rec.has_snapshot ? (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.muted, fontSize: 12 }}>
+                        <Video size={14} /> Play
+                      </span>
+                    ) : (
+                      <span
+                        title="No initial snapshot was captured — this recording can't be replayed."
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.muted, fontSize: 11, opacity: 0.7 }}
+                      >
+                        <VideoOff size={14} /> No replay
+                      </span>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setPendingDeleteId(rec.id) }}
+                      title="Delete recording"
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: C.muted, padding: 2, display: 'flex', alignItems: 'center',
+                      }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = C.error }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = C.muted }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 </div>
-                <div style={{ fontSize: 13, color: C.text }}>{formatDuration(rec.duration_ms)}</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.muted }}>
-                  <DeviceIcon type={rec.device_type} />
-                  <span style={{ textTransform: 'capitalize' }}>{rec.device_type || 'desktop'}</span>
-                </div>
-                <div>
-                  {rec.environment ? (
-                    <span style={{
-                      fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
-                      background: 'rgba(245,158,11,0.08)', color: C.amber,
-                      border: `1px solid rgba(245,158,11,0.2)`,
-                    }}>
-                      {rec.environment}
-                    </span>
-                  ) : (
-                    <span style={{ color: C.muted, fontSize: 12 }}>—</span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: C.muted }}>
-                  {rec.is_bot ? <Bot size={12} /> : <User size={12} />}
-                  <span>{rec.is_bot ? 'Bot' : 'Human'}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {rec.has_snapshot ? (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.muted, fontSize: 12 }}>
-                      <Video size={14} /> Play
-                    </span>
-                  ) : (
-                    <span
-                      title="No initial snapshot was captured — this recording can't be replayed."
-                      style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.muted, fontSize: 11, opacity: 0.7 }}
-                    >
-                      <VideoOff size={14} /> No replay
-                    </span>
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); void handleDelete(rec) }}
-                    title="Delete recording"
-                    style={{
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      color: C.muted, padding: 2, display: 'flex', alignItems: 'center',
-                    }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = C.error }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = C.muted }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
 
             {/* Pagination */}
             <div style={{
@@ -349,7 +505,7 @@ export default function Sessions() {
             }}>
               <button
                 disabled={offset === 0}
-                onClick={() => { const next = Math.max(0, offset - PAGE_SIZE); setOffset(next); void load(next, filters) }}
+                onClick={() => { const next = Math.max(0, offset - PAGE_SIZE); setOffset(next); setSelectedIds(new Set()); setBulkPendingDelete(false); void load(next, filters) }}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 4,
                   background: 'none', border: `1px solid ${C.border}`, borderRadius: 6,
@@ -361,7 +517,7 @@ export default function Sessions() {
               </button>
               <button
                 disabled={!hasMore}
-                onClick={() => { const next = offset + PAGE_SIZE; setOffset(next); void load(next, filters) }}
+                onClick={() => { const next = offset + PAGE_SIZE; setOffset(next); setSelectedIds(new Set()); setBulkPendingDelete(false); void load(next, filters) }}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 4,
                   background: 'none', border: `1px solid ${C.border}`, borderRadius: 6,
