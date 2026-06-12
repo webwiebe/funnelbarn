@@ -39,6 +39,15 @@ const mockApi = vi.hoisted(() => ({
   approveProject: vi.fn(),
   getInstanceSettings: vi.fn(),
   setInstanceSettings: vi.fn(),
+  getProjectHealth: vi.fn().mockResolvedValue({
+    project_id: 'p1',
+    setup_called: false,
+    events_received: false,
+    flags_evaluated: false,
+    recordings_received: false,
+    updated_at: '2024-01-01T00:00:00Z',
+  }),
+  resetProjectHealth: vi.fn().mockResolvedValue(undefined),
   getClientConfig: vi.fn().mockResolvedValue({
     bugbarn_endpoint: '',
     bugbarn_ingest_key: '',
