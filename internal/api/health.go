@@ -29,3 +29,32 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"version": s.version,
 	})
 }
+
+func (s *Server) handleGetProjectHealth(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		jsonError(w, "project id required", http.StatusBadRequest)
+		return
+	}
+	health, err := s.projectHealth.GetProjectHealth(r.Context(), projectID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "get project health", "project_id", projectID, "err", err)
+		jsonError(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, health)
+}
+
+func (s *Server) handleResetProjectHealth(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		jsonError(w, "project id required", http.StatusBadRequest)
+		return
+	}
+	if err := s.projectHealth.ResetProjectHealth(r.Context(), projectID); err != nil {
+		slog.ErrorContext(r.Context(), "reset project health", "project_id", projectID, "err", err)
+		jsonError(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

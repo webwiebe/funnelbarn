@@ -126,6 +126,14 @@ type Querier interface {
 	UpdateWidget(ctx context.Context, w DashboardWidget) (DashboardWidget, error)
 	DeleteWidget(ctx context.Context, id string) error
 	WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]PropertyBreakdown, error)
+
+	// Project health
+	GetProjectHealth(ctx context.Context, projectID string) (ProjectHealth, error)
+	MarkProjectHealthSetupCalled(ctx context.Context, projectID string) error
+	MarkProjectHealthEventsReceived(ctx context.Context, projectID string) error
+	MarkProjectHealthFlagsEvaluated(ctx context.Context, projectID string) error
+	MarkProjectHealthRecordingsReceived(ctx context.Context, projectID string) error
+	ResetProjectHealth(ctx context.Context, projectID string) error
 }
 
 // compile-time check that *Store satisfies Querier.

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -59,6 +60,15 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		slog.Error("setup: ensure api key", "project_id", project.ID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
+	}
+
+	if s.projectHealth != nil {
+		pid := project.ID
+		go func() {
+			if err := s.projectHealth.MarkSetupCalled(context.Background(), pid); err != nil {
+				slog.Warn("setup: mark health", "project_id", pid, "err", err)
+			}
+		}()
 	}
 
 	publicURL := s.publicURL

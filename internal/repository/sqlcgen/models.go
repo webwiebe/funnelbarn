@@ -30,6 +30,17 @@ type ApiKey struct {
 	CreatedAt  time.Time    `json:"created_at"`
 }
 
+type DashboardWidget struct {
+	ID        string    `json:"id"`
+	ProjectID string    `json:"project_id"`
+	EventName string    `json:"event_name"`
+	Property  string    `json:"property"`
+	Title     string    `json:"title"`
+	Position  int64     `json:"position"`
+	CreatedAt time.Time `json:"created_at"`
+	Size      int64     `json:"size"`
+}
+
 type Event struct {
 	ID             string         `json:"id"`
 	ProjectID      string         `json:"project_id"`
@@ -53,6 +64,34 @@ type Event struct {
 	IngestID       string         `json:"ingest_id"`
 	OccurredAt     time.Time      `json:"occurred_at"`
 	CreatedAt      time.Time      `json:"created_at"`
+	PageViewID     sql.NullString `json:"page_view_id"`
+	Environment    string         `json:"environment"`
+}
+
+type FeatureFlag struct {
+	ID              string    `json:"id"`
+	ProjectID       string    `json:"project_id"`
+	FlagKey         string    `json:"flag_key"`
+	Name            string    `json:"name"`
+	FlagType        string    `json:"flag_type"`
+	Variants        string    `json:"variants"`
+	DefaultVariant  string    `json:"default_variant"`
+	Split           string    `json:"split"`
+	ConversionEvent string    `json:"conversion_event"`
+	Status          string    `json:"status"`
+	CreatedAt       time.Time `json:"created_at"`
+	TargetingRules  string    `json:"targeting_rules"`
+}
+
+type FlagEvaluation struct {
+	ID          string         `json:"id"`
+	FlagID      string         `json:"flag_id"`
+	ProjectID   string         `json:"project_id"`
+	Variant     string         `json:"variant"`
+	ContextHash string         `json:"context_hash"`
+	SessionID   sql.NullString `json:"session_id"`
+	CreatedAt   time.Time      `json:"created_at"`
+	ContextKeys string         `json:"context_keys"`
 }
 
 type Funnel struct {
@@ -61,6 +100,7 @@ type Funnel struct {
 	Name        string         `json:"name"`
 	Description sql.NullString `json:"description"`
 	CreatedAt   time.Time      `json:"created_at"`
+	Scope       string         `json:"scope"`
 }
 
 type FunnelStep struct {
@@ -71,13 +111,55 @@ type FunnelStep struct {
 	Filters   sql.NullString `json:"filters"`
 }
 
+type InstanceSetting struct {
+	Key       string    `json:"key"`
+	Value     string    `json:"value"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type Project struct {
 	ID        string         `json:"id"`
 	Name      string         `json:"name"`
 	Slug      string         `json:"slug"`
 	Status    string         `json:"status"`
-	Domain    sql.NullString `json:"domain"`
 	CreatedAt time.Time      `json:"created_at"`
+	Domain    sql.NullString `json:"domain"`
+}
+
+type ProjectHealth struct {
+	ProjectID          string    `json:"project_id"`
+	SetupCalled        int64     `json:"setup_called"`
+	EventsReceived     int64     `json:"events_received"`
+	FlagsEvaluated     int64     `json:"flags_evaluated"`
+	RecordingsReceived int64     `json:"recordings_received"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
+type ProjectRecordingSetting struct {
+	ProjectID  string          `json:"project_id"`
+	Enabled    sql.NullInt64   `json:"enabled"`
+	SampleRate sql.NullFloat64 `json:"sample_rate"`
+	Rules      string          `json:"rules"`
+	UpdatedAt  time.Time       `json:"updated_at"`
+}
+
+type Recording struct {
+	ID              string       `json:"id"`
+	ProjectID       string       `json:"project_id"`
+	SessionID       string       `json:"session_id"`
+	Environment     string       `json:"environment"`
+	ChunkCount      int64        `json:"chunk_count"`
+	DurationMs      int64        `json:"duration_ms"`
+	StartedAt       time.Time    `json:"started_at"`
+	EndedAt         sql.NullTime `json:"ended_at"`
+	CreatedAt       time.Time    `json:"created_at"`
+	DeviceType      string       `json:"device_type"`
+	UserAgent       string       `json:"user_agent"`
+	IsBot           int64        `json:"is_bot"`
+	PageUrl         string       `json:"page_url"`
+	FirstChunkIndex int64        `json:"first_chunk_index"`
+	LastChunkIndex  int64        `json:"last_chunk_index"`
+	HasSnapshot     int64        `json:"has_snapshot"`
 }
 
 type SchemaMigration struct {
@@ -85,20 +167,47 @@ type SchemaMigration struct {
 	AppliedAt string `json:"applied_at"`
 }
 
+type Segment struct {
+	ID        string    `json:"id"`
+	ProjectID string    `json:"project_id"`
+	Name      string    `json:"name"`
+	Rules     string    `json:"rules"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Session struct {
-	ID          string         `json:"id"`
-	ProjectID   string         `json:"project_id"`
-	FirstSeenAt time.Time      `json:"first_seen_at"`
-	LastSeenAt  time.Time      `json:"last_seen_at"`
-	EventCount  int64          `json:"event_count"`
-	EntryUrl    sql.NullString `json:"entry_url"`
-	ExitUrl     sql.NullString `json:"exit_url"`
-	Referrer    sql.NullString `json:"referrer"`
-	UtmSource   sql.NullString `json:"utm_source"`
-	UtmMedium   sql.NullString `json:"utm_medium"`
-	UtmCampaign sql.NullString `json:"utm_campaign"`
-	DeviceType  sql.NullString `json:"device_type"`
-	CountryCode sql.NullString `json:"country_code"`
+	ID               string          `json:"id"`
+	ProjectID        string          `json:"project_id"`
+	FirstSeenAt      time.Time       `json:"first_seen_at"`
+	LastSeenAt       time.Time       `json:"last_seen_at"`
+	EventCount       int64           `json:"event_count"`
+	EntryUrl         sql.NullString  `json:"entry_url"`
+	ExitUrl          sql.NullString  `json:"exit_url"`
+	Referrer         sql.NullString  `json:"referrer"`
+	UtmSource        sql.NullString  `json:"utm_source"`
+	UtmMedium        sql.NullString  `json:"utm_medium"`
+	UtmCampaign      sql.NullString  `json:"utm_campaign"`
+	DeviceType       sql.NullString  `json:"device_type"`
+	CountryCode      sql.NullString  `json:"country_code"`
+	Ip               sql.NullString  `json:"ip"`
+	City             sql.NullString  `json:"city"`
+	Region           sql.NullString  `json:"region"`
+	Latitude         sql.NullFloat64 `json:"latitude"`
+	Longitude        sql.NullFloat64 `json:"longitude"`
+	Timezone         sql.NullString  `json:"timezone"`
+	AsnOrg           sql.NullString  `json:"asn_org"`
+	ConnectionClass  sql.NullString  `json:"connection_class"`
+	GeoAnonymized    int64           `json:"geo_anonymized"`
+	ScreenWidth      sql.NullInt64   `json:"screen_width"`
+	ScreenHeight     sql.NullInt64   `json:"screen_height"`
+	PixelRatio       sql.NullFloat64 `json:"pixel_ratio"`
+	Touch            sql.NullInt64   `json:"touch"`
+	DarkMode         sql.NullInt64   `json:"dark_mode"`
+	ReducedMotion    sql.NullInt64   `json:"reduced_motion"`
+	BrowserTimezone  sql.NullString  `json:"browser_timezone"`
+	CpuCores         sql.NullInt64   `json:"cpu_cores"`
+	SignalsCollected int64           `json:"signals_collected"`
+	Environment      string          `json:"environment"`
 }
 
 type SessionsHttp struct {
@@ -108,8 +217,9 @@ type SessionsHttp struct {
 }
 
 type User struct {
-	ID           string    `json:"id"`
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"password_hash"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string         `json:"id"`
+	Username     string         `json:"username"`
+	PasswordHash string         `json:"password_hash"`
+	CreatedAt    time.Time      `json:"created_at"`
+	IambarnSub   sql.NullString `json:"iambarn_sub"`
 }

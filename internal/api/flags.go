@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -229,6 +230,14 @@ func (s *Server) handleEvaluateFlag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		jsonError(w, "unauthorized", http.StatusUnauthorized)
 		return
+	}
+	if s.projectHealth != nil {
+		pid := projectID
+		go func() {
+			if err := s.projectHealth.MarkFlagsEvaluated(context.Background(), pid); err != nil {
+				slog.Warn("evaluate flag: mark health", "project_id", pid, "err", err)
+			}
+		}()
 	}
 	s.evaluateFlagInProject(w, r, projectID)
 }

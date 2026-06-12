@@ -73,6 +73,7 @@ type ServerConfig struct {
 	Distributions     DistributionRepo
 	Recordings        service.Recordings
 	RecordingSettings ProjectRecordingSettingsRepo
+	ProjectHealth     service.ProjectHealth
 }
 
 // DistributionRepo provides session field distribution data.
@@ -128,6 +129,7 @@ type Server struct {
 	distributions      DistributionRepo
 	recordings         service.Recordings
 	recordingSettings  ProjectRecordingSettingsRepo
+	projectHealth      service.ProjectHealth
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
@@ -184,6 +186,7 @@ func NewServer(cfg ServerConfig) *Server {
 		distributions:      cfg.Distributions,
 		recordings:         cfg.Recordings,
 		recordingSettings:  cfg.RecordingSettings,
+		projectHealth:      cfg.ProjectHealth,
 	}
 	s.registerRoutes()
 	return s
@@ -308,6 +311,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/segments", s.requireSession(s.handleCreateSegment))
 	s.mux.HandleFunc("PUT /api/v1/projects/{id}/segments/{sid}", s.requireSession(s.handleUpdateSegment))
 	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/segments/{sid}", s.requireSession(s.handleDeleteSegment))
+
+	// Project integration health
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/health", s.requireSession(s.handleGetProjectHealth))
+	s.mux.HandleFunc("POST /api/v1/projects/{id}/health/reset", s.requireSession(s.handleResetProjectHealth))
 
 	// Instance settings
 	s.mux.HandleFunc("GET /api/v1/instance-settings", s.requireSession(s.handleGetInstanceSettings))

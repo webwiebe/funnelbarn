@@ -395,6 +395,13 @@ export const api = {
     if (params.to) qs.set('to', params.to)
     return request<{ session_ids: string[] }>(`/api/v1/projects/${projectId}/flows/sessions?${qs}`)
   },
+
+  // Project integration health
+  getProjectHealth: (projectId: string) =>
+    request<ProjectHealth>(`/api/v1/projects/${projectId}/health`),
+
+  resetProjectHealth: (projectId: string) =>
+    request<void>(`/api/v1/projects/${projectId}/health/reset`, { method: 'POST' }),
 }
 
 // Types
@@ -625,6 +632,15 @@ export interface FlagEvaluationEntry {
   flag_name: string
   variant: string
   evaluated_at: string
+}
+
+export interface ProjectHealth {
+  project_id: string
+  setup_called: boolean
+  events_received: boolean
+  flags_evaluated: boolean
+  recordings_received: boolean
+  updated_at: string
 }
 
 export interface ClientConfig {
