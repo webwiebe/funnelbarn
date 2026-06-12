@@ -484,12 +484,12 @@ export default function Sessions() {
                     />
                   </div>
                   {isMobile ? (
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(rec.started_at)}</div>
                       <div style={{ fontSize: 11, color: C.muted, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {rec.page_url ? new URL(rec.page_url).pathname : rec.session_id.slice(0, 12) + '…'}
                       </div>
-                      <div style={{ fontSize: 11, color: C.muted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ fontSize: 11, color: C.muted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
                         <span>{formatDuration(rec.duration_ms)}</span>
                         <span>·</span>
                         <DeviceIcon type={rec.device_type} />
