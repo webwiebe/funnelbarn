@@ -11,6 +11,35 @@ interface Props {
   onClose: () => void
 }
 
+// rrweb IncrementalSource values that represent genuine user interaction
+const INTERACTION_SOURCES = new Set([1, 2, 3, 5, 6, 12]) // MouseMove, MouseInteraction, Scroll, Input, TouchMove, Drag
+
+function computeSkipGaps(events: unknown[], threshold: number): Array<{ start: number; end: number }> {
+  if (events.length === 0) return []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const firstTs = (events[0] as any).timestamp as number
+  const activityMs: number[] = []
+  for (const e of events) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ev = e as any
+    if (ev.type === 3 && INTERACTION_SOURCES.has(ev.data?.source)) {
+      activityMs.push(ev.timestamp - firstTs)
+    }
+  }
+  if (activityMs.length === 0) return []
+  activityMs.sort((a, b) => a - b)
+  const gaps: Array<{ start: number; end: number }> = []
+  if (activityMs[0] > threshold) {
+    gaps.push({ start: threshold, end: activityMs[0] })
+  }
+  for (let i = 0; i < activityMs.length - 1; i++) {
+    if (activityMs[i + 1] - activityMs[i] > threshold) {
+      gaps.push({ start: activityMs[i] + threshold, end: activityMs[i + 1] })
+    }
+  }
+  return gaps
+}
+
 function formatDuration(ms: number): string {
   const s = Math.floor(ms / 1000)
   const m = Math.floor(s / 60)
@@ -32,6 +61,7 @@ function formatClock(ms: number): string {
 export function SessionReplay({ projectId, recording, onClose }: Props) {
   const playerRef = useRef<HTMLDivElement>(null)
   const replayerRef = useRef<Replayer | null>(null)
+  const skipGapsRef = useRef<Array<{ start: number; end: number }>>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [flags, setFlags] = useState<FlagEvaluationEntry[]>([])
@@ -40,6 +70,7 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
   const [currentMs, setCurrentMs] = useState(0)
   const [totalMs, setTotalMs] = useState(0)
   const [speed, setSpeed] = useState(1)
+  const [skipInactive, setSkipInactive] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -122,6 +153,7 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
 
         const meta = replayer.getMetaData()
         setTotalMs(meta.totalTime)
+        skipGapsRef.current = computeSkipGaps(allEvents, 5000)
         replayer.on(ReplayerEvents.Finish, () => {
           setPlaying(false)
           setCurrentMs(meta.totalTime)
@@ -145,6 +177,7 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
       cancelled = true
       replayerRef.current?.pause()
       ro?.disconnect()
+      skipGapsRef.current = []
     }
   }, [projectId, recording])
 
@@ -154,10 +187,20 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
     if (!playing) return
     const id = setInterval(() => {
       const r = replayerRef.current
-      if (r) setCurrentMs(Math.min(r.getCurrentTime(), totalMs))
+      if (!r) return
+      const cur = r.getCurrentTime()
+      if (skipInactive && skipGapsRef.current.length > 0) {
+        const gap = skipGapsRef.current.find(g => cur >= g.start && cur <= g.end)
+        if (gap) {
+          r.play(gap.end)
+          setCurrentMs(gap.end)
+          return
+        }
+      }
+      setCurrentMs(Math.min(cur, totalMs))
     }, 100)
     return () => clearInterval(id)
-  }, [playing, totalMs])
+  }, [playing, totalMs, skipInactive])
 
   function seek(ms: number) {
     const r = replayerRef.current
@@ -303,6 +346,19 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
                 >
                   {[0.5, 1, 2, 4, 8].map((s) => <option key={s} value={s}>{s}x</option>)}
                 </select>
+                <button
+                  onClick={() => setSkipInactive(!skipInactive)}
+                  title="Skip periods with no user activity"
+                  style={{
+                    background: skipInactive ? 'rgba(245,158,11,0.1)' : 'none',
+                    border: `1px solid ${skipInactive ? C.amber : C.border}`,
+                    cursor: 'pointer',
+                    color: skipInactive ? C.amber : C.muted,
+                    fontSize: 11, padding: '3px 8px', borderRadius: 6, whiteSpace: 'nowrap',
+                  }}
+                >
+                  Skip inactive
+                </button>
               </div>
             )}
           </div>

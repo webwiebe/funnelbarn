@@ -357,7 +357,11 @@ export default function Sessions() {
             {/* Table header */}
             <div style={{
               display: 'grid',
+<<<<<<< HEAD
               gridTemplateColumns: isMobile ? '32px 1fr auto' : '32px 1fr 90px 90px 110px 90px 110px',
+=======
+              gridTemplateColumns: '32px 1fr 90px 90px 110px 90px 110px',
+>>>>>>> origin/main
               padding: '0.5rem 1.5rem',
               fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase',
               borderBottom: `1px solid ${C.border}`,
@@ -425,6 +429,7 @@ export default function Sessions() {
                 )
               }
 
+<<<<<<< HEAD
               const isSelected = selectedIds.has(rec.id)
               const replayCell = (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -456,18 +461,25 @@ export default function Sessions() {
                 </div>
               )
 
+=======
+>>>>>>> origin/main
               return (
                 <div
                   key={rec.id}
                   onClick={() => { if (rec.has_snapshot) setSelected(rec) }}
                   style={{
                     display: 'grid',
+<<<<<<< HEAD
                     gridTemplateColumns: isMobile ? '32px 1fr auto' : '32px 1fr 90px 90px 110px 90px 110px',
+=======
+                    gridTemplateColumns: '32px 1fr 90px 90px 110px 90px 110px',
+>>>>>>> origin/main
                     padding: '0.75rem 1.5rem',
                     borderBottom: `1px solid ${C.border}`,
                     cursor: rec.has_snapshot ? 'pointer' : 'default',
                     transition: 'background 0.1s',
                     alignItems: 'center',
+<<<<<<< HEAD
                     background: isSelected ? 'rgba(245,158,11,0.04)' : undefined,
                   }}
                   onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)' }}
@@ -536,6 +548,78 @@ export default function Sessions() {
                     </>
                   )}
                   {replayCell}
+=======
+                    background: selectedIds.has(rec.id) ? 'rgba(245,158,11,0.04)' : undefined,
+                  }}
+                  onMouseEnter={(e) => { if (!selectedIds.has(rec.id)) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)' }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = selectedIds.has(rec.id) ? 'rgba(245,158,11,0.04)' : 'transparent' }}
+                >
+                  <div
+                    style={{ display: 'flex', alignItems: 'center' }}
+                    onClick={(e) => { e.stopPropagation(); toggleSelect(rec.id) }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(rec.id)}
+                      onChange={() => toggleSelect(rec.id)}
+                      style={{ cursor: 'pointer', accentColor: C.amber }}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(rec.started_at)}</div>
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                      {rec.page_url ? new URL(rec.page_url).pathname : rec.session_id.slice(0, 12) + '…'}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 13, color: C.text }}>{formatDuration(rec.duration_ms)}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.muted }}>
+                    <DeviceIcon type={rec.device_type} />
+                    <span style={{ textTransform: 'capitalize' }}>{rec.device_type || 'desktop'}</span>
+                  </div>
+                  <div>
+                    {rec.environment ? (
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
+                        background: 'rgba(245,158,11,0.08)', color: C.amber,
+                        border: `1px solid rgba(245,158,11,0.2)`,
+                      }}>
+                        {rec.environment}
+                      </span>
+                    ) : (
+                      <span style={{ color: C.muted, fontSize: 12 }}>—</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: C.muted }}>
+                    {rec.is_bot ? <Bot size={12} /> : <User size={12} />}
+                    <span>{rec.is_bot ? 'Bot' : 'Human'}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {rec.has_snapshot ? (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.muted, fontSize: 12 }}>
+                        <Video size={14} /> Play
+                      </span>
+                    ) : (
+                      <span
+                        title="No initial snapshot was captured — this recording can't be replayed."
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.muted, fontSize: 11, opacity: 0.7 }}
+                      >
+                        <VideoOff size={14} /> No replay
+                      </span>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setPendingDeleteId(rec.id) }}
+                      title="Delete recording"
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: C.muted, padding: 2, display: 'flex', alignItems: 'center',
+                      }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = C.error }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = C.muted }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+>>>>>>> origin/main
                 </div>
               )
             })}
