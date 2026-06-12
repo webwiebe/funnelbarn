@@ -60,3 +60,12 @@ func (s *Store) DeleteRecording(_ context.Context, _ string) error { return nil 
 func (s *Store) FlagEvaluationsForSession(_ context.Context, _, _ string) ([]repository.FlagEvaluationEntry, error) {
 	return nil, nil
 }
+
+func (s *Store) GetProjectHealth(_ context.Context, projectID string) (repository.ProjectHealth, error) {
+	return repository.ProjectHealth{ProjectID: projectID}, nil
+}
+func (s *Store) MarkProjectHealthSetupCalled(_ context.Context, _ string) error        { return nil }
+func (s *Store) MarkProjectHealthEventsReceived(_ context.Context, _ string) error     { return nil }
+func (s *Store) MarkProjectHealthFlagsEvaluated(_ context.Context, _ string) error     { return nil }
+func (s *Store) MarkProjectHealthRecordingsReceived(_ context.Context, _ string) error { return nil }
+func (s *Store) ResetProjectHealth(_ context.Context, _ string) error                  { return nil }

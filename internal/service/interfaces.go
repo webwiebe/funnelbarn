@@ -7,6 +7,16 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
+// ProjectHealth is the service interface for tracking integration health per project.
+type ProjectHealth interface {
+	GetProjectHealth(ctx context.Context, projectID string) (repository.ProjectHealth, error)
+	MarkSetupCalled(ctx context.Context, projectID string) error
+	MarkEventsReceived(ctx context.Context, projectID string) error
+	MarkFlagsEvaluated(ctx context.Context, projectID string) error
+	MarkRecordingsReceived(ctx context.Context, projectID string) error
+	ResetProjectHealth(ctx context.Context, projectID string) error
+}
+
 // Projects is the interface for project-related operations.
 type Projects interface {
 	CreateProject(ctx context.Context, name, slug string) (repository.Project, error)

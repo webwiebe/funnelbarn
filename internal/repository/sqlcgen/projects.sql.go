@@ -40,7 +40,7 @@ func (q *Queries) DeleteProject(ctx context.Context, id string) error {
 }
 
 const getProjectByID = `-- name: GetProjectByID :one
-SELECT id, name, slug, status, domain, created_at FROM projects WHERE id = ?
+SELECT id, name, slug, status, created_at, domain FROM projects WHERE id = ?
 `
 
 func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error) {
@@ -51,14 +51,14 @@ func (q *Queries) GetProjectByID(ctx context.Context, id string) (Project, error
 		&i.Name,
 		&i.Slug,
 		&i.Status,
-		&i.Domain,
 		&i.CreatedAt,
+		&i.Domain,
 	)
 	return i, err
 }
 
 const getProjectBySlug = `-- name: GetProjectBySlug :one
-SELECT id, name, slug, status, domain, created_at FROM projects WHERE slug = ?
+SELECT id, name, slug, status, created_at, domain FROM projects WHERE slug = ?
 `
 
 func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (Project, error) {
@@ -69,8 +69,8 @@ func (q *Queries) GetProjectBySlug(ctx context.Context, slug string) (Project, e
 		&i.Name,
 		&i.Slug,
 		&i.Status,
-		&i.Domain,
 		&i.CreatedAt,
+		&i.Domain,
 	)
 	return i, err
 }
@@ -106,7 +106,7 @@ func (q *Queries) InsertProjectPending(ctx context.Context, arg InsertProjectPen
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, name, slug, status, domain, created_at FROM projects ORDER BY name
+SELECT id, name, slug, status, created_at, domain FROM projects ORDER BY name
 `
 
 func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
@@ -123,8 +123,8 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 			&i.Name,
 			&i.Slug,
 			&i.Status,
-			&i.Domain,
 			&i.CreatedAt,
+			&i.Domain,
 		); err != nil {
 			return nil, err
 		}

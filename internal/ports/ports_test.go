@@ -16,6 +16,7 @@ var _ ports.SessionRepo = (*repository.Store)(nil)
 var _ ports.APIKeyRepo = (*repository.Store)(nil)
 var _ ports.WidgetRepo = (*repository.Store)(nil)
 var _ ports.EventPersister = (*repository.Store)(nil)
+var _ ports.ProjectHealthRepo = (*repository.Store)(nil)
 
 // Compile-time checks: *mock.Store satisfies every port interface.
 var _ ports.ProjectRepo = (*mock.Store)(nil)
@@ -27,3 +28,4 @@ var _ ports.SessionRepo = (*mock.Store)(nil)
 var _ ports.APIKeyRepo = (*mock.Store)(nil)
 var _ ports.WidgetRepo = (*mock.Store)(nil)
 var _ ports.EventPersister = (*mock.Store)(nil)
+var _ ports.ProjectHealthRepo = (*mock.Store)(nil)

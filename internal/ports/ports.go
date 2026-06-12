@@ -137,6 +137,16 @@ type RecordingRepo interface {
 	FlagEvaluationsForSession(ctx context.Context, sessionID, projectID string) ([]repository.FlagEvaluationEntry, error)
 }
 
+// ProjectHealthRepo is the persistence port for project integration health.
+type ProjectHealthRepo interface {
+	GetProjectHealth(ctx context.Context, projectID string) (repository.ProjectHealth, error)
+	MarkProjectHealthSetupCalled(ctx context.Context, projectID string) error
+	MarkProjectHealthEventsReceived(ctx context.Context, projectID string) error
+	MarkProjectHealthFlagsEvaluated(ctx context.Context, projectID string) error
+	MarkProjectHealthRecordingsReceived(ctx context.Context, projectID string) error
+	ResetProjectHealth(ctx context.Context, projectID string) error
+}
+
 // EventPersister is the narrow interface worker.PersistEvent requires.
 // It is a subset of EventRepo + SessionRepo to avoid injecting the full store.
 type EventPersister interface {

@@ -98,15 +98,40 @@ type ListEventsParams struct {
 	Offset    int64  `json:"offset"`
 }
 
-func (q *Queries) ListEvents(ctx context.Context, arg ListEventsParams) ([]Event, error) {
+type ListEventsRow struct {
+	ID             string         `json:"id"`
+	ProjectID      string         `json:"project_id"`
+	SessionID      string         `json:"session_id"`
+	UserIDHash     sql.NullString `json:"user_id_hash"`
+	Name           string         `json:"name"`
+	Url            sql.NullString `json:"url"`
+	Referrer       sql.NullString `json:"referrer"`
+	ReferrerDomain sql.NullString `json:"referrer_domain"`
+	UtmSource      sql.NullString `json:"utm_source"`
+	UtmMedium      sql.NullString `json:"utm_medium"`
+	UtmCampaign    sql.NullString `json:"utm_campaign"`
+	UtmTerm        sql.NullString `json:"utm_term"`
+	UtmContent     sql.NullString `json:"utm_content"`
+	Properties     sql.NullString `json:"properties"`
+	UserAgent      sql.NullString `json:"user_agent"`
+	Browser        sql.NullString `json:"browser"`
+	Os             sql.NullString `json:"os"`
+	DeviceType     sql.NullString `json:"device_type"`
+	CountryCode    sql.NullString `json:"country_code"`
+	IngestID       string         `json:"ingest_id"`
+	OccurredAt     time.Time      `json:"occurred_at"`
+	CreatedAt      time.Time      `json:"created_at"`
+}
+
+func (q *Queries) ListEvents(ctx context.Context, arg ListEventsParams) ([]ListEventsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listEvents, arg.ProjectID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Event
+	var items []ListEventsRow
 	for rows.Next() {
-		var i Event
+		var i ListEventsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProjectID,

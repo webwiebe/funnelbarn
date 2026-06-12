@@ -32,6 +32,9 @@ type Handler struct {
 	now          func() time.Time
 	idFn         func() string
 	queue        chan spool.Record
+	// OnEventsReceived is called once per request after successful auth.
+	// It is optional; set by the server to track integration health.
+	OnEventsReceived func(ctx context.Context, projectID string)
 }
 
 // NewHandler creates an ingest Handler.
@@ -140,6 +143,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 		jsonErr(w, "unauthorized", http.StatusUnauthorized)
 		return
+	}
+
+	if h.OnEventsReceived != nil {
+		pid := projectID
+		go h.OnEventsReceived(context.Background(), pid)
 	}
 
 	defer r.Body.Close()

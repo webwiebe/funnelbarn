@@ -132,6 +132,7 @@ func run() error {
 	apikeysSvc := service.NewAPIKeyService(store)
 	widgetsSvc := service.NewWidgetService(store)
 	segmentsSvc := service.NewSegmentService(store)
+	healthSvc := service.NewProjectHealthService(store)
 
 	eventSpool, err := spool.NewWithLimit(cfg.SpoolDir, cfg.MaxSpoolBytes)
 	if err != nil {
@@ -212,6 +213,11 @@ func run() error {
 	}
 	sessionManager := auth.NewSessionManager(cfg.SessionSecret, cfg.SessionTTL)
 	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.MaxBodyBytes)
+	handler.OnEventsReceived = func(ctx context.Context, projectID string) {
+		if err := healthSvc.MarkEventsReceived(ctx, projectID); err != nil {
+			slog.Warn("ingest: mark events received", "project_id", projectID, "err", err)
+		}
+	}
 	go handler.Start(ctx)
 
 	var iambarnProvider *iambarn.Provider
@@ -265,6 +271,7 @@ func run() error {
 		OIDC:                oidcClient,
 		Recordings:          recordingsSvc,
 		RecordingSettings:   store,
+		ProjectHealth:       healthSvc,
 	})
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)

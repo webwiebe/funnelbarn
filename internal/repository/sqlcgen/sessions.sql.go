@@ -18,9 +18,25 @@ SELECT id, project_id, first_seen_at, last_seen_at, event_count,
 FROM sessions WHERE id = ?
 `
 
-func (q *Queries) GetSessionByID(ctx context.Context, id string) (Session, error) {
+type GetSessionByIDRow struct {
+	ID          string         `json:"id"`
+	ProjectID   string         `json:"project_id"`
+	FirstSeenAt time.Time      `json:"first_seen_at"`
+	LastSeenAt  time.Time      `json:"last_seen_at"`
+	EventCount  int64          `json:"event_count"`
+	EntryUrl    sql.NullString `json:"entry_url"`
+	ExitUrl     sql.NullString `json:"exit_url"`
+	Referrer    sql.NullString `json:"referrer"`
+	UtmSource   sql.NullString `json:"utm_source"`
+	UtmMedium   sql.NullString `json:"utm_medium"`
+	UtmCampaign sql.NullString `json:"utm_campaign"`
+	DeviceType  sql.NullString `json:"device_type"`
+	CountryCode sql.NullString `json:"country_code"`
+}
+
+func (q *Queries) GetSessionByID(ctx context.Context, id string) (GetSessionByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getSessionByID, id)
-	var i Session
+	var i GetSessionByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
@@ -94,15 +110,31 @@ type ListSessionsParams struct {
 	Offset    int64  `json:"offset"`
 }
 
-func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]Session, error) {
+type ListSessionsRow struct {
+	ID          string         `json:"id"`
+	ProjectID   string         `json:"project_id"`
+	FirstSeenAt time.Time      `json:"first_seen_at"`
+	LastSeenAt  time.Time      `json:"last_seen_at"`
+	EventCount  int64          `json:"event_count"`
+	EntryUrl    sql.NullString `json:"entry_url"`
+	ExitUrl     sql.NullString `json:"exit_url"`
+	Referrer    sql.NullString `json:"referrer"`
+	UtmSource   sql.NullString `json:"utm_source"`
+	UtmMedium   sql.NullString `json:"utm_medium"`
+	UtmCampaign sql.NullString `json:"utm_campaign"`
+	DeviceType  sql.NullString `json:"device_type"`
+	CountryCode sql.NullString `json:"country_code"`
+}
+
+func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]ListSessionsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listSessions, arg.ProjectID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Session
+	var items []ListSessionsRow
 	for rows.Next() {
-		var i Session
+		var i ListSessionsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProjectID,

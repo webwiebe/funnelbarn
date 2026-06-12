@@ -7,6 +7,7 @@ import { CopyButton } from '../components/ui/CopyButton'
 import { reportError } from '../lib/bugbarn'
 import { ProjectSettings } from '../components/settings/ProjectSettings'
 import { ApiKeySettings } from '../components/settings/ApiKeySettings'
+import { ProjectHealthCard } from '../components/settings/ProjectHealthCard'
 
 const C = {
   bg: '#0f1117',
@@ -209,6 +210,11 @@ export default function Settings() {
         loading={loading}
         projects={projects}
         onError={setError}
+      />
+
+      <ProjectHealthCard
+        projects={projects}
+        defaultProjectId={defaultProjectId}
       />
 
       {/* Event retention info */}

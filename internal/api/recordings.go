@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -36,6 +37,15 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 		)
 		jsonError(w, "unauthorized", http.StatusUnauthorized)
 		return
+	}
+
+	if s.projectHealth != nil {
+		pid := projectID
+		go func() {
+			if err := s.projectHealth.MarkRecordingsReceived(context.Background(), pid); err != nil {
+				slog.Warn("recording chunk: mark health", "project_id", pid, "err", err)
+			}
+		}()
 	}
 
 	proj, err := s.projects.GetProject(r.Context(), projectID)
