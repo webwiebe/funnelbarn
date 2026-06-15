@@ -17,11 +17,6 @@ spec:
         app.kubernetes.io/name: funnelbarn
         app.kubernetes.io/environment: staging
     spec:
-      # The geoipupdate init container writes the GeoLite2 DBs as root; fsGroup
-      # makes the shared data volume group-readable by the funnelbarn user
-      # (uid 100 / gid 101) so geo enrichment can open them.
-      securityContext:
-        fsGroup: 101
       imagePullSecrets:
         - name: ghcr-secret
       initContainers:
@@ -42,6 +37,15 @@ spec:
               value: GeoLite2-City GeoLite2-ASN
             - name: GEOIPUPDATE_DB_DIR
               value: /var/lib/funnelbarn/geoip
+          volumeMounts:
+            - name: funnelbarn-data
+              mountPath: /var/lib/funnelbarn
+        # local-path PVCs do not honor pod-level fsGroup, so explicitly make the
+        # GeoLite2 dbs (written by geoipupdate as root, dir mode 0750) readable by
+        # the non-root service user. They are public MaxMind data, so a+r is fine.
+        - name: geoip-perms
+          image: ghcr.io/maxmind/geoipupdate:v7.1.1
+          command: ["chmod", "-R", "a+rX", "/var/lib/funnelbarn/geoip"]
           volumeMounts:
             - name: funnelbarn-data
               mountPath: /var/lib/funnelbarn
