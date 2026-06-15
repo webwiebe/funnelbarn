@@ -90,6 +90,19 @@ func Path(dir string) string {
 	return filepath.Join(dir, DefaultFileName)
 }
 
+// ActiveSize returns the size in bytes of the active spool file, or 0 if it does
+// not exist yet. Used to gauge how much data is pending consumption.
+func ActiveSize(dir string) (int64, error) {
+	fi, err := os.Stat(Path(dir))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return fi.Size(), nil
+}
+
 // Append writes a single record to the spool.
 func (s *Spool) Append(record Record) error {
 	if s == nil {
