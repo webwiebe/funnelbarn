@@ -26,7 +26,9 @@ FROM alpine:3.20
 WORKDIR /app
 
 RUN apk add --no-cache ca-certificates sqlite
-RUN addgroup -S funnelbarn && adduser -S funnelbarn -G funnelbarn
+# Pin uid/gid so the Kubernetes pod securityContext.fsGroup (101) stays correct
+# across rebuilds — the shared data volume is made group-readable to this gid.
+RUN addgroup -g 101 -S funnelbarn && adduser -u 100 -S funnelbarn -G funnelbarn
 
 COPY --from=build /out/funnelbarn /usr/local/bin/funnelbarn
 COPY --from=litestream /usr/local/bin/litestream /usr/local/bin/litestream
