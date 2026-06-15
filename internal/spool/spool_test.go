@@ -185,6 +185,38 @@ func TestReadRecordsFrom_Offset(t *testing.T) {
 	}
 }
 
+// TestReadRecordsFrom_ResetsStaleOffsetAfterRotation reproduces the production
+// stall where the worker's byte-offset cursor pointed past the end of the active
+// spool file after a rotation, causing it to read zero records forever. The read
+// must transparently reset to the start and return the backlog.
+func TestReadRecordsFrom_ResetsStaleOffsetAfterRotation(t *testing.T) {
+	dir := newTestDir(t)
+	sp, err := spool.New(dir)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer sp.Close()
+
+	// New active segment (as if just created by a rotation) with two records.
+	for _, r := range []spool.Record{makeRecord("a", `{"n":1}`), makeRecord("b", `{"n":2}`)} {
+		if err := sp.Append(r); err != nil {
+			t.Fatalf("Append: %v", err)
+		}
+	}
+
+	// A cursor left over from a previous, larger segment points well past EOF.
+	got, err := spool.ReadRecordsFrom(spool.Path(dir), 1<<30)
+	if err != nil {
+		t.Fatalf("ReadRecordsFrom(stale offset): %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("stale offset should reset to start and return all records; want 2, got %d", len(got))
+	}
+	if got[0].Record.IngestID != "a" || got[1].Record.IngestID != "b" {
+		t.Errorf("unexpected records after reset: %q, %q", got[0].Record.IngestID, got[1].Record.IngestID)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // ErrFull / size limit
 // ---------------------------------------------------------------------------
