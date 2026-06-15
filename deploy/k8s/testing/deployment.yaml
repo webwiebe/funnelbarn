@@ -17,6 +17,11 @@ spec:
         app.kubernetes.io/name: funnelbarn
         app.kubernetes.io/environment: testing
     spec:
+      # The geoipupdate init container writes the GeoLite2 DBs as root; fsGroup
+      # makes the shared data volume group-readable by the funnelbarn user
+      # (uid 100 / gid 101) so geo enrichment can open them.
+      securityContext:
+        fsGroup: 101
       imagePullSecrets:
         - name: ghcr-secret
       initContainers:
