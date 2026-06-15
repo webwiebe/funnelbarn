@@ -2,10 +2,36 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
 )
+
+// flagColumns is the shared SELECT column list for feature_flags, kept in one
+// place so every read path scans an identical row shape via scanFlag.
+const flagColumns = `id, project_id, flag_key, name, flag_type, variants, default_variant, split, COALESCE(conversion_event,''), COALESCE(targeting_rules,'[]'), status, created_at, COALESCE(origin,'manual'), last_evaluated_at`
+
+// rowScanner is satisfied by both *sql.Row and *sql.Rows.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanFlag(sc rowScanner) (FeatureFlag, error) {
+	var f FeatureFlag
+	var lastEval sql.NullTime
+	if err := sc.Scan(
+		&f.ID, &f.ProjectID, &f.FlagKey, &f.Name, &f.FlagType,
+		&f.Variants, &f.DefaultVariant, &f.Split, &f.ConversionEvent,
+		&f.TargetingRules, &f.Status, &f.CreatedAt, &f.Origin, &lastEval,
+	); err != nil {
+		return FeatureFlag{}, err
+	}
+	if lastEval.Valid {
+		f.LastEvaluatedAt = &lastEval.Time
+	}
+	return f, nil
+}
 
 // FeatureFlag represents an OpenFeature-compatible feature flag.
 type FeatureFlag struct {
@@ -21,6 +47,11 @@ type FeatureFlag struct {
 	TargetingRules  string    `json:"targeting_rules"`
 	Status          string    `json:"status"`
 	CreatedAt       time.Time `json:"created_at"`
+	// Origin is "manual" for human-created flags and "auto" for flags created on
+	// first evaluation. LastEvaluatedAt tracks the most recent evaluation of an
+	// auto flag so stale, never-configured ones can be pruned.
+	Origin          string     `json:"origin"`
+	LastEvaluatedAt *time.Time `json:"last_evaluated_at,omitempty"`
 }
 
 // FlagEvaluation records a single flag evaluation.
@@ -59,44 +90,91 @@ func (s *Store) CreateFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, err
 	if f.TargetingRules == "" {
 		f.TargetingRules = "[]"
 	}
-	const q = `INSERT INTO feature_flags (id, project_id, flag_key, name, flag_type, variants, default_variant, split, conversion_event, targeting_rules, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	if f.Origin == "" {
+		f.Origin = "manual"
+	}
+	const q = `INSERT INTO feature_flags (id, project_id, flag_key, name, flag_type, variants, default_variant, split, conversion_event, targeting_rules, status, origin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	if _, err := s.db.ExecContext(ctx, q,
 		f.ID, f.ProjectID, f.FlagKey, f.Name, f.FlagType,
-		f.Variants, f.DefaultVariant, f.Split, f.ConversionEvent, f.TargetingRules, f.Status,
+		f.Variants, f.DefaultVariant, f.Split, f.ConversionEvent, f.TargetingRules, f.Status, f.Origin,
 	); err != nil {
 		return FeatureFlag{}, fmt.Errorf("create flag: %w", err)
 	}
 	return s.FlagByID(ctx, f.ID)
 }
 
-func (s *Store) FlagByID(ctx context.Context, id string) (FeatureFlag, error) {
-	const q = `SELECT id, project_id, flag_key, name, flag_type, variants, default_variant, split, COALESCE(conversion_event,''), COALESCE(targeting_rules,'[]'), status, created_at FROM feature_flags WHERE id = ?`
-	var f FeatureFlag
-	if err := s.db.QueryRowContext(ctx, q, id).Scan(
-		&f.ID, &f.ProjectID, &f.FlagKey, &f.Name, &f.FlagType,
-		&f.Variants, &f.DefaultVariant, &f.Split, &f.ConversionEvent,
-		&f.TargetingRules, &f.Status, &f.CreatedAt,
-	); err != nil {
-		return FeatureFlag{}, err
+// EnsureAutoFlag inserts an auto-created flag if no flag with the same
+// (project_id, flag_key) exists yet, then returns the current row. It is
+// idempotent and race-safe: concurrent first-evaluations of the same key
+// converge on a single row via the UNIQUE(project_id, flag_key) constraint.
+func (s *Store) EnsureAutoFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, error) {
+	id, err := generateUUID()
+	if err != nil {
+		return FeatureFlag{}, fmt.Errorf("generate uuid: %w", err)
 	}
-	return f, nil
+	if f.TargetingRules == "" {
+		f.TargetingRules = "[]"
+	}
+	if f.Origin == "" {
+		f.Origin = "auto"
+	}
+	const q = `INSERT INTO feature_flags (id, project_id, flag_key, name, flag_type, variants, default_variant, split, conversion_event, targeting_rules, status, origin)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(project_id, flag_key) DO NOTHING`
+	if _, err := s.db.ExecContext(ctx, q,
+		id, f.ProjectID, f.FlagKey, f.Name, f.FlagType,
+		f.Variants, f.DefaultVariant, f.Split, f.ConversionEvent, f.TargetingRules, f.Status, f.Origin,
+	); err != nil {
+		return FeatureFlag{}, fmt.Errorf("ensure auto flag: %w", err)
+	}
+	return s.FlagByKey(ctx, f.ProjectID, f.FlagKey)
+}
+
+// CountAutoFlags returns how many auto-created flags a project has. Manual flags
+// are not counted — only the auto-registration spam vector is bounded.
+func (s *Store) CountAutoFlags(ctx context.Context, projectID string) (int, error) {
+	const q = `SELECT COUNT(*) FROM feature_flags WHERE project_id = ? AND origin = 'auto'`
+	var n int
+	if err := s.db.QueryRowContext(ctx, q, projectID).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// TouchFlagEvaluated records that an auto flag was just evaluated, so the
+// retention sweep can tell live unconfigured flags from abandoned ones.
+func (s *Store) TouchFlagEvaluated(ctx context.Context, flagID string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE feature_flags SET last_evaluated_at = CURRENT_TIMESTAMP WHERE id = ?`, flagID)
+	return err
+}
+
+// PurgeStaleAutoFlags deletes auto-created, never-configured (status='inactive')
+// flags whose most recent evaluation — or creation, if never evaluated — predates
+// the cutoff. Human-claimed flags (origin='manual') and activated/paused flags are
+// never touched.
+func (s *Store) PurgeStaleAutoFlags(ctx context.Context, cutoff time.Time) (int64, error) {
+	const q = `DELETE FROM feature_flags
+		WHERE origin = 'auto' AND status = 'inactive'
+		  AND COALESCE(last_evaluated_at, created_at) < ?`
+	result, err := s.db.ExecContext(ctx, q, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (s *Store) FlagByID(ctx context.Context, id string) (FeatureFlag, error) {
+	q := `SELECT ` + flagColumns + ` FROM feature_flags WHERE id = ?`
+	return scanFlag(s.db.QueryRowContext(ctx, q, id))
 }
 
 func (s *Store) FlagByKey(ctx context.Context, projectID, flagKey string) (FeatureFlag, error) {
-	const q = `SELECT id, project_id, flag_key, name, flag_type, variants, default_variant, split, COALESCE(conversion_event,''), COALESCE(targeting_rules,'[]'), status, created_at FROM feature_flags WHERE project_id = ? AND flag_key = ?`
-	var f FeatureFlag
-	if err := s.db.QueryRowContext(ctx, q, projectID, flagKey).Scan(
-		&f.ID, &f.ProjectID, &f.FlagKey, &f.Name, &f.FlagType,
-		&f.Variants, &f.DefaultVariant, &f.Split, &f.ConversionEvent,
-		&f.TargetingRules, &f.Status, &f.CreatedAt,
-	); err != nil {
-		return FeatureFlag{}, err
-	}
-	return f, nil
+	q := `SELECT ` + flagColumns + ` FROM feature_flags WHERE project_id = ? AND flag_key = ?`
+	return scanFlag(s.db.QueryRowContext(ctx, q, projectID, flagKey))
 }
 
 func (s *Store) ListFlags(ctx context.Context, projectID string) ([]FeatureFlag, error) {
-	const q = `SELECT id, project_id, flag_key, name, flag_type, variants, default_variant, split, COALESCE(conversion_event,''), COALESCE(targeting_rules,'[]'), status, created_at FROM feature_flags WHERE project_id = ? ORDER BY created_at DESC`
+	q := `SELECT ` + flagColumns + ` FROM feature_flags WHERE project_id = ? ORDER BY created_at DESC`
 	rows, err := s.db.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, err
@@ -105,12 +183,8 @@ func (s *Store) ListFlags(ctx context.Context, projectID string) ([]FeatureFlag,
 
 	var flags []FeatureFlag
 	for rows.Next() {
-		var f FeatureFlag
-		if err := rows.Scan(
-			&f.ID, &f.ProjectID, &f.FlagKey, &f.Name, &f.FlagType,
-			&f.Variants, &f.DefaultVariant, &f.Split, &f.ConversionEvent,
-			&f.TargetingRules, &f.Status, &f.CreatedAt,
-		); err != nil {
+		f, err := scanFlag(rows)
+		if err != nil {
 			return nil, err
 		}
 		flags = append(flags, f)
@@ -122,7 +196,9 @@ func (s *Store) UpdateFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, err
 	if f.TargetingRules == "" {
 		f.TargetingRules = "[]"
 	}
-	const q = `UPDATE feature_flags SET name=?, flag_type=?, variants=?, default_variant=?, split=?, conversion_event=?, targeting_rules=?, status=? WHERE id=?`
+	// A human editing a flag claims it (origin='manual'): it now appears as a
+	// normal flag and is exempt from the stale-auto-flag sweep.
+	const q = `UPDATE feature_flags SET name=?, flag_type=?, variants=?, default_variant=?, split=?, conversion_event=?, targeting_rules=?, status=?, origin='manual' WHERE id=?`
 	if _, err := s.db.ExecContext(ctx, q,
 		f.Name, f.FlagType, f.Variants, f.DefaultVariant, f.Split,
 		f.ConversionEvent, f.TargetingRules, f.Status, f.ID,

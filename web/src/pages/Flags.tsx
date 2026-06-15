@@ -8,7 +8,7 @@ import { useProjects } from '../lib/projects'
 import { reportError } from '../lib/bugbarn'
 import { trackEvent } from '../lib/analytics'
 import { Skeleton } from '../components/ui/Skeleton'
-import { C, statusBadge, StatCard } from '../components/flags/shared'
+import { C, statusBadge, originBadge, StatCard } from '../components/flags/shared'
 import { FlagFormModal } from '../components/flags/FlagFormModal'
 
 // alignBooleanSplit produces a new split where the *new default* is always
@@ -450,6 +450,7 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
           {flag.flag_type === 'boolean' && (
             <DefaultToggle value={flag.default_variant === 'on'} onChange={toggleDefault} disabled={togglingDefault} />
           )}
+          {originBadge(flag.origin)}
           {statusBadge(flag.status)}
           <button onClick={toggleStatus} disabled={toggling}
             title={flag.status === 'active'
@@ -644,7 +645,10 @@ export default function Flags() {
                 <div style={{ fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 4 }}>{f.name}</div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <code style={{ fontSize: 12, color: C.muted }}>{f.flag_key}</code>
-                  {statusBadge(f.status)}
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    {originBadge(f.origin)}
+                    {statusBadge(f.status)}
+                  </div>
                 </div>
               </div>
             ))

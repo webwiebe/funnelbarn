@@ -74,6 +74,10 @@ type ServerConfig struct {
 	Recordings        service.Recordings
 	RecordingSettings ProjectRecordingSettingsRepo
 	ProjectHealth     service.ProjectHealth
+
+	// FlagAutoRegisterMax caps auto-created flags per project on the SDK evaluate
+	// endpoint (0 disables auto-registration).
+	FlagAutoRegisterMax int
 }
 
 // DistributionRepo provides session field distribution data.
@@ -95,41 +99,42 @@ type GeoAnonymizer interface {
 
 // Server is the main HTTP API server.
 type Server struct {
-	mux                *http.ServeMux
-	db                 Pinger
-	projects           service.Projects
-	funnels            service.Funnels
-	abtests            service.ABTests
-	flags              service.Flags
-	events             service.Events
-	sessions           service.Sessions
-	apikeys            service.APIKeys
-	widgets            service.Widgets
-	ingest             *ingest.Handler
-	userAuth           *auth.UserAuthenticator
-	sessionManager     *auth.SessionManager
-	allowedOrigins     []string
-	sessionSecret      string
-	publicURL          string
-	metricsToken       string
-	version            string
-	bugbarnEndpoint    string
-	bugbarnIngestKey   string
-	bugbarnProject     string
-	dogfoodAPIKey      string
-	dogfoodProject     string
-	trustedProxies     []string
-	iambarnProvider    *iambarn.Provider
-	iambarnUsers       IAMBarnUserRepo
-	iambarnFlagProject string
-	oidc               *auth.OIDCClient
-	instanceSettings   InstanceSettingsRepo
-	geoAnonymizer      GeoAnonymizer
-	segments           service.Segments
-	distributions      DistributionRepo
-	recordings         service.Recordings
-	recordingSettings  ProjectRecordingSettingsRepo
-	projectHealth      service.ProjectHealth
+	mux                 *http.ServeMux
+	db                  Pinger
+	projects            service.Projects
+	funnels             service.Funnels
+	abtests             service.ABTests
+	flags               service.Flags
+	events              service.Events
+	sessions            service.Sessions
+	apikeys             service.APIKeys
+	widgets             service.Widgets
+	ingest              *ingest.Handler
+	userAuth            *auth.UserAuthenticator
+	sessionManager      *auth.SessionManager
+	allowedOrigins      []string
+	sessionSecret       string
+	publicURL           string
+	metricsToken        string
+	version             string
+	bugbarnEndpoint     string
+	bugbarnIngestKey    string
+	bugbarnProject      string
+	dogfoodAPIKey       string
+	dogfoodProject      string
+	trustedProxies      []string
+	iambarnProvider     *iambarn.Provider
+	iambarnUsers        IAMBarnUserRepo
+	iambarnFlagProject  string
+	oidc                *auth.OIDCClient
+	instanceSettings    InstanceSettingsRepo
+	geoAnonymizer       GeoAnonymizer
+	segments            service.Segments
+	distributions       DistributionRepo
+	recordings          service.Recordings
+	recordingSettings   ProjectRecordingSettingsRepo
+	projectHealth       service.ProjectHealth
+	flagAutoRegisterMax int
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
@@ -149,44 +154,45 @@ func NewServer(cfg ServerConfig) *Server {
 	}
 
 	s := &Server{
-		mux:                http.NewServeMux(),
-		db:                 cfg.DB,
-		version:            cfg.Version,
-		projects:           cfg.Projects,
-		funnels:            cfg.Funnels,
-		abtests:            cfg.ABTests,
-		flags:              cfg.Flags,
-		events:             cfg.Events,
-		sessions:           cfg.Sessions,
-		apikeys:            cfg.APIKeys,
-		widgets:            cfg.Widgets,
-		ingest:             cfg.Ingest,
-		userAuth:           cfg.UserAuth,
-		sessionManager:     cfg.SessionManager,
-		allowedOrigins:     cfg.AllowedOrigins,
-		sessionSecret:      cfg.SessionSecret,
-		publicURL:          cfg.PublicURL,
-		bugbarnEndpoint:    cfg.BugbarnEndpoint,
-		bugbarnIngestKey:   cfg.BugbarnIngestKey,
-		bugbarnProject:     cfg.BugbarnProject,
-		dogfoodAPIKey:      cfg.DogfoodAPIKey,
-		dogfoodProject:     cfg.DogfoodProject,
-		trustedProxies:     cfg.TrustedProxies,
-		loginLimiter:       newRateLimiter(cfg.LoginRatePerMinute, cfg.LoginRateBurst),
-		eventsLimiter:      newRateLimiter(cfg.IngestRatePerMinute, cfg.IngestRateBurst),
-		apiLimiter:         newRateLimiter(cfg.APIRatePerMinute, cfg.APIRateBurst),
-		setupLimiter:       newRateLimiter(setupRate, setupBurst),
-		iambarnProvider:    cfg.IAMBarnProvider,
-		iambarnUsers:       cfg.IAMBarnUsers,
-		iambarnFlagProject: cfg.IAMBarnFlagProject,
-		oidc:               cfg.OIDC,
-		instanceSettings:   cfg.InstanceSettings,
-		geoAnonymizer:      cfg.GeoAnonymizer,
-		segments:           cfg.Segments,
-		distributions:      cfg.Distributions,
-		recordings:         cfg.Recordings,
-		recordingSettings:  cfg.RecordingSettings,
-		projectHealth:      cfg.ProjectHealth,
+		mux:                 http.NewServeMux(),
+		db:                  cfg.DB,
+		version:             cfg.Version,
+		projects:            cfg.Projects,
+		funnels:             cfg.Funnels,
+		abtests:             cfg.ABTests,
+		flags:               cfg.Flags,
+		events:              cfg.Events,
+		sessions:            cfg.Sessions,
+		apikeys:             cfg.APIKeys,
+		widgets:             cfg.Widgets,
+		ingest:              cfg.Ingest,
+		userAuth:            cfg.UserAuth,
+		sessionManager:      cfg.SessionManager,
+		allowedOrigins:      cfg.AllowedOrigins,
+		sessionSecret:       cfg.SessionSecret,
+		publicURL:           cfg.PublicURL,
+		bugbarnEndpoint:     cfg.BugbarnEndpoint,
+		bugbarnIngestKey:    cfg.BugbarnIngestKey,
+		bugbarnProject:      cfg.BugbarnProject,
+		dogfoodAPIKey:       cfg.DogfoodAPIKey,
+		dogfoodProject:      cfg.DogfoodProject,
+		trustedProxies:      cfg.TrustedProxies,
+		loginLimiter:        newRateLimiter(cfg.LoginRatePerMinute, cfg.LoginRateBurst),
+		eventsLimiter:       newRateLimiter(cfg.IngestRatePerMinute, cfg.IngestRateBurst),
+		apiLimiter:          newRateLimiter(cfg.APIRatePerMinute, cfg.APIRateBurst),
+		setupLimiter:        newRateLimiter(setupRate, setupBurst),
+		iambarnProvider:     cfg.IAMBarnProvider,
+		iambarnUsers:        cfg.IAMBarnUsers,
+		iambarnFlagProject:  cfg.IAMBarnFlagProject,
+		oidc:                cfg.OIDC,
+		instanceSettings:    cfg.InstanceSettings,
+		geoAnonymizer:       cfg.GeoAnonymizer,
+		segments:            cfg.Segments,
+		distributions:       cfg.Distributions,
+		recordings:          cfg.Recordings,
+		recordingSettings:   cfg.RecordingSettings,
+		projectHealth:       cfg.ProjectHealth,
+		flagAutoRegisterMax: cfg.FlagAutoRegisterMax,
 	}
 	s.registerRoutes()
 	return s

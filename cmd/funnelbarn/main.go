@@ -272,6 +272,7 @@ func run() error {
 		Recordings:          recordingsSvc,
 		RecordingSettings:   store,
 		ProjectHealth:       healthSvc,
+		FlagAutoRegisterMax: cfg.AutoRegisterMaxFlags,
 	})
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)
@@ -381,6 +382,15 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 					slog.Error("purge old evaluations", "err", err)
 				} else if ne > 0 {
 					slog.Info("purged old evaluations", "count", ne, "before", cutoff.Format(time.DateOnly))
+				}
+			}
+			if cfg.AutoRegisterTTLDays > 0 {
+				cutoff := time.Now().AddDate(0, 0, -cfg.AutoRegisterTTLDays)
+				nf, err := store.PurgeStaleAutoFlags(ctx, cutoff)
+				if err != nil {
+					slog.Error("purge stale auto flags", "err", err)
+				} else if nf > 0 {
+					slog.Info("purged stale auto flags", "count", nf, "before", cutoff.Format(time.DateOnly))
 				}
 			}
 			if recordings != nil {

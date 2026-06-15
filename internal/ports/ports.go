@@ -51,6 +51,10 @@ type ABTestRepo interface {
 // FlagRepo is the persistence port for feature flags.
 type FlagRepo interface {
 	CreateFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error)
+	EnsureAutoFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error)
+	CountAutoFlags(ctx context.Context, projectID string) (int, error)
+	TouchFlagEvaluated(ctx context.Context, flagID string) error
+	PurgeStaleAutoFlags(ctx context.Context, cutoff time.Time) (int64, error)
 	FlagByID(ctx context.Context, id string) (repository.FeatureFlag, error)
 	FlagByKey(ctx context.Context, projectID, flagKey string) (repository.FeatureFlag, error)
 	ListFlags(ctx context.Context, projectID string) ([]repository.FeatureFlag, error)

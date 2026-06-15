@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
@@ -239,21 +241,24 @@ func (s *Server) handleEvaluateFlag(w http.ResponseWriter, r *http.Request) {
 			}
 		}()
 	}
-	s.evaluateFlagInProject(w, r, projectID)
+	// SDK callers auto-register unknown flags so they surface in the dashboard.
+	s.evaluateFlagInProject(w, r, projectID, true)
 }
 
 // handlePlaygroundEvaluateFlag is the session-authed dashboard counterpart of
 // handleEvaluateFlag. The project ID comes from the URL instead of the API key.
+// The dashboard playground never auto-registers — it's a testing surface, and a
+// typo there shouldn't create a flag.
 func (s *Server) handlePlaygroundEvaluateFlag(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
 		jsonError(w, "project id required", http.StatusBadRequest)
 		return
 	}
-	s.evaluateFlagInProject(w, r, projectID)
+	s.evaluateFlagInProject(w, r, projectID, false)
 }
 
-func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, projectID string) {
+func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, projectID string, autoRegister bool) {
 	var body struct {
 		FlagKey      string         `json:"flag_key"`
 		DefaultValue any            `json:"default_value"`
@@ -271,19 +276,32 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 		body.Context = map[string]any{}
 	}
 
-	result, err := s.flags.EvaluateFlag(r.Context(), projectID, body.FlagKey, body.Context)
+	var result service.FlagEvalResult
+	var err error
+	if autoRegister {
+		result, err = s.flags.EvaluateOrRegisterFlag(r.Context(), projectID, body.FlagKey, body.Context, body.DefaultValue, s.flagAutoRegisterMax)
+	} else {
+		result, err = s.flags.EvaluateFlag(r.Context(), projectID, body.FlagKey, body.Context)
+	}
 	if err != nil {
 		errorCode := "GENERAL"
-		if strings.Contains(err.Error(), "flag not found") {
+		switch {
+		case errors.Is(err, domain.ErrAutoRegisterLimit):
+			errorCode = "AUTO_REGISTER_LIMIT"
+		case strings.Contains(err.Error(), "flag not found"):
 			errorCode = "FLAG_NOT_FOUND"
 		}
-		// FLAG_NOT_FOUND is normal client behaviour; everything else (DB
-		// failure, JSON corruption) is a real server problem that was
-		// previously hidden behind a 200 OK + reason=ERROR. Surface those.
-		if errorCode == "FLAG_NOT_FOUND" {
+		// FLAG_NOT_FOUND is normal client behaviour; AUTO_REGISTER_LIMIT is a
+		// possible-abuse signal worth a warning; everything else (DB failure,
+		// JSON corruption) is a real server problem to surface.
+		switch errorCode {
+		case "FLAG_NOT_FOUND":
 			slog.DebugContext(r.Context(), "flag evaluate: not found",
 				"project_id", projectID, "flag_key", body.FlagKey)
-		} else {
+		case "AUTO_REGISTER_LIMIT":
+			slog.WarnContext(r.Context(), "flag auto-register limit reached",
+				"handled", true, "project_id", projectID, "flag_key", body.FlagKey)
+		default:
 			slog.ErrorContext(r.Context(), "flag evaluate failed",
 				"err", err, "handled", false,
 				"project_id", projectID,

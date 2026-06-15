@@ -33,19 +33,26 @@ type Config struct {
 	DogfoodAPIKey       string
 	DogfoodProject      string
 	EventRetentionDays  int // 0 = disabled; default 90
-	LoginRatePerMinute  float64
-	LoginRateBurst      float64
-	APIRatePerMinute    float64
-	APIRateBurst        float64
-	MetricsToken        string
-	LogLevel            slog.Level
-	IngestRatePerMinute float64
-	IngestRateBurst     float64
-	SpanBarnEndpoint    string
-	SpanBarnAPIKey      string
-	TrustedProxies      []string
-	SetupRatePerMinute  float64
-	SetupRateBurst      float64
+
+	// AutoRegisterMaxFlags caps auto-created flags per project (0 disables
+	// auto-registration). AutoRegisterTTLDays is how long an auto-created,
+	// never-configured flag survives without evaluations before pruning (0
+	// disables pruning).
+	AutoRegisterMaxFlags int
+	AutoRegisterTTLDays  int
+	LoginRatePerMinute   float64
+	LoginRateBurst       float64
+	APIRatePerMinute     float64
+	APIRateBurst         float64
+	MetricsToken         string
+	LogLevel             slog.Level
+	IngestRatePerMinute  float64
+	IngestRateBurst      float64
+	SpanBarnEndpoint     string
+	SpanBarnAPIKey       string
+	TrustedProxies       []string
+	SetupRatePerMinute   float64
+	SetupRateBurst       float64
 
 	IAMBarnClientID string
 	IAMBarnIssuer   string
@@ -118,6 +125,21 @@ func Load() Config {
 	if raw := os.Getenv("FUNNELBARN_EVENT_RETENTION_DAYS"); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
 			cfg.EventRetentionDays = parsed
+		}
+	}
+
+	// Flag auto-registration — default cap 100 per project, prune stale
+	// never-configured auto flags after 30 days.
+	cfg.AutoRegisterMaxFlags = 100
+	if raw := os.Getenv("FUNNELBARN_FLAG_AUTOREGISTER_MAX"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
+			cfg.AutoRegisterMaxFlags = parsed
+		}
+	}
+	cfg.AutoRegisterTTLDays = 30
+	if raw := os.Getenv("FUNNELBARN_FLAG_AUTOREGISTER_TTL_DAYS"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
+			cfg.AutoRegisterTTLDays = parsed
 		}
 	}
 
