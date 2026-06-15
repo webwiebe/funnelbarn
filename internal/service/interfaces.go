@@ -53,6 +53,7 @@ type Flags interface {
 	UpdateFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error)
 	DeleteFlag(ctx context.Context, id string) error
 	EvaluateFlag(ctx context.Context, projectID, flagKey string, evalContext map[string]any) (FlagEvalResult, error)
+	EvaluateOrRegisterFlag(ctx context.Context, projectID, flagKey string, evalContext map[string]any, defaultValue any, maxAuto int) (FlagEvalResult, error)
 	AnalyzeFlag(ctx context.Context, flag repository.FeatureFlag, from, to time.Time) ([]repository.FlagAnalysisResult, error)
 	ContextKeySuggestions(ctx context.Context, projectID string) ([]repository.ContextKeySuggestion, error)
 }

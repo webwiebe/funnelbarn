@@ -1,7 +1,10 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -251,5 +254,151 @@ func TestHandleClientConfig_ExposesBugbarnFields(t *testing.T) {
 	}
 	if resp["bugbarn_project"] != "funnelbarn" {
 		t.Errorf("bugbarn_project: got %v (expected dogfood routing slug)", resp["bugbarn_project"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleEvaluateFlag — API-key SDK endpoint, which auto-registers unknown flags.
+// ---------------------------------------------------------------------------
+
+// newSDKServer builds a server whose ingest authorizer maps a fixed API key to a
+// freshly-created project (scope "ingest"), so the SDK evaluate endpoint resolves
+// a concrete project ID and can auto-register flags.
+func newSDKServer(t *testing.T, maxAuto int) (*Server, *repository.Store, string, string) {
+	t.Helper()
+	store := openMemoryStore(t)
+	sp := newTestSpool(t)
+	p, err := store.CreateProject(context.Background(), "SDK", "sdk")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	const apiKey = "proj-sdk-key"
+	sum := sha256.Sum256([]byte(apiKey))
+	wantHash := hex.EncodeToString(sum[:])
+	lookup := func(_ context.Context, keySHA256 string) (string, string, bool, error) {
+		if keySHA256 == wantHash {
+			return p.ID, "ingest", true, nil
+		}
+		return "", "", false, nil
+	}
+	authorizer := auth.New("").WithDBLookup(lookup, nil)
+	ingestHandler := ingest.NewHandler(authorizer, sp, 0)
+	sm := auth.NewSessionManager("test-secret", time.Hour)
+	userAuth, _ := auth.NewUserAuthenticator("", "", "")
+
+	srv := NewServer(ServerConfig{
+		Ingest:              ingestHandler,
+		Projects:            service.NewProjectService(store),
+		Funnels:             service.NewFunnelService(store),
+		ABTests:             service.NewABTestService(store),
+		Flags:               service.NewFlagService(store),
+		Events:              service.NewEventService(store),
+		Sessions:            service.NewSessionService(store),
+		APIKeys:             service.NewAPIKeyService(store),
+		Widgets:             service.NewWidgetService(store),
+		UserAuth:            userAuth,
+		SessionManager:      sm,
+		SessionSecret:       "test-secret",
+		PublicURL:           "http://localhost",
+		LoginRatePerMinute:  1000,
+		LoginRateBurst:      1000,
+		APIRatePerMinute:    1000,
+		APIRateBurst:        1000,
+		IngestRatePerMinute: 1000,
+		IngestRateBurst:     1000,
+		DB:                  store,
+		Version:             "test",
+		FlagAutoRegisterMax: maxAuto,
+	})
+	return srv, store, p.ID, apiKey
+}
+
+func postEvaluateSDK(t *testing.T, srv *Server, apiKey string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	b, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/evaluate", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(auth.HeaderAPIKey, apiKey)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	return w
+}
+
+func TestSDKEvaluate_AutoRegistersUnknownFlag(t *testing.T) {
+	srv, store, projectID, apiKey := newSDKServer(t, 100)
+
+	w := postEvaluateSDK(t, srv, apiKey, map[string]any{
+		"flag_key":      "anon_qr_limit",
+		"default_value": float64(3),
+		"context":       map[string]any{"targeting_key": "device-1"},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["reason"] != "DISABLED" {
+		t.Errorf("reason: want DISABLED for a freshly auto-created flag, got %v", resp["reason"])
+	}
+	if resp["value"] != float64(3) {
+		t.Errorf("value: want 3 (caller default), got %v", resp["value"])
+	}
+
+	flags, err := store.ListFlags(context.Background(), projectID)
+	if err != nil {
+		t.Fatalf("ListFlags: %v", err)
+	}
+	if len(flags) != 1 {
+		t.Fatalf("want 1 auto-registered flag, got %d", len(flags))
+	}
+	if flags[0].Origin != "auto" || flags[0].Status != "inactive" {
+		t.Errorf("auto flag should be origin=auto status=inactive, got origin=%q status=%q", flags[0].Origin, flags[0].Status)
+	}
+}
+
+func TestSDKEvaluate_AutoRegisterLimit(t *testing.T) {
+	srv, store, projectID, apiKey := newSDKServer(t, 1)
+
+	// First unknown flag registers fine.
+	if w := postEvaluateSDK(t, srv, apiKey, map[string]any{"flag_key": "flag_a", "default_value": true}); w.Code != http.StatusOK {
+		t.Fatalf("flag_a: want 200, got %d", w.Code)
+	}
+	// Second exceeds the cap of 1.
+	w := postEvaluateSDK(t, srv, apiKey, map[string]any{"flag_key": "flag_b", "default_value": true})
+	if w.Code != http.StatusOK {
+		t.Fatalf("flag_b: want 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["error_code"] != "AUTO_REGISTER_LIMIT" {
+		t.Errorf("error_code: want AUTO_REGISTER_LIMIT, got %v", resp["error_code"])
+	}
+	if resp["value"] != true {
+		t.Errorf("value: want true (caller default), got %v", resp["value"])
+	}
+
+	flags, _ := store.ListFlags(context.Background(), projectID)
+	if len(flags) != 1 {
+		t.Errorf("cap should hold the project at 1 auto flag, got %d", len(flags))
+	}
+}
+
+func TestPlaygroundEvaluate_DoesNotAutoRegister(t *testing.T) {
+	srv, store := newAuthedServer(t)
+	p, _, cookie, csrf := playgroundFlag(t, srv, store, "noauto")
+	// Remove the seeded flag so we can assert nothing new is created.
+	before, _ := store.ListFlags(context.Background(), p.ID)
+
+	w := postJSONWithCSRF(t, srv, "/api/v1/projects/"+p.ID+"/flags/evaluate", map[string]any{
+		"flag_key":      "never_created_by_playground",
+		"default_value": "x",
+		"context":       map[string]any{},
+	}, cookie, csrf)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	after, _ := store.ListFlags(context.Background(), p.ID)
+	if len(after) != len(before) {
+		t.Errorf("playground must not auto-register: flag count changed %d -> %d", len(before), len(after))
 	}
 }

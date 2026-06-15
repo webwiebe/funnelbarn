@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -223,6 +224,103 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 		Reason:  "SPLIT",
 		FlagKey: flag.FlagKey,
 	}, nil
+}
+
+// flagKeyRe bounds auto-registration to sane keys so a spam caller can't create
+// rows with arbitrary/oversized garbage keys.
+var flagKeyRe = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,64}$`)
+
+func validFlagKey(key string) bool { return flagKeyRe.MatchString(key) }
+
+// inferFlagType maps a JSON-decoded default value to a flag_type for the dashboard.
+func inferFlagType(v any) string {
+	switch v.(type) {
+	case bool:
+		return "boolean"
+	case float64, int, int64:
+		return "number"
+	case string, nil:
+		return "string"
+	default:
+		return "json"
+	}
+}
+
+// buildAutoFlag describes an inert, auto-created flag: a single "default" variant
+// holding the caller's default value, status "inactive" so evaluation returns that
+// default (reason DISABLED) until a human configures it.
+func buildAutoFlag(projectID, flagKey string, defaultValue any) repository.FeatureFlag {
+	variants := map[string]any{"default": defaultValue}
+	vb, err := json.Marshal(variants)
+	if err != nil {
+		vb = []byte(`{"default":null}`)
+	}
+	return repository.FeatureFlag{
+		ProjectID:      projectID,
+		FlagKey:        flagKey,
+		Name:           flagKey,
+		FlagType:       inferFlagType(defaultValue),
+		Variants:       string(vb),
+		DefaultVariant: "default",
+		Split:          "{}",
+		TargetingRules: "[]",
+		Status:         "inactive",
+		Origin:         "auto",
+	}
+}
+
+// EvaluateOrRegisterFlag evaluates a flag and, when it doesn't exist yet,
+// auto-registers an inert flag carrying the caller's default so it surfaces in
+// the dashboard ready to configure. The caller always gets its default back in
+// that case (reason DISABLED), so SDK behaviour is unchanged.
+//
+// maxAuto caps auto-created flags per project (0 disables auto-registration).
+// Invalid keys, a missing project, or hitting the cap fall back to the original
+// not-found behaviour (the cap case via domain.ErrAutoRegisterLimit).
+func (svc *FlagService) EvaluateOrRegisterFlag(ctx context.Context, projectID, flagKey string, evalContext map[string]any, defaultValue any, maxAuto int) (FlagEvalResult, error) {
+	res, err := svc.EvaluateFlag(ctx, projectID, flagKey, evalContext)
+	if err == nil {
+		// Keep auto, still-unconfigured flags alive in the retention sweep while
+		// they're actively evaluated. DISABLED covers inactive (auto) and paused
+		// (manual, never pruned) flags; touchIfAuto filters to origin='auto'.
+		if res.Reason == "DISABLED" {
+			svc.touchIfAuto(projectID, flagKey)
+		}
+		return res, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return FlagEvalResult{}, err // a real lookup failure, not a missing flag
+	}
+	if maxAuto <= 0 || projectID == "" || !validFlagKey(flagKey) {
+		return FlagEvalResult{}, err // fall through to FLAG_NOT_FOUND + default
+	}
+	if n, cerr := svc.store.CountAutoFlags(ctx, projectID); cerr == nil && n >= maxAuto {
+		return FlagEvalResult{}, fmt.Errorf("project %s: %w", projectID, domain.ErrAutoRegisterLimit)
+	}
+	if _, cerr := svc.store.EnsureAutoFlag(ctx, buildAutoFlag(projectID, flagKey, defaultValue)); cerr != nil {
+		slog.WarnContext(ctx, "flag: auto-register failed", "err", cerr, "handled", true,
+			"project_id", projectID, "flag_key", flagKey)
+		// Still hand the caller its default so the SDK is unaffected.
+		return FlagEvalResult{Value: defaultValue, Variant: "default", Reason: "DISABLED", FlagKey: flagKey}, nil
+	}
+	// Re-evaluate now that the inert flag exists (returns default, reason DISABLED).
+	return svc.EvaluateFlag(ctx, projectID, flagKey, evalContext)
+}
+
+// touchIfAuto best-effort bumps last_evaluated_at for an auto flag, off the
+// request path so it never adds latency or fails the evaluation.
+func (svc *FlagService) touchIfAuto(projectID, flagKey string) {
+	go func() {
+		ctx := context.Background()
+		f, err := svc.store.FlagByKey(ctx, projectID, flagKey)
+		if err != nil || f.Origin != "auto" {
+			return
+		}
+		if err := svc.store.TouchFlagEvaluated(ctx, f.ID); err != nil {
+			slog.WarnContext(ctx, "flag: touch last_evaluated_at", "err", err, "handled", true,
+				"flag_id", f.ID, "project_id", projectID)
+		}
+	}()
 }
 
 func (svc *FlagService) AnalyzeFlag(ctx context.Context, flag repository.FeatureFlag, from, to time.Time) ([]repository.FlagAnalysisResult, error) {

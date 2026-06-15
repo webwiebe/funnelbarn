@@ -525,6 +525,8 @@ export interface FeatureFlag {
   targeting_rules: string
   status: string
   created_at: string
+  origin: string // 'manual' | 'auto' — 'auto' flags were created on first evaluation
+  last_evaluated_at?: string
 }
 
 export interface FlagAnalysisVariant {

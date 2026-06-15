@@ -174,3 +174,27 @@ func TestApplyConfigFile_DoesNotOverrideExisting(t *testing.T) {
 		t.Errorf("existing env var should not be overridden: got %q", got)
 	}
 }
+
+func TestLoad_FlagAutoRegisterDefaults(t *testing.T) {
+	t.Setenv("FUNNELBARN_FLAG_AUTOREGISTER_MAX", "")
+	t.Setenv("FUNNELBARN_FLAG_AUTOREGISTER_TTL_DAYS", "")
+	cfg := Load()
+	if cfg.AutoRegisterMaxFlags != 100 {
+		t.Errorf("AutoRegisterMaxFlags default: want 100, got %d", cfg.AutoRegisterMaxFlags)
+	}
+	if cfg.AutoRegisterTTLDays != 30 {
+		t.Errorf("AutoRegisterTTLDays default: want 30, got %d", cfg.AutoRegisterTTLDays)
+	}
+}
+
+func TestLoad_FlagAutoRegisterOverrides(t *testing.T) {
+	t.Setenv("FUNNELBARN_FLAG_AUTOREGISTER_MAX", "0")
+	t.Setenv("FUNNELBARN_FLAG_AUTOREGISTER_TTL_DAYS", "7")
+	cfg := Load()
+	if cfg.AutoRegisterMaxFlags != 0 {
+		t.Errorf("AutoRegisterMaxFlags: want 0 (disabled), got %d", cfg.AutoRegisterMaxFlags)
+	}
+	if cfg.AutoRegisterTTLDays != 7 {
+		t.Errorf("AutoRegisterTTLDays: want 7, got %d", cfg.AutoRegisterTTLDays)
+	}
+}

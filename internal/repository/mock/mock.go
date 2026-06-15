@@ -614,11 +614,72 @@ func (s *Store) CreateFlag(_ context.Context, f repository.FeatureFlag) (reposit
 	defer s.mu.Unlock()
 	f.ID = newMockID("flag")
 	f.CreatedAt = time.Now()
+	if f.Origin == "" {
+		f.Origin = "manual"
+	}
 	if s.flags == nil {
 		s.flags = make(map[string]repository.FeatureFlag)
 	}
 	s.flags[f.ID] = f
 	return f, nil
+}
+
+func (s *Store) EnsureAutoFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error) {
+	s.mu.Lock()
+	for _, existing := range s.flags {
+		if existing.ProjectID == f.ProjectID && existing.FlagKey == f.FlagKey {
+			s.mu.Unlock()
+			return existing, nil
+		}
+	}
+	s.mu.Unlock()
+	if f.Origin == "" {
+		f.Origin = "auto"
+	}
+	return s.CreateFlag(ctx, f)
+}
+
+func (s *Store) CountAutoFlags(_ context.Context, projectID string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n := 0
+	for _, f := range s.flags {
+		if f.ProjectID == projectID && f.Origin == "auto" {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (s *Store) TouchFlagEvaluated(_ context.Context, flagID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if f, ok := s.flags[flagID]; ok {
+		now := time.Now()
+		f.LastEvaluatedAt = &now
+		s.flags[flagID] = f
+	}
+	return nil
+}
+
+func (s *Store) PurgeStaleAutoFlags(_ context.Context, cutoff time.Time) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var deleted int64
+	for id, f := range s.flags {
+		if f.Origin != "auto" || f.Status != "inactive" {
+			continue
+		}
+		seen := f.CreatedAt
+		if f.LastEvaluatedAt != nil {
+			seen = *f.LastEvaluatedAt
+		}
+		if seen.Before(cutoff) {
+			delete(s.flags, id)
+			deleted++
+		}
+	}
+	return deleted, nil
 }
 
 func (s *Store) FlagByID(_ context.Context, id string) (repository.FeatureFlag, error) {
@@ -665,6 +726,7 @@ func (s *Store) UpdateFlag(_ context.Context, f repository.FeatureFlag) (reposit
 	f.ProjectID = existing.ProjectID
 	f.FlagKey = existing.FlagKey
 	f.CreatedAt = existing.CreatedAt
+	f.Origin = "manual" // a human edit claims the flag
 	s.flags[f.ID] = f
 	return f, nil
 }

@@ -2,10 +2,12 @@ package service_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/mock"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -369,4 +371,123 @@ func TestFlagService_DeterministicSplit(t *testing.T) {
 	r2, err := svc.EvaluateFlag(context.Background(), "proj-1", "deterministic-flag", map[string]any{"targetingKey": "same-user"})
 	require.NoError(t, err)
 	require.Equal(t, r1.Variant, r2.Variant)
+}
+
+func TestEvaluateOrRegisterFlag_CreatesInactiveDefaultFlag(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+
+	res, err := svc.EvaluateOrRegisterFlag(context.Background(), "proj-1", "anon_qr_limit",
+		map[string]any{"targeting_key": "device-1"}, float64(3), 100)
+	require.NoError(t, err)
+	require.Equal(t, "DISABLED", res.Reason)
+	require.Equal(t, float64(3), res.Value)
+	require.Equal(t, "anon_qr_limit", res.FlagKey)
+
+	flags, err := svc.ListFlags(context.Background(), "proj-1")
+	require.NoError(t, err)
+	require.Len(t, flags, 1)
+	require.Equal(t, "auto", flags[0].Origin)
+	require.Equal(t, "inactive", flags[0].Status)
+	require.Equal(t, "number", flags[0].FlagType)
+	require.JSONEq(t, `{"default":3}`, flags[0].Variants)
+}
+
+func TestEvaluateOrRegisterFlag_Idempotent(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+	ctx := context.Background()
+
+	for i := 0; i < 3; i++ {
+		_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "pricing_default_billing",
+			map[string]any{"targeting_key": "s1"}, "monthly", 100)
+		require.NoError(t, err)
+	}
+	flags, err := svc.ListFlags(ctx, "proj-1")
+	require.NoError(t, err)
+	require.Len(t, flags, 1, "repeated evaluations must not create duplicate flags")
+}
+
+func TestEvaluateOrRegisterFlag_CapReached(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+	ctx := context.Background()
+
+	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "flag_a", nil, true, 1)
+	require.NoError(t, err)
+
+	_, err = svc.EvaluateOrRegisterFlag(ctx, "proj-1", "flag_b", nil, true, 1)
+	require.ErrorIs(t, err, domain.ErrAutoRegisterLimit)
+
+	flags, _ := svc.ListFlags(ctx, "proj-1")
+	require.Len(t, flags, 1, "cap must stop new auto flags from being created")
+}
+
+func TestEvaluateOrRegisterFlag_ManualFlagsNotCounted(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+	ctx := context.Background()
+
+	// Three manual flags exist; with a cap of 1, auto-registration should still
+	// succeed because manual flags do not count toward the cap.
+	for _, k := range []string{"m1", "m2", "m3"} {
+		createTestFlag(t, svc, "proj-1", k, map[string]any{"on": true, "off": false}, map[string]int{"on": 100}, "off")
+	}
+	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "auto_1", nil, true, 1)
+	require.NoError(t, err)
+
+	// A second auto key now hits the cap of 1 auto flag.
+	_, err = svc.EvaluateOrRegisterFlag(ctx, "proj-1", "auto_2", nil, true, 1)
+	require.ErrorIs(t, err, domain.ErrAutoRegisterLimit)
+}
+
+func TestEvaluateOrRegisterFlag_InvalidKeyNotCreated(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+	ctx := context.Background()
+
+	bad := "has spaces & symbols!"
+	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", bad, nil, true, 100)
+	require.ErrorIs(t, err, sql.ErrNoRows, "invalid keys fall through to not-found, never created")
+
+	flags, _ := svc.ListFlags(ctx, "proj-1")
+	require.Empty(t, flags)
+}
+
+func TestEvaluateOrRegisterFlag_DisabledWhenMaxZero(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+	ctx := context.Background()
+
+	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "some_flag", nil, true, 0)
+	require.ErrorIs(t, err, sql.ErrNoRows, "maxAuto=0 disables auto-registration")
+
+	flags, _ := svc.ListFlags(ctx, "proj-1")
+	require.Empty(t, flags)
+}
+
+func TestEvaluateOrRegisterFlag_NoProjectSkips(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+
+	_, err := svc.EvaluateOrRegisterFlag(context.Background(), "", "some_flag", nil, true, 100)
+	require.ErrorIs(t, err, sql.ErrNoRows, "an empty project (admin key) must not auto-register")
+}
+
+func TestUpdateFlag_ClaimsAutoFlagAsManual(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+	ctx := context.Background()
+
+	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "claim_me", nil, true, 100)
+	require.NoError(t, err)
+	flags, _ := svc.ListFlags(ctx, "proj-1")
+	require.Len(t, flags, 1)
+	require.Equal(t, "auto", flags[0].Origin)
+
+	f := flags[0]
+	f.Status = "active"
+	updated, err := svc.UpdateFlag(ctx, f)
+	require.NoError(t, err)
+	require.Equal(t, "manual", updated.Origin, "a human edit claims the flag")
 }

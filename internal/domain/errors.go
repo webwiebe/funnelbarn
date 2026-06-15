@@ -9,6 +9,9 @@ var (
 	ErrConflict   = errors.New("already exists")
 	ErrForbidden  = errors.New("forbidden")
 	ErrValidation = errors.New("validation error")
+	// ErrAutoRegisterLimit is returned when a project has reached its cap on
+	// auto-created feature flags and a new key cannot be registered.
+	ErrAutoRegisterLimit = errors.New("auto-register limit reached")
 )
 
 // ValidationError wraps a field-level validation message.
