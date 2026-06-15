@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CheckCircle, Circle, RotateCcw } from 'lucide-react'
 import { api, Project, ProjectHealth } from '../../lib/api'
 import { reportError } from '../../lib/bugbarn'
+import { FEATURES } from '../integrations/features'
 
 const C = {
   bg: '#0f1117',
@@ -14,19 +15,15 @@ const C = {
   success: '#10b981',
 }
 
-const FEATURES: { key: keyof ProjectHealth; label: string; description: string }[] = [
-  { key: 'setup_called', label: 'Setup guide fetched', description: 'GET /api/v1/setup/{slug}' },
-  { key: 'events_received', label: 'Events received', description: 'POST /api/v1/events' },
-  { key: 'flags_evaluated', label: 'Flag evaluations', description: 'POST /api/v1/evaluate' },
-  { key: 'recordings_received', label: 'Session recordings', description: 'POST /api/v1/recordings/chunk' },
-]
-
 interface ProjectHealthCardProps {
   projects: Project[]
   defaultProjectId: string | null
+  /** Notified whenever the loaded health / selected project changes, so a
+   *  sibling (e.g. the agent-instruction generator) can share the same data. */
+  onHealthChange?: (health: ProjectHealth | null, project: Project | null) => void
 }
 
-export function ProjectHealthCard({ projects, defaultProjectId }: ProjectHealthCardProps) {
+export function ProjectHealthCard({ projects, defaultProjectId, onHealthChange }: ProjectHealthCardProps) {
   const [selectedId, setSelectedId] = useState<string>('')
   const [health, setHealth] = useState<ProjectHealth | null>(null)
   const [loading, setLoading] = useState(false)
@@ -45,9 +42,13 @@ export function ProjectHealthCard({ projects, defaultProjectId }: ProjectHealthC
     setLoading(true)
     setError(null)
     api.getProjectHealth(selectedId)
-      .then(setHealth)
+      .then((h) => {
+        setHealth(h)
+        onHealthChange?.(h, projects.find((p) => p.id === selectedId) ?? null)
+      })
       .catch((e) => { reportError(e, { source: 'ProjectHealthCard.getProjectHealth' }); setError(String(e)) })
       .finally(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId])
 
   const handleReset = async () => {
@@ -58,6 +59,7 @@ export function ProjectHealthCard({ projects, defaultProjectId }: ProjectHealthC
       await api.resetProjectHealth(selectedId)
       const updated = await api.getProjectHealth(selectedId)
       setHealth(updated)
+      onHealthChange?.(updated, projects.find((p) => p.id === selectedId) ?? null)
     } catch (e) {
       reportError(e, { source: 'ProjectHealthCard.resetProjectHealth' })
       setError(String(e))
