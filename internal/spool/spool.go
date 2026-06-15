@@ -311,6 +311,19 @@ func ReadRecordsFrom(path string, offset int64) ([]RecordAtOffset, error) {
 	}
 	defer file.Close()
 
+	// Guard against a stale cursor after rotation: if the persisted offset is
+	// past the end of the active file, the file was rotated (renamed to an
+	// archive and recreated) or truncated since the cursor was written, so the
+	// offset points beyond the new, shorter file. Seeking there would silently
+	// read zero records forever and the consumer would never advance again.
+	// Restart from the beginning — the records in the active file are post-rotation
+	// and have not been processed yet, so this replays exactly the backlog.
+	if offset > 0 {
+		if fi, statErr := file.Stat(); statErr == nil && offset > fi.Size() {
+			offset = 0
+		}
+	}
+
 	if offset > 0 {
 		if _, err := file.Seek(offset, 0); err != nil {
 			return nil, err
