@@ -451,3 +451,23 @@ func TestAppendBatch_SizeLimit(t *testing.T) {
 		t.Errorf("want ErrFull for oversized batch, got %v", err)
 	}
 }
+
+func TestActiveSize(t *testing.T) {
+	dir := newTestDir(t)
+	// No file yet -> 0, no error.
+	if n, err := spool.ActiveSize(dir); err != nil || n != 0 {
+		t.Fatalf("empty dir: want 0,nil got %d,%v", n, err)
+	}
+	sp, err := spool.New(dir)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer sp.Close()
+	if err := sp.Append(makeRecord("a", `{"n":1}`)); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	n, err := spool.ActiveSize(dir)
+	if err != nil || n <= 0 {
+		t.Fatalf("after append: want >0,nil got %d,%v", n, err)
+	}
+}

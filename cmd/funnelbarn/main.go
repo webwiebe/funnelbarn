@@ -37,6 +37,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 	"github.com/wiebe-xyz/funnelbarn/internal/worker"
+	"github.com/wiebe-xyz/funnelbarn/internal/workerhealth"
 )
 
 // Version and BuildTime are injected at build time via -ldflags.
@@ -194,7 +195,11 @@ func run() error {
 		var geoErr error
 		geoLookup, geoErr = geoip.Open(cfg.GeoIPCityDB, cfg.GeoIPASNDB)
 		if geoErr != nil {
-			slog.Warn("geoip: failed to open database, geo lookup disabled", "err", geoErr)
+			// Error (not Warn) so a missing/unreadable geo DB raises a BugBarn
+			// issue instead of silently disabling geo enrichment.
+			slog.Error("geoip: failed to open database, geo enrichment disabled",
+				"err", geoErr, "handled", false,
+				"city_db", cfg.GeoIPCityDB, "asn_db", cfg.GeoIPASNDB)
 		} else {
 			defer geoLookup.Close()
 			slog.Info("geoip enabled", "city_db", cfg.GeoIPCityDB, "asn_db", cfg.GeoIPASNDB)
@@ -361,6 +366,10 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 		offset = 0
 	}
 
+	// Surface silent failure modes (stalled consumer, geo resolving nothing) as
+	// BugBarn issues via slog.Error.
+	health := workerhealth.New(workerhealth.Options{})
+
 	retryCounts := make(map[string]int)
 
 	for {
@@ -419,6 +428,23 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 			}
 			metrics.SpoolQueueDepth.Set(float64(len(entries)))
 
+			// Stall detection: if the spool has pending bytes the cursor isn't
+			// draining, raise an issue. This is the blindspot that hid a ~5-day
+			// ingestion outage.
+			if size, serr := spool.ActiveSize(cfg.SpoolDir); serr == nil {
+				pending := size - offset
+				if pending < 0 {
+					pending = 0
+				}
+				if stalled, since := health.CheckProgress(offset, pending); stalled {
+					slog.Error("ingest worker stalled: spool backlog not draining",
+						"handled", false,
+						"pending_bytes", pending,
+						"offset", offset,
+						"stalled_for", since.Round(time.Second).String())
+				}
+			}
+
 			// Check geo_enabled once per batch to avoid a DB round-trip per event.
 			geoEnabled := geoLookup != nil
 			if geoEnabled {
@@ -474,6 +500,13 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				var geoResult *geoip.GeoResult
 				if geoEnabled {
 					geoResult = geoLookup.Lookup(event.ClientIP)
+					// Geo is on but resolving nothing usually means the real
+					// client IP isn't reaching us (proxy/forwarding config).
+					hit := geoResult != nil && geoResult.CountryCode != ""
+					if alert, n := health.RecordGeo(hit); alert {
+						slog.Error("geo enrichment resolved 0 countries over recent lookups; check FUNNELBARN_TRUSTED_PROXIES and client-IP forwarding",
+							"handled", false, "lookups", n)
+					}
 				}
 
 				persistErr := worker.PersistEvent(opCtx, store, event, geoResult)
