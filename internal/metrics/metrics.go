@@ -49,4 +49,26 @@ var (
 		Name: "funnelbarn_spool_queue_depth",
 		Help: "Approximate number of unprocessed event records in the spool.",
 	})
+
+	// Worker health signals (mirror the workerhealth detectors so they're
+	// graphable trends in SpanBarn, not just discrete BugBarn issues).
+	IngestPendingBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "funnelbarn_ingest_pending_bytes",
+		Help: "Unconsumed bytes in the active spool file (consumer backlog).",
+	})
+
+	IngestStalled = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "funnelbarn_ingest_stalled",
+		Help: "1 when the ingest consumer is stalled (backlog not draining), else 0.",
+	})
+
+	GeoLookups = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "funnelbarn_geo_lookups_total",
+		Help: "Total geo lookups attempted by the worker.",
+	})
+
+	GeoHits = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "funnelbarn_geo_hits_total",
+		Help: "Total geo lookups that resolved a country.",
+	})
 )
