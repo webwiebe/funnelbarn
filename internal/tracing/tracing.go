@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -30,6 +31,26 @@ type Config struct {
 	Environment string
 }
 
+// newResource builds the OTEL resource shared by the trace, metric and log
+// providers so all three signals carry the same service identity.
+func newResource(ctx context.Context, cfg Config) (*resource.Resource, error) {
+	return resource.New(ctx,
+		resource.WithAttributes(
+			semconv.ServiceName(cfg.ServiceName),
+			semconv.ServiceVersion(cfg.Version),
+			semconv.DeploymentEnvironment(cfg.Environment),
+		),
+	)
+}
+
+// signalURL derives a sibling OTLP signal endpoint from the configured traces
+// endpoint (which is the full ".../v1/traces" URL). e.g. signalURL(".../v1/traces",
+// "metrics") -> ".../v1/metrics".
+func signalURL(tracesEndpoint, signal string) string {
+	base := strings.TrimSuffix(strings.TrimRight(tracesEndpoint, "/"), "/v1/traces")
+	return base + "/v1/" + signal
+}
+
 func Init(ctx context.Context, cfg Config) (func(context.Context) error, error) {
 	if cfg.Endpoint == "" || cfg.APIKey == "" {
 		tracer = otel.Tracer(cfg.ServiceName)
@@ -46,13 +67,7 @@ func Init(ctx context.Context, cfg Config) (func(context.Context) error, error) 
 		return nil, fmt.Errorf("create trace exporter: %w", err)
 	}
 
-	res, err := resource.New(ctx,
-		resource.WithAttributes(
-			semconv.ServiceName(cfg.ServiceName),
-			semconv.ServiceVersion(cfg.Version),
-			semconv.DeploymentEnvironment(cfg.Environment),
-		),
-	)
+	res, err := newResource(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("create resource: %w", err)
 	}

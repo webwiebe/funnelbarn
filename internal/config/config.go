@@ -50,6 +50,7 @@ type Config struct {
 	IngestRateBurst      float64
 	SpanBarnEndpoint     string
 	SpanBarnAPIKey       string
+	SpanBarnLogLevel     slog.Level // min level shipped to SpanBarn via OTLP logs (default info)
 	TrustedProxies       []string
 	SetupRatePerMinute   float64
 	SetupRateBurst       float64
@@ -190,6 +191,7 @@ func Load() Config {
 
 	cfg.SpanBarnEndpoint = os.Getenv("FUNNELBARN_SPANBARN_ENDPOINT")
 	cfg.SpanBarnAPIKey = os.Getenv("FUNNELBARN_SPANBARN_API_KEY")
+	cfg.SpanBarnLogLevel = parseLevel(os.Getenv("FUNNELBARN_SPANBARN_LOG_LEVEL"), slog.LevelInfo)
 
 	if raw := os.Getenv("FUNNELBARN_TRUSTED_PROXIES"); raw != "" {
 		for _, p := range strings.Split(raw, ",") {
@@ -230,19 +232,26 @@ func Load() Config {
 		}
 	}
 
-	cfg.LogLevel = slog.LevelInfo
-	if raw := os.Getenv("FUNNELBARN_LOG_LEVEL"); raw != "" {
-		switch strings.ToLower(raw) {
-		case "debug":
-			cfg.LogLevel = slog.LevelDebug
-		case "warn", "warning":
-			cfg.LogLevel = slog.LevelWarn
-		case "error":
-			cfg.LogLevel = slog.LevelError
-		}
-	}
+	cfg.LogLevel = parseLevel(os.Getenv("FUNNELBARN_LOG_LEVEL"), slog.LevelInfo)
 
 	return cfg
+}
+
+// parseLevel maps a level string ("debug"/"info"/"warn"/"error") to a slog.Level,
+// falling back to def for empty or unrecognised values.
+func parseLevel(raw string, def slog.Level) slog.Level {
+	switch strings.ToLower(raw) {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return def
+	}
 }
 
 func getenv(key, fallback string) string {

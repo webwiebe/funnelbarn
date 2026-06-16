@@ -103,6 +103,10 @@ func (m *Monitor) CheckProgress(offset, pending int64) (alert bool, stalledFor t
 	return false, 0
 }
 
+// Stalled reports whether the consumer is currently in a confirmed-stall state
+// (set true when CheckProgress alerts, cleared when the offset next advances).
+func (m *Monitor) Stalled() bool { return m.stalled }
+
 // RecordGeo records the outcome of one geo lookup (hit = a country was resolved).
 // When a full window of GeoSampleSize lookups resolves zero countries it returns
 // true once, throttled by GeoReAlert, so a broken client-IP/proxy chain (geo

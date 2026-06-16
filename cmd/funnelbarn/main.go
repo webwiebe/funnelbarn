@@ -74,8 +74,10 @@ func main() {
 }
 
 // buildLogger constructs a multi-sink slog.Logger based on the config.
-// It always writes JSON to stderr, and optionally fans out Warn+ to BugBarn.
-func buildLogger(cfg config.Config) *slog.Logger {
+// It always writes JSON to stderr, optionally fans out Warn+ to BugBarn, and
+// (when spanbarn != nil) ships >= SpanBarnLogLevel records to SpanBarn via OTLP,
+// minus the high-volume health-probe access logs.
+func buildLogger(cfg config.Config, spanbarn slog.Handler) *slog.Logger {
 	var handlers []slog.Handler
 
 	// Always: structured JSON to stderr.
@@ -90,7 +92,30 @@ func buildLogger(cfg config.Config) *slog.Logger {
 		handlers = append(handlers, bbHandler)
 	}
 
+	// Optional: SpanBarn OTLP logs (trace-correlated), filtered to keep volume
+	// sane on indefinitely-retained log storage.
+	if spanbarn != nil {
+		handlers = append(handlers, bblog.NewFilterHandler(spanbarn, cfg.SpanBarnLogLevel, isHealthProbeLog))
+	}
+
 	return slog.New(bblog.NewMultiHandler(handlers...))
+}
+
+// isHealthProbeLog drops the per-request access log emitted for Kubernetes health
+// probes, which fire every few seconds and would otherwise flood SpanBarn.
+func isHealthProbeLog(r slog.Record) bool {
+	if r.Message != "request" {
+		return false
+	}
+	probe := false
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key == "user_agent" && strings.HasPrefix(a.Value.String(), "kube-probe") {
+			probe = true
+			return false
+		}
+		return true
+	})
+	return probe
 }
 
 // run owns process wiring: opens storage, starts the worker, and serves the API.
@@ -166,8 +191,23 @@ func run() error {
 		})
 		defer bb.Shutdown(2 * time.Second)
 	}
+	otelCfg := tracing.Config{
+		Endpoint:    cfg.SpanBarnEndpoint,
+		APIKey:      cfg.SpanBarnAPIKey,
+		ServiceName: "funnelbarn",
+		Version:     Version,
+		Environment: cfg.SelfEnvironment,
+	}
+
+	// SpanBarn OTLP logs handler — must be created before the logger is built.
+	spanbarnLogHandler, shutdownLogs, err := tracing.InitLogs(ctx, otelCfg)
+	if err != nil {
+		return fmt.Errorf("init logs: %w", err)
+	}
+	defer shutdownLogs(context.Background())
+
 	// Rewire the global logger with the appropriate sinks.
-	slog.SetDefault(buildLogger(cfg))
+	slog.SetDefault(buildLogger(cfg, spanbarnLogHandler))
 	if selfReporting {
 		slog.Info("self-reporting enabled", "endpoint", cfg.SelfEndpoint)
 	}
@@ -175,19 +215,20 @@ func run() error {
 		slog.Info("dogfood analytics enabled", "project", cfg.DogfoodProject)
 	}
 
-	shutdownTracer, err := tracing.Init(ctx, tracing.Config{
-		Endpoint:    cfg.SpanBarnEndpoint,
-		APIKey:      cfg.SpanBarnAPIKey,
-		ServiceName: "funnelbarn",
-		Version:     Version,
-		Environment: cfg.SelfEnvironment,
-	})
+	shutdownTracer, err := tracing.Init(ctx, otelCfg)
 	if err != nil {
 		return fmt.Errorf("init tracing: %w", err)
 	}
 	defer shutdownTracer(context.Background())
+
+	shutdownMetrics, err := tracing.InitMetrics(ctx, otelCfg)
+	if err != nil {
+		return fmt.Errorf("init metrics: %w", err)
+	}
+	defer shutdownMetrics(context.Background())
+
 	if cfg.SpanBarnEndpoint != "" {
-		slog.Info("tracing enabled", "endpoint", cfg.SpanBarnEndpoint)
+		slog.Info("spanbarn telemetry enabled", "endpoint", cfg.SpanBarnEndpoint, "signals", "traces,metrics,logs")
 	}
 
 	var geoLookup *geoip.Lookup
@@ -436,6 +477,7 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				if pending < 0 {
 					pending = 0
 				}
+				metrics.IngestPendingBytes.Set(float64(pending))
 				if stalled, since := health.CheckProgress(offset, pending); stalled {
 					slog.Error("ingest worker stalled: spool backlog not draining",
 						"handled", false,
@@ -443,6 +485,11 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 						"offset", offset,
 						"stalled_for", since.Round(time.Second).String())
 				}
+				stalledGauge := 0.0
+				if health.Stalled() {
+					stalledGauge = 1
+				}
+				metrics.IngestStalled.Set(stalledGauge)
 			}
 
 			// Check geo_enabled once per batch to avoid a DB round-trip per event.
@@ -503,6 +550,10 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 					// Geo is on but resolving nothing usually means the real
 					// client IP isn't reaching us (proxy/forwarding config).
 					hit := geoResult != nil && geoResult.CountryCode != ""
+					metrics.GeoLookups.Inc()
+					if hit {
+						metrics.GeoHits.Inc()
+					}
 					if alert, n := health.RecordGeo(hit); alert {
 						slog.Error("geo enrichment resolved 0 countries over recent lookups; check FUNNELBARN_TRUSTED_PROXIES and client-IP forwarding",
 							"handled", false, "lookups", n)
