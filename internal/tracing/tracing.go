@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
@@ -52,6 +53,15 @@ func signalURL(tracesEndpoint, signal string) string {
 }
 
 func Init(ctx context.Context, cfg Config) (func(context.Context) error, error) {
+	// Always honour incoming W3C trace context so FunnelBarn's own spans/logs
+	// join the caller's trace in SpanBarn — the same trace_id that BugBarn errors
+	// and the recorded session carry. Set unconditionally (even when export is
+	// off) so extraction/injection behave consistently.
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+
 	if cfg.Endpoint == "" || cfg.APIKey == "" {
 		tracer = otel.Tracer(cfg.ServiceName)
 		return func(context.Context) error { return nil }, nil
@@ -93,8 +103,12 @@ func Middleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// Adopt any incoming W3C traceparent so this server span becomes a child
+		// of the caller's trace rather than a new root.
+		ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+
 		// Provisional name until the mux resolves the route pattern.
-		ctx, span := tracer.Start(r.Context(), r.Method,
+		ctx, span := tracer.Start(ctx, r.Method,
 			trace.WithSpanKind(trace.SpanKindServer),
 			trace.WithAttributes(
 				semconv.HTTPMethod(r.Method),
