@@ -1,6 +1,16 @@
 import { describe, it, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { FunnelBarnClient } from '../dist/esm/index.js';
+import { FunnelBarnClient, parseTraceparent, buildTraceparent } from '../dist/esm/index.js';
+
+// defineWritable temporarily overrides a global (e.g. window) and returns a restore fn.
+function defineWritable(obj, key, value) {
+  const orig = Object.getOwnPropertyDescriptor(obj, key);
+  Object.defineProperty(obj, key, { value, writable: true, configurable: true });
+  return () => {
+    if (orig) Object.defineProperty(obj, key, orig);
+    else delete obj[key];
+  };
+}
 
 // Stub localStorage for Node (not available outside a browser).
 const _store = {};
@@ -256,6 +266,149 @@ describe('FunnelBarnClient', () => {
       restoreScreen();
       restoreNavigator();
       restoreIntl();
+    }
+  });
+});
+
+describe('trace context helpers', () => {
+  it('parseTraceparent accepts a valid header', () => {
+    const got = parseTraceparent(`00-${'1'.repeat(32)}-${'2'.repeat(16)}-01`);
+    assert.deepEqual(got, { traceId: '1'.repeat(32), spanId: '2'.repeat(16) });
+  });
+
+  it('parseTraceparent rejects malformed and all-zero ids', () => {
+    assert.equal(parseTraceparent(''), null);
+    assert.equal(parseTraceparent('garbage'), null);
+    assert.equal(parseTraceparent(`01-${'1'.repeat(32)}-${'2'.repeat(16)}-01`), null); // wrong version
+    assert.equal(parseTraceparent(`00-${'0'.repeat(32)}-${'2'.repeat(16)}-01`), null); // zero trace
+    assert.equal(parseTraceparent(`00-${'1'.repeat(32)}-${'0'.repeat(16)}-01`), null); // zero span
+  });
+
+  it('buildTraceparent assembles a sampled header', () => {
+    assert.equal(buildTraceparent('a'.repeat(32), 'b'.repeat(16)), `00-${'a'.repeat(32)}-${'b'.repeat(16)}-01`);
+  });
+});
+
+describe('recording trace capture', () => {
+  it('recording chunk body includes buffered traces', async () => {
+    const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'http://localhost:8080' });
+    client.recordingId = 'rec1';
+    client.recordingStartedAt = new Date().toISOString();
+    client.recordingStartMs = Date.now();
+    client.rrwebBuffer.push({ type: 3, data: {} });
+    client.traceBuffer.push({ trace_id: 'a'.repeat(32), span_id: 'b'.repeat(16), occurred_at: new Date().toISOString() });
+
+    await client.flushRecordingChunk();
+
+    const chunkReq = requests.find((r) => String(r.url).includes('/recordings/chunk'));
+    assert.ok(chunkReq, 'a recording chunk request was sent');
+    const body = JSON.parse(chunkReq.options.body);
+    assert.equal(body.traces.length, 1);
+    assert.equal(body.traces[0].trace_id, 'a'.repeat(32));
+  });
+
+  it('chunk body omits traces when none buffered', async () => {
+    const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'http://localhost:8080' });
+    client.recordingId = 'rec2';
+    client.recordingStartedAt = new Date().toISOString();
+    client.recordingStartMs = Date.now();
+    client.rrwebBuffer.push({ type: 3, data: {} });
+
+    await client.flushRecordingChunk();
+
+    const chunkReq = requests.find((r) => String(r.url).includes('/recordings/chunk'));
+    const body = JSON.parse(chunkReq.options.body);
+    assert.equal(body.traces, undefined);
+  });
+
+  it('harvests an existing traceparent from an outgoing fetch', async () => {
+    const restoreWindow = defineWritable(global, 'window', {
+      location: { href: 'https://app.example/p', origin: 'https://app.example' },
+      addEventListener() {},
+      removeEventListener() {},
+      fetch: async () => ({ ok: true, status: 200 }),
+    });
+    try {
+      const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'https://app.example' });
+      client.rrwebStop = () => {}; // mark recording active
+      client.recordingId = 'r'.repeat(32);
+      client.installTraceCapture();
+
+      const tp = `00-${'1'.repeat(32)}-${'2'.repeat(16)}-01`;
+      await global.window.fetch('https://app.example/api/data', { headers: { traceparent: tp } });
+
+      assert.equal(client.traceBuffer.length, 1);
+      assert.equal(client.traceBuffer[0].trace_id, '1'.repeat(32));
+      assert.equal(client.traceBuffer[0].span_id, '2'.repeat(16));
+      assert.equal(client.traceBuffer[0].url, 'https://app.example/api/data');
+    } finally {
+      restoreWindow();
+    }
+  });
+
+  it('injects a deterministic traceparent (trace_id = recording_id) when tracePropagate is on', async () => {
+    const appCalls = [];
+    const restoreWindow = defineWritable(global, 'window', {
+      location: { href: 'https://app.example/p', origin: 'https://app.example' },
+      addEventListener() {},
+      removeEventListener() {},
+      fetch: async (input, init) => { appCalls.push({ input, init }); return { ok: true, status: 200 }; },
+    });
+    try {
+      const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'https://app.example', tracePropagate: true });
+      client.rrwebStop = () => {};
+      client.recordingId = 'c'.repeat(32);
+      client.installTraceCapture();
+
+      await global.window.fetch('https://app.example/api/pay'); // same-origin, no traceparent
+
+      assert.equal(client.traceBuffer.length, 1);
+      assert.equal(client.traceBuffer[0].trace_id, 'c'.repeat(32), 'injected trace_id is the recording_id');
+      const injected = appCalls[0].init.headers.get('traceparent');
+      assert.ok(injected.includes('c'.repeat(32)), 'traceparent header injected into the outgoing request');
+    } finally {
+      restoreWindow();
+    }
+  });
+
+  it('does not inject cross-origin unless allow-listed', async () => {
+    const appCalls = [];
+    const restoreWindow = defineWritable(global, 'window', {
+      location: { href: 'https://app.example/p', origin: 'https://app.example' },
+      addEventListener() {},
+      removeEventListener() {},
+      fetch: async (input, init) => { appCalls.push({ input, init }); return { ok: true, status: 200 }; },
+    });
+    try {
+      const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'https://app.example', tracePropagate: true });
+      client.rrwebStop = () => {};
+      client.recordingId = 'd'.repeat(32);
+      client.installTraceCapture();
+
+      await global.window.fetch('https://other.example/api'); // cross-origin, not allow-listed
+
+      assert.equal(client.traceBuffer.length, 0, 'no trace recorded for a non-propagated cross-origin request');
+    } finally {
+      restoreWindow();
+    }
+  });
+
+  it('does not harvest when recording is inactive', async () => {
+    const restoreWindow = defineWritable(global, 'window', {
+      location: { href: 'https://app.example/p', origin: 'https://app.example' },
+      addEventListener() {},
+      removeEventListener() {},
+      fetch: async () => ({ ok: true, status: 200 }),
+    });
+    try {
+      const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'https://app.example' });
+      // rrwebStop intentionally not set -> recording inactive
+      client.installTraceCapture();
+      const tp = `00-${'1'.repeat(32)}-${'2'.repeat(16)}-01`;
+      await global.window.fetch('https://app.example/api/data', { headers: { traceparent: tp } });
+      assert.equal(client.traceBuffer.length, 0);
+    } finally {
+      restoreWindow();
     }
   });
 });
