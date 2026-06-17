@@ -20,7 +20,7 @@ export function AddWidgetModal({ projectId, onClose, onAdded }: {
 
   useEffect(() => {
     api.getEventNames(projectId)
-      .then((d) => setEventNames(d.event_names))
+      .then((d) => setEventNames(d.event_names ?? []))
       .catch(() => {})
       .finally(() => setLoadingEvents(false))
   }, [projectId])
@@ -33,7 +33,7 @@ export function AddWidgetModal({ projectId, onClose, onAdded }: {
     setLoadingProps(true)
     setSelectedProperty('')
     api.getEventProperties(projectId, selectedEvent)
-      .then((d) => setProperties(d.properties))
+      .then((d) => setProperties(d.properties ?? []))
       .catch(() => {})
       .finally(() => setLoadingProps(false))
   }, [projectId, selectedEvent])
