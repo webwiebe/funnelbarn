@@ -30,6 +30,32 @@ export interface FunnelBarnOptions {
   recordInclude?: string[];
   /** URL path patterns to always ignore (checked before server rules) */
   recordExclude?: string[];
+  /**
+   * Capture W3C trace context (traceparent) from outgoing fetch/XHR requests
+   * during a recording and link it to the session. This is the cross-stack join
+   * key: a trace_id seen in SpanBarn/BugBarn resolves back to this recording.
+   * Read-only — never modifies requests. Default: true (only active while recording).
+   */
+  traceCapture?: boolean;
+  /**
+   * When an outgoing request carries no traceparent, generate one and inject it
+   * so an un-instrumented backend's trace still reaches SpanBarn correlatable to
+   * this recording. The injected trace_id is the recording_id (deterministic, so
+   * it resolves with no lookup). Same-origin requests only, unless an origin is
+   * listed in tracePropagateOrigins. Default: false (opt-in — injecting a header
+   * cross-origin requires the server to allow it via CORS).
+   */
+  tracePropagate?: boolean;
+  /** Extra origins (besides same-origin) eligible for traceparent injection. */
+  tracePropagateOrigins?: string[];
+}
+
+/** A W3C trace observed in the browser during a recording. */
+export interface TraceLink {
+  trace_id: string;
+  span_id?: string;
+  url?: string;
+  occurred_at: string;
 }
 
 export interface EventProperties {
@@ -123,6 +149,14 @@ export class FunnelBarnClient {
   private recordingSnapshotFlushed = false;
   private recordingOptions: FunnelBarnOptions;
   private serverRecordingRules: RecordingRule[] = [];
+
+  // trace capture (fetch/XHR instrumentation, active only while recording)
+  private traceBuffer: TraceLink[] = [];
+  private traceCaptureInstalled = false;
+  private origFetch?: typeof fetch;
+  private origXhrOpen?: typeof XMLHttpRequest.prototype.open;
+  private origXhrSetHeader?: typeof XMLHttpRequest.prototype.setRequestHeader;
+  private origXhrSend?: typeof XMLHttpRequest.prototype.send;
 
   constructor(options: FunnelBarnOptions) {
     this.apiKey = options.apiKey;
@@ -550,6 +584,8 @@ export class FunnelBarnClient {
     const interval = chunkMs ?? 10_000;
     this.recordingTimer = setInterval(() => { this.flushRecordingChunk().catch(() => {}); }, interval);
     window.addEventListener('beforeunload', this.handleRecordingUnload);
+    // Begin observing outgoing requests' trace context so it links to this recording.
+    this.installTraceCapture();
   }
 
   private handleRecordingUnload = (): void => {
@@ -619,8 +655,10 @@ export class FunnelBarnClient {
     if (typeof window !== "undefined") {
       window.removeEventListener('beforeunload', this.handleRecordingUnload);
     }
+    this.uninstallTraceCapture();
     this.clearRecordingState();
     this.rrwebBuffer = [];
+    this.traceBuffer = [];
     this.recordingChunkIndex = 0;
     this.recordingSnapshotFlushed = false;
   }
@@ -688,6 +726,148 @@ export class FunnelBarnClient {
     return true; // default: capture
   }
 
+  // installTraceCapture wraps fetch + XHR to observe the W3C traceparent on
+  // outgoing requests while a recording is active. Harvesting is read-only;
+  // injection (tracePropagate) only mutates same-origin / allow-listed requests.
+  private installTraceCapture(): void {
+    if (this.traceCaptureInstalled) return;
+    if (typeof window === 'undefined') return;
+    if (this.recordingOptions.traceCapture === false) return;
+    this.traceCaptureInstalled = true;
+
+    // fetch
+    if (typeof window.fetch === 'function' && !(window.fetch as { __fb?: boolean }).__fb) {
+      const orig = window.fetch.bind(window);
+      this.origFetch = orig;
+      const wrapped = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        try {
+          const url = this.resolveURL(input);
+          let hdrs: Headers;
+          if (init?.headers) hdrs = new Headers(init.headers as HeadersInit);
+          else if (typeof Request !== 'undefined' && input instanceof Request) hdrs = new Headers(input.headers);
+          else hdrs = new Headers();
+
+          const existing = hdrs.get('traceparent');
+          if (existing) {
+            const p = parseTraceparent(existing);
+            if (p) this.recordTrace(p.traceId, p.spanId, url);
+          } else if (this.shouldPropagate(url)) {
+            const traceId = this.recordingId || randomHex(16);
+            const spanId = randomHex(8);
+            hdrs.set('traceparent', buildTraceparent(traceId, spanId));
+            this.recordTrace(traceId, spanId, url);
+            if (typeof Request !== 'undefined' && input instanceof Request) {
+              input = new Request(input, { headers: hdrs });
+            } else {
+              init = { ...(init || {}), headers: hdrs };
+            }
+          }
+        } catch {
+          // Never let trace capture break the app's own request.
+        }
+        return orig(input, init);
+      };
+      (wrapped as { __fb?: boolean }).__fb = true;
+      window.fetch = wrapped;
+    }
+
+    // XMLHttpRequest
+    if (typeof XMLHttpRequest !== 'undefined' && !(XMLHttpRequest.prototype.send as { __fb?: boolean }).__fb) {
+      const proto = XMLHttpRequest.prototype;
+      this.origXhrOpen = proto.open;
+      this.origXhrSetHeader = proto.setRequestHeader;
+      this.origXhrSend = proto.send;
+      const self = this;
+      proto.open = function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) {
+        (this as { __fbUrl?: string; __fbTp?: string }).__fbUrl = self.resolveURL(url);
+        (this as { __fbTp?: string }).__fbTp = undefined;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (self.origXhrOpen as any).call(this, method, url, ...rest);
+      };
+      proto.setRequestHeader = function (this: XMLHttpRequest, name: string, value: string) {
+        if (String(name).toLowerCase() === 'traceparent') {
+          (this as { __fbTp?: string }).__fbTp = value;
+        }
+        return (self.origXhrSetHeader as typeof proto.setRequestHeader).call(this, name, value);
+      };
+      const sendWrapped = function (this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit | null) {
+        try {
+          const url = (this as { __fbUrl?: string }).__fbUrl ?? '';
+          const tp = (this as { __fbTp?: string }).__fbTp;
+          if (tp) {
+            const p = parseTraceparent(tp);
+            if (p) self.recordTrace(p.traceId, p.spanId, url);
+          } else if (self.shouldPropagate(url)) {
+            const traceId = self.recordingId || randomHex(16);
+            const spanId = randomHex(8);
+            (self.origXhrSetHeader as typeof proto.setRequestHeader).call(this, 'traceparent', buildTraceparent(traceId, spanId));
+            self.recordTrace(traceId, spanId, url);
+          }
+        } catch {
+          // ignore — never break the app's request
+        }
+        return (self.origXhrSend as typeof proto.send).call(this, body ?? null);
+      };
+      (sendWrapped as { __fb?: boolean }).__fb = true;
+      proto.send = sendWrapped;
+    }
+  }
+
+  private uninstallTraceCapture(): void {
+    if (!this.traceCaptureInstalled) return;
+    this.traceCaptureInstalled = false;
+    if (this.origFetch && typeof window !== 'undefined') {
+      window.fetch = this.origFetch;
+      this.origFetch = undefined;
+    }
+    if (typeof XMLHttpRequest !== 'undefined' && this.origXhrSend) {
+      const proto = XMLHttpRequest.prototype;
+      if (this.origXhrOpen) proto.open = this.origXhrOpen;
+      if (this.origXhrSetHeader) proto.setRequestHeader = this.origXhrSetHeader;
+      proto.send = this.origXhrSend;
+      this.origXhrOpen = this.origXhrSetHeader = this.origXhrSend = undefined;
+    }
+  }
+
+  // recordTrace buffers a trace link, but only while a recording is active and
+  // capped so a chatty page can't grow the buffer without bound.
+  private recordTrace(traceId: string, spanId: string, url: string): void {
+    if (!this.rrwebStop) return;
+    if (this.traceBuffer.length >= 500) return;
+    this.traceBuffer.push({
+      trace_id: traceId,
+      span_id: spanId || undefined,
+      url: url || undefined,
+      occurred_at: new Date().toISOString(),
+    });
+  }
+
+  // shouldPropagate reports whether a traceparent may be injected on this URL.
+  private shouldPropagate(url: string): boolean {
+    if (!this.rrwebStop) return false;
+    if (!this.recordingOptions.tracePropagate) return false;
+    if (typeof window === 'undefined') return false;
+    try {
+      const u = new URL(url, window.location.href);
+      if (u.origin === window.location.origin) return true;
+      return (this.recordingOptions.tracePropagateOrigins ?? []).includes(u.origin);
+    } catch {
+      return false;
+    }
+  }
+
+  private resolveURL(input: unknown): string {
+    try {
+      if (typeof input === 'string') return input;
+      if (typeof URL !== 'undefined' && input instanceof URL) return input.href;
+      if (typeof Request !== 'undefined' && input instanceof Request) return input.url;
+      if (input && typeof (input as { url?: unknown }).url === 'string') return (input as { url: string }).url;
+    } catch {
+      // fall through
+    }
+    return '';
+  }
+
   private async flushRecordingChunk(useKeepalive = false): Promise<void> {
     if (!this.shouldRecordCurrentPage()) {
       this.rrwebBuffer = [];
@@ -695,6 +875,7 @@ export class FunnelBarnClient {
     }
     const events = this.rrwebBuffer.splice(0);
     if (!events.length) return;
+    const traces = this.traceBuffer.splice(0);
     const chunkIndex = this.recordingChunkIndex++;
     try {
       await fetch(`${this.endpoint}/api/v1/recordings/chunk`, {
@@ -711,6 +892,7 @@ export class FunnelBarnClient {
           started_at: this.recordingStartedAt,
           duration_ms: Date.now() - this.recordingStartMs,
           page_url: typeof window !== 'undefined' ? window.location.href : undefined,
+          traces: traces.length ? traces : undefined,
         }),
         // keepalive has a 64 KB body limit per the Fetch spec — rrweb full
         // snapshots are 1-5 MB so we only use it for the final unload flush
@@ -721,6 +903,7 @@ export class FunnelBarnClient {
       // On failure, push events back to the front so the next flush retries
       // them — most importantly this preserves the full snapshot (chunk 0).
       this.rrwebBuffer.unshift(...events);
+      if (traces.length) this.traceBuffer.unshift(...traces);
       this.recordingChunkIndex--;
     }
   }
@@ -759,6 +942,41 @@ export class FunnelBarnClient {
       return {};
     }
   }
+}
+
+// --------------------------------------------------------------------------
+// W3C trace context helpers
+// --------------------------------------------------------------------------
+
+/**
+ * parseTraceparent validates a W3C `traceparent` header and extracts the
+ * trace + span ids. Returns null for malformed or all-zero (invalid) ids.
+ * Format: `00-<32 hex trace-id>-<16 hex span-id>-<2 hex flags>`.
+ */
+export function parseTraceparent(value: string): { traceId: string; spanId: string } | null {
+  if (!value) return null;
+  const m = /^00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$/i.exec(value.trim());
+  if (!m) return null;
+  const traceId = m[1].toLowerCase();
+  const spanId = m[2].toLowerCase();
+  if (traceId === '0'.repeat(32) || spanId === '0'.repeat(16)) return null;
+  return { traceId, spanId };
+}
+
+/** buildTraceparent assembles a sampled (flags=01) W3C traceparent header. */
+export function buildTraceparent(traceId: string, spanId: string): string {
+  return `00-${traceId}-${spanId}-01`;
+}
+
+/** randomHex returns `bytes` cryptographically-random bytes as a lowercase hex string. */
+function randomHex(bytes: number): string {
+  const arr = new Uint8Array(bytes);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(arr);
+  } else {
+    for (let i = 0; i < arr.length; i++) arr[i] = Math.floor(Math.random() * 256);
+  }
+  return Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 // --------------------------------------------------------------------------
