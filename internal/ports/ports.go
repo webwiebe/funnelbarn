@@ -139,6 +139,9 @@ type RecordingRepo interface {
 	ListBrokenRecordings(ctx context.Context) ([]repository.Recording, error)
 	DeleteRecording(ctx context.Context, id string) error
 	FlagEvaluationsForSession(ctx context.Context, sessionID, projectID string) ([]repository.FlagEvaluationEntry, error)
+	InsertTraceLinks(ctx context.Context, projectID, sessionID, recordingID string, links []repository.TraceLink) error
+	LookupTrace(ctx context.Context, projectID, traceID string) (repository.TraceLookup, bool, error)
+	TracesForRecording(ctx context.Context, recordingID string) ([]repository.TraceLink, error)
 }
 
 // ProjectHealthRepo is the persistence port for project integration health.

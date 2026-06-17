@@ -132,6 +132,8 @@ type Recordings interface {
 	PurgeOldRecordings(ctx context.Context, retentionDays int) error
 	PurgeBrokenRecordings(ctx context.Context) (int, error)
 	DeleteRecording(ctx context.Context, projectID, recordingID string) error
+	LookupTrace(ctx context.Context, projectID, traceID string) (repository.TraceLookup, bool, error)
+	TracesForRecording(ctx context.Context, projectID, recordingID string) ([]repository.TraceLink, error)
 }
 
 // APIKeys is the interface for API key-related operations.

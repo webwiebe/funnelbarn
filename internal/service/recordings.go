@@ -23,10 +23,14 @@ type RecordingChunk struct {
 	StartedAt   time.Time       `json:"started_at"`
 	DurationMs  int64           `json:"duration_ms"`
 	PageURL     string          `json:"page_url"`
-	Environment string          `json:"-"` // set by the handler from the resolved project
-	ProjectSlug string          `json:"-"` // set by the handler
-	ProjectID   string          `json:"-"` // set by the handler after slug lookup
-	UserAgent   string          `json:"-"` // set by the handler from the request UA header
+	// Traces are the W3C trace links observed in the browser during this chunk's
+	// window. They are the cross-stack join key (SpanBarn/BugBarn trace_id ->
+	// session/recording). Optional: a chunk with no instrumented requests sends none.
+	Traces      []repository.TraceLink `json:"traces,omitempty"`
+	Environment string                 `json:"-"` // set by the handler from the resolved project
+	ProjectSlug string                 `json:"-"` // set by the handler
+	ProjectID   string                 `json:"-"` // set by the handler after slug lookup
+	UserAgent   string                 `json:"-"` // set by the handler from the request UA header
 }
 
 // RecordingStorage is the interface for chunk blob storage (R2).
@@ -81,7 +85,40 @@ func (svc *RecordingService) IngestChunk(ctx context.Context, chunk RecordingChu
 		IsBot:           DetectBot(chunk.UserAgent),
 		PageURL:         chunk.PageURL,
 	}
-	return svc.store.UpsertRecording(ctx, rec)
+	if err := svc.store.UpsertRecording(ctx, rec); err != nil {
+		return err
+	}
+	// Persist trace links last: the recording row must exist first (LookupTrace
+	// joins against it for the seek offset). A trace-link failure should not lose
+	// the chunk itself, so log and continue rather than returning an error.
+	if len(chunk.Traces) > 0 {
+		if err := svc.store.InsertTraceLinks(ctx, chunk.ProjectID, chunk.SessionID, chunk.RecordingID, chunk.Traces); err != nil {
+			slog.WarnContext(ctx, "recordings: persist trace links failed",
+				"err", err, "handled", true,
+				"recording_id", chunk.RecordingID, "project_id", chunk.ProjectID,
+				"trace_count", len(chunk.Traces))
+		}
+	}
+	return nil
+}
+
+// LookupTrace resolves a trace_id (from SpanBarn/BugBarn) to the recording that
+// captured it, scoped to the project. ok is false when the trace is unknown.
+func (svc *RecordingService) LookupTrace(ctx context.Context, projectID, traceID string) (repository.TraceLookup, bool, error) {
+	return svc.store.LookupTrace(ctx, projectID, traceID)
+}
+
+// TracesForRecording returns the ordered trace timeline for a recording, after
+// verifying it belongs to the given project.
+func (svc *RecordingService) TracesForRecording(ctx context.Context, projectID, recordingID string) ([]repository.TraceLink, error) {
+	rec, err := svc.store.GetRecording(ctx, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf("recordings: get recording: %w", err)
+	}
+	if rec.ProjectID != projectID {
+		return nil, fmt.Errorf("recordings: not found")
+	}
+	return svc.store.TracesForRecording(ctx, recordingID)
 }
 
 // PurgeOldRecordings deletes recordings older than retentionDays from both R2 and SQLite.

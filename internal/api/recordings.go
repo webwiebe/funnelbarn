@@ -268,6 +268,67 @@ func (s *Server) handleGetRecordingFlags(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"evaluations": evals})
 }
 
+// handleLookupTrace resolves a W3C trace_id (as seen in SpanBarn/BugBarn) to the
+// FunnelBarn session + recording that captured it, plus the seek offset. This is
+// the cross-stack deep-link: given an error trace, find the replayable session.
+// Auth is by API key (project scope) so a trace only resolves within its project.
+func (s *Server) handleLookupTrace(w http.ResponseWriter, r *http.Request) {
+	if s.recordings == nil {
+		jsonError(w, "session recording not configured", http.StatusServiceUnavailable)
+		return
+	}
+	projectID, _, ok := s.ingest.APIKeyProjectScope(r)
+	if !ok {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	traceID := r.PathValue("trace_id")
+	if traceID == "" {
+		jsonError(w, "trace_id required", http.StatusBadRequest)
+		return
+	}
+
+	lookup, found, err := s.recordings.LookupTrace(r.Context(), projectID, traceID)
+	if err != nil {
+		mapServiceError(w, err, "handleLookupTrace")
+		return
+	}
+	if !found {
+		jsonError(w, "not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, lookup)
+}
+
+// handleGetRecordingTraces returns the ordered trace timeline for a recording so
+// the replay UI can overlay trace markers on the scrubber.
+func (s *Server) handleGetRecordingTraces(w http.ResponseWriter, r *http.Request) {
+	if s.recordings == nil {
+		jsonError(w, "session recording not configured", http.StatusServiceUnavailable)
+		return
+	}
+	projectID := r.PathValue("id")
+	recordingID := r.PathValue("rid")
+	if projectID == "" || recordingID == "" {
+		jsonError(w, "project id and recording id are required", http.StatusBadRequest)
+		return
+	}
+
+	traces, err := s.recordings.TracesForRecording(r.Context(), projectID, recordingID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			jsonError(w, "not found", http.StatusNotFound)
+			return
+		}
+		mapServiceError(w, err, "handleGetRecordingTraces")
+		return
+	}
+	if traces == nil {
+		traces = []repository.TraceLink{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"traces": traces})
+}
+
 func (s *Server) handleFunnelStepSessions(w http.ResponseWriter, r *http.Request) {
 	if s.recordings == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"session_ids": []any{}})
