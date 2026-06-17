@@ -7,7 +7,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestInit_NoEndpointReturnsNoopShutdown(t *testing.T) {
@@ -119,4 +123,58 @@ func TestRecordError_IgnoresNilError(t *testing.T) {
 	_, span := StartSpan(context.Background(), "x")
 	defer span.End()
 	RecordError(span, nil) // no-op, should not crash
+}
+
+// TestMiddleware_AdoptsIncomingTraceparent verifies a request carrying a W3C
+// traceparent produces a server span on the SAME trace — the property that lets
+// FunnelBarn's spans/logs correlate to the caller's trace in SpanBarn.
+func TestMiddleware_AdoptsIncomingTraceparent(t *testing.T) {
+	tp := sdktrace.NewTracerProvider()
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+	prev := tracer
+	tracer = tp.Tracer("test")
+	defer func() { tracer = prev }()
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{}, propagation.Baggage{},
+	))
+
+	const wantTrace = "0af7651916cd43dd8448eb211c80319c"
+	var gotTrace string
+	var sampled bool
+	h := Middleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		sc := trace.SpanContextFromContext(r.Context())
+		gotTrace = sc.TraceID().String()
+		sampled = sc.IsSampled()
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	req.Header.Set("traceparent", "00-"+wantTrace+"-b7ad6b7169203331-01")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if gotTrace != wantTrace {
+		t.Errorf("server span trace_id = %q, want %q (incoming traceparent not adopted)", gotTrace, wantTrace)
+	}
+	if !sampled {
+		t.Error("sampled flag from incoming traceparent not honoured")
+	}
+}
+
+// TestMiddleware_NoTraceparentStartsRoot verifies a request without trace context
+// still gets a valid new-root span.
+func TestMiddleware_NoTraceparentStartsRoot(t *testing.T) {
+	tp := sdktrace.NewTracerProvider()
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+	prev := tracer
+	tracer = tp.Tracer("test")
+	defer func() { tracer = prev }()
+
+	var valid bool
+	h := Middleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		valid = trace.SpanContextFromContext(r.Context()).TraceID().IsValid()
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	if !valid {
+		t.Error("expected a valid new-root trace id when no traceparent is present")
+	}
 }
