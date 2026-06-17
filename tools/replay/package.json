@@ -1,0 +1,28 @@
+{
+  "name": "@funnelbarn/replay",
+  "version": "0.1.0",
+  "description": "Resolve a trace_id (from SpanBarn/BugBarn) to a FunnelBarn session recording and replay it locally in a Playwright-driven browser, seeking to the moment the trace fired.",
+  "type": "module",
+  "bin": {
+    "funnelbarn-replay": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "replay": "node dist/cli.js"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0",
+    "rrweb-player": "^1.0.0-alpha.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
