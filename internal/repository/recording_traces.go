@@ -27,6 +27,14 @@ type TraceLookup struct {
 	OffsetMs           int64     `json:"offset_ms"`
 	URL                string    `json:"url,omitempty"`
 	RecordingStartedAt time.Time `json:"recording_started_at"`
+	// Chunk range + metadata of the resolved recording, so a replay client can
+	// fetch the chunks and render without a second round-trip.
+	FirstChunkIndex int    `json:"first_chunk_index"`
+	LastChunkIndex  int    `json:"last_chunk_index"`
+	ChunkCount      int    `json:"chunk_count"`
+	DurationMs      int64  `json:"duration_ms"`
+	Environment     string `json:"environment,omitempty"`
+	PageURL         string `json:"page_url,omitempty"`
 }
 
 // InsertTraceLinks persists the trace links observed during one recording chunk.
@@ -67,7 +75,8 @@ func (s *Store) InsertTraceLinks(ctx context.Context, projectID, sessionID, reco
 // target). Returns sql.ErrNoRows-wrapped nil + found=false when the trace is unknown.
 func (s *Store) LookupTrace(ctx context.Context, projectID, traceID string) (TraceLookup, bool, error) {
 	const q = `
-		SELECT rt.project_id, rt.session_id, rt.recording_id, rt.trace_id, rt.url, rt.occurred_at, r.started_at
+		SELECT rt.project_id, rt.session_id, rt.recording_id, rt.trace_id, rt.url, rt.occurred_at,
+		       r.started_at, r.first_chunk_index, r.last_chunk_index, r.chunk_count, r.duration_ms, r.environment, r.page_url
 		FROM recording_traces rt
 		JOIN recordings r ON r.id = rt.recording_id
 		WHERE rt.project_id = ? AND rt.trace_id = ?
@@ -77,6 +86,7 @@ func (s *Store) LookupTrace(ctx context.Context, projectID, traceID string) (Tra
 	err := s.db.QueryRowContext(ctx, q, projectID, traceID).Scan(
 		&out.ProjectID, &out.SessionID, &out.RecordingID, &out.TraceID,
 		&out.URL, &out.OccurredAt, &out.RecordingStartedAt,
+		&out.FirstChunkIndex, &out.LastChunkIndex, &out.ChunkCount, &out.DurationMs, &out.Environment, &out.PageURL,
 	)
 	if err != nil {
 		if isNoRows(err) {

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -175,6 +176,69 @@ func TestLookupTrace_EndToEnd(t *testing.T) {
 	}
 	if got.OffsetMs != 4000 {
 		t.Errorf("offset: want 4000ms, got %d", got.OffsetMs)
+	}
+	// Chunk range + metadata travel with the lookup so a replay client can fetch
+	// without a second round-trip.
+	if got.ChunkCount != 1 || got.FirstChunkIndex != 0 || got.LastChunkIndex != 0 {
+		t.Errorf("chunk range: got first=%d last=%d count=%d", got.FirstChunkIndex, got.LastChunkIndex, got.ChunkCount)
+	}
+	if got.PageURL != "https://shop.example/checkout" {
+		t.Errorf("page_url: got %q", got.PageURL)
+	}
+
+	// The same API key can fetch the recording's chunks for replay.
+	wc := getChunkByKey(t, srv, key, "recE2E", 0)
+	if wc.Code != http.StatusOK {
+		t.Fatalf("chunk fetch: expected 200, got %d (body: %s)", wc.Code, wc.Body.String())
+	}
+	var events []map[string]any
+	if err := json.Unmarshal(wc.Body.Bytes(), &events); err != nil {
+		t.Fatalf("chunk unmarshal: %v (body: %s)", err, wc.Body.String())
+	}
+	if len(events) != 1 || events[0]["type"] != float64(2) {
+		t.Errorf("expected one full-snapshot event, got %v", events)
+	}
+}
+
+func getChunkByKey(t *testing.T, srv *Server, key, rid string, index int) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/recordings/"+rid+"/chunks/"+strconv.Itoa(index), nil)
+	if key != "" {
+		req.Header.Set(auth.HeaderAPIKey, key)
+	}
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	return w
+}
+
+func TestGetRecordingChunkByKey_CrossProjectDenied(t *testing.T) {
+	srv, store := newRecordingServer(t)
+	_, keyA := projectKey(t, store, "Owner", "owner-proj")
+	_, keyB := projectKey(t, store, "Other", "other-proj")
+
+	start := time.Now().UTC().Truncate(time.Second)
+	w := postChunk(t, srv, keyA, map[string]any{
+		"recording_id": "recOwned",
+		"session_id":   "sessOwned",
+		"chunk_index":  0,
+		"events":       json.RawMessage(`[{"type":2,"data":{}}]`),
+		"started_at":   start,
+		"duration_ms":  1000,
+	})
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("ingest: expected 202, got %d", w.Code)
+	}
+
+	// Project B must not read project A's recording chunk.
+	wc := getChunkByKey(t, srv, keyB, "recOwned", 0)
+	if wc.Code != http.StatusNotFound {
+		t.Errorf("cross-project chunk read: expected 404, got %d", wc.Code)
+	}
+
+	// No key at all -> 401.
+	wn := getChunkByKey(t, srv, "", "recOwned", 0)
+	if wn.Code != http.StatusUnauthorized {
+		t.Errorf("no key chunk read: expected 401, got %d", wn.Code)
 	}
 }
 

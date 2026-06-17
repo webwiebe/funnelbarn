@@ -223,6 +223,8 @@ func (s *Server) registerRoutes() {
 	// Cross-stack trace lookup (API key required): trace_id -> session/recording.
 	// Consumed by SpanBarn/BugBarn deep-links and the replay CLI.
 	s.mux.HandleFunc("GET /api/v1/traces/{trace_id}", s.handleLookupTrace)
+	// API-key-authed replay-read for programmatic consumers (the replay CLI).
+	s.mux.HandleFunc("GET /api/v1/recordings/{rid}/chunks/{index}", s.handleGetRecordingChunkByKey)
 
 	// Auth
 	s.mux.Handle("POST /api/v1/login", s.loginLimiter.middleware(http.HandlerFunc(s.handleLogin)))

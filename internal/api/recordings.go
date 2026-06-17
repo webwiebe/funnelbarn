@@ -300,6 +300,53 @@ func (s *Server) handleLookupTrace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, lookup)
 }
 
+// handleGetRecordingChunkByKey serves a recording chunk to an API-key client
+// (e.g. the replay CLI), scoped to the key's project. It mirrors the session-auth
+// chunk endpoint but lets a programmatic consumer fetch replay data with the same
+// credential it used for the trace lookup. GetChunk verifies project ownership.
+func (s *Server) handleGetRecordingChunkByKey(w http.ResponseWriter, r *http.Request) {
+	if s.recordings == nil {
+		jsonError(w, "session recording not configured", http.StatusServiceUnavailable)
+		return
+	}
+	projectID, _, ok := s.ingest.APIKeyProjectScope(r)
+	if !ok {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	recordingID := r.PathValue("rid")
+	indexStr := r.PathValue("index")
+	if recordingID == "" || indexStr == "" {
+		jsonError(w, "recording id and chunk index are required", http.StatusBadRequest)
+		return
+	}
+	index, err := strconv.Atoi(indexStr)
+	if err != nil || index < 0 {
+		jsonError(w, "invalid chunk index", http.StatusBadRequest)
+		return
+	}
+
+	data, err := s.recordings.GetChunk(r.Context(), projectID, recordingID, index)
+	if err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "not found") || strings.Contains(errStr, "NoSuchKey") || strings.Contains(errStr, "404") {
+			jsonError(w, "not found", http.StatusNotFound)
+			return
+		}
+		slog.ErrorContext(r.Context(), "fetch recording chunk (api key) failed",
+			"error", err, "handled", false,
+			"recording_id", recordingID, "project_id", projectID, "chunk_index", index,
+			"request_id", RequestIDFromContext(r.Context()),
+		)
+		jsonError(w, "failed to fetch chunk", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.WriteHeader(http.StatusOK)
+	w.Write(data) //nolint:errcheck
+}
+
 // handleGetRecordingTraces returns the ordered trace timeline for a recording so
 // the replay UI can overlay trace markers on the scrubber.
 func (s *Server) handleGetRecordingTraces(w http.ResponseWriter, r *http.Request) {
