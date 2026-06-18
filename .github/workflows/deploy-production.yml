@@ -125,6 +125,8 @@ jobs:
             kubectl apply -k /tmp/funnelbarn-deploy/deploy/k8s/production
             kubectl -n ${NAMESPACE} set image deployment/funnelbarn \
               funnelbarn=${SERVICE_IMAGE}:${SHA}
+            kubectl -n ${NAMESPACE} set env deployment/funnelbarn \
+              FUNNELBARN_VERSION=${{ github.event.inputs.production_version }}
             kubectl -n ${NAMESPACE} set image deployment/funnelbarn-web \
               funnelbarn-web=${WEB_IMAGE}:${SHA}
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=180s

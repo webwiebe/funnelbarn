@@ -122,6 +122,14 @@ func isHealthProbeLog(r slog.Record) bool {
 func run() error {
 	cfg := config.Load()
 
+	// Runtime version: the deploy injects the actual release tag via
+	// FUNNELBARN_VERSION (images are SHA-tagged and reused across environments),
+	// which overrides the build-time default baked into the binary.
+	version := Version
+	if cfg.Version != "" {
+		version = cfg.Version
+	}
+
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "version", "--version", "-v":
@@ -195,7 +203,7 @@ func run() error {
 		Endpoint:    cfg.SpanBarnEndpoint,
 		APIKey:      cfg.SpanBarnAPIKey,
 		ServiceName: "funnelbarn",
-		Version:     Version,
+		Version:     version,
 		Environment: cfg.SelfEnvironment,
 	}
 
@@ -304,7 +312,7 @@ func run() error {
 		SetupRatePerMinute:  cfg.SetupRatePerMinute,
 		SetupRateBurst:      cfg.SetupRateBurst,
 		DB:                  store,
-		Version:             Version,
+		Version:             version,
 		TrustedProxies:      cfg.TrustedProxies,
 		BugbarnEndpoint:     cfg.SelfEndpoint,
 		BugbarnIngestKey:    cfg.SelfAPIKey,
@@ -336,7 +344,7 @@ func run() error {
 		Handler: httpHandler,
 	}
 
-	slog.Info("funnelbarn starting", "addr", cfg.Addr, "version", Version)
+	slog.Info("funnelbarn starting", "addr", cfg.Addr, "version", version)
 
 	errCh := make(chan error, 1)
 	go func() {
