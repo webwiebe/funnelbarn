@@ -30,9 +30,14 @@ type Config struct {
 	SelfAPIKey          string
 	SelfProject         string
 	SelfEnvironment     string
-	DogfoodAPIKey       string
-	DogfoodProject      string
-	EventRetentionDays  int // 0 = disabled; default 90
+	// Version, when set (FUNNELBARN_VERSION), overrides the build-time version
+	// baked into the binary. Images are SHA-tagged and reused across
+	// environments, so the deploy injects the actual release tag here to make
+	// the running version visible (e.g. in /api/v1/health).
+	Version            string
+	DogfoodAPIKey      string
+	DogfoodProject     string
+	EventRetentionDays int // 0 = disabled; default 90
 
 	// AutoRegisterMaxFlags caps auto-created flags per project (0 disables
 	// auto-registration). AutoRegisterTTLDays is how long an auto-created,
@@ -96,6 +101,7 @@ func Load() Config {
 		SelfAPIKey:          os.Getenv("FUNNELBARN_SELF_API_KEY"),
 		SelfProject:         getenv("FUNNELBARN_SELF_PROJECT", "funnelbarn"),
 		SelfEnvironment:     getenv("FUNNELBARN_ENVIRONMENT", "production"),
+		Version:             os.Getenv("FUNNELBARN_VERSION"),
 		DogfoodAPIKey:       os.Getenv("FUNNELBARN_DOGFOOD_API_KEY"),
 		DogfoodProject:      getenv("FUNNELBARN_DOGFOOD_PROJECT", "funnelbarn"),
 	}

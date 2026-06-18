@@ -198,3 +198,17 @@ func TestLoad_FlagAutoRegisterOverrides(t *testing.T) {
 		t.Errorf("AutoRegisterTTLDays: want 7, got %d", cfg.AutoRegisterTTLDays)
 	}
 }
+
+func TestLoad_VersionFromEnv(t *testing.T) {
+	t.Setenv("FUNNELBARN_VERSION", "v1.2.3")
+	if got := Load().Version; got != "v1.2.3" {
+		t.Errorf("Version from env: got %q, want v1.2.3", got)
+	}
+}
+
+func TestLoad_VersionEmptyByDefault(t *testing.T) {
+	t.Setenv("FUNNELBARN_VERSION", "")
+	if got := Load().Version; got != "" {
+		t.Errorf("Version default: got %q, want empty (main falls back to build var)", got)
+	}
+}
