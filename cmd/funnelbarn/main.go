@@ -216,6 +216,7 @@ func run() error {
 		GeoAnonymizer:       store,
 		Segments:            segmentsSvc,
 		Distributions:       store,
+		Recordings:          store,
 		Ingest:              handler,
 		Projects:            projectsSvc,
 		Funnels:             funnelsSvc,

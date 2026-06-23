@@ -71,6 +71,7 @@ type ServerConfig struct {
 	GeoAnonymizer    GeoAnonymizer
 	Segments         service.Segments
 	Distributions    DistributionRepo
+	Recordings       RecordingChunkRepo
 }
 
 // DistributionRepo provides session field distribution data.
@@ -124,6 +125,7 @@ type Server struct {
 	geoAnonymizer      GeoAnonymizer
 	segments           service.Segments
 	distributions      DistributionRepo
+	recordings         RecordingChunkRepo
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
@@ -178,6 +180,7 @@ func NewServer(cfg ServerConfig) *Server {
 		geoAnonymizer:      cfg.GeoAnonymizer,
 		segments:           cfg.Segments,
 		distributions:      cfg.Distributions,
+		recordings:         cfg.Recordings,
 	}
 	s.registerRoutes()
 	return s
@@ -204,6 +207,7 @@ func (s *Server) registerRoutes() {
 
 	// Ingest (API key required)
 	s.mux.Handle("POST /api/v1/events", s.eventsLimiter.middleware(s.ingest))
+	s.mux.Handle("POST /api/v1/recordings/chunk", s.eventsLimiter.middleware(http.HandlerFunc(s.handleRecordingChunk)))
 
 	// Auth
 	s.mux.Handle("POST /api/v1/login", s.loginLimiter.middleware(http.HandlerFunc(s.handleLogin)))
@@ -314,8 +318,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// Apply a reasonable body limit to all routes (ingest has its own per-handler limit).
-	if r.Body != nil && r.URL.Path != "/api/v1/events" {
+	// Apply a reasonable body limit to all routes; ingest and recording endpoints
+	// manage their own limits in their handlers.
+	if r.Body != nil && r.URL.Path != "/api/v1/events" && r.URL.Path != "/api/v1/recordings/chunk" {
 		r.Body = http.MaxBytesReader(w, r.Body, 256<<10) // 256 KiB
 	}
 	// Apply middleware: requestLogger (innermost) → securityHeaders → tracing → dispatch.

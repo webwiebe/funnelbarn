@@ -499,3 +499,76 @@ func TestErrorResponseShape(t *testing.T) {
 		})
 	}
 }
+
+func TestRecordingChunk(t *testing.T) {
+	srv, store := newTestServer(t)
+
+	// Create a project so the slug lookup succeeds.
+	proj, err := store.EnsureProject(context.Background(), "test-project")
+	if err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+
+	validBody := map[string]any{
+		"session_id":  "ses_abc123",
+		"chunk_index": 0,
+		"events":      []any{map[string]any{"type": 3, "data": map[string]any{"source": 0}, "timestamp": 1700000000000}},
+	}
+
+	postChunk := func(t *testing.T, apiKey, projectSlug string, body any) *httptest.ResponseRecorder {
+		t.Helper()
+		var buf bytes.Buffer
+		json.NewEncoder(&buf).Encode(body) //nolint:errcheck
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/recordings/chunk", &buf)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-funnelbarn-api-key", apiKey)
+		if projectSlug != "" {
+			req.Header.Set("x-funnelbarn-project", projectSlug)
+		}
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+		return w
+	}
+
+	t.Run("accepted with valid key and project", func(t *testing.T) {
+		w := postChunk(t, "test-key", proj.Slug, validBody)
+		assert(t, w.Code == http.StatusAccepted, "expected 202, got "+http.StatusText(w.Code))
+		var resp map[string]any
+		json.NewDecoder(w.Body).Decode(&resp) //nolint:errcheck
+		assert(t, resp["accepted"] == true, "response.accepted should be true")
+	})
+
+	t.Run("unauthorized with wrong key", func(t *testing.T) {
+		w := postChunk(t, "wrong-key", proj.Slug, validBody)
+		assert(t, w.Code == http.StatusUnauthorized, "expected 401, got "+http.StatusText(w.Code))
+	})
+
+	t.Run("bad request when session_id missing", func(t *testing.T) {
+		body := map[string]any{
+			"chunk_index": 0,
+			"events":      []any{map[string]any{"type": 3}},
+		}
+		w := postChunk(t, "test-key", proj.Slug, body)
+		assert(t, w.Code == http.StatusBadRequest, "expected 400, got "+http.StatusText(w.Code))
+	})
+
+	t.Run("bad request when project header missing for static key", func(t *testing.T) {
+		w := postChunk(t, "test-key", "", validBody)
+		assert(t, w.Code == http.StatusBadRequest, "expected 400, got "+http.StatusText(w.Code))
+	})
+
+	t.Run("not found when project slug unknown", func(t *testing.T) {
+		w := postChunk(t, "test-key", "no-such-project", validBody)
+		assert(t, w.Code == http.StatusNotFound, "expected 404, got "+http.StatusText(w.Code))
+	})
+
+	t.Run("preflight OPTIONS succeeds", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodOptions, "/api/v1/recordings/chunk", nil)
+		req.Header.Set("Origin", "https://bugbarn.wiebe.xyz")
+		req.Header.Set("Access-Control-Request-Method", "POST")
+		req.Header.Set("Access-Control-Request-Headers", "x-funnelbarn-api-key, Content-Type")
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+		assert(t, w.Code == http.StatusNoContent, "expected 204, got "+http.StatusText(w.Code))
+	})
+}
