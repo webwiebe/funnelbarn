@@ -1,0 +1,42 @@
+# Generic custom ingest domain support.
+#
+# Accepts any `f.<customer-domain>` (e.g. f.brandtrace.net) so consuming apps can front FunnelBarn
+# under their own branded subdomain instead of funnelbarn.wiebe.xyz. A plain k8s Ingress cannot
+# express this — its host wildcard must be `*.<fixed-suffix>` (one zone), whereas customer domains
+# span different apexes — so this uses a Traefik IngressRoute with HostRegexp.
+#
+# This mirrors the established sibling pattern on the same cluster: BrandTrace's `bt.*`
+# (brandtrace-brandtrace-bt-cname) and SpanBarn's `sb.*` (spanbarn-forward-domains). Traefik v3
+# issues a Let's Encrypt certificate per incoming SNI on-demand via `certResolver: letsencrypt`, so
+# no per-domain cert or manifest edit is needed when a new customer onboards.
+#
+# Scope is intentionally tight — only the paths the browser SDK fetches from its origin:
+#   - /sdk.js (+ legacy /sdk/funnelbarn.js) served by nginx (funnelbarn-web)
+#   - /api/*  (events, evaluate, recording-config, recordings/chunk, health) served by the Go service
+# The dashboard SPA is NOT exposed on customer domains. `priority: 1` keeps FunnelBarn's own concrete
+# per-host Ingresses (f.bananasketch.nl, ingress-f.yaml) winning for their own hosts and TLS.
+#
+# Onboarding a customer: point f.<brand> at the shared cluster (CNAME, same target as bt.*/sb.*) with
+# port 80 reachable so the HTTP-01 ACME challenge can validate. See deploy/RUNBOOK.md §"Custom ingest domain".
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: funnelbarn-f-wildcard
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: HostRegexp(`^f\..+$`) && (Path(`/sdk.js`) || Path(`/sdk/funnelbarn.js`))
+      kind: Rule
+      priority: 1
+      services:
+        - name: funnelbarn-web
+          port: 3000
+    - match: HostRegexp(`^f\..+$`) && PathPrefix(`/api`)
+      kind: Rule
+      priority: 1
+      services:
+        - name: funnelbarn
+          port: 8080
+  tls:
+    certResolver: letsencrypt

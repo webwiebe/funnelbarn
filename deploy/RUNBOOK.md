@@ -147,6 +147,45 @@ kubectl -n $NAMESPACE rollout status deployment/funnelbarn-web --timeout=180s
 
 ---
 
+## 2b. Custom ingest domain (`f.<brand>` CNAME)
+
+Consuming apps can front FunnelBarn under their own branded subdomain (e.g. BrandTrace uses
+`f.brandtrace.net`) instead of exposing `funnelbarn.wiebe.xyz` in `<script>` tags and API calls. This
+is handled generically at the edge — **no per-customer manifest change and no application config**.
+
+**How it works.** `deploy/k8s/production/ingressroute-f-wildcard.yaml` is a Traefik `IngressRoute`
+that matches any host of the form `f.<domain>` (`HostRegexp(`^f\..+$`)`) and routes `/sdk.js` (+ the
+legacy `/sdk/funnelbarn.js`) to the web/nginx service and `/api/*` to the Go service. Traefik v3
+issues a Let's Encrypt certificate per incoming SNI on-demand (`certResolver: letsencrypt`). This is
+the same pattern the sibling barn tools use (`bt.*` for BrandTrace, `sb.*` for SpanBarn). Projects are
+still resolved by API key + the `x-funnelbarn-project` header, so the custom host needs no app-side
+mapping.
+
+**Onboarding a customer (one-time, DNS side only):**
+
+1. Point `f.<brand>` at the shared cluster — a CNAME to the same target the customer's other barn
+   subdomains (`bt.<brand>`, `sb.<brand>`) already use. Port 80 must reach Traefik for that host so
+   the HTTP-01 ACME challenge can validate and the per-SNI cert can issue.
+2. Install the snippet against the custom host: `<script src="https://f.<brand>/sdk.js"
+   data-api-key="…" data-project-name="…" defer></script>`. The SDK derives its endpoint from the
+   script's own origin, so events go to `https://f.<brand>/api/v1/events` automatically.
+3. Verify (see checks in Section 2c below).
+
+Only `/sdk.js` and `/api/*` are exposed on customer domains — the dashboard SPA is not.
+
+### 2c. Verify a custom ingest domain
+
+```sh
+curl -sI https://f.<brand>/sdk.js            # expect HTTP 200 (served by nginx)
+curl -sI https://f.<brand>/api/v1/health     # expect HTTP 200 (Go service)
+```
+
+Then load a page embedding the snippet and confirm in the browser console that `window.funnelbarn`
+initializes and a `track()` POST to `https://f.<brand>/api/v1/events` returns 2xx. Event volume for
+the project should appear on the dashboard within a minute.
+
+---
+
 ## 3. Rollback
 
 ### Automatic rollback
