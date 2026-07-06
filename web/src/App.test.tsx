@@ -246,7 +246,7 @@ describe('RootRedirect', () => {
     expect(screen.queryByTestId('dashboard-page')).toBeNull()
   })
 
-  it('redirects authenticated users to the last-visited project', async () => {
+  it('redirects authenticated users with projects to the cross-project overview', async () => {
     localStorage.setItem(LAST_PROJECT_ID_KEY, 'p2')
     mockUseAuth.mockReturnValue({ user: loggedInUser, isLoading: false })
     mockUseProjects.mockReturnValue({
@@ -263,14 +263,13 @@ describe('RootRedirect', () => {
     renderAt('/')
 
     await waitFor(() =>
-      expect(screen.getByTestId('dashboard-page')).toBeInTheDocument(),
+      expect(window.location.pathname).toBe('/overview'),
     )
-    expect(window.location.pathname).toBe('/dashboard/p2')
     // Landing must not render for authenticated users
     expect(screen.queryByTestId('landing-page')).toBeNull()
   })
 
-  it('redirects authenticated users to the first project when no default is stored', async () => {
+  it('lands authenticated users on the overview regardless of stored default', async () => {
     mockUseAuth.mockReturnValue({ user: loggedInUser, isLoading: false })
     mockUseProjects.mockReturnValue({
       projects: [
@@ -286,9 +285,8 @@ describe('RootRedirect', () => {
     renderAt('/')
 
     await waitFor(() =>
-      expect(screen.getByTestId('dashboard-page')).toBeInTheDocument(),
+      expect(window.location.pathname).toBe('/overview'),
     )
-    expect(window.location.pathname).toBe('/dashboard/p1')
     expect(screen.queryByTestId('landing-page')).toBeNull()
   })
 

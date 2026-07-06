@@ -31,6 +31,7 @@ type ServerConfig struct {
 	ABTests        service.ABTests
 	Flags          service.Flags
 	Events         service.Events
+	Overview       service.Overview
 	Sessions       service.Sessions
 	APIKeys        service.APIKeys
 	Widgets        service.Widgets
@@ -106,6 +107,7 @@ type Server struct {
 	abtests             service.ABTests
 	flags               service.Flags
 	events              service.Events
+	overview            service.Overview
 	sessions            service.Sessions
 	apikeys             service.APIKeys
 	widgets             service.Widgets
@@ -162,6 +164,7 @@ func NewServer(cfg ServerConfig) *Server {
 		abtests:             cfg.ABTests,
 		flags:               cfg.Flags,
 		events:              cfg.Events,
+		overview:            cfg.Overview,
 		sessions:            cfg.Sessions,
 		apikeys:             cfg.APIKeys,
 		widgets:             cfg.Widgets,
@@ -254,6 +257,29 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-properties", s.requireSession(s.handleEventProperties))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-property-values", s.requireSession(s.handleEventPropertyValues))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/environments", s.requireSession(s.handleEnvironments))
+
+	// Cross-project overview (instance-wide analytics; no project in the path).
+	s.mux.HandleFunc("GET /api/v1/overview", s.requireSession(s.handleOverview))
+	s.mux.HandleFunc("GET /api/v1/overview/events", s.requireSession(s.handleOverviewEvents))
+
+	// Canonical event catalog (instance-level vocabulary).
+	s.mux.HandleFunc("GET /api/v1/canonical-events", s.requireSession(s.handleListCanonicalEvents))
+	s.mux.HandleFunc("POST /api/v1/canonical-events", s.requireSession(s.handleCreateCanonicalEvent))
+	s.mux.HandleFunc("PUT /api/v1/canonical-events/{key}", s.requireSession(s.handleUpdateCanonicalEvent))
+	s.mux.HandleFunc("DELETE /api/v1/canonical-events/{key}", s.requireSession(s.handleDeleteCanonicalEvent))
+
+	// Per-project raw→canonical event mappings + suggestions.
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-mappings", s.requireSession(s.handleListMappings))
+	s.mux.HandleFunc("PUT /api/v1/projects/{id}/event-mappings", s.requireSession(s.handleSetMappings))
+	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/event-mappings/{raw}", s.requireSession(s.handleDeleteMapping))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-mappings/suggestions", s.requireSession(s.handleMappingSuggestions))
+
+	// Cross-project canonical funnels.
+	s.mux.HandleFunc("GET /api/v1/overview/funnels", s.requireSession(s.handleListCanonicalFunnels))
+	s.mux.HandleFunc("POST /api/v1/overview/funnels", s.requireSession(s.handleCreateCanonicalFunnel))
+	s.mux.HandleFunc("PUT /api/v1/overview/funnels/{id}", s.requireSession(s.handleUpdateCanonicalFunnel))
+	s.mux.HandleFunc("DELETE /api/v1/overview/funnels/{id}", s.requireSession(s.handleDeleteCanonicalFunnel))
+	s.mux.HandleFunc("GET /api/v1/overview/funnels/{id}/analysis", s.requireSession(s.handleCanonicalFunnelAnalysis))
 
 	// Funnels
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels", s.requireSession(s.handleListFunnels))

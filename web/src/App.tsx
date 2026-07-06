@@ -13,6 +13,10 @@ import Flags from './pages/Flags'
 import Insights from './pages/Insights'
 import Flows from './pages/Flows'
 import Sessions from './pages/Sessions'
+import Overview from './pages/Overview'
+import OverviewEvents from './pages/OverviewEvents'
+import OverviewFunnels from './pages/OverviewFunnels'
+import EventMapping from './pages/EventMapping'
 import FirstRunWizard from './components/wizards/FirstRunWizard'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { LAST_PROJECT_ID_KEY } from './components/ui/ProjectPicker'
@@ -80,10 +84,46 @@ function RootRedirect() {
   // when a default/last-visited project is known, rather than bouncing through
   // a generic /dashboard hop.
   if (user) {
-    return <DefaultProjectRoute base="/dashboard" />
+    return <AuthedHome />
   }
 
   return <Landing />
+}
+
+// AuthedHome decides where a logged-in user landing on "/" goes: the
+// cross-project Overview when they have projects, or the Dashboard's
+// create-project onboarding empty state when they have none.
+function AuthedHome() {
+  const { projects, isLoading } = useProjects()
+
+  if (isLoading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: '#0f1117',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        <div style={{
+          width: 32,
+          height: 32,
+          border: '3px solid #2a2d3a',
+          borderTopColor: '#f59e0b',
+          borderRadius: '50%',
+          animation: 'spin 0.7s linear infinite',
+        }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    )
+  }
+
+  if (projects.length === 0) {
+    // No projects yet — Dashboard renders the create-project empty state.
+    return <Dashboard />
+  }
+
+  return <Navigate to="/overview" replace />
 }
 
 function DefaultProjectRoute({ base }: { base: string }) {
@@ -157,6 +197,11 @@ function AppRoutes() {
       <Routes>
         <Route path="/" element={<RootRedirect />} />
         <Route path="/login" element={<Login />} />
+        {/* Cross-project (instance-wide) surfaces — not project-scoped. */}
+        <Route path="/overview" element={<ProtectedRoute><Overview /></ProtectedRoute>} />
+        <Route path="/overview/events" element={<ProtectedRoute><OverviewEvents /></ProtectedRoute>} />
+        <Route path="/overview/funnels" element={<ProtectedRoute><OverviewFunnels /></ProtectedRoute>} />
+        <Route path="/event-mapping" element={<ProtectedRoute><EventMapping /></ProtectedRoute>} />
         <Route
           path="/dashboard"
           element={<ProtectedRoute><DefaultProjectRoute base="/dashboard" /></ProtectedRoute>}

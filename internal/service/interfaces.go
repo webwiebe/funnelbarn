@@ -93,6 +93,36 @@ type Events interface {
 	SessionsForPage(ctx context.Context, projectID, page string, from, to time.Time) ([]string, error)
 }
 
+// Overview is the interface for cross-project ("instance-wide") analytics:
+// GA-like rollups, the canonical-event vocabulary + mappings, and aggregate
+// cross-project funnels.
+type Overview interface {
+	ProjectRollups(ctx context.Context, from, to time.Time, env string) ([]repository.ProjectRollup, error)
+	OverviewTotals(ctx context.Context, from, to time.Time, env string) (int64, int64, error)
+	OverviewVisitorsByProjectDaily(ctx context.Context, from, to time.Time, env string) ([]repository.ProjectDayCount, error)
+	OverviewTopPages(ctx context.Context, from, to time.Time, limit int, env string) ([]repository.OverviewPageStat, error)
+	OverviewTopReferrers(ctx context.Context, from, to time.Time, limit int, env string) ([]repository.OverviewReferrerStat, error)
+	OverviewTopCountries(ctx context.Context, from, to time.Time, limit int, env string) ([]repository.OverviewCountryStat, error)
+	OverviewDimensionBreakdown(ctx context.Context, dimension string, from, to time.Time, limit int, env string) ([]repository.DimensionStat, error)
+	ListAllEvents(ctx context.Context, f repository.EventFilter, limit int) ([]repository.Event, error)
+
+	ListCanonicalEvents(ctx context.Context) ([]repository.CanonicalEvent, error)
+	CreateCanonicalEvent(ctx context.Context, c repository.CanonicalEvent) (repository.CanonicalEvent, error)
+	UpdateCanonicalEvent(ctx context.Context, c repository.CanonicalEvent) (repository.CanonicalEvent, error)
+	DeleteCanonicalEvent(ctx context.Context, key string) error
+	ListMappings(ctx context.Context, projectID string) ([]repository.EventNameMapping, error)
+	SetMappings(ctx context.Context, projectID string, mappings []repository.EventNameMapping) error
+	DeleteMapping(ctx context.Context, projectID, rawName string) error
+	MappingSuggestions(ctx context.Context, projectID string) ([]repository.MappingSuggestion, error)
+
+	CreateCanonicalFunnel(ctx context.Context, f repository.CanonicalFunnel) (repository.CanonicalFunnel, error)
+	ListCanonicalFunnels(ctx context.Context) ([]repository.CanonicalFunnel, error)
+	GetCanonicalFunnel(ctx context.Context, id string) (repository.CanonicalFunnel, error)
+	UpdateCanonicalFunnel(ctx context.Context, f repository.CanonicalFunnel) (repository.CanonicalFunnel, error)
+	DeleteCanonicalFunnel(ctx context.Context, id string) error
+	AnalyzeCanonicalFunnel(ctx context.Context, f repository.CanonicalFunnel, projectIDs []string, from, to time.Time, seg *repository.SegmentFilter, rules ...repository.SegmentRule) (repository.CanonicalFunnelResult, error)
+}
+
 // Widgets is the interface for dashboard widget operations.
 type Widgets interface {
 	CreateWidget(ctx context.Context, w repository.DashboardWidget) (repository.DashboardWidget, error)

@@ -73,6 +73,7 @@ func newRecordingServer(t *testing.T) (*Server, *repository.Store) {
 		ABTests:             service.NewABTestService(store),
 		Flags:               service.NewFlagService(store),
 		Events:              service.NewEventService(store),
+		Overview:            service.NewOverviewService(store),
 		Sessions:            service.NewSessionService(store),
 		APIKeys:             service.NewAPIKeyService(store),
 		Widgets:             service.NewWidgetService(store),
