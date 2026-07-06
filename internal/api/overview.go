@@ -84,16 +84,16 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"from":                 from.Format(time.RFC3339),
-		"to":                   to.Format(time.RFC3339),
-		"total_events":         totalEvents,
-		"unique_sessions":      totalSessions,
-		"projects":             projects,
-		"visitors_by_project":  visitors,
-		"top_pages":            topPages,
-		"top_referrers":        topReferrers,
-		"top_countries":        topCountries,
-		"dimension_breakdown":  dimension,
+		"from":                from.Format(time.RFC3339),
+		"to":                  to.Format(time.RFC3339),
+		"total_events":        totalEvents,
+		"unique_sessions":     totalSessions,
+		"projects":            projects,
+		"visitors_by_project": visitors,
+		"top_pages":           topPages,
+		"top_referrers":       topReferrers,
+		"top_countries":       topCountries,
+		"dimension_breakdown": dimension,
 	})
 }
 
@@ -295,12 +295,12 @@ func (s *Server) handleListCanonicalFunnels(w http.ResponseWriter, r *http.Reque
 
 // canonicalFunnelBody is the request shape for creating/updating a canonical funnel.
 type canonicalFunnelBody struct {
-	Name        string                            `json:"name"`
-	Description string                            `json:"description"`
-	Scope       string                            `json:"scope"`
-	ProjectIDs  []string                          `json:"project_ids"`
-	Segment     string                            `json:"segment"`
-	Steps       []repository.CanonicalFunnelStep  `json:"steps"`
+	Name        string                           `json:"name"`
+	Description string                           `json:"description"`
+	Scope       string                           `json:"scope"`
+	ProjectIDs  []string                         `json:"project_ids"`
+	Segment     string                           `json:"segment"`
+	Steps       []repository.CanonicalFunnelStep `json:"steps"`
 }
 
 func (b canonicalFunnelBody) toFunnel(id string) repository.CanonicalFunnel {

@@ -23,12 +23,12 @@ func normalizeRawName(s string) string {
 // is left for the user to map manually.
 var builtinAliases = map[string]string{
 	// page_view
-	"pageview":     "page_view",
-	"pageviewed":   "page_view",
-	"pageviews":    "page_view",
-	"view":         "page_view",
-	"screenview":   "page_view",
-	"visit":        "page_view",
+	"pageview":   "page_view",
+	"pageviewed": "page_view",
+	"pageviews":  "page_view",
+	"view":       "page_view",
+	"screenview": "page_view",
+	"visit":      "page_view",
 	// sign_up
 	"signup":        "sign_up",
 	"register":      "sign_up",
@@ -38,9 +38,9 @@ var builtinAliases = map[string]string{
 	"accountcreate": "sign_up",
 	"joined":        "sign_up",
 	// login
-	"login":    "login",
-	"signin":   "login",
-	"loggedin": "login",
+	"login":        "login",
+	"signin":       "login",
+	"loggedin":     "login",
 	"loginsuccess": "login",
 	// add_to_cart
 	"addtocart": "add_to_cart",
@@ -52,14 +52,14 @@ var builtinAliases = map[string]string{
 	"begincheckout": "checkout_start",
 	"startcheckout": "checkout_start",
 	// purchase
-	"purchase":       "purchase",
-	"purchased":      "purchase",
-	"order":          "purchase",
-	"ordercompleted": "purchase",
-	"orderplaced":    "purchase",
+	"purchase":         "purchase",
+	"purchased":        "purchase",
+	"order":            "purchase",
+	"ordercompleted":   "purchase",
+	"orderplaced":      "purchase",
 	"checkoutcomplete": "purchase",
-	"payment":        "purchase",
-	"paymentsuccess": "purchase",
+	"payment":          "purchase",
+	"paymentsuccess":   "purchase",
 }
 
 // guessCanonicalKey returns a best-guess canonical key for a raw event name, or

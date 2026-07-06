@@ -210,3 +210,129 @@ func TestOverview_ListAllEventsCrossProject(t *testing.T) {
 	require.Len(t, onlyA, 1)
 	require.Equal(t, a.ID, onlyA[0].ProjectID)
 }
+
+func TestOverview_DimensionRollups(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	from, to := wideRange()
+
+	a, _ := s.CreateProject(ctx, "A", "dim-a")
+	b, _ := s.CreateProject(ctx, "B", "dim-b")
+	insertEvent(t, s, a.ID, "a1", "pageview", "https://a/home")
+	insertEvent(t, s, a.ID, "a2", "pageview", "https://a/home")
+	insertEvent(t, s, b.ID, "b1", "pageview", "https://b/pricing")
+
+	pages, err := s.OverviewTopPages(ctx, from, to, 10, "")
+	require.NoError(t, err)
+	require.NotEmpty(t, pages)
+	require.Equal(t, "https://a/home", pages[0].URL)
+	require.EqualValues(t, 2, pages[0].Views)
+
+	refs, err := s.OverviewTopReferrers(ctx, from, to, 10, "")
+	require.NoError(t, err)
+	require.NotEmpty(t, refs) // insertEvent seeds referrer_domain=google.com
+
+	_, err = s.OverviewTopCountries(ctx, from, to, 10, "")
+	require.NoError(t, err) // no country on seeded events -> empty, but must not error
+
+	visitors, err := s.OverviewVisitorsByProjectDaily(ctx, from, to, "")
+	require.NoError(t, err)
+	require.NotEmpty(t, visitors)
+
+	dims, err := s.OverviewDimensionBreakdown(ctx, "device_type", from, to, 10, "")
+	require.NoError(t, err)
+	require.NotEmpty(t, dims) // insertEvent seeds device_type=desktop
+	require.Equal(t, "desktop", dims[0].Value)
+
+	_, err = s.OverviewDimensionBreakdown(ctx, "not_a_column", from, to, 10, "")
+	require.Error(t, err)
+}
+
+func TestOverview_CanonicalCatalogCRUD(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	created, err := s.CreateCanonicalEvent(ctx, repository.CanonicalEvent{Key: "contact_form", Label: "Contact Form", SortOrder: 99})
+	require.NoError(t, err)
+	require.Equal(t, "contact_form", created.Key)
+
+	// Duplicate key conflicts.
+	_, err = s.CreateCanonicalEvent(ctx, repository.CanonicalEvent{Key: "contact_form", Label: "dup"})
+	require.Error(t, err)
+
+	updated, err := s.UpdateCanonicalEvent(ctx, repository.CanonicalEvent{Key: "contact_form", Label: "Contact", SortOrder: 5})
+	require.NoError(t, err)
+	require.Equal(t, "Contact", updated.Label)
+
+	// Update of unknown key is a not-found.
+	_, err = s.UpdateCanonicalEvent(ctx, repository.CanonicalEvent{Key: "nope", Label: "x"})
+	require.Error(t, err)
+
+	keys, err := s.CanonicalKeySet(ctx)
+	require.NoError(t, err)
+	require.True(t, keys["contact_form"])
+	require.True(t, keys["page_view"]) // seeded
+
+	// Unreferenced canonical can be deleted.
+	require.NoError(t, s.DeleteCanonicalEvent(ctx, "contact_form"))
+	keys2, _ := s.CanonicalKeySet(ctx)
+	require.False(t, keys2["contact_form"])
+}
+
+func TestOverview_MappingDelete(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	p, _ := s.CreateProject(ctx, "P", "mapdel-p")
+
+	require.NoError(t, s.UpsertMapping(ctx, p.ID, "pageview", "page_view"))
+	m, err := s.ListMappings(ctx, p.ID)
+	require.NoError(t, err)
+	require.Len(t, m, 1)
+
+	require.NoError(t, s.DeleteMapping(ctx, p.ID, "pageview"))
+	m2, err := s.ListMappings(ctx, p.ID)
+	require.NoError(t, err)
+	require.Empty(t, m2)
+}
+
+func TestOverview_CanonicalFunnelCRUD(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	f, err := s.CreateCanonicalFunnel(ctx, repository.CanonicalFunnel{
+		Name:       "Flow",
+		Scope:      "session",
+		ProjectIDs: []string{"p1", "p2"},
+		Segment:    "mobile",
+		Steps: []repository.CanonicalFunnelStep{
+			{CanonicalKey: "page_view"},
+			{CanonicalKey: "sign_up"},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, f.Steps, 2)
+	require.Equal(t, []string{"p1", "p2"}, f.ProjectIDs)
+	require.Equal(t, "mobile", f.Segment)
+
+	got, err := s.CanonicalFunnelByID(ctx, f.ID)
+	require.NoError(t, err)
+	require.Equal(t, "Flow", got.Name)
+	require.Equal(t, "Page View", got.Steps[0].Label) // resolved from catalog
+
+	list, err := s.ListCanonicalFunnels(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+
+	f.Name = "Renamed"
+	f.Steps = []repository.CanonicalFunnelStep{{CanonicalKey: "login"}}
+	updated, err := s.UpdateCanonicalFunnel(ctx, f)
+	require.NoError(t, err)
+	require.Equal(t, "Renamed", updated.Name)
+	require.Len(t, updated.Steps, 1)
+	require.Equal(t, "login", updated.Steps[0].CanonicalKey)
+
+	require.NoError(t, s.DeleteCanonicalFunnel(ctx, f.ID))
+	list2, err := s.ListCanonicalFunnels(ctx)
+	require.NoError(t, err)
+	require.Empty(t, list2)
+}
