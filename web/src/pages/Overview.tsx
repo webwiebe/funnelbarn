@@ -123,9 +123,9 @@ export default function Overview() {
                 <XAxis dataKey="day" stroke={C.muted} fontSize={11} />
                 <YAxis stroke={C.muted} fontSize={11} allowDecimals={false} />
                 <Tooltip contentStyle={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text }} />
-                <Legend formatter={(v) => nameFor(String(v))} />
+                <Legend />
                 {chartProjectIds.map((pid, i) => (
-                  <Line key={pid} type="monotone" dataKey={pid} name={pid} stroke={LINE_COLORS[i % LINE_COLORS.length]} dot={false} strokeWidth={2} />
+                  <Line key={pid} type="monotone" dataKey={pid} name={nameFor(pid)} stroke={LINE_COLORS[i % LINE_COLORS.length]} dot={false} strokeWidth={2} />
                 ))}
               </LineChart>
             </ResponsiveContainer>
