@@ -93,6 +93,43 @@ type EventRepo interface {
 	SessionsForPage(ctx context.Context, projectID, page string, from, to time.Time, limit int) ([]string, error)
 }
 
+// OverviewRepo is the persistence port for cross-project ("instance-wide")
+// analytics: GA-like rollups, the canonical-event vocabulary + mappings, and
+// aggregate cross-project funnels.
+type OverviewRepo interface {
+	// GA-like overview rollups.
+	ProjectRollups(ctx context.Context, from, to time.Time, env string) ([]repository.ProjectRollup, error)
+	OverviewTotals(ctx context.Context, from, to time.Time, env string) (events, sessions int64, err error)
+	OverviewVisitorsByProjectDaily(ctx context.Context, from, to time.Time, env string) ([]repository.ProjectDayCount, error)
+	OverviewTopPages(ctx context.Context, from, to time.Time, limit int, env string) ([]repository.OverviewPageStat, error)
+	OverviewTopReferrers(ctx context.Context, from, to time.Time, limit int, env string) ([]repository.OverviewReferrerStat, error)
+	OverviewTopCountries(ctx context.Context, from, to time.Time, limit int, env string) ([]repository.OverviewCountryStat, error)
+	OverviewDimensionBreakdown(ctx context.Context, dimension string, from, to time.Time, limit int, env string) ([]repository.DimensionStat, error)
+	ListAllEvents(ctx context.Context, f repository.EventFilter, limit int) ([]repository.Event, error)
+
+	// Canonical event catalog + per-project mappings.
+	ListCanonicalEvents(ctx context.Context) ([]repository.CanonicalEvent, error)
+	CreateCanonicalEvent(ctx context.Context, c repository.CanonicalEvent) (repository.CanonicalEvent, error)
+	UpdateCanonicalEvent(ctx context.Context, c repository.CanonicalEvent) (repository.CanonicalEvent, error)
+	DeleteCanonicalEvent(ctx context.Context, key string) error
+	CanonicalKeySet(ctx context.Context) (map[string]bool, error)
+	ListMappings(ctx context.Context, projectID string) ([]repository.EventNameMapping, error)
+	UpsertMapping(ctx context.Context, projectID, rawName, canonicalKey string) error
+	DeleteMapping(ctx context.Context, projectID, rawName string) error
+	MappingSuggestions(ctx context.Context, projectID string) ([]repository.MappingSuggestion, error)
+
+	// Cross-project canonical funnels.
+	CreateCanonicalFunnel(ctx context.Context, f repository.CanonicalFunnel) (repository.CanonicalFunnel, error)
+	ListCanonicalFunnels(ctx context.Context) ([]repository.CanonicalFunnel, error)
+	CanonicalFunnelByID(ctx context.Context, id string) (repository.CanonicalFunnel, error)
+	UpdateCanonicalFunnel(ctx context.Context, f repository.CanonicalFunnel) (repository.CanonicalFunnel, error)
+	DeleteCanonicalFunnel(ctx context.Context, id string) error
+	AnalyzeCanonicalFunnel(ctx context.Context, f repository.CanonicalFunnel, projectIDs []string, from, to time.Time, seg *repository.SegmentFilter, rules ...repository.SegmentRule) (repository.CanonicalFunnelResult, error)
+
+	// ListProjects supplies the "all projects" set for aggregate analysis.
+	ListProjects(ctx context.Context) ([]repository.Project, error)
+}
+
 // SessionRepo is the persistence port for sessions.
 type SessionRepo interface {
 	UpsertSession(ctx context.Context, sess repository.Session) error

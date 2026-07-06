@@ -162,6 +162,7 @@ func run() error {
 	abtestsSvc := service.NewABTestService(store)
 	flagsSvc := service.NewFlagService(store)
 	eventsSvc := service.NewEventService(store)
+	overviewSvc := service.NewOverviewService(store)
 	sessionsSvc := service.NewSessionService(store)
 	apikeysSvc := service.NewAPIKeyService(store)
 	widgetsSvc := service.NewWidgetService(store)
@@ -295,6 +296,7 @@ func run() error {
 		ABTests:             abtestsSvc,
 		Flags:               flagsSvc,
 		Events:              eventsSvc,
+		Overview:            overviewSvc,
 		Sessions:            sessionsSvc,
 		APIKeys:             apikeysSvc,
 		Widgets:             widgetsSvc,

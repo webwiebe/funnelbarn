@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { BarChart2, Layers, Radio, Settings, Flag, Lightbulb, GitBranch, Video, PlugZap } from 'lucide-react'
+import { BarChart2, Layers, Radio, Settings, Flag, Lightbulb, GitBranch, Video, PlugZap, Globe } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { useProjects } from '../../lib/projects'
 import { LAST_PROJECT_ID_KEY } from '../ui/ProjectPicker'
@@ -73,6 +73,7 @@ export default function Shell({ children, projectId, projectName, projects: proj
   }
 
   const navLinks = [
+    { to: '/overview', label: 'All Projects', icon: <Globe size={16} /> },
     { to: projectId ? `/dashboard/${projectId}` : '/dashboard', label: 'Overview', icon: <BarChart2 size={16} /> },
     { to: projectId ? `/flows/${projectId}` : '/flows', label: 'Flows', icon: <GitBranch size={16} /> },
     { to: projectId ? `/funnels/${projectId}` : '/funnels', label: 'Funnels', icon: <Layers size={16} /> },

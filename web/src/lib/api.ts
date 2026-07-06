@@ -170,6 +170,77 @@ export const api = {
   deleteFunnel: (projectId: string, funnelId: string) =>
     request<void>(`/api/v1/projects/${projectId}/funnels/${funnelId}`, { method: 'DELETE' }),
 
+  // ---- Cross-project overview ----
+  getOverview: (range = '7d', env = '', dimension = '') => {
+    const qs = new URLSearchParams({ range })
+    if (env) qs.set('environment', env)
+    if (dimension) qs.set('dimension', dimension)
+    return request<OverviewData>(`/api/v1/overview?${qs}`)
+  },
+
+  getOverviewEvents: (params: { projectId?: string; name?: string; environment?: string; cursorTime?: string; cursorId?: string; limit?: number } = {}) => {
+    const qs = new URLSearchParams()
+    if (params.projectId) qs.set('project_id', params.projectId)
+    if (params.name) qs.set('name', params.name)
+    if (params.environment) qs.set('environment', params.environment)
+    if (params.cursorTime) qs.set('cursor_time', params.cursorTime)
+    if (params.cursorId) qs.set('cursor_id', params.cursorId)
+    qs.set('limit', String(params.limit ?? 50))
+    return request<OverviewEventsResponse>(`/api/v1/overview/events?${qs}`)
+  },
+
+  // ---- Canonical event catalog ----
+  listCanonicalEvents: () =>
+    request<{ canonical_events: CanonicalEvent[] }>('/api/v1/canonical-events'),
+
+  createCanonicalEvent: (body: CanonicalEvent) =>
+    request<CanonicalEvent>('/api/v1/canonical-events', { method: 'POST', body: JSON.stringify(body) }),
+
+  updateCanonicalEvent: (key: string, body: { label: string; sort_order: number }) =>
+    request<CanonicalEvent>(`/api/v1/canonical-events/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify(body) }),
+
+  deleteCanonicalEvent: (key: string) =>
+    request<void>(`/api/v1/canonical-events/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+
+  // ---- Per-project event-name mappings ----
+  listMappings: (projectId: string) =>
+    request<{ mappings: EventNameMapping[] }>(`/api/v1/projects/${projectId}/event-mappings`),
+
+  getMappingSuggestions: (projectId: string) =>
+    request<{ suggestions: MappingSuggestion[] }>(`/api/v1/projects/${projectId}/event-mappings/suggestions`),
+
+  setMappings: (projectId: string, mappings: { raw_name: string; canonical_key: string }[]) =>
+    request<{ mappings: EventNameMapping[] }>(`/api/v1/projects/${projectId}/event-mappings`, {
+      method: 'PUT',
+      body: JSON.stringify({ mappings }),
+    }),
+
+  deleteMapping: (projectId: string, rawName: string) =>
+    request<void>(`/api/v1/projects/${projectId}/event-mappings/${encodeURIComponent(rawName)}`, { method: 'DELETE' }),
+
+  // ---- Cross-project canonical funnels ----
+  listCanonicalFunnels: () =>
+    request<{ funnels: CanonicalFunnel[] }>('/api/v1/overview/funnels'),
+
+  createCanonicalFunnel: (body: CanonicalFunnelInput) =>
+    request<CanonicalFunnel>('/api/v1/overview/funnels', { method: 'POST', body: JSON.stringify(body) }),
+
+  updateCanonicalFunnel: (id: string, body: CanonicalFunnelInput) =>
+    request<CanonicalFunnel>(`/api/v1/overview/funnels/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+
+  deleteCanonicalFunnel: (id: string) =>
+    request<void>(`/api/v1/overview/funnels/${id}`, { method: 'DELETE' }),
+
+  analyzeCanonicalFunnel: (id: string, opts: { from?: string; to?: string; segment?: string; projectIds?: string[] } = {}) => {
+    const qs = new URLSearchParams()
+    if (opts.from) qs.set('from', opts.from)
+    if (opts.to) qs.set('to', opts.to)
+    if (opts.segment !== undefined && opts.segment !== 'all') qs.set('segment', opts.segment)
+    if (opts.projectIds && opts.projectIds.length) qs.set('project_ids', opts.projectIds.join(','))
+    const q = qs.toString()
+    return request<CanonicalFunnelAnalysis>(`/api/v1/overview/funnels/${id}/analysis${q ? `?${q}` : ''}`)
+  },
+
   // API Keys
   listApiKeys: () =>
     request<{ api_keys: ApiKey[] }>('/api/v1/apikeys'),
@@ -663,4 +734,112 @@ export interface ClientConfig {
     enabled?: boolean
     loginURL?: string
   }
+}
+
+// ---- Cross-project overview types ----
+
+export interface ProjectRollup {
+  project_id: string
+  events: number
+  unique_sessions: number
+}
+
+export interface OverviewData {
+  from: string
+  to: string
+  total_events: number
+  unique_sessions: number
+  projects: ProjectRollup[]
+  visitors_by_project: { day: string; project_id: string; count: number }[]
+  top_pages: { project_id: string; url: string; views: number }[]
+  top_referrers: { project_id: string; domain: string; visits: number }[]
+  top_countries: { project_id: string; country_code: string; count: number }[]
+  dimension_breakdown: { value: string; count: number }[] | null
+}
+
+export interface OverviewEvent {
+  id: string
+  project_id: string
+  session_id: string
+  name: string
+  url: string
+  referrer_domain: string
+  browser: string
+  device_type: string
+  country_code: string
+  environment?: string
+  occurred_at: string
+}
+
+export interface OverviewEventsResponse {
+  events: OverviewEvent[]
+  next_cursor: { cursor_time: string; cursor_id: string } | null
+}
+
+export interface CanonicalEvent {
+  key: string
+  label: string
+  sort_order: number
+}
+
+export interface EventNameMapping {
+  project_id: string
+  raw_name: string
+  canonical_key: string
+}
+
+export interface MappingSuggestion {
+  raw_name: string
+  suggested_key: string
+}
+
+export interface CanonicalFunnelStep {
+  step_order?: number
+  canonical_key: string
+  label?: string
+}
+
+export interface CanonicalFunnel {
+  id: string
+  name: string
+  description?: string
+  scope: 'session' | 'page_view'
+  project_ids: string[] | null
+  segment?: string
+  steps: CanonicalFunnelStep[]
+  created_at?: string
+}
+
+export interface CanonicalFunnelInput {
+  name: string
+  description?: string
+  scope?: 'session' | 'page_view'
+  project_ids?: string[]
+  segment?: string
+  steps: { canonical_key: string }[]
+}
+
+export interface ProjectFunnelBreakdown {
+  project_id: string
+  project_name: string
+  steps: StepResult[]
+}
+
+export interface ExcludedProject {
+  project_id: string
+  project_name: string
+  reason: string
+}
+
+export interface CanonicalFunnelResult {
+  steps: StepResult[]
+  by_project: ProjectFunnelBreakdown[]
+  excluded_projects: ExcludedProject[]
+}
+
+export interface CanonicalFunnelAnalysis {
+  funnel: CanonicalFunnel
+  result: CanonicalFunnelResult
+  from: string
+  to: string
 }
