@@ -1,0 +1,15 @@
+{
+  "//": "Frontend duplication ratchet. Current duplicated lines = 2.78%; ceiling pinned at 3%. Lower this as duplication is removed; a rise above it fails CI.",
+  "threshold": 3,
+  "minTokens": 70,
+  "path": ["src"],
+  "ignore": [
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "src/test-setup.ts",
+    "src/setupTests.ts",
+    "src/vite-env.d.ts"
+  ],
+  "reporters": ["console"],
+  "gitignore": true
+}

@@ -16,6 +16,14 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
+// dummyBcryptHash is a valid bcrypt hash compared against on the user-not-found
+// login path so that a missing username costs the same as a wrong password,
+// preventing username enumeration via response timing.
+var dummyBcryptHash = func() []byte {
+	h, _ := bcrypt.GenerateFromPassword([]byte("funnelbarn-timing-equalizer"), bcrypt.DefaultCost)
+	return h
+}()
+
 // handleLogin authenticates a user and sets a session cookie.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -38,6 +46,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// Fall back to DB user.
 		user, err := s.projects.UserByUsername(r.Context(), body.Username)
 		if err != nil {
+			// Run a bcrypt comparison against a dummy hash so a missing username
+			// takes the same time as a wrong password — otherwise the fast
+			// no-bcrypt path here leaks which usernames exist.
+			_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(body.Password))
 			slog.WarnContext(r.Context(), "login failed", "username", body.Username, "reason", "user_not_found", "request_id", RequestIDFromContext(r.Context()))
 			jsonError(w, "invalid credentials", http.StatusUnauthorized)
 			return
@@ -70,6 +82,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 // handleLogout clears the session cookie.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	// Revoke the presented session token server-side so it cannot be replayed
+	// before its natural expiry — clearing the cookie alone leaves a captured
+	// token valid.
+	if cookie, err := r.Cookie("funnelbarn_session"); err == nil && s.sessionManager != nil {
+		s.sessionManager.Revoke(cookie.Value)
+	}
+
 	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, auth.ClearSessionCookie(secure))
 	http.SetCookie(w, auth.ClearCSRFCookie(secure))
@@ -285,6 +304,16 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	if projectID == "" {
 		jsonError(w, "project id required", http.StatusBadRequest)
 		return
+	}
+	// Purge R2 recording blobs first: once the SQLite rows are gone we can no
+	// longer locate the chunk keys. A purge failure is logged but must not block
+	// tenant deletion — a stray blob orphan is preferable to an undeletable
+	// project (and the retention sweep will not reach orphaned blobs either).
+	if s.recordings != nil {
+		if err := s.recordings.PurgeProjectRecordings(r.Context(), projectID); err != nil {
+			slog.ErrorContext(r.Context(), "delete project: purge recordings failed",
+				"err", err, "handled", true, "project_id", projectID)
+		}
 	}
 	if err := s.projects.DeleteProject(r.Context(), projectID); err != nil {
 		mapServiceError(w, err, "handleDeleteProject")

@@ -28,7 +28,12 @@ func Open(path string) (*Store, error) {
 		path = ".data/funnelbarn.db"
 	}
 
-	dsn := path + "?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on"
+	// NOTE: the driver is modernc.org/sqlite, which does NOT understand the
+	// mattn/go-sqlite3 DSN params (_journal_mode/_busy_timeout/_foreign_keys) —
+	// it silently ignores them, leaving foreign keys OFF. modernc expects
+	// PRAGMAs expressed as repeated `_pragma=` params. Foreign keys are required
+	// for the schema's ON DELETE CASCADE constraints to actually fire.
+	dsn := path + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
 	db, err := otelsql.Open("sqlite", dsn,
 		otelsql.WithAttributes(semconv.DBSystemSqlite),
 		otelsql.WithSpanOptions(otelsql.SpanOptions{
@@ -46,6 +51,18 @@ func Open(path string) (*Store, error) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(0)
+
+	// Fail fast if foreign keys did not actually get enabled — a driver/DSN
+	// mismatch would silently disable every ON DELETE CASCADE in the schema.
+	var fkEnabled int
+	if err := db.QueryRow("PRAGMA foreign_keys").Scan(&fkEnabled); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("check foreign_keys pragma: %w", err)
+	}
+	if fkEnabled != 1 {
+		db.Close()
+		return nil, fmt.Errorf("foreign keys are not enabled (PRAGMA foreign_keys=%d); schema cascade constraints would not fire", fkEnabled)
+	}
 
 	goose.SetBaseFS(migrations)
 	if err := goose.SetDialect("sqlite3"); err != nil {

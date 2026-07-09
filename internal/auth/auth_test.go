@@ -241,6 +241,48 @@ func TestSessionManager_CreateAndValidate(t *testing.T) {
 	}
 }
 
+func TestSessionManager_Revoke(t *testing.T) {
+	sm := NewSessionManager("test-secret-key", time.Hour)
+
+	token, _, err := sm.Create("alice")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, ok := sm.Valid(token); !ok {
+		t.Fatal("token should be valid before revocation")
+	}
+
+	sm.Revoke(token)
+
+	if _, ok := sm.Valid(token); ok {
+		t.Error("token should be invalid after revocation")
+	}
+	// A different token for the same user must still be valid.
+	other, _, _ := sm.Create("alice")
+	if _, ok := sm.Valid(other); !ok {
+		t.Error("a freshly issued token must not be affected by another token's revocation")
+	}
+}
+
+func TestSessionManager_RevokePersistAndReload(t *testing.T) {
+	var persisted = map[string]time.Time{}
+	sm := NewSessionManager("test-secret-key", time.Hour)
+	sm.SetPersistRevocation(func(hash string, exp time.Time) { persisted[hash] = exp })
+
+	token, _, _ := sm.Create("bob")
+	sm.Revoke(token)
+	if len(persisted) != 1 {
+		t.Fatalf("expected 1 persisted revocation, got %d", len(persisted))
+	}
+
+	// Simulate a restart: a fresh manager (same secret) reloads the revoked set.
+	fresh := NewSessionManager("test-secret-key", time.Hour)
+	fresh.LoadRevoked(persisted)
+	if _, ok := fresh.Valid(token); ok {
+		t.Error("revocation must survive a restart via LoadRevoked")
+	}
+}
+
 func TestSessionManager_ExpiredToken(t *testing.T) {
 	sm := NewSessionManager("secret", time.Hour)
 	// Override `now` to be in the future relative to token creation.

@@ -90,9 +90,25 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.ts'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'lcov'],
+      reporter: ['text', 'text-summary', 'json-summary', 'lcov'],
+      // Count EVERY source file, not just those a test happens to import, so a
+      // new untested file drags the numbers down (it can't hide behind covered
+      // files). Tests/setup/type-shims are excluded.
+      all: true,
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/**/*.test.{ts,tsx}',
+        'src/test-setup.ts',
+        'src/setupTests.ts',
+        'src/vite-env.d.ts',
+      ],
+      // Coverage ratchet floors — PINNED AT CURRENT (whole percent). They may
+      // only be raised, never lowered. A drop below any floor fails the build.
       thresholds: {
-        lines: 70,
+        lines: 26,
+        statements: 23,
+        functions: 17,
+        branches: 23,
       },
     },
   },

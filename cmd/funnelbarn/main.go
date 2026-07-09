@@ -146,8 +146,15 @@ func run() error {
 		}
 	}
 
-	if cfg.SessionSecret == "" {
-		slog.Warn("FUNNELBARN_SESSION_SECRET is not set; sessions will not persist across restarts")
+	// A configured session secret must be strong. An empty secret is tolerated
+	// for local dev (a random per-process secret is generated) but refused for a
+	// weak explicit one — a short secret is worse than none because it looks
+	// deliberate. All deployed environments set this via SOPS.
+	if secret := strings.TrimSpace(cfg.SessionSecret); secret == "" {
+		slog.Warn("FUNNELBARN_SESSION_SECRET is not set; a random per-process secret will be used and sessions will not persist across restarts",
+			"handled", false)
+	} else if len(secret) < 32 {
+		return fmt.Errorf("FUNNELBARN_SESSION_SECRET must be at least 32 characters (got %d)", len(secret))
 	}
 
 	store, err := repository.Open(cfg.DBPath)
@@ -267,6 +274,25 @@ func run() error {
 		return err
 	}
 	sessionManager := auth.NewSessionManager(cfg.SessionSecret, cfg.SessionTTL)
+	// Wire durable session revocation (SESS-1): persist logouts and repopulate
+	// the in-memory revoked set so a logout survives a restart.
+	sessionManager.SetPersistRevocation(func(tokenHash string, expiresAt time.Time) {
+		if err := store.RevokeSession(context.Background(), tokenHash, expiresAt); err != nil {
+			slog.Error("persist session revocation", "err", err, "handled", true)
+		}
+	})
+	if err := store.DeleteExpiredRevokedSessions(ctx, time.Now().UTC()); err != nil {
+		slog.Warn("prune expired session revocations", "err", err)
+	}
+	if revoked, err := store.ActiveRevokedSessions(ctx, time.Now().UTC()); err != nil {
+		slog.Warn("load session revocations", "err", err)
+	} else {
+		seed := make(map[string]time.Time, len(revoked))
+		for _, r := range revoked {
+			seed[r.TokenHash] = r.ExpiresAt
+		}
+		sessionManager.LoadRevoked(seed)
+	}
 	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.MaxBodyBytes)
 	handler.OnEventsReceived = func(ctx context.Context, projectID string) {
 		if err := healthSvc.MarkEventsReceived(ctx, projectID); err != nil {
@@ -285,6 +311,24 @@ func run() error {
 
 	oidcClient := buildOIDCClient(cfg)
 
+	// Determine whether local/DB users exist so the API can fail closed. A
+	// deployment that authenticates only via CLI-created users (no admin env,
+	// no OIDC) must still enforce sessions on its dashboard routes.
+	localUserCount, err := store.CountUsers(ctx)
+	if err != nil {
+		return fmt.Errorf("count users: %w", err)
+	}
+	slog.Info("authentication mechanisms",
+		"env_admin", userAuth.Enabled(),
+		"iambarn", iambarnProvider != nil,
+		"oidc_confidential", oidcClient != nil,
+		"local_users", localUserCount,
+	)
+	if !userAuth.Enabled() && iambarnProvider == nil && oidcClient == nil && localUserCount == 0 {
+		slog.Warn("no authentication mechanism configured; dashboard API routes will be served UNAUTHENTICATED — set FUNNELBARN_ADMIN_*, configure OIDC/IAMBarn, or run 'funnelbarn user create'",
+			"handled", false)
+	}
+
 	apiServer := api.NewServer(api.ServerConfig{
 		InstanceSettings:    store,
 		GeoAnonymizer:       store,
@@ -302,6 +346,7 @@ func run() error {
 		Widgets:             widgetsSvc,
 		UserAuth:            userAuth,
 		SessionManager:      sessionManager,
+		LocalUsersExist:     localUserCount > 0,
 		AllowedOrigins:      cfg.AllowedOrigins,
 		SessionSecret:       cfg.SessionSecret,
 		PublicURL:           cfg.PublicURL,
@@ -332,6 +377,9 @@ func run() error {
 	})
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)
+	} else {
+		slog.Warn("/metrics is served without authentication (FUNNELBARN_METRICS_TOKEN unset); ensure it is not exposed on a public route",
+			"handled", false)
 	}
 
 	apiServer.StartCleanup(ctx)

@@ -25,6 +25,17 @@ func (s *Store) UpsertUser(ctx context.Context, username, passwordHash string) e
 	return err
 }
 
+// CountUsers returns the number of user rows. Used at startup to decide whether
+// local/DB-user authentication is a configured login mechanism (so the API can
+// fail closed rather than serve routes unauthenticated).
+func (s *Store) CountUsers(ctx context.Context) (int, error) {
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // UserByUsername fetches a user by username.
 func (s *Store) UserByUsername(ctx context.Context, username string) (User, error) {
 	const q = `SELECT id, username, password_hash, COALESCE(iambarn_sub, ''), created_at FROM users WHERE username = ?`
@@ -54,7 +65,9 @@ func (s *Store) CreateIAMBarnUser(ctx context.Context, sub, username string) (Us
 	// If sub is already in the DB, just update the display name.
 	if _, err := s.FindUserByIAMBarnSub(ctx, sub); err == nil {
 		const upd = `UPDATE users SET username = ? WHERE iambarn_sub = ?`
-		_, _ = s.db.ExecContext(ctx, upd, username, sub)
+		if _, updErr := s.db.ExecContext(ctx, upd, username, sub); updErr != nil {
+			return User{}, fmt.Errorf("update iambarn user display name: %w", updErr)
+		}
 		return s.FindUserByIAMBarnSub(ctx, sub)
 	}
 

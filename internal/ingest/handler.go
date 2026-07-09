@@ -185,9 +185,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
-	projectSlug := r.Header.Get("x-funnelbarn-project")
+	// Attribute the event to the project bound to the API key — NOT to the
+	// client-supplied x-funnelbarn-project header. A project-scoped key (e.g. the
+	// public key embedded in a website's page source) must not be able to write
+	// into a different project, or auto-create arbitrary projects, by sending a
+	// forged header. Only fall back to the header when the key is not bound to a
+	// specific project (an instance-wide/full key, or the unauthenticated dev
+	// mode where projectID is empty).
+	projectSlug := projectID
 	if projectSlug == "" {
-		projectSlug = projectID
+		projectSlug = r.Header.Get("x-funnelbarn-project")
 	}
 
 	record := spool.Record{

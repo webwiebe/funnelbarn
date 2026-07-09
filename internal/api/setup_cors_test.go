@@ -46,7 +46,7 @@ func TestHandleSetup_ContainsSlugAndAPIKey(t *testing.T) {
 	}
 
 	// The response must contain the deterministic API key.
-	plaintext, _ := setupKey("test-secret", "my-new-site")
+	plaintext, _, _ := setupKey("test-secret", "my-new-site")
 	if !strings.Contains(body, plaintext) {
 		t.Errorf("setup response does not contain the expected API key %q", plaintext)
 	}
@@ -64,7 +64,7 @@ func TestHandleSetup_Idempotent(t *testing.T) {
 	}
 
 	// Extract the key from the first response.
-	plaintext, _ := setupKey("test-secret", "my-new-site")
+	plaintext, _, _ := setupKey("test-secret", "my-new-site")
 	if !strings.Contains(w1.Body.String(), plaintext) {
 		t.Fatalf("first response missing expected key %q", plaintext)
 	}
@@ -102,8 +102,8 @@ func TestHandleSetup_MissingSlug(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSetupKey_Deterministic(t *testing.T) {
-	pt1, hash1 := setupKey("my-secret", "acme-corp")
-	pt2, hash2 := setupKey("my-secret", "acme-corp")
+	pt1, hash1, _ := setupKey("my-secret", "acme-corp")
+	pt2, hash2, _ := setupKey("my-secret", "acme-corp")
 
 	if pt1 != pt2 {
 		t.Errorf("plaintext not deterministic: %q != %q", pt1, pt2)
@@ -114,8 +114,8 @@ func TestSetupKey_Deterministic(t *testing.T) {
 }
 
 func TestSetupKey_DifferentSlugsProduceDifferentKeys(t *testing.T) {
-	pt1, _ := setupKey("my-secret", "site-a")
-	pt2, _ := setupKey("my-secret", "site-b")
+	pt1, _, _ := setupKey("my-secret", "site-a")
+	pt2, _, _ := setupKey("my-secret", "site-b")
 
 	if pt1 == pt2 {
 		t.Error("different slugs should produce different keys")
@@ -123,38 +123,37 @@ func TestSetupKey_DifferentSlugsProduceDifferentKeys(t *testing.T) {
 }
 
 func TestSetupKey_DifferentSecretsProduceDifferentKeys(t *testing.T) {
-	pt1, _ := setupKey("secret-one", "my-site")
-	pt2, _ := setupKey("secret-two", "my-site")
+	pt1, _, _ := setupKey("secret-one", "my-site")
+	pt2, _, _ := setupKey("secret-two", "my-site")
 
 	if pt1 == pt2 {
 		t.Error("different secrets should produce different keys")
 	}
 }
 
-func TestSetupKey_EmptySecretUsesFallback(t *testing.T) {
-	// An empty secret must not panic and must produce the same key as the
-	// explicit fallback string.
-	ptEmpty, _ := setupKey("", "test-slug")
-	ptFallback, _ := setupKey(setupInsecureFallback, "test-slug")
-
-	if ptEmpty == "" {
-		t.Error("empty secret: expected non-empty plaintext key")
+func TestSetupKey_EmptySecretFailsClosed(t *testing.T) {
+	// SETUP-1: with no session secret, setupKey must refuse (ok=false) rather
+	// than derive a key from a hardcoded constant, which would make every
+	// project's ingest key globally predictable.
+	pt, hash, ok := setupKey("", "test-slug")
+	if ok {
+		t.Error("empty secret: expected ok=false")
 	}
-	if ptEmpty != ptFallback {
-		t.Errorf("empty secret did not use the fallback: %q != %q", ptEmpty, ptFallback)
+	if pt != "" || hash != "" {
+		t.Errorf("empty secret: expected empty key material, got pt=%q hash=%q", pt, hash)
 	}
 }
 
 func TestSetupKey_PlaintextLength(t *testing.T) {
 	// The plaintext key is always 40 hex chars (first 40 of a 64-char SHA-256 hex).
-	plaintext, _ := setupKey("any-secret", "any-slug")
+	plaintext, _, _ := setupKey("any-secret", "any-slug")
 	if len(plaintext) != 40 {
 		t.Errorf("plaintext length: want 40, got %d (%q)", len(plaintext), plaintext)
 	}
 }
 
 func TestSetupKey_HashIsHex(t *testing.T) {
-	_, keySHA256 := setupKey("any-secret", "any-slug")
+	_, keySHA256, _ := setupKey("any-secret", "any-slug")
 	if len(keySHA256) != 64 {
 		t.Errorf("keySHA256 length: want 64 hex chars, got %d (%q)", len(keySHA256), keySHA256)
 	}
@@ -231,8 +230,10 @@ func TestCORS_WildcardAllowedOriginsAllowsAny(t *testing.T) {
 	}
 }
 
-func TestCORS_EmptyAllowedOriginsAllowsAll(t *testing.T) {
-	// newTestServer passes nil allowedOrigins → open CORS (returns "*").
+func TestCORS_EmptyAllowedOriginsDeniesDashboard(t *testing.T) {
+	// CORS-1: an empty allowlist must mean "same-origin only" for the
+	// credentialed dashboard API, NOT "reflect any origin". A dashboard route
+	// (here /api/v1/health, a non-ingest path) must get no CORS headers.
 	srv, _ := newTestServer(t)
 	// allowedOrigins is nil/empty by default in newTestServer.
 
@@ -241,9 +242,30 @@ func TestCORS_EmptyAllowedOriginsAllowsAll(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
-	got := w.Header().Get("Access-Control-Allow-Origin")
-	if got != "https://example.com" {
-		t.Errorf("empty allowedOrigins: want reflected origin, got %q", got)
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("empty allowedOrigins on dashboard route: want no ACAO header, got %q", got)
+	}
+}
+
+// TestCORS_IngestEndpointOpenNoCredentials verifies CORS-1: the public ingest
+// endpoints allow any origin (browser SDKs live on arbitrary customer sites)
+// but must NOT set Allow-Credentials — they authenticate with an API-key
+// header, never cookies.
+func TestCORS_IngestEndpointOpenNoCredentials(t *testing.T) {
+	srv, _ := newTestServer(t)
+	// No allowlist configured — ingest must still be reachable cross-origin.
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/events", nil)
+	req.Header.Set("Origin", "https://any-customer-site.example")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "https://any-customer-site.example" {
+		t.Errorf("ingest ACAO: want reflected origin, got %q", got)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Errorf("ingest must not allow credentials, got %q", got)
 	}
 }
 
