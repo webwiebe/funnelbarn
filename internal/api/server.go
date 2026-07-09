@@ -432,6 +432,14 @@ func (s *Server) metricsHandler() http.Handler {
 // publicIngestCORSPaths are the endpoints a browser SDK on an arbitrary
 // customer origin legitimately calls cross-origin. They authenticate with an
 // API-key header (never cookies), so they get open, NON-credentialed CORS.
+//
+// AUDIT GUARD: do NOT "harden" these by pinning Access-Control-Allow-Headers to
+// the fixed corsAllowHeaders list — they must keep reflecting the preflight's
+// requested headers (see setCORSHeaders). SDKs/tracing add headers we don't
+// control (e.g. `traceparent`); a fixed list drops the missing one and the
+// browser blocks the whole request. This regressed once (CORS-1 in #195, fixed
+// in #198) and only shows up in a real browser, never in curl or unit tests.
+// The fixed allowlist is safe ONLY on the credentialed dashboard API.
 var publicIngestCORSPaths = map[string]bool{
 	"/api/v1/events":           true,
 	"/api/v1/recordings/chunk": true,
@@ -440,8 +448,10 @@ var publicIngestCORSPaths = map[string]bool{
 	"/api/v1/client-config":    true,
 }
 
-// corsAllowHeaders is the fixed set of request headers permitted cross-origin.
-// We never reflect Access-Control-Request-Headers verbatim.
+// corsAllowHeaders is the fixed set of request headers permitted cross-origin
+// on the CREDENTIALED dashboard API only. We never reflect
+// Access-Control-Request-Headers verbatim there. NOTE: this list is deliberately
+// NOT used for the public ingest paths — see publicIngestCORSPaths.
 var corsAllowHeaders = "Content-Type, Authorization, " + auth.HeaderAPIKey +
 	", x-funnelbarn-project, x-funnelbarn-environment, X-FunnelBarn-CSRF, X-Requested-With"
 
