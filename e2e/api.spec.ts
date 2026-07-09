@@ -104,3 +104,60 @@ test.describe('API: ingest', () => {
     expect([401, 403]).toContain(resp.status())
   })
 })
+
+/**
+ * CORS configuration guard — validates the deployed edge, not just the handler.
+ *
+ * This is the regression net for the custom-CNAME ingest break (CORS-1 in #195,
+ * fixed in #198): a browser SDK preflights POST /api/v1/events carrying headers
+ * we don't control (notably `traceparent` from distributed tracing), and the
+ * non-credentialed ingest path MUST echo them back or the browser blocks the
+ * real request. It only reproduces in a browser — curl skips preflight — so we
+ * pin the actual OPTIONS response the browser would enforce on. Running against
+ * the live deployment (E2E_BASE_URL) also catches an edge/proxy that strips or
+ * rewrites the CORS headers, which a Go unit test cannot.
+ */
+test.describe('API: CORS config', () => {
+  const CUSTOMER_ORIGIN = 'https://cors-e2e-customer.example'
+
+  test('ingest preflight reflects the origin and echoes requested headers incl. traceparent', async ({
+    request,
+  }) => {
+    const resp = await request.fetch('/api/v1/events', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: CUSTOMER_ORIGIN,
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'content-type,traceparent,x-funnelbarn-api-key',
+      },
+    })
+    expect(resp.status()).toBe(204)
+
+    const h = resp.headers()
+    // Origin reflected (browser SDKs live on arbitrary customer sites).
+    expect(h['access-control-allow-origin']).toBe(CUSTOMER_ORIGIN)
+    // The header that regressed — must be echoed back, or the POST is blocked.
+    expect((h['access-control-allow-headers'] ?? '').toLowerCase()).toContain('traceparent')
+    // Non-credentialed: these auth with an API-key header, never cookies.
+    expect(h['access-control-allow-credentials']).toBeUndefined()
+  })
+
+  test('credentialed dashboard endpoint does not open CORS to an arbitrary origin', async ({
+    request,
+  }) => {
+    const resp = await request.fetch('/api/v1/projects', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://cors-e2e-evil.example',
+        'Access-Control-Request-Method': 'GET',
+        'Access-Control-Request-Headers': 'x-evil-injected',
+      },
+    })
+    const h = resp.headers()
+    // An off-allowlist origin must get NO Allow-Origin (credentialed API is not
+    // reflected cross-origin) and certainly no reflected injected header. This
+    // is the strict posture CORS-1 established and #198 preserved.
+    expect(h['access-control-allow-origin']).toBeUndefined()
+    expect((h['access-control-allow-headers'] ?? '').toLowerCase()).not.toContain('x-evil-injected')
+  })
+})
