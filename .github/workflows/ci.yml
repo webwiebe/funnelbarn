@@ -38,6 +38,16 @@ jobs:
       - name: staticcheck
         run: go install honnef.co/go/tools/cmd/staticcheck@latest && staticcheck ./...
 
+      - name: cyclomatic complexity gate
+        # Fail if any function exceeds a cyclomatic complexity of 50. This is a
+        # regression ceiling set just above today's worst offenders (config.Load,
+        # main.run) — the intent is to ratchet it DOWN over time as the flagged
+        # analytics/startup functions are decomposed, never up. Generated and
+        # test code is excluded.
+        run: |
+          go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+          gocyclo -over 50 -ignore '_test|sqlcgen|/mock/' internal cmd
+
   go-test:
     runs-on: ubuntu-latest
     steps:

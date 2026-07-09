@@ -12,14 +12,13 @@ import (
 	"time"
 )
 
-const setupInsecureFallback = "funnelbarn-setup-insecure"
-
-// setupKey derives a deterministic ingest API key from the session secret and slug.
-// Returns (plaintext40, keySHA256).
-func setupKey(secret, slug string) (plaintext, keySHA256 string) {
-	if secret == "" {
-		slog.Warn("session secret is empty; using insecure fallback for setup key derivation")
-		secret = setupInsecureFallback
+// setupKey derives a deterministic ingest API key from the session secret and
+// slug. Returns ok=false when no session secret is configured — in that case we
+// MUST NOT derive a key from a hardcoded constant, which would make every
+// project's ingest key globally predictable. Callers fail closed instead.
+func setupKey(secret, slug string) (plaintext, keySHA256 string, ok bool) {
+	if strings.TrimSpace(secret) == "" {
+		return "", "", false
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte("setup:" + slug))
@@ -27,7 +26,7 @@ func setupKey(secret, slug string) (plaintext, keySHA256 string) {
 	plaintext = hex.EncodeToString(raw)[:40]
 	sum := sha256.Sum256([]byte(plaintext))
 	keySHA256 = hex.EncodeToString(sum[:])
-	return
+	return plaintext, keySHA256, true
 }
 
 // handleSetup is a public endpoint that returns a self-service setup page in
@@ -52,8 +51,14 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Derive deterministic ingest key.
-	plaintext, keySHA256 := setupKey(s.sessionSecret, slug)
+	// Derive deterministic ingest key. Fail closed if no session secret is set —
+	// deriving from a constant would hand out globally predictable keys.
+	plaintext, keySHA256, ok := setupKey(s.sessionSecret, slug)
+	if !ok {
+		slog.Error("setup: refusing to derive key without a session secret", "slug", slug, "handled", false)
+		http.Error(w, "setup unavailable: server missing session secret", http.StatusServiceUnavailable)
+		return
+	}
 
 	// Upsert the setup key so it is valid for ingest.
 	if err := s.projects.EnsureSetupAPIKey(ctx, project.ID, keySHA256); err != nil {

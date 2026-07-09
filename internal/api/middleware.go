@@ -170,6 +170,17 @@ func (rl *rateLimiter) middleware(next http.Handler) http.Handler {
 	return rl.middlewareWithIP(next, defaultClientIP)
 }
 
+// limit wraps next with the given rate limiter, keyed on the trusted-proxy-aware
+// client IP (s.clientIP) rather than the raw X-Forwarded-For first hop. This is
+// what the public endpoints (login, ingest, setup, evaluate, OIDC) must use so
+// that, when FUNNELBARN_TRUSTED_PROXIES is configured, an attacker cannot mint a
+// fresh token bucket per request by spoofing X-Forwarded-For. Without trusted
+// proxies configured the behaviour is unchanged (XFF is still honoured) — set
+// FUNNELBARN_TRUSTED_PROXIES to your ingress/CDN to activate the protection.
+func (s *Server) limit(rl *rateLimiter, next http.Handler) http.Handler {
+	return rl.middlewareWithIP(next, s.clientIP)
+}
+
 func (rl *rateLimiter) middlewareWithIP(next http.Handler, extractIP func(*http.Request) string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := extractIP(r)

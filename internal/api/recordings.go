@@ -88,6 +88,14 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 		jsonError(w, "recording_id, session_id, and events are required", http.StatusUnprocessableEntity)
 		return
 	}
+	// recording_id and session_id are interpolated into R2 object keys
+	// (recordings/<project>/<recording_id>/<index>). Reject anything that could
+	// inject or traverse a key path ('/', '..', control chars) before it reaches
+	// storage — see chunkKey in internal/service/recordings.go.
+	if !isValidStorageID(chunk.RecordingID) || !isValidStorageID(chunk.SessionID) {
+		jsonError(w, "recording_id and session_id must be alphanumeric (with '-' or '_'), max 64 chars", http.StatusUnprocessableEntity)
+		return
+	}
 
 	chunk.ProjectID = projectID
 	chunk.ProjectSlug = proj.Slug
@@ -106,6 +114,23 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true})
+}
+
+// isValidStorageID guards IDs that become object-storage key segments. It
+// rejects anything outside [A-Za-z0-9_-] (notably '/', '.', and control chars)
+// so a client-supplied recording_id/session_id cannot inject or traverse R2
+// keys. 64 chars is comfortably above the SDK's 32-hex-char IDs.
+func isValidStorageID(s string) bool {
+	if len(s) == 0 || len(s) > 64 {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
@@ -277,9 +302,16 @@ func (s *Server) handleLookupTrace(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "session recording not configured", http.StatusServiceUnavailable)
 		return
 	}
-	projectID, _, ok := s.ingest.APIKeyProjectScope(r)
+	projectID, scope, ok := s.ingest.APIKeyProjectScope(r)
 	if !ok {
 		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	// Reject ingest-scoped keys: those are the public keys embedded in a site's
+	// page source. Resolving a trace to a session recording is a read of private
+	// replay data and must require a full-scope key.
+	if scope != repository.APIKeyScopeFull {
+		jsonError(w, "forbidden: full-scope API key required", http.StatusForbidden)
 		return
 	}
 	traceID := r.PathValue("trace_id")
@@ -309,9 +341,15 @@ func (s *Server) handleGetRecordingChunkByKey(w http.ResponseWriter, r *http.Req
 		jsonError(w, "session recording not configured", http.StatusServiceUnavailable)
 		return
 	}
-	projectID, _, ok := s.ingest.APIKeyProjectScope(r)
+	projectID, scope, ok := s.ingest.APIKeyProjectScope(r)
 	if !ok {
 		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	// Session replay chunks are private data — an ingest-scoped (public) key must
+	// not be able to read them. Require a full-scope key.
+	if scope != repository.APIKeyScopeFull {
+		jsonError(w, "forbidden: full-scope API key required", http.StatusForbidden)
 		return
 	}
 	recordingID := r.PathValue("rid")

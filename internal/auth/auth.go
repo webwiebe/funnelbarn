@@ -12,6 +12,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -164,10 +165,22 @@ func (a *UserAuthenticator) Username() string {
 // --------------------------------------------------------------------------
 
 // SessionManager creates and validates HMAC-signed session tokens.
+//
+// Tokens are stateless (nothing per-token is stored on issue), but logout must
+// still invalidate a token before its natural expiry. We keep an in-memory set
+// of revoked token hashes — checked on the hot Valid() path with no DB hit — and
+// an optional persist hook so a revocation survives a process restart (the set
+// is repopulated at startup via LoadRevoked).
 type SessionManager struct {
 	secret []byte
 	ttl    time.Duration
 	now    func() time.Time
+
+	mu      sync.Mutex
+	revoked map[string]int64 // token hash -> expiry unix seconds
+	// persist, when set, durably records a revocation (hash, expiry). Failures
+	// are the caller's concern; the in-memory set is authoritative at runtime.
+	persist func(tokenHash string, expiresAt time.Time)
 }
 
 type sessionClaims struct {
@@ -186,10 +199,89 @@ func NewSessionManager(secret string, ttl time.Duration) *SessionManager {
 		secret = randomSecret()
 	}
 	return &SessionManager{
-		secret: []byte(secret),
-		ttl:    ttl,
-		now:    time.Now,
+		secret:  []byte(secret),
+		ttl:     ttl,
+		now:     time.Now,
+		revoked: make(map[string]int64),
 	}
+}
+
+// SetPersistRevocation installs a hook used to durably store revocations so they
+// survive a restart. Call once at startup, before serving requests.
+func (m *SessionManager) SetPersistRevocation(fn func(tokenHash string, expiresAt time.Time)) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.persist = fn
+	m.mu.Unlock()
+}
+
+// LoadRevoked seeds the in-memory revocation set from durable storage at startup.
+func (m *SessionManager) LoadRevoked(hashes map[string]time.Time) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for h, exp := range hashes {
+		m.revoked[h] = exp.Unix()
+	}
+}
+
+// Revoke invalidates a session token immediately (and durably, if a persist hook
+// is installed). Safe to call with an already-expired or malformed token.
+func (m *SessionManager) Revoke(token string) {
+	if m == nil || strings.TrimSpace(token) == "" {
+		return
+	}
+	// Determine the token's own expiry so the revocation can be pruned later.
+	exp := m.now().UTC().Add(m.ttl)
+	if _, claims, ok := m.parse(token); ok {
+		exp = time.Unix(claims.Expires, 0).UTC()
+	}
+	h := hashToken(token)
+
+	m.mu.Lock()
+	m.pruneLocked()
+	m.revoked[h] = exp.Unix()
+	persist := m.persist
+	m.mu.Unlock()
+
+	if persist != nil {
+		persist(h, exp)
+	}
+}
+
+// isRevoked reports whether the token hash is in the (non-expired) revoked set.
+func (m *SessionManager) isRevoked(token string) bool {
+	h := hashToken(token)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	exp, ok := m.revoked[h]
+	if !ok {
+		return false
+	}
+	if exp <= m.now().UTC().Unix() {
+		delete(m.revoked, h)
+		return false
+	}
+	return true
+}
+
+// pruneLocked drops expired entries. Caller must hold m.mu.
+func (m *SessionManager) pruneLocked() {
+	now := m.now().UTC().Unix()
+	for h, exp := range m.revoked {
+		if exp <= now {
+			delete(m.revoked, h)
+		}
+	}
+}
+
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 // Create issues a new signed session token for username.
@@ -214,33 +306,47 @@ func (m *SessionManager) Create(username string) (string, time.Time, error) {
 
 // Valid validates a session token and returns the username.
 func (m *SessionManager) Valid(token string) (string, bool) {
-	if m == nil || strings.TrimSpace(token) == "" {
+	_, claims, ok := m.parse(token)
+	if !ok {
 		return "", false
+	}
+	// Reject tokens that were explicitly revoked (logout) even though their
+	// signature and expiry are still valid.
+	if m.isRevoked(token) {
+		return "", false
+	}
+	return claims.Username, true
+}
+
+// parse verifies a token's signature and expiry and returns its raw payload and
+// decoded claims. ok is false for any malformed, mis-signed, expired, or
+// empty-username token. It does NOT consult the revocation set.
+func (m *SessionManager) parse(token string) (payload []byte, claims sessionClaims, ok bool) {
+	if m == nil || strings.TrimSpace(token) == "" {
+		return nil, sessionClaims{}, false
 	}
 	parts := strings.Split(token, ".")
 	if len(parts) != 2 {
-		return "", false
+		return nil, sessionClaims{}, false
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return "", false
+		return nil, sessionClaims{}, false
 	}
 	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return "", false
+		return nil, sessionClaims{}, false
 	}
-	expected := sign(m.secret, payload)
-	if hmac.Equal(signature, expected) {
-		var claims sessionClaims
-		if err := json.Unmarshal(payload, &claims); err != nil {
-			return "", false
-		}
-		if claims.Expires <= m.now().UTC().Unix() || claims.Username == "" {
-			return "", false
-		}
-		return claims.Username, true
+	if !hmac.Equal(signature, sign(m.secret, payload)) {
+		return nil, sessionClaims{}, false
 	}
-	return "", false
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil, sessionClaims{}, false
+	}
+	if claims.Expires <= m.now().UTC().Unix() || claims.Username == "" {
+		return nil, sessionClaims{}, false
+	}
+	return payload, claims, true
 }
 
 // SessionCookie returns an HttpOnly session cookie.

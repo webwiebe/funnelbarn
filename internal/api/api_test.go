@@ -120,6 +120,53 @@ func newAuthedServer(t *testing.T) (*Server, *repository.Store) {
 	return srv, store
 }
 
+// TestRequireSession_FailsClosedWithLocalUsers verifies AUTH-1: when the only
+// configured auth mechanism is local/DB users (no env admin, no OIDC, no
+// IAMBarn), session-authed routes must NOT be served unauthenticated. A
+// regression here reopens the full auth bypass.
+func TestRequireSession_FailsClosedWithLocalUsers(t *testing.T) {
+	store := openMemoryStore(t)
+	sp := newTestSpool(t)
+	ingestHandler := ingest.NewHandler(auth.New("test-key"), sp, 0)
+	sm := auth.NewSessionManager("test-secret", time.Hour)
+	userAuth, _ := auth.NewUserAuthenticator("", "", "") // env admin disabled
+
+	srv := NewServer(ServerConfig{
+		Ingest:             ingestHandler,
+		Projects:           service.NewProjectService(store),
+		Funnels:            service.NewFunnelService(store),
+		ABTests:            service.NewABTestService(store),
+		Flags:              service.NewFlagService(store),
+		Events:             service.NewEventService(store),
+		Overview:           service.NewOverviewService(store),
+		Sessions:           service.NewSessionService(store),
+		APIKeys:            service.NewAPIKeyService(store),
+		Widgets:            service.NewWidgetService(store),
+		UserAuth:           userAuth,
+		SessionManager:     sm,
+		LocalUsersExist:    true, // e.g. created via `funnelbarn user create`
+		SessionSecret:      "test-secret",
+		PublicURL:          "http://localhost",
+		LoginRatePerMinute: 1000, LoginRateBurst: 1000,
+		APIRatePerMinute: 1000, APIRateBurst: 1000,
+		IngestRatePerMinute: 1000, IngestRateBurst: 1000,
+		DB:      store,
+		Version: "test",
+	})
+
+	// No session cookie -> must be rejected, not served.
+	w := getJSON(t, srv, "/api/v1/projects", nil)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without session cookie, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	// Valid session cookie -> allowed.
+	w = getJSON(t, srv, "/api/v1/projects", sessionCookieFor(t, srv, "someuser"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 with valid session cookie, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
 // sessionCookieFor creates a valid session cookie for the given server.
 func sessionCookieFor(t *testing.T, srv *Server, username string) *http.Cookie {
 	t.Helper()

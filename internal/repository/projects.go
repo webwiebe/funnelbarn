@@ -4,10 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/sqlcgen"
 )
+
+// projectSlugPattern bounds slugs that may be auto-created on the ingest path.
+// It mirrors the CLI's slugPattern (lowercase alphanumerics + single hyphens),
+// so an attacker cannot use a forged x-funnelbarn-project header to spawn
+// projects with arbitrary/garbage names.
+var projectSlugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 // APIKeyScopeFull allows full API access.
 const APIKeyScopeFull = "full"
@@ -81,6 +88,13 @@ func (s *Store) EnsureProject(ctx context.Context, slug string) (Project, error)
 		return Project{}, fmt.Errorf("slug %q looks like a UUID but no project with that ID exists; refusing to auto-create", slug)
 	}
 
+	// Only auto-create for well-formed slugs. This blocks path-traversal /
+	// garbage values (e.g. from a forged x-funnelbarn-project header on an
+	// instance-wide key) from spawning junk projects.
+	if !projectSlugPattern.MatchString(slug) {
+		return Project{}, fmt.Errorf("refusing to auto-create project for invalid slug %q", slug)
+	}
+
 	return s.CreateProject(ctx, slug, slug)
 }
 
@@ -144,9 +158,29 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 	return projects, nil
 }
 
-// DeleteProject removes a project and all related data (cascades via FK constraints).
+// DeleteProject removes a project and all of its data in a single transaction.
+// Child tables that declare ON DELETE CASCADE (events, sessions, recordings,
+// feature_flags, flag_evaluations, dashboard_widgets, segments, canonical
+// mappings, project_recording_settings, project_health, …) are removed
+// automatically now that foreign keys are enforced (see Open). recording_traces
+// has no foreign key, so it is deleted explicitly to avoid orphans. R2 chunk
+// blobs are purged separately by the recording service before this call — SQLite
+// deletion cannot reach object storage.
 func (s *Store) DeleteProject(ctx context.Context, id string) error {
-	return s.q.DeleteProject(ctx, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("delete project: begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	// recording_traces has no FK to projects, so cascade won't reach it.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM recording_traces WHERE project_id = ?`, id); err != nil {
+		return fmt.Errorf("delete project: recording_traces: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete project: %w", err)
+	}
+	return tx.Commit()
 }
 
 // UpdateProject updates a project's name and domain.

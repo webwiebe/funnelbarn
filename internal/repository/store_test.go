@@ -194,6 +194,40 @@ func TestDeleteProject(t *testing.T) {
 	require.Empty(t, projects)
 }
 
+// TestDeleteProject_NoOrphans verifies DEL-1: deleting a project removes every
+// child row — both the FK-cascade tables (events, recordings) and the
+// recording_traces table, which has no foreign key and must be deleted
+// explicitly. A regression here (e.g. FKs silently off, or the explicit delete
+// dropped) leaves tenant data behind after a "delete project".
+func TestDeleteProject_NoOrphans(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	p, err := s.CreateProject(ctx, "Tenant", "tenant-orphans")
+	require.NoError(t, err)
+
+	require.NoError(t, s.InsertEvent(ctx, repository.Event{
+		ID: "e1", ProjectID: p.ID, SessionID: "sess1", Name: "pageview",
+		IngestID: "ing1", OccurredAt: time.Now().UTC(),
+	}))
+	require.NoError(t, s.UpsertRecording(ctx, repository.Recording{
+		ID: "rec1", ProjectID: p.ID, SessionID: "sess1", StartedAt: time.Now().UTC(),
+	}))
+	require.NoError(t, s.InsertTraceLinks(ctx, p.ID, "sess1", "rec1", []repository.TraceLink{
+		{TraceID: "trace1", OccurredAt: time.Now().UTC()},
+	}))
+
+	require.NoError(t, s.DeleteProject(ctx, p.ID))
+
+	for _, table := range []string{"events", "recordings", "recording_traces"} {
+		var n int
+		err := s.DB().QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM "+table+" WHERE project_id = ?", p.ID).Scan(&n)
+		require.NoError(t, err)
+		require.Zerof(t, n, "expected no orphaned rows in %s after project delete, found %d", table, n)
+	}
+}
+
 // --------------------------------------------------------------------------
 // API Keys
 // --------------------------------------------------------------------------
@@ -1181,6 +1215,23 @@ func TestStore_EnsureProject(t *testing.T) {
 	p2, err := s.EnsureProject(ctx, "ensure-slug")
 	require.NoError(t, err)
 	assert.Equal(t, p.ID, p2.ID)
+}
+
+// TestStore_EnsureProject_RejectsInvalidSlug verifies INGEST-1: a forged
+// x-funnelbarn-project header carrying a garbage/traversal slug on an
+// instance-wide key must not be able to auto-create junk projects.
+func TestStore_EnsureProject_RejectsInvalidSlug(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	for _, slug := range []string{"../evil", "Has Spaces", "UPPER", "bad_slug", "trailing-"} {
+		_, err := s.EnsureProject(ctx, slug)
+		require.Errorf(t, err, "expected EnsureProject(%q) to be rejected", slug)
+	}
+
+	projects, err := s.ListProjects(ctx)
+	require.NoError(t, err)
+	require.Empty(t, projects, "no junk projects should have been created")
 }
 
 func TestStore_AnalyzeABTest(t *testing.T) {

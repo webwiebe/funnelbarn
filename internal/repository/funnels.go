@@ -464,10 +464,6 @@ func buildSegmentRuleClause(rules []SegmentRule) (clause string, args []any, nee
 	if len(rules) == 0 {
 		return "", nil, false
 	}
-	sessionFields := map[string]bool{
-		"country_code": true, "city": true, "connection_class": true,
-		"dark_mode": true, "browser_timezone": true,
-	}
 	var parts []string
 	for _, rule := range rules {
 		tableAlias, ok := AllowedSegmentFields[rule.Field]
@@ -478,7 +474,6 @@ func buildSegmentRuleClause(rules []SegmentRule) (clause string, args []any, nee
 			needJoin = true
 		}
 		col := tableAlias + "." + rule.Field
-		_ = sessionFields // already handled via allowedSegmentFields
 		switch rule.Operator {
 		case "eq":
 			parts = append(parts, col+" = ?")
@@ -515,7 +510,15 @@ type FunnelSegments struct {
 func (s *Store) FunnelSegmentData(ctx context.Context, projectID string) (FunnelSegments, error) {
 	var out FunnelSegments
 
+	// Column names are interpolated into SQL, so guard against any caller ever
+	// passing an unvetted value: only an explicit allowlist of event columns is
+	// permitted. Callers below pass literals; this is defence-in-depth.
+	allowedDistinctCols := map[string]bool{"device_type": true, "browser": true, "country_code": true}
+
 	fetchDistinct := func(col string) ([]string, error) {
+		if !allowedDistinctCols[col] {
+			return nil, fmt.Errorf("FunnelSegmentData: disallowed column %q", col)
+		}
 		q := fmt.Sprintf(`SELECT DISTINCT %s FROM events WHERE project_id = ? AND %s IS NOT NULL AND %s != '' ORDER BY %s`, col, col, col, col)
 		rows, err := s.db.QueryContext(ctx, q, projectID)
 		if err != nil {

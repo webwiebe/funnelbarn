@@ -111,6 +111,19 @@ func projectKey(t *testing.T, store *repository.Store, name, slug string) (proje
 	return p.ID, plaintextKey
 }
 
+// fullKey mints a full-scope API key bound to projectID. The recording read
+// endpoints (trace lookup, chunk-by-key) reject ingest-scoped public keys, so
+// programmatic replay consumers must use a full-scope key.
+func fullKey(t *testing.T, store *repository.Store, projectID, slug string) string {
+	t.Helper()
+	plaintext := "full-" + slug
+	sum := sha256.Sum256([]byte(plaintext))
+	if _, err := store.CreateAPIKey(context.Background(), "test-full", projectID, hex.EncodeToString(sum[:]), "full"); err != nil {
+		t.Fatalf("CreateAPIKey(full): %v", err)
+	}
+	return plaintext
+}
+
 func postChunk(t *testing.T, srv *Server, key string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	var buf bytes.Buffer
@@ -139,6 +152,7 @@ func getTrace(t *testing.T, srv *Server, key, traceID string) *httptest.Response
 func TestLookupTrace_EndToEnd(t *testing.T) {
 	srv, store := newRecordingServer(t)
 	projectID, key := projectKey(t, store, "Trace E2E", "trace-e2e")
+	readKey := fullKey(t, store, projectID, "trace-e2e")
 
 	start := time.Now().UTC().Truncate(time.Second)
 	traceTime := start.Add(4 * time.Second)
@@ -160,8 +174,8 @@ func TestLookupTrace_EndToEnd(t *testing.T) {
 		t.Fatalf("chunk ingest: expected 202, got %d (body: %s)", w.Code, w.Body.String())
 	}
 
-	// Resolve the trace back to the recording.
-	wl := getTrace(t, srv, key, "trace-xyz")
+	// Resolve the trace back to the recording (full-scope read key).
+	wl := getTrace(t, srv, readKey, "trace-xyz")
 	if wl.Code != http.StatusOK {
 		t.Fatalf("lookup: expected 200, got %d (body: %s)", wl.Code, wl.Body.String())
 	}
@@ -187,8 +201,8 @@ func TestLookupTrace_EndToEnd(t *testing.T) {
 		t.Errorf("page_url: got %q", got.PageURL)
 	}
 
-	// The same API key can fetch the recording's chunks for replay.
-	wc := getChunkByKey(t, srv, key, "recE2E", 0)
+	// A full-scope key can fetch the recording's chunks for replay.
+	wc := getChunkByKey(t, srv, readKey, "recE2E", 0)
 	if wc.Code != http.StatusOK {
 		t.Fatalf("chunk fetch: expected 200, got %d (body: %s)", wc.Code, wc.Body.String())
 	}
@@ -215,7 +229,10 @@ func getChunkByKey(t *testing.T, srv *Server, key, rid string, index int) *httpt
 func TestGetRecordingChunkByKey_CrossProjectDenied(t *testing.T) {
 	srv, store := newRecordingServer(t)
 	_, keyA := projectKey(t, store, "Owner", "owner-proj")
-	_, keyB := projectKey(t, store, "Other", "other-proj")
+	projectB, _ := projectKey(t, store, "Other", "other-proj")
+	// Full-scope key for project B: it passes the scope gate, so the test
+	// exercises the cross-project ownership check (404), not the scope check.
+	keyB := fullKey(t, store, projectB, "other-proj")
 
 	start := time.Now().UTC().Truncate(time.Second)
 	w := postChunk(t, srv, keyA, map[string]any{
@@ -253,9 +270,25 @@ func TestLookupTrace_Unauthorized(t *testing.T) {
 
 func TestLookupTrace_NotFound(t *testing.T) {
 	srv, store := newRecordingServer(t)
-	_, key := projectKey(t, store, "Trace NF", "trace-nf")
+	projectID, _ := projectKey(t, store, "Trace NF", "trace-nf")
+	key := fullKey(t, store, projectID, "trace-nf")
 	w := getTrace(t, srv, key, "unknown-trace")
 	if w.Code != http.StatusNotFound {
 		t.Errorf("unknown trace: expected 404, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+// TestReadEndpoints_IngestScopeForbidden verifies REC-1: a public ingest-scoped
+// key must NOT be able to read session replays or resolve traces, even for its
+// own project.
+func TestReadEndpoints_IngestScopeForbidden(t *testing.T) {
+	srv, store := newRecordingServer(t)
+	_, ingestKey := projectKey(t, store, "Ingest Only", "ingest-only")
+
+	if w := getTrace(t, srv, ingestKey, "any-trace"); w.Code != http.StatusForbidden {
+		t.Errorf("trace lookup with ingest key: expected 403, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	if w := getChunkByKey(t, srv, ingestKey, "any-rec", 0); w.Code != http.StatusForbidden {
+		t.Errorf("chunk read with ingest key: expected 403, got %d (body: %s)", w.Code, w.Body.String())
 	}
 }

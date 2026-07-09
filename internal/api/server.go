@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -68,6 +69,11 @@ type ServerConfig struct {
 	// login flow at /api/v1/oidc/{login,callback}. Independent of IAMBarnProvider.
 	OIDC *auth.OIDCClient
 
+	// LocalUsersExist reports whether any local/DB users exist at startup. It is
+	// one of the signals that authentication is configured: if true, DB-user
+	// login is a real mechanism and session-authed routes must fail closed.
+	LocalUsersExist bool
+
 	InstanceSettings  InstanceSettingsRepo
 	GeoAnonymizer     GeoAnonymizer
 	Segments          service.Segments
@@ -129,6 +135,7 @@ type Server struct {
 	iambarnUsers        IAMBarnUserRepo
 	iambarnFlagProject  string
 	oidc                *auth.OIDCClient
+	localUsersExist     bool
 	instanceSettings    InstanceSettingsRepo
 	geoAnonymizer       GeoAnonymizer
 	segments            service.Segments
@@ -188,6 +195,7 @@ func NewServer(cfg ServerConfig) *Server {
 		iambarnUsers:        cfg.IAMBarnUsers,
 		iambarnFlagProject:  cfg.IAMBarnFlagProject,
 		oidc:                cfg.OIDC,
+		localUsersExist:     cfg.LocalUsersExist,
 		instanceSettings:    cfg.InstanceSettings,
 		geoAnonymizer:       cfg.GeoAnonymizer,
 		segments:            cfg.Segments,
@@ -216,13 +224,13 @@ func (s *Server) registerRoutes() {
 
 	// Public
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
-	s.mux.Handle("GET /api/v1/setup/{slug}", s.setupLimiter.middleware(http.HandlerFunc(s.handleSetup)))
-	s.mux.HandleFunc("GET /api/v1/client-config", s.handleClientConfig)
+	s.mux.Handle("GET /api/v1/setup/{slug}", s.limit(s.setupLimiter, http.HandlerFunc(s.handleSetup)))
+	s.mux.Handle("GET /api/v1/client-config", s.limit(s.eventsLimiter, http.HandlerFunc(s.handleClientConfig)))
 	s.mux.HandleFunc("GET /.well-known/iambarn-theme.json", s.handleThemeManifest)
 
 	// Ingest (API key required)
-	s.mux.Handle("POST /api/v1/events", s.eventsLimiter.middleware(s.ingest))
-	s.mux.Handle("POST /api/v1/recordings/chunk", s.eventsLimiter.middleware(http.HandlerFunc(s.handleIngestRecordingChunk)))
+	s.mux.Handle("POST /api/v1/events", s.limit(s.eventsLimiter, s.ingest))
+	s.mux.Handle("POST /api/v1/recordings/chunk", s.limit(s.eventsLimiter, http.HandlerFunc(s.handleIngestRecordingChunk)))
 	// Cross-stack trace lookup (API key required): trace_id -> session/recording.
 	// Consumed by SpanBarn/BugBarn deep-links and the replay CLI.
 	s.mux.HandleFunc("GET /api/v1/traces/{trace_id}", s.handleLookupTrace)
@@ -230,17 +238,17 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/recordings/{rid}/chunks/{index}", s.handleGetRecordingChunkByKey)
 
 	// Auth
-	s.mux.Handle("POST /api/v1/login", s.loginLimiter.middleware(http.HandlerFunc(s.handleLogin)))
+	s.mux.Handle("POST /api/v1/login", s.limit(s.loginLimiter, http.HandlerFunc(s.handleLogin)))
 	s.mux.HandleFunc("POST /api/v1/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /api/v1/me", s.requireSession(s.handleMe))
 
 	// OIDC (gated by the iambarn-enabled feature flag in handlers)
-	s.mux.Handle("GET /api/v1/auth/oidc/login", s.loginLimiter.middleware(http.HandlerFunc(s.handleOIDCLogin)))
+	s.mux.Handle("GET /api/v1/auth/oidc/login", s.limit(s.loginLimiter, http.HandlerFunc(s.handleOIDCLogin)))
 	s.mux.HandleFunc("GET /api/v1/auth/oidc/callback", s.handleOIDCCallback)
 
 	// OIDC confidential-client flow (gated by FUNNELBARN_OIDC_* env vars).
 	// Independent of the IAMBarn PKCE flow above; both can coexist.
-	s.mux.Handle("GET /api/v1/oidc/login", s.loginLimiter.middleware(http.HandlerFunc(s.handleOIDCConfidentialLogin)))
+	s.mux.Handle("GET /api/v1/oidc/login", s.limit(s.loginLimiter, http.HandlerFunc(s.handleOIDCConfidentialLogin)))
 	s.mux.HandleFunc("GET /api/v1/oidc/callback", s.handleOIDCConfidentialCallback)
 
 	// Projects
@@ -302,7 +310,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/flags/evaluate", s.requireSession(s.handlePlaygroundEvaluateFlag))
 
 	// Flag evaluation (API key required, like ingest)
-	s.mux.Handle("POST /api/v1/evaluate", s.eventsLimiter.middleware(http.HandlerFunc(s.handleEvaluateFlag)))
+	s.mux.Handle("POST /api/v1/evaluate", s.limit(s.eventsLimiter, http.HandlerFunc(s.handleEvaluateFlag)))
 
 	// A/B Tests
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/abtests", s.requireSession(s.handleListABTests))
@@ -334,7 +342,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PUT /api/v1/projects/{id}/recording-settings", s.requireSession(s.handleUpdateProjectRecordingSettings))
 
 	// SDK recording config (API key auth, public — returns effective config for the project)
-	s.mux.HandleFunc("GET /api/v1/recording-config", s.handleGetRecordingConfig)
+	s.mux.Handle("GET /api/v1/recording-config", s.limit(s.eventsLimiter, http.HandlerFunc(s.handleGetRecordingConfig)))
 
 	// API keys
 	s.mux.HandleFunc("GET /api/v1/apikeys", s.requireSession(s.handleListAPIKeys))
@@ -408,9 +416,11 @@ func (s *Server) metricsHandler() http.Handler {
 	if s.metricsToken == "" {
 		return promH // no token configured — open access (backwards compatible)
 	}
+	expected := "Bearer " + s.metricsToken
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auth := r.Header.Get("Authorization")
-		if auth != "Bearer "+s.metricsToken {
+		presented := r.Header.Get("Authorization")
+		// Constant-time compare to avoid leaking the token via response timing.
+		if subtle.ConstantTimeCompare([]byte(presented), []byte(expected)) != 1 {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="metrics"`)
 			jsonError(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -419,41 +429,64 @@ func (s *Server) metricsHandler() http.Handler {
 	})
 }
 
+// publicIngestCORSPaths are the endpoints a browser SDK on an arbitrary
+// customer origin legitimately calls cross-origin. They authenticate with an
+// API-key header (never cookies), so they get open, NON-credentialed CORS.
+var publicIngestCORSPaths = map[string]bool{
+	"/api/v1/events":           true,
+	"/api/v1/recordings/chunk": true,
+	"/api/v1/evaluate":         true,
+	"/api/v1/recording-config": true,
+	"/api/v1/client-config":    true,
+}
+
+// corsAllowHeaders is the fixed set of request headers permitted cross-origin.
+// We never reflect Access-Control-Request-Headers verbatim.
+var corsAllowHeaders = "Content-Type, Authorization, " + auth.HeaderAPIKey +
+	", x-funnelbarn-project, x-funnelbarn-environment, X-FunnelBarn-CSRF, X-Requested-With"
+
 func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return
 	}
 
-	open := len(s.allowedOrigins) == 0 || (len(s.allowedOrigins) == 1 && s.allowedOrigins[0] == "")
-	allowed := open
-	if !allowed {
-		for _, o := range s.allowedOrigins {
-			if o == "*" || strings.EqualFold(o, origin) {
-				allowed = true
-				break
-			}
+	// Public ingest endpoints: any origin, but NO credentials (the SDK uses an
+	// API-key header, not cookies). Safe to allow broadly precisely because no
+	// credentials are attached, so a malicious origin gains nothing.
+	if publicIngestCORSPaths[r.URL.Path] {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Add("Vary", "Origin")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", corsAllowHeaders)
+		w.Header().Set("Access-Control-Max-Age", "86400")
+		// Deliberately NO Access-Control-Allow-Credentials here.
+		return
+	}
+
+	// Everything else is the credentialed dashboard API. Only origins on the
+	// explicit allowlist may make credentialed cross-origin requests. An empty
+	// allowlist means "same-origin only" (the default deployment serves the SPA
+	// from the same origin), NOT "allow everyone" — never reflect an arbitrary
+	// origin together with Allow-Credentials.
+	allowed := false
+	for _, o := range s.allowedOrigins {
+		if o == "" {
+			continue
+		}
+		if o == "*" || strings.EqualFold(o, origin) {
+			allowed = true
+			break
 		}
 	}
 	if !allowed {
 		return
 	}
 
-	// Always reflect the origin (not "*") so credentialed requests work — browsers
-	// reject Allow-Credentials: true combined with Allow-Origin: *.
 	w.Header().Set("Access-Control-Allow-Origin", origin)
 	w.Header().Add("Vary", "Origin")
-
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-	// Echo back any headers the client asked for in preflight; fall back to a
-	// permissive default list so trackers using non-standard headers aren't blocked.
-	reqHeaders := r.Header.Get("Access-Control-Request-Headers")
-	if reqHeaders != "" {
-		w.Header().Set("Access-Control-Allow-Headers", reqHeaders)
-		w.Header().Add("Vary", "Access-Control-Request-Headers")
-	} else {
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, "+auth.HeaderAPIKey+", X-FunnelBarn-CSRF, X-Requested-With")
-	}
+	w.Header().Set("Access-Control-Allow-Headers", corsAllowHeaders)
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
 	w.Header().Set("Access-Control-Max-Age", "86400")
 }
@@ -462,7 +495,12 @@ func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 // It also applies the apiLimiter rate limit and CSRF validation on mutating methods.
 func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		authConfigured := s.userAuth.Enabled() || s.iambarnProvider != nil
+		// authConfigured must reflect EVERY way a user can obtain a session:
+		// the env-var admin, the IAMBarn PKCE flow, the confidential OIDC client,
+		// AND local/DB users. Missing any of these would leave every route below
+		// served unauthenticated on a deployment that authenticates only that way.
+		authConfigured := s.userAuth.Enabled() || s.iambarnProvider != nil ||
+			s.oidc != nil || s.localUsersExist
 		if s.sessionManager == nil || !authConfigured {
 			if !s.apiLimiter.allow(s.clientIP(r)) {
 				jsonError(w, "too many requests", http.StatusTooManyRequests)
@@ -487,7 +525,8 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 		if isMutating(r.Method) {
 			expected := auth.CSRFToken(cookie.Value)
 			got := r.Header.Get("X-FunnelBarn-CSRF")
-			if got == "" || got != expected {
+			// Constant-time compare so the CSRF token can't be recovered by timing.
+			if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(expected)) != 1 {
 				jsonError(w, "csrf token invalid", http.StatusForbidden)
 				return
 			}

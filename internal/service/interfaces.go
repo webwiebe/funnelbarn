@@ -161,6 +161,7 @@ type Recordings interface {
 	SessionsForPage(ctx context.Context, projectID, page string, from, to time.Time) ([]string, error)
 	PurgeOldRecordings(ctx context.Context, retentionDays int) error
 	PurgeBrokenRecordings(ctx context.Context) (int, error)
+	PurgeProjectRecordings(ctx context.Context, projectID string) error
 	DeleteRecording(ctx context.Context, projectID, recordingID string) error
 	LookupTrace(ctx context.Context, projectID, traceID string) (repository.TraceLookup, bool, error)
 	TracesForRecording(ctx context.Context, projectID, recordingID string) ([]repository.TraceLink, error)

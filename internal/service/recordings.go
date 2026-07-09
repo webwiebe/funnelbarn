@@ -167,6 +167,30 @@ func (svc *RecordingService) PurgeBrokenRecordings(ctx context.Context) (int, er
 	return len(recs), nil
 }
 
+// PurgeProjectRecordings best-effort removes every R2 chunk object for the
+// project. It must run BEFORE the project's SQLite rows are deleted, because it
+// reads recording metadata to locate the chunk keys — object storage is not
+// reachable by the FK cascade that removes the rows. Chunk deletes are
+// best-effort (a stray orphan is logged, not fatal); rows are removed by the
+// caller's project delete.
+func (svc *RecordingService) PurgeProjectRecordings(ctx context.Context, projectID string) error {
+	const batch = 500
+	offset := 0
+	for {
+		recs, err := svc.store.ListRecordings(ctx, projectID, repository.RecordingListOpts{Limit: batch, Offset: offset})
+		if err != nil {
+			return fmt.Errorf("recordings: list for project purge: %w", err)
+		}
+		for _, rec := range recs {
+			svc.deleteChunks(ctx, rec.ProjectID, rec.ID, rec.LastChunkIndex, rec.ChunkCount)
+		}
+		if len(recs) < batch {
+			return nil
+		}
+		offset += batch
+	}
+}
+
 // DeleteRecording removes a single recording (R2 chunks + SQLite row) after
 // verifying it belongs to the given project.
 func (svc *RecordingService) DeleteRecording(ctx context.Context, projectID, recordingID string) error {
