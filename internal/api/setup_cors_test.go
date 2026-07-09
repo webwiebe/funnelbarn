@@ -269,6 +269,55 @@ func TestCORS_IngestEndpointOpenNoCredentials(t *testing.T) {
 	}
 }
 
+// TestCORS_IngestReflectsRequestedHeaders is the regression guard for the
+// custom-CNAME ingest CORS break: a browser SDK preflights /api/v1/events with
+// headers we don't control (notably `traceparent` from distributed tracing),
+// and the non-credentialed ingest path must echo them back in
+// Access-Control-Allow-Headers, or the browser blocks the real request. A fixed
+// allowlist that omits `traceparent` regressed this.
+func TestCORS_IngestReflectsRequestedHeaders(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/events", nil)
+	req.Header.Set("Origin", "https://brandtrace.net")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	req.Header.Set("Access-Control-Request-Headers", "content-type,traceparent,x-funnelbarn-api-key")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	allow := w.Header().Get("Access-Control-Allow-Headers")
+	if !strings.Contains(strings.ToLower(allow), "traceparent") {
+		t.Errorf("ingest preflight must echo requested headers incl. traceparent, got %q", allow)
+	}
+	// Still non-credentialed.
+	if got := w.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Errorf("ingest must not allow credentials, got %q", got)
+	}
+}
+
+// TestCORS_DashboardDoesNotReflectRequestedHeaders verifies the credentialed
+// dashboard API keeps the strict fixed allowlist (never reflects arbitrary
+// requested headers) — the security posture CORS-1 established.
+func TestCORS_DashboardDoesNotReflectRequestedHeaders(t *testing.T) {
+	srv, _ := newTestServer(t)
+	srv.allowedOrigins = []string{"https://dash.example"}
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/projects", nil)
+	req.Header.Set("Origin", "https://dash.example")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	req.Header.Set("Access-Control-Request-Headers", "x-evil-injected-header")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	allow := w.Header().Get("Access-Control-Allow-Headers")
+	if strings.Contains(strings.ToLower(allow), "x-evil-injected-header") {
+		t.Errorf("dashboard CORS must not reflect arbitrary requested headers, got %q", allow)
+	}
+	if allow != corsAllowHeaders {
+		t.Errorf("dashboard Allow-Headers: want fixed allowlist %q, got %q", corsAllowHeaders, allow)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // requireSession — various states
 // ---------------------------------------------------------------------------

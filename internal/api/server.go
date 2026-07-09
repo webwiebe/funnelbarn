@@ -458,7 +458,21 @@ func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Add("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", corsAllowHeaders)
+		// Reflect whatever headers the browser's preflight asks for. These
+		// endpoints are NON-credentialed (API-key header, never cookies), so
+		// echoing arbitrary request headers is harmless — an attacker origin
+		// gains nothing without credentials, and Allow-Headers only governs
+		// which request headers the browser may send, it leaks nothing back.
+		// A fixed allowlist here is a footgun: SDKs and browser tracing
+		// instrumentation add headers we don't control (e.g. `traceparent`),
+		// and a missing entry fails the whole preflight. We keep the strict
+		// fixed allowlist only for the credentialed dashboard API below.
+		if reqHeaders := r.Header.Get("Access-Control-Request-Headers"); reqHeaders != "" {
+			w.Header().Set("Access-Control-Allow-Headers", reqHeaders)
+			w.Header().Add("Vary", "Access-Control-Request-Headers")
+		} else {
+			w.Header().Set("Access-Control-Allow-Headers", corsAllowHeaders)
+		}
 		w.Header().Set("Access-Control-Max-Age", "86400")
 		// Deliberately NO Access-Control-Allow-Credentials here.
 		return
