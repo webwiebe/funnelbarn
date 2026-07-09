@@ -38,15 +38,10 @@ jobs:
       - name: staticcheck
         run: go install honnef.co/go/tools/cmd/staticcheck@latest && staticcheck ./...
 
-      - name: cyclomatic complexity gate
-        # Fail if any function exceeds a cyclomatic complexity of 50. This is a
-        # regression ceiling set just above today's worst offenders (config.Load,
-        # main.run) — the intent is to ratchet it DOWN over time as the flagged
-        # analytics/startup functions are decomposed, never up. Generated and
-        # test code is excluded.
-        run: |
-          go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
-          gocyclo -over 50 -ignore '_test|sqlcgen|/mock/' internal cmd
+      - name: Go quality ratchets (complexity / file length / duplication)
+        # Cyclomatic complexity, file length, and code duplication — each pinned
+        # at today's worst value. They may only ratchet DOWN. See the script.
+        run: bash scripts/go-quality-gates.sh
 
   go-test:
     runs-on: ubuntu-latest
@@ -60,10 +55,11 @@ jobs:
       - name: Go tests with race detector
         run: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
 
-      - name: Coverage gate (service + repository ≥ 60%)
-        run: |
-          go test -coverprofile=svc-coverage.out ./internal/service/... ./internal/repository 2>/dev/null || true
-          go tool cover -func=svc-coverage.out | tail -1 | awk '{pct=$3+0; if(pct<60){printf "Coverage %.1f%% is below 60%% threshold\n", pct; exit 1}}'
+      - name: Coverage ratchet (per-file / per-package / global)
+        # Fails if ANY first-party file is 0% covered, if any package drops below
+        # its committed floor, or if global coverage drops. Floors are pinned at
+        # current in scripts/coverage-baseline.txt (raise, never lower).
+        run: python3 scripts/coverage-gate.py
 
       - name: Upload coverage report
         if: github.event_name == 'push'
@@ -116,6 +112,16 @@ jobs:
         working-directory: web
         run: npm ci
 
-      - name: Run Vitest
+      - name: Run Vitest with coverage ratchet
+        # vitest enforces the per-metric coverage floors (all:true) from
+        # vite.config.ts; pinned at current, raise-only.
         working-directory: web
-        run: npm test
+        run: npm run test:coverage
+
+      - name: Per-file coverage ratchet (no new uncovered files)
+        working-directory: web
+        run: npm run gate:coverage-perfile
+
+      - name: Duplication ratchet (jscpd)
+        working-directory: web
+        run: npm run gate:duplication

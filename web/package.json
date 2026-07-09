@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "gate:coverage-perfile": "node scripts/coverage-perfile-gate.mjs",
+    "gate:duplication": "jscpd"
   },
   "dependencies": {
     "@funnelbarn/js": "file:../sdks/js",
@@ -41,6 +43,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
+    "jscpd": "^4.2.5",
     "jsdom": "^29.1.0",
     "typescript": "^5.4.0",
     "vite": "^6.4.2",

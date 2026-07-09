@@ -1,0 +1,26 @@
+# Go coverage ratchet floors — whole-percent, pinned at current.
+# Raise (never lower) these as coverage improves. Regenerate with
+#   python3 scripts/coverage-gate.py --update
+TOTAL	64
+cmd/funnelbarn	11
+internal/api	61
+internal/apierr	100
+internal/auth	80
+internal/bblog	94
+internal/config	77
+internal/domain	100
+internal/enrich	91
+internal/environment	100
+internal/geoip	34
+internal/iambarn	1
+internal/ingest	72
+internal/middleware	100
+internal/repository	74
+internal/service	74
+internal/session	100
+internal/spool	75
+internal/storage	20
+internal/timerange	100
+internal/tracing	46
+internal/worker	61
+internal/workerhealth	89
