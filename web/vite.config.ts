@@ -102,13 +102,15 @@ export default defineConfig({
         'src/setupTests.ts',
         'src/vite-env.d.ts',
       ],
-      // Coverage ratchet floors — PINNED AT CURRENT (whole percent). They may
-      // only be raised, never lowered. A drop below any floor fails the build.
+      // Coverage ratchet floors — PINNED AT CURRENT (whole percent, ~0.5pt
+      // under the live numbers). They may only be raised, never lowered. A drop
+      // below any floor fails the build. Live at last ratchet: lines 51.47,
+      // statements 48.72, functions 42.56, branches 45.26.
       thresholds: {
-        lines: 26,
-        statements: 23,
-        functions: 17,
-        branches: 23,
+        lines: 51,
+        statements: 48,
+        functions: 42,
+        branches: 45,
       },
     },
   },
