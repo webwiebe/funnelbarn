@@ -305,8 +305,7 @@ func run() error {
 	if cfg.IAMBarnClientID != "" && cfg.PublicURL != "" {
 		redirectURI := strings.TrimRight(cfg.PublicURL, "/") + "/api/v1/auth/oidc/callback"
 		iambarnProvider = iambarn.New(cfg.IAMBarnIssuer, cfg.IAMBarnClientID, redirectURI)
-		slog.Info("iambarn configured", "client_id", cfg.IAMBarnClientID, "redirect_uri", redirectURI,
-			"flag_project", cfg.DogfoodProject)
+		slog.Info("iambarn configured", "client_id", cfg.IAMBarnClientID, "redirect_uri", redirectURI, "flag_project", cfg.DogfoodProject)
 	}
 
 	oidcClient := buildOIDCClient(cfg)

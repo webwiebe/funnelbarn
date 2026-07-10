@@ -218,12 +218,8 @@ func Load() Config {
 	cfg.IAMBarnClientID = os.Getenv("FUNNELBARN_IAMBARN_CLIENT_ID")
 	cfg.IAMBarnIssuer = getenv("FUNNELBARN_IAMBARN_ISSUER", "https://iam.wiebe.xyz")
 
-	// Default the post-logout redirect to the local session-clearing endpoint
-	// derived from PublicURL; an explicit env var always wins.
-	cfg.PostLogoutRedirectURI = os.Getenv("FUNNELBARN_POST_LOGOUT_REDIRECT_URI")
-	if cfg.PostLogoutRedirectURI == "" && cfg.PublicURL != "" {
-		cfg.PostLogoutRedirectURI = strings.TrimRight(cfg.PublicURL, "/") + "/api/v1/auth/oidc/logged-out"
-	}
+	cfg.PostLogoutRedirectURI = defaultPostLogoutRedirectURI(
+		os.Getenv("FUNNELBARN_POST_LOGOUT_REDIRECT_URI"), cfg.PublicURL)
 
 	cfg.OIDCIssuer = os.Getenv("FUNNELBARN_OIDC_ISSUER")
 	cfg.OIDCClientID = os.Getenv("FUNNELBARN_OIDC_CLIENT_ID")
@@ -280,6 +276,19 @@ func getenv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// defaultPostLogoutRedirectURI resolves the IAMBarn post-logout redirect: an
+// explicit value wins, otherwise it derives the local session-clearing endpoint
+// from publicURL (empty when neither is set).
+func defaultPostLogoutRedirectURI(configured, publicURL string) string {
+	if configured != "" {
+		return configured
+	}
+	if publicURL != "" {
+		return strings.TrimRight(publicURL, "/") + "/api/v1/auth/oidc/logged-out"
+	}
+	return ""
 }
 
 // loadConfigFiles applies KEY=VALUE config files to the process environment.
