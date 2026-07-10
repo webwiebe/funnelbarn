@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard'
 import Funnels from './pages/Funnels'
 import Live from './pages/Live'
 import Settings from './pages/Settings'
+import Account from './pages/Account'
 import IntegrationHealth from './pages/IntegrationHealth'
 import Flags from './pages/Flags'
 import Insights from './pages/Insights'
@@ -265,6 +266,10 @@ function AppRoutes() {
         <Route
           path="/settings"
           element={<ProtectedRoute><Settings /></ProtectedRoute>}
+        />
+        <Route
+          path="/account"
+          element={<ProtectedRoute><Account /></ProtectedRoute>}
         />
       </Routes>
     </>

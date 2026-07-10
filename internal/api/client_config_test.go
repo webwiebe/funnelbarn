@@ -13,7 +13,11 @@ import (
 type clientConfigResp struct {
 	IAMBarnEnabled bool `json:"iambarn_enabled"`
 	IAMBarn        struct {
-		ProfileURL string `json:"profile_url,omitempty"`
+		ProfileURL            string `json:"profile_url,omitempty"`
+		ServerURL             string `json:"server_url,omitempty"`
+		ClientID              string `json:"client_id,omitempty"`
+		WidgetURL             string `json:"widget_url,omitempty"`
+		PostLogoutRedirectURI string `json:"post_logout_redirect_uri,omitempty"`
 	} `json:"iambarn,omitempty"`
 	OIDC struct {
 		Enabled  bool   `json:"enabled"`
@@ -51,6 +55,34 @@ func TestClientConfig_LegacyIAMBarnProviderSetsProfileURL(t *testing.T) {
 	want := "https://iam.test.wiebe.xyz/admin#profile"
 	if got.IAMBarn.ProfileURL != want {
 		t.Errorf("profile_url: got %q, want %q", got.IAMBarn.ProfileURL, want)
+	}
+}
+
+func TestClientConfig_ExposesWidgetFields(t *testing.T) {
+	srv, _ := newTestServer(t)
+	srv.iambarnProvider = iambarn.New("https://iam.test.wiebe.xyz/", "ibc_test123", "https://funnelbarn.test/cb")
+	srv.postLogoutRedirect = "https://funnelbarn.test/api/v1/auth/oidc/logged-out"
+
+	got := getClientConfig(t, srv)
+	if got.IAMBarn.ServerURL != "https://iam.test.wiebe.xyz" {
+		t.Errorf("server_url: got %q", got.IAMBarn.ServerURL)
+	}
+	if got.IAMBarn.ClientID != "ibc_test123" {
+		t.Errorf("client_id: got %q", got.IAMBarn.ClientID)
+	}
+	if got.IAMBarn.WidgetURL != "https://iam.test.wiebe.xyz/widget/iambarn-widget.iife.js" {
+		t.Errorf("widget_url: got %q", got.IAMBarn.WidgetURL)
+	}
+	if got.IAMBarn.PostLogoutRedirectURI != "https://funnelbarn.test/api/v1/auth/oidc/logged-out" {
+		t.Errorf("post_logout_redirect_uri: got %q", got.IAMBarn.PostLogoutRedirectURI)
+	}
+}
+
+func TestClientConfig_NoWidgetFieldsWhenIAMBarnUnconfigured(t *testing.T) {
+	srv, _ := newTestServer(t)
+	got := getClientConfig(t, srv)
+	if got.IAMBarn.ServerURL != "" || got.IAMBarn.ClientID != "" || got.IAMBarn.WidgetURL != "" {
+		t.Errorf("expected no widget fields, got %+v", got.IAMBarn)
 	}
 }
 

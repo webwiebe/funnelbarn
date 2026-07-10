@@ -5,6 +5,7 @@ import { useAuth } from '../../lib/auth'
 import { useProjects } from '../../lib/projects'
 import { LAST_PROJECT_ID_KEY } from '../ui/ProjectPicker'
 import { api, type Project } from '../../lib/api'
+import { useIambarnWidget, type IambarnConfig } from '../../lib/iambarn-widget'
 import { C } from '../../lib/theme'
 import { TopNav } from './TopNav'
 import { BottomTabBar } from './BottomTabBar'
@@ -26,7 +27,7 @@ export default function Shell({ children, projectId, projectName, projects: proj
   const location = useLocation()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [moreSheetOpen, setMoreSheetOpen] = useState(false)
-  const [iambarnProfileURL, setIambarnProfileURL] = useState<string | null>(null)
+  const [iambarnCfg, setIambarnCfg] = useState<IambarnConfig | null>(null)
 
   // Remember the active project so that when the user lands on a
   // non-project-scoped route (e.g. /settings), the picker can show their
@@ -53,13 +54,18 @@ export default function Shell({ children, projectId, projectName, projects: proj
     let cancelled = false
     api.getClientConfig()
       .then((cfg) => {
-        if (!cancelled && cfg.iambarn?.profile_url) {
-          setIambarnProfileURL(cfg.iambarn.profile_url)
+        if (!cancelled && cfg.iambarn) {
+          setIambarnCfg(cfg.iambarn)
         }
       })
-      .catch(() => { /* non-fatal — menu item simply hidden */ })
+      .catch(() => { /* non-fatal — IAMBarn UI simply hidden */ })
     return () => { cancelled = true }
   }, [])
+
+  // Load the hosted IAMBarn widget bundle once config is known. Ready only
+  // after the custom elements upgrade; until then the shell falls back to the
+  // built-in username dropdown.
+  const iambarnReady = useIambarnWidget(iambarnCfg?.widget_url)
 
   const projects = projectsProp ?? ctxProjects
 
@@ -99,7 +105,8 @@ export default function Shell({ children, projectId, projectName, projects: proj
         navLinks={navLinks}
         userMenuOpen={userMenuOpen}
         onUserMenuToggle={() => setUserMenuOpen((v) => !v)}
-        iambarnProfileURL={iambarnProfileURL}
+        iambarn={iambarnCfg}
+        iambarnReady={iambarnReady}
         onLogout={handleLogout}
         isActive={isActive}
       />
@@ -121,7 +128,8 @@ export default function Shell({ children, projectId, projectName, projects: proj
         <MoreSheet
           projectId={projectId}
           projects={projects}
-          iambarnProfileURL={iambarnProfileURL}
+          iambarn={iambarnCfg}
+          iambarnReady={iambarnReady}
           onClose={() => setMoreSheetOpen(false)}
           onLogout={handleLogout}
         />

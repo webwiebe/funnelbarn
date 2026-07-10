@@ -63,6 +63,14 @@ type Config struct {
 	IAMBarnClientID string
 	IAMBarnIssuer   string
 
+	// PostLogoutRedirectURI is where IAMBarn's RP-initiated logout
+	// (/oauth2/end-session) returns the browser after ending the IAMBarn
+	// session. It must point at a FunnelBarn URL registered on the client's
+	// post-logout allowlist. When empty it defaults to
+	// {PublicURL}/api/v1/auth/oidc/logged-out, an endpoint that also clears the
+	// local FunnelBarn session. Overridable via FUNNELBARN_POST_LOGOUT_REDIRECT_URI.
+	PostLogoutRedirectURI string
+
 	OIDCIssuer        string // FUNNELBARN_OIDC_ISSUER — when all four OIDC vars are set, OIDC login is offered alongside local auth
 	OIDCClientID      string // FUNNELBARN_OIDC_CLIENT_ID
 	OIDCClientSecret  string // FUNNELBARN_OIDC_CLIENT_SECRET
@@ -209,6 +217,13 @@ func Load() Config {
 
 	cfg.IAMBarnClientID = os.Getenv("FUNNELBARN_IAMBARN_CLIENT_ID")
 	cfg.IAMBarnIssuer = getenv("FUNNELBARN_IAMBARN_ISSUER", "https://iam.wiebe.xyz")
+
+	// Default the post-logout redirect to the local session-clearing endpoint
+	// derived from PublicURL; an explicit env var always wins.
+	cfg.PostLogoutRedirectURI = os.Getenv("FUNNELBARN_POST_LOGOUT_REDIRECT_URI")
+	if cfg.PostLogoutRedirectURI == "" && cfg.PublicURL != "" {
+		cfg.PostLogoutRedirectURI = strings.TrimRight(cfg.PublicURL, "/") + "/api/v1/auth/oidc/logged-out"
+	}
 
 	cfg.OIDCIssuer = os.Getenv("FUNNELBARN_OIDC_ISSUER")
 	cfg.OIDCClientID = os.Getenv("FUNNELBARN_OIDC_CLIENT_ID")

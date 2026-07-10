@@ -1,9 +1,10 @@
 import { Link, useLocation } from 'react-router-dom'
-import { LogOut, User, ExternalLink } from 'lucide-react'
+import { LogOut, User, UserCog } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { ProjectPicker } from '../ui/ProjectPicker'
 import { EnvironmentPicker } from '../ui/EnvironmentPicker'
 import { type Project } from '../../lib/api'
+import { iambarnThemeVars, type IambarnConfig } from '../../lib/iambarn-widget'
 import { C } from '../../lib/theme'
 
 interface NavLink {
@@ -19,7 +20,10 @@ interface TopNavProps {
   navLinks: NavLink[]
   userMenuOpen: boolean
   onUserMenuToggle: () => void
-  iambarnProfileURL: string | null
+  /** IAMBarn component config, set only for IAMBarn/OIDC sessions. */
+  iambarn: IambarnConfig | null
+  /** Whether the hosted IAMBarn widget bundle has loaded and upgraded. */
+  iambarnReady: boolean
   onLogout: () => void
   isActive: (to: string) => boolean
 }
@@ -31,7 +35,8 @@ export function TopNav({
   navLinks,
   userMenuOpen,
   onUserMenuToggle,
-  iambarnProfileURL,
+  iambarn,
+  iambarnReady,
   onLogout,
   isActive,
 }: TopNavProps) {
@@ -137,45 +142,78 @@ export function TopNav({
           <span className="live-label">Live</span>
         </div>
 
-        {/* User menu */}
-        <div style={{ position: 'relative' }}>
-          <button
-            onClick={onUserMenuToggle}
-            style={{
-              background: C.bg,
-              border: `1px solid ${C.border}`,
-              borderRadius: 6,
-              color: C.text,
-              padding: '0.35rem 0.6rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 13,
-              minHeight: 'unset',
-            }}
-          >
-            <User size={14} />
-            <span className="user-name">{user?.username}</span>
-          </button>
-          {userMenuOpen && (
-            <div style={{
-              position: 'absolute',
-              top: '110%',
-              right: 0,
-              background: C.surface,
-              border: `1px solid ${C.border}`,
-              borderRadius: 8,
-              minWidth: 200,
-              boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-              zIndex: 200,
-            }}>
-              {iambarnProfileURL && (
-                <a
-                  href={iambarnProfileURL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={onUserMenuToggle}
+        {/* User menu — hosted IAMBarn component for OIDC sessions (avatar,
+            name, account link + RP-initiated logout), else the built-in
+            username dropdown for local-password sessions. */}
+        {iambarn?.server_url && iambarn?.client_id && iambarnReady ? (
+          <iambarn-user-menu
+            server-url={iambarn.server_url}
+            client-id={iambarn.client_id}
+            account-href="/account"
+            post-logout-redirect-uri={iambarn.post_logout_redirect_uri}
+            show-email=""
+            style={iambarnThemeVars}
+          />
+        ) : (
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={onUserMenuToggle}
+              style={{
+                background: C.bg,
+                border: `1px solid ${C.border}`,
+                borderRadius: 6,
+                color: C.text,
+                padding: '0.35rem 0.6rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 13,
+                minHeight: 'unset',
+              }}
+            >
+              <User size={14} />
+              <span className="user-name">{user?.username}</span>
+            </button>
+            {userMenuOpen && (
+              <div style={{
+                position: 'absolute',
+                top: '110%',
+                right: 0,
+                background: C.surface,
+                border: `1px solid ${C.border}`,
+                borderRadius: 8,
+                minWidth: 200,
+                boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                zIndex: 200,
+              }}>
+                {iambarn && (
+                  <Link
+                    to="/account"
+                    onClick={onUserMenuToggle}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      width: '100%',
+                      textAlign: 'left',
+                      background: 'transparent',
+                      border: 'none',
+                      borderBottom: `1px solid ${C.border}`,
+                      color: C.text,
+                      padding: '0.6rem 1rem',
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      textDecoration: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <UserCog size={14} />
+                    Manage account
+                  </Link>
+                )}
+                <button
+                  onClick={onLogout}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -184,42 +222,20 @@ export function TopNav({
                     textAlign: 'left',
                     background: 'transparent',
                     border: 'none',
-                    borderBottom: `1px solid ${C.border}`,
-                    color: C.text,
+                    color: '#ef4444',
                     padding: '0.6rem 1rem',
                     cursor: 'pointer',
                     fontSize: 14,
-                    textDecoration: 'none',
-                    boxSizing: 'border-box',
+                    minHeight: 'unset',
                   }}
                 >
-                  <ExternalLink size={14} />
-                  Edit IAMBarn profile
-                </a>
-              )}
-              <button
-                onClick={onLogout}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  width: '100%',
-                  textAlign: 'left',
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#ef4444',
-                  padding: '0.6rem 1rem',
-                  cursor: 'pointer',
-                  fontSize: 14,
-                  minHeight: 'unset',
-                }}
-              >
-                <LogOut size={14} />
-                Logout
-              </button>
-            </div>
-          )}
-        </div>
+                  <LogOut size={14} />
+                  Logout
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </nav>
   )

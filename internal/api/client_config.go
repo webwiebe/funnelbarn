@@ -15,6 +15,13 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	type iambarnOut struct {
 		ProfileURL string `json:"profile_url,omitempty"`
+		// Fields consumed by the hosted IAMBarn web components. All are
+		// non-secret: the client id is a public browser client and the URLs
+		// are derived from the public issuer.
+		ServerURL             string `json:"server_url,omitempty"`
+		ClientID              string `json:"client_id,omitempty"`
+		WidgetURL             string `json:"widget_url,omitempty"`
+		PostLogoutRedirectURI string `json:"post_logout_redirect_uri,omitempty"`
 	}
 	type response struct {
 		BugbarnEndpoint         string     `json:"bugbarn_endpoint"`
@@ -60,7 +67,12 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		resp.OIDC = oidcOut{Enabled: true, LoginURL: "/api/v1/oidc/login"}
 	}
 	if issuer := s.iambarnIssuer(); issuer != "" {
-		resp.IAMBarn.ProfileURL = strings.TrimRight(issuer, "/") + "/admin#profile"
+		trimmed := strings.TrimRight(issuer, "/")
+		resp.IAMBarn.ProfileURL = trimmed + "/admin#profile"
+		resp.IAMBarn.ServerURL = trimmed
+		resp.IAMBarn.WidgetURL = trimmed + "/widget/iambarn-widget.iife.js"
+		resp.IAMBarn.ClientID = s.iambarnClientID()
+		resp.IAMBarn.PostLogoutRedirectURI = s.postLogoutRedirect
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -76,6 +88,17 @@ func (s *Server) iambarnIssuer() string {
 	}
 	if s.iambarnProvider != nil {
 		return s.iambarnProvider.Issuer()
+	}
+	return ""
+}
+
+// iambarnClientID returns the public browser client id used by the hosted
+// IAMBarn web components. It comes from the IAMBarn PKCE provider (a registered
+// public client); the confidential-client OIDC flow is not a browser client and
+// is intentionally not used here. Returns "" when the PKCE provider is unset.
+func (s *Server) iambarnClientID() string {
+	if s.iambarnProvider != nil {
+		return s.iambarnProvider.ClientID()
 	}
 	return ""
 }

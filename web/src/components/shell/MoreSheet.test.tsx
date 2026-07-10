@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { MoreSheet } from './MoreSheet'
 import type { Project } from '../../lib/api'
+import type { IambarnConfig } from '../../lib/iambarn-widget'
 
 vi.mock('../../lib/auth', () => ({
   useAuth: () => ({ user: { id: 'u1', username: 'testuser' } }),
@@ -12,10 +13,18 @@ const projects: Project[] = [
   { id: 'proj-123', name: 'My Project', slug: 'my-project', status: 'active' },
 ]
 
+const iambarnCfg: IambarnConfig = {
+  server_url: 'https://iam.test.wiebe.xyz',
+  client_id: 'ibc_test',
+  widget_url: 'https://iam.test.wiebe.xyz/widget/iambarn-widget.iife.js',
+  post_logout_redirect_uri: 'https://app.test/api/v1/auth/oidc/logged-out',
+}
+
 function renderSheet(overrides: Partial<{
   projectId?: string
   projects: Project[]
-  iambarnProfileURL: string | null
+  iambarn: IambarnConfig | null
+  iambarnReady: boolean
   onClose: () => void
   onLogout: () => void
 }> = {}) {
@@ -26,7 +35,8 @@ function renderSheet(overrides: Partial<{
       <MoreSheet
         projectId={'projectId' in overrides ? overrides.projectId : 'proj-123'}
         projects={overrides.projects ?? projects}
-        iambarnProfileURL={overrides.iambarnProfileURL ?? null}
+        iambarn={overrides.iambarn ?? null}
+        iambarnReady={overrides.iambarnReady ?? false}
         onClose={onClose}
         onLogout={onLogout}
       />
@@ -72,16 +82,27 @@ describe('MoreSheet', () => {
     expect(screen.queryByText('Switch Project')).not.toBeInTheDocument()
   })
 
-  it('shows the IAMBarn profile link only when a profile URL is configured', () => {
-    renderSheet({ iambarnProfileURL: 'https://iam.test.wiebe.xyz/admin#profile' })
-    const link = screen.getByText('Edit IAMBarn profile').closest('a')
-    expect(link?.getAttribute('href')).toBe('https://iam.test.wiebe.xyz/admin#profile')
-    expect(link?.getAttribute('target')).toBe('_blank')
+  it('shows a Manage account link to /account for IAMBarn sessions', () => {
+    renderSheet({ iambarn: iambarnCfg })
+    const link = screen.getByText('Manage account').closest('a')
+    expect(link?.getAttribute('href')).toBe('/account')
   })
 
-  it('does not show the IAMBarn profile link when unconfigured', () => {
-    renderSheet({ iambarnProfileURL: null })
-    expect(screen.queryByText('Edit IAMBarn profile')).not.toBeInTheDocument()
+  it('does not show the Manage account link for local sessions', () => {
+    renderSheet({ iambarn: null })
+    expect(screen.queryByText('Manage account')).not.toBeInTheDocument()
+  })
+
+  it('renders the hosted logout button once the widget is ready', () => {
+    const { container } = { container: document.body }
+    renderSheet({ iambarn: iambarnCfg, iambarnReady: true })
+    // The plain Log out button is replaced by the hosted component.
+    expect(screen.queryByText('Log out')).not.toBeInTheDocument()
+    const el = container.querySelector('iambarn-logout-button')
+    expect(el).not.toBeNull()
+    expect(el?.getAttribute('server-url')).toBe(iambarnCfg.server_url)
+    expect(el?.getAttribute('client-id')).toBe(iambarnCfg.client_id)
+    expect(el?.getAttribute('post-logout-redirect-uri')).toBe(iambarnCfg.post_logout_redirect_uri)
   })
 
   it('calls onClose when a nav link is clicked', () => {
@@ -96,7 +117,7 @@ describe('MoreSheet', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
-  it('closes and logs out when Log out is clicked', () => {
+  it('closes and logs out via the plain button for local sessions', () => {
     const { onClose, onLogout } = renderSheet()
     fireEvent.click(screen.getByText('Log out'))
     expect(onClose).toHaveBeenCalled()

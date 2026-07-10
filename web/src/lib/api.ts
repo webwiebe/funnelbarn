@@ -1,5 +1,6 @@
 // Typed API client with 401 interceptor and BugBarn 5xx reporting
 import { reportError } from './bugbarn'
+import type { IambarnConfig } from './iambarn-config'
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -727,9 +728,7 @@ export interface ClientConfig {
   funnelbarn_recording_rate?: number
   iambarn_enabled: boolean
   local_auth_available?: boolean
-  iambarn?: {
-    profile_url?: string
-  }
+  iambarn?: IambarnConfig
   oidc?: {
     enabled?: boolean
     loginURL?: string

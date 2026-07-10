@@ -63,6 +63,17 @@ func (s *Server) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
+// handleOIDCLoggedOut is the landing endpoint for IAMBarn's RP-initiated logout
+// (/oauth2/end-session). IAMBarn ends its own session, then redirects the
+// browser here; we clear the local FunnelBarn session so both are gone, then
+// send the user to the login page. Registered as the client's
+// post_logout_redirect_uri.
+// GET /api/v1/auth/oidc/logged-out
+func (s *Server) handleOIDCLoggedOut(w http.ResponseWriter, r *http.Request) {
+	s.clearSession(w, r)
+	http.Redirect(w, r, "/login", http.StatusFound)
+}
+
 // handleOIDCCallback completes the PKCE flow and issues a FunnelBarn session.
 // GET /api/v1/auth/oidc/callback
 func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
