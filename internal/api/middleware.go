@@ -36,17 +36,42 @@ func RequestIDFromContext(ctx context.Context) string {
 // Security Headers Middleware
 // --------------------------------------------------------------------------
 
-func securityHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := w.Header()
-		h.Set("X-Frame-Options", "DENY")
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("X-XSS-Protection", "0")
-		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-		h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
-		next.ServeHTTP(w, r)
-	})
+// securityHeaders sets response security headers, including the CSP. When
+// iambarnOrigin is non-empty (scheme://host of the IAMBarn issuer), it is added
+// to script-src/connect-src/img-src so the hosted IAMBarn web components can
+// load their bundle and make credentialed calls back to IAMBarn. Without it the
+// CSP stays strictly 'self'.
+func securityHeaders(iambarnOrigin string) func(http.Handler) http.Handler {
+	csp := buildCSP(iambarnOrigin)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := w.Header()
+			h.Set("X-Frame-Options", "DENY")
+			h.Set("X-Content-Type-Options", "nosniff")
+			h.Set("X-XSS-Protection", "0")
+			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			h.Set("Content-Security-Policy", csp)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// buildCSP assembles the Content-Security-Policy. The IAMBarn origin, when
+// provided, is whitelisted for scripts (the widget bundle), connections (the
+// components' credentialed fetch to {issuer}/api/v1/me) and images (avatars).
+func buildCSP(iambarnOrigin string) string {
+	script := "'self'"
+	connect := "'self'"
+	img := "'self' data:"
+	if iambarnOrigin != "" {
+		script += " " + iambarnOrigin
+		connect += " " + iambarnOrigin
+		img += " " + iambarnOrigin
+	}
+	return "default-src 'self'; script-src " + script +
+		"; style-src 'self' 'unsafe-inline'; img-src " + img +
+		"; connect-src " + connect
 }
 
 // --------------------------------------------------------------------------

@@ -1,19 +1,23 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Settings, LogOut, User, ExternalLink, Flag, Radio, Lightbulb, PlugZap, Globe, ListOrdered, Filter, Shuffle } from 'lucide-react'
+import { Settings, LogOut, User, UserCog, Flag, Radio, Lightbulb, PlugZap, Globe, ListOrdered, Filter, Shuffle } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { ProjectPicker } from '../ui/ProjectPicker'
 import { type Project } from '../../lib/api'
+import { iambarnThemeVars, type IambarnConfig } from '../../lib/iambarn-widget'
 import { C } from '../../lib/theme'
 
 interface MoreSheetProps {
   projectId?: string
   projects: Project[]
-  iambarnProfileURL: string | null
+  /** IAMBarn component config, set only for IAMBarn/OIDC sessions. */
+  iambarn: IambarnConfig | null
+  /** Whether the hosted IAMBarn widget bundle has loaded and upgraded. */
+  iambarnReady: boolean
   onClose: () => void
   onLogout: () => void
 }
 
-export function MoreSheet({ projectId, projects, iambarnProfileURL, onClose, onLogout }: MoreSheetProps) {
+export function MoreSheet({ projectId, projects, iambarn, iambarnReady, onClose, onLogout }: MoreSheetProps) {
   const { user } = useAuth()
   const location = useLocation()
 
@@ -158,12 +162,11 @@ export function MoreSheet({ projectId, projects, iambarnProfileURL, onClose, onL
           Settings
         </Link>
 
-        {/* Edit IAMBarn profile — only when iambarn issuer is configured */}
-        {iambarnProfileURL && (
-          <a
-            href={iambarnProfileURL}
-            target="_blank"
-            rel="noopener noreferrer"
+        {/* Manage account — routes to the local /account page (hosted
+            <iambarn-profile>). Shown only for IAMBarn/OIDC sessions. */}
+        {iambarn && (
+          <Link
+            to="/account"
             onClick={onClose}
             style={{
               display: 'flex',
@@ -177,34 +180,47 @@ export function MoreSheet({ projectId, projects, iambarnProfileURL, onClose, onL
               borderBottom: `1px solid ${C.border}`,
             }}
           >
-            <ExternalLink size={18} color={C.muted} />
-            Edit IAMBarn profile
-          </a>
+            <UserCog size={18} color={C.muted} />
+            Manage account
+          </Link>
         )}
 
-        {/* Logout */}
-        <button
-          onClick={() => { onClose(); onLogout() }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            width: '100%',
-            background: 'transparent',
-            border: 'none',
-            color: '#ef4444',
-            padding: '0.75rem 0',
-            cursor: 'pointer',
-            fontSize: 15,
-            fontWeight: 500,
-            marginTop: 0,
-            textAlign: 'left',
-            minHeight: 'unset',
-          }}
-        >
-          <LogOut size={18} />
-          Log out
-        </button>
+        {/* Logout — for OIDC sessions use IAMBarn's RP-initiated logout (ends
+            the IAMBarn session too); otherwise clear the local session. */}
+        {iambarn?.server_url && iambarn?.client_id && iambarnReady ? (
+          <div style={{ padding: '0.75rem 0' }}>
+            <iambarn-logout-button
+              server-url={iambarn.server_url}
+              client-id={iambarn.client_id}
+              post-logout-redirect-uri={iambarn.post_logout_redirect_uri}
+              label="Log out"
+              style={iambarnThemeVars}
+            />
+          </div>
+        ) : (
+          <button
+            onClick={() => { onClose(); onLogout() }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              width: '100%',
+              background: 'transparent',
+              border: 'none',
+              color: '#ef4444',
+              padding: '0.75rem 0',
+              cursor: 'pointer',
+              fontSize: 15,
+              fontWeight: 500,
+              marginTop: 0,
+              textAlign: 'left',
+              minHeight: 'unset',
+            }}
+          >
+            <LogOut size={18} />
+            Log out
+          </button>
+        )}
       </div>
     </>
   )

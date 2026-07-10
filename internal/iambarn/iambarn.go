@@ -47,6 +47,13 @@ func (p *Provider) Issuer() string {
 	return p.issuer
 }
 
+// ClientID returns the public browser client id registered with IAMBarn.
+// It is safe to expose to the frontend (public client), e.g. for the hosted
+// IAMBarn web components.
+func (p *Provider) ClientID() string {
+	return p.clientID
+}
+
 // GenerateVerifier generates a PKCE code_verifier (43 base64url chars from 32 random bytes).
 func GenerateVerifier() (string, error) {
 	b := make([]byte, 32)

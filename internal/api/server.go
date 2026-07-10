@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -64,6 +65,11 @@ type ServerConfig struct {
 	IAMBarnProvider    *iambarn.Provider
 	IAMBarnUsers       IAMBarnUserRepo
 	IAMBarnFlagProject string // dogfood project slug to read the iambarn-enabled flag from
+
+	// PostLogoutRedirectURI is exposed to the frontend so the hosted IAMBarn
+	// components can pass it to /oauth2/end-session. It should point at the
+	// local session-clearing endpoint (/api/v1/auth/oidc/logged-out).
+	PostLogoutRedirectURI string
 
 	// OIDC, when non-nil, enables the bugbarn-style confidential-client OIDC
 	// login flow at /api/v1/oidc/{login,callback}. Independent of IAMBarnProvider.
@@ -134,6 +140,7 @@ type Server struct {
 	iambarnProvider     *iambarn.Provider
 	iambarnUsers        IAMBarnUserRepo
 	iambarnFlagProject  string
+	postLogoutRedirect  string
 	oidc                *auth.OIDCClient
 	localUsersExist     bool
 	instanceSettings    InstanceSettingsRepo
@@ -149,6 +156,10 @@ type Server struct {
 	eventsLimiter *rateLimiter
 	apiLimiter    *rateLimiter
 	setupLimiter  *rateLimiter
+
+	// securityMW is the precomputed security-headers middleware; its CSP
+	// whitelists the IAMBarn origin (if configured) for the hosted components.
+	securityMW func(http.Handler) http.Handler
 }
 
 // NewServer creates the API server and registers all routes.
@@ -194,6 +205,7 @@ func NewServer(cfg ServerConfig) *Server {
 		iambarnProvider:     cfg.IAMBarnProvider,
 		iambarnUsers:        cfg.IAMBarnUsers,
 		iambarnFlagProject:  cfg.IAMBarnFlagProject,
+		postLogoutRedirect:  cfg.PostLogoutRedirectURI,
 		oidc:                cfg.OIDC,
 		localUsersExist:     cfg.LocalUsersExist,
 		instanceSettings:    cfg.InstanceSettings,
@@ -205,8 +217,22 @@ func NewServer(cfg ServerConfig) *Server {
 		projectHealth:       cfg.ProjectHealth,
 		flagAutoRegisterMax: cfg.FlagAutoRegisterMax,
 	}
+	s.securityMW = securityHeaders(originOf(s.iambarnIssuer()))
 	s.registerRoutes()
 	return s
+}
+
+// originOf returns the scheme://host origin of a URL, or "" if it can't be
+// parsed. Used to whitelist the IAMBarn issuer origin in the CSP.
+func originOf(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // StartCleanup begins periodic rate limiter cleanup goroutines.
@@ -245,6 +271,9 @@ func (s *Server) registerRoutes() {
 	// OIDC (gated by the iambarn-enabled feature flag in handlers)
 	s.mux.Handle("GET /api/v1/auth/oidc/login", s.limit(s.loginLimiter, http.HandlerFunc(s.handleOIDCLogin)))
 	s.mux.HandleFunc("GET /api/v1/auth/oidc/callback", s.handleOIDCCallback)
+	// Landing endpoint for IAMBarn RP-initiated logout — clears the local
+	// session, then redirects to /login. Registered as post_logout_redirect_uri.
+	s.mux.HandleFunc("GET /api/v1/auth/oidc/logged-out", s.handleOIDCLoggedOut)
 
 	// OIDC confidential-client flow (gated by FUNNELBARN_OIDC_* env vars).
 	// Independent of the IAMBarn PKCE flow above; both can coexist.
@@ -397,7 +426,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 256<<10) // 256 KiB
 	}
 	// Apply middleware: requestLogger (innermost) → securityHeaders → tracing → dispatch.
-	tracing.Middleware(requestLogger(securityHeaders(s.mux))).ServeHTTP(w, r)
+	tracing.Middleware(requestLogger(s.securityMW(s.mux))).ServeHTTP(w, r)
 }
 
 // SetMetricsToken configures a bearer token required to access /metrics.

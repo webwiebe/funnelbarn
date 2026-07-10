@@ -80,8 +80,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleLogout clears the session cookie.
-func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+// clearSession revokes the presented session token server-side and clears the
+// session, CSRF, and auth-method cookies. Shared by handleLogout (JSON API) and
+// handleOIDCLoggedOut (the IAMBarn RP-initiated logout landing endpoint).
+func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) {
 	// Revoke the presented session token server-side so it cannot be replayed
 	// before its natural expiry — clearing the cookie alone leaves a captured
 	// token valid.
@@ -101,6 +103,11 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// handleLogout clears the session cookie.
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	s.clearSession(w, r)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "logged out"})
 }
 
