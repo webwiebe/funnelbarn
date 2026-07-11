@@ -39,6 +39,20 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// The global env-var key (FUNNELBARN_API_KEY) resolves with an empty
+	// project ID. Recording chunks must be attributed to a specific project, so
+	// this key cannot be used here. A common misconfiguration is setting
+	// BUGBARN_FUNNELBARN_API_KEY (or equivalent cross-barn env vars) to the
+	// global key instead of a per-project key from the project settings page.
+	if projectID == "" {
+		slog.WarnContext(r.Context(), "recording chunk: global API key cannot be used for recording; project-scoped key required",
+			"user_agent", r.Header.Get("User-Agent"),
+			"request_id", RequestIDFromContext(r.Context()),
+		)
+		jsonError(w, "recording requires a project-scoped API key — use the key from the project settings page, not the global FUNNELBARN_API_KEY", http.StatusUnauthorized)
+		return
+	}
+
 	if s.projectHealth != nil {
 		pid := projectID
 		go func() {
@@ -50,6 +64,11 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 
 	proj, err := s.projects.GetProject(r.Context(), projectID)
 	if err != nil {
+		slog.WarnContext(r.Context(), "recording chunk: project not found for API key",
+			"project_id", projectID,
+			"user_agent", r.Header.Get("User-Agent"),
+			"request_id", RequestIDFromContext(r.Context()),
+		)
 		mapServiceError(w, err, "handleIngestRecordingChunk")
 		return
 	}

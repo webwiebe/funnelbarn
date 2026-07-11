@@ -46,11 +46,15 @@ analytics.page();
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `apiKey` | `string` | required | Your ingest API key |
+| `apiKey` | `string` | required | Your ingest API key (see [API keys](#api-keys)) |
 | `endpoint` | `string` | required | Full URL of your FunnelBarn instance |
-| `projectName` | `string` | — | Project identifier sent as `x-funnelbarn-project` header |
+| `projectName` | `string` | — | Project identifier sent as `x-funnelbarn-project` header (events only; not used for recording) |
 | `flushInterval` | `number` | `5000` | How often (ms) the event queue is flushed |
 | `sessionTimeout` | `number` | `1800000` | Session idle timeout in ms (default 30 min) |
+| `recording` | `boolean` | `false` | Enable session recording immediately on init (server config can also enable it) |
+| `recordingChunkMs` | `number` | `10000` | How often (ms) a recording chunk is flushed to the server |
+| `recordInclude` | `string[]` | — | URL path glob patterns to always record (e.g. `['/checkout/**']`) |
+| `recordExclude` | `string[]` | — | URL path glob patterns to never record (e.g. `['/admin/**']`) |
 
 ## Tracking page views
 
@@ -121,6 +125,63 @@ function Analytics() {
   return null;
 }
 ```
+
+## Session Recording
+
+FunnelBarn can record user sessions with rrweb and replay them in the dashboard.
+
+### API keys
+
+> **Important:** session recording requires a **project-scoped API key** — the
+> key shown on your project's settings page. The global `FUNNELBARN_API_KEY`
+> (the env-var key used for self-hosting) is not bound to any project and will
+> be rejected with a `401` when the SDK tries to send recording chunks.
+>
+> If you are integrating two barns (e.g. bugbarn sending recordings to
+> funnelbarn), set the cross-barn env var (`BUGBARN_FUNNELBARN_API_KEY` etc.)
+> to the **project-scoped key** from the funnelbarn project settings page, not
+> the global `FUNNELBARN_API_KEY`.
+
+### Enabling recording
+
+Recording is off by default. Turn it on in one of two ways:
+
+**Option A — enable in the dashboard** (recommended): Go to your project's Settings → Session Recording and toggle recording on. The SDK fetches this setting on init via `GET /api/v1/recording-config` and starts recording automatically.
+
+**Option B — enable in the SDK init:**
+
+```javascript
+const analytics = new FunnelBarnClient({
+  apiKey: 'your-project-scoped-api-key',
+  endpoint: 'https://funnelbarn.example.com',
+  recording: true,
+});
+```
+
+### Script-tag usage with recording
+
+```html
+<script src="https://funnelbarn.example.com/sdk.js"
+        data-api-key="your-project-scoped-api-key" defer></script>
+```
+
+Recording is controlled server-side when using the script tag. Enable it from the project settings in the dashboard.
+
+### Filtering which pages are recorded
+
+```javascript
+const analytics = new FunnelBarnClient({
+  apiKey: 'your-project-scoped-api-key',
+  endpoint: 'https://funnelbarn.example.com',
+  recording: true,
+  recordInclude: ['/checkout/**', '/signup'],
+  recordExclude: ['/admin/**', '/account/password'],
+});
+```
+
+`recordInclude` and `recordExclude` are checked first. Server-side rules (set from the dashboard) are applied next. If no rule matches, the page is recorded by default.
+
+To mask sensitive input fields, add the `fb-block` CSS class to any element and its contents will be hidden in the recording.
 
 ## TypeScript
 
