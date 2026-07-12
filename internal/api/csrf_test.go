@@ -3,8 +3,6 @@ package api
 import (
 	"net/http"
 	"testing"
-
-	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 )
 
 func TestCSRF_MutatingRequestWithoutToken_Blocked(t *testing.T) {
@@ -22,12 +20,8 @@ func TestCSRF_MutatingRequestWithoutToken_Blocked(t *testing.T) {
 
 func TestCSRF_MutatingRequestWithValidToken_Allowed(t *testing.T) {
 	srv, _ := newAuthedServer(t)
-	token, expires, err := srv.sessionManager.Create("admin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	cookie := auth.SessionCookie(token, expires, false)
-	csrfToken := auth.CSRFToken(token)
+	cookie := sessionCookieFor(t, srv, "admin")
+	csrfToken := srv.sessionManager.CSRFToken(cookie.Value)
 
 	w := postJSONWithCSRF(t, srv, "/api/v1/projects", map[string]string{
 		"name": "CSRF OK",

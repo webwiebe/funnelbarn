@@ -52,3 +52,4 @@ cursor.json
 /coverage.out
 *.coverage.out
 web/coverage/
+/funnelbarn

@@ -61,10 +61,22 @@ func TestHandleOIDCConfidentialCallback_StateMismatch(t *testing.T) {
 	}
 }
 
+func TestHandleOIDCConfidentialCallback_MalformedStateCookie(t *testing.T) {
+	srv := oidcConfServer(t)
+	// A state cookie without the "|verifier" suffix is malformed -> 400.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/oidc/callback?state=abc&code=xyz", nil)
+	req.AddCookie(&http.Cookie{Name: oidcConfStateCookie, Value: "abc"})
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for malformed state cookie, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
 func TestHandleOIDCConfidentialCallback_MissingNonce(t *testing.T) {
 	srv := oidcConfServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/oidc/callback?state=abc&code=xyz", nil)
-	req.AddCookie(&http.Cookie{Name: oidcConfStateCookie, Value: "abc"})
+	req.AddCookie(&http.Cookie{Name: oidcConfStateCookie, Value: "abc|ver"})
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -75,7 +87,7 @@ func TestHandleOIDCConfidentialCallback_MissingNonce(t *testing.T) {
 func TestHandleOIDCConfidentialCallback_MissingCode(t *testing.T) {
 	srv := oidcConfServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/oidc/callback?state=abc", nil)
-	req.AddCookie(&http.Cookie{Name: oidcConfStateCookie, Value: "abc"})
+	req.AddCookie(&http.Cookie{Name: oidcConfStateCookie, Value: "abc|ver"})
 	req.AddCookie(&http.Cookie{Name: oidcConfNonceCookie, Value: "nnn"})
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -87,7 +99,7 @@ func TestHandleOIDCConfidentialCallback_MissingCode(t *testing.T) {
 func TestHandleOIDCConfidentialCallback_ExchangeFails(t *testing.T) {
 	srv := oidcConfServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/oidc/callback?state=abc&code=xyz", nil)
-	req.AddCookie(&http.Cookie{Name: oidcConfStateCookie, Value: "abc"})
+	req.AddCookie(&http.Cookie{Name: oidcConfStateCookie, Value: "abc|ver"})
 	req.AddCookie(&http.Cookie{Name: oidcConfNonceCookie, Value: "nnn"})
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)

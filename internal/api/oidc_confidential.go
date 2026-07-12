@@ -1,14 +1,27 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
+
+// IAMBarnUserRepo is the storage interface needed by the OIDC callback handler
+// to upsert the local user record keyed on the stable IdP subject.
+type IAMBarnUserRepo interface {
+	FindUserByIAMBarnSub(ctx context.Context, sub string) (repository.User, error)
+	CreateIAMBarnUser(ctx context.Context, sub, username string) (repository.User, error)
+}
 
 const (
 	oidcConfStateCookie = "funnelbarn_oidc_state"
@@ -16,13 +29,10 @@ const (
 	oidcConfCookieTTL   = 10 * time.Minute
 )
 
-// handleOIDCConfidentialLogin starts the OIDC authorization-code flow by
-// redirecting the browser to the issuer's authorize endpoint. State + nonce
-// are stored in short-lived HttpOnly cookies and checked on the callback.
-//
-// This is the bugbarn-style confidential-client flow gated by
-// FUNNELBARN_OIDC_* env vars. It is independent of the existing IAMBarn PKCE
-// flow on /api/v1/auth/oidc/* (which is feature-flag gated).
+// handleOIDCConfidentialLogin starts the OIDC authorization-code + PKCE flow
+// by redirecting the browser to the issuer's authorize endpoint. State (with
+// the PKCE verifier, "state|verifier") and nonce are stored in short-lived
+// HttpOnly cookies and checked on the callback.
 func (s *Server) handleOIDCConfidentialLogin(w http.ResponseWriter, r *http.Request) {
 	if s.oidc == nil {
 		jsonError(w, "oidc not configured", http.StatusNotFound)
@@ -30,28 +40,35 @@ func (s *Server) handleOIDCConfidentialLogin(w http.ResponseWriter, r *http.Requ
 	}
 	state := oidcConfRandomToken()
 	nonce := oidcConfRandomToken()
-	authURL, err := s.oidc.AuthorizeURL(state, nonce)
+	verifier := oauth2.GenerateVerifier()
+	authURL, err := s.oidc.AuthorizeURL(state, nonce, verifier)
 	if err != nil {
 		slog.WarnContext(r.Context(), "oidc: build authorize url", "error", err)
 		jsonError(w, "oidc unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
-	http.SetCookie(w, oidcConfShortLivedCookie(oidcConfStateCookie, state, secure))
+	secure := s.isSecureRequest(r)
+	http.SetCookie(w, oidcConfShortLivedCookie(oidcConfStateCookie, state+"|"+verifier, secure))
 	http.SetCookie(w, oidcConfShortLivedCookie(oidcConfNonceCookie, nonce, secure))
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
 // handleOIDCConfidentialCallback handles the redirect back from the issuer. On
-// success it issues a local session cookie that authenticates the browser for
-// the SPA.
+// success it persists the iambarn token set in a server-side session row and
+// hands the browser an opaque session handle.
 func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.Request) {
 	if s.oidc == nil {
 		jsonError(w, "oidc not configured", http.StatusNotFound)
 		return
 	}
 	stateCookie, err := r.Cookie(oidcConfStateCookie)
-	if err != nil || stateCookie.Value == "" || stateCookie.Value != r.URL.Query().Get("state") {
+	if err != nil || stateCookie.Value == "" {
+		slog.WarnContext(r.Context(), "oidc: state cookie missing")
+		jsonError(w, "oidc state mismatch", http.StatusBadRequest)
+		return
+	}
+	state, verifier, ok := parseStateCookie(stateCookie.Value)
+	if !ok || state != r.URL.Query().Get("state") {
 		slog.WarnContext(r.Context(), "oidc: state mismatch")
 		jsonError(w, "oidc state mismatch", http.StatusBadRequest)
 		return
@@ -66,21 +83,22 @@ func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.R
 		jsonError(w, "oidc code missing", http.StatusBadRequest)
 		return
 	}
-	claims, err := s.oidc.Exchange(r.Context(), code, nonceCookie.Value)
+	result, err := s.oidc.ExchangeFull(r.Context(), code, nonceCookie.Value, verifier)
 	if err != nil {
 		slog.WarnContext(r.Context(), "oidc: exchange failed", "error", err)
 		jsonError(w, "oidc exchange failed", http.StatusUnauthorized)
 		return
 	}
+	claims := result.Claims
 	if !s.oidc.Allowed(claims) {
 		slog.WarnContext(r.Context(), "oidc: access denied",
 			"sub", claims.Subject, "groups", claims.Groups, "roles", claims.Roles)
 		jsonError(w, "access denied: user is not a member of the required group", http.StatusForbidden)
 		return
 	}
-	if s.sessionManager == nil {
-		// Misconfiguration: OIDC enabled but no session manager wired.
-		slog.ErrorContext(r.Context(), "oidc: session manager not configured",
+	if s.sessionManager == nil || s.webSessions == nil {
+		// Misconfiguration: OIDC enabled but no session plumbing wired.
+		slog.ErrorContext(r.Context(), "oidc: session store not configured",
 			"handled", false, "sub", claims.Subject)
 		jsonError(w, "session unavailable", http.StatusServiceUnavailable)
 		return
@@ -89,16 +107,33 @@ func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.R
 	if username == "" {
 		username = "oidc-user"
 	}
-	token, expires, err := s.sessionManager.Create(username)
+
+	// Upsert the user record, keyed by the stable sub claim. Non-fatal: the
+	// session is issued regardless; the user record is best-effort.
+	if s.iambarnUsers != nil {
+		if _, upsertErr := s.iambarnUsers.CreateIAMBarnUser(r.Context(), claims.Subject, username); upsertErr != nil {
+			slog.WarnContext(r.Context(), "oidc: upsert user", "sub", claims.Subject, "error", upsertErr)
+		}
+	}
+
+	secure := s.isSecureRequest(r)
+	expires, err := s.issueWebSession(r.Context(), w, secure, repository.WebSession{
+		Username:        username,
+		AuthMethod:      "oidc",
+		IdpSub:          claims.Subject,
+		IdpSid:          claims.SessionID,
+		IDToken:         result.IDToken,
+		AccessToken:     result.AccessToken,
+		RefreshToken:    result.RefreshToken,
+		AccessExpiresAt: unixOrZero(result.ExpiresAt),
+		ClaimsJSON:      marshalClaims(claims),
+	})
 	if err != nil {
 		slog.ErrorContext(r.Context(), "oidc: failed to create session",
 			"err", err, "handled", false, "sub", claims.Subject, "username", username)
 		jsonError(w, "session unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
-	http.SetCookie(w, auth.SessionCookie(token, expires, secure))
-	http.SetCookie(w, auth.CSRFCookie(token, expires, secure))
 	// Non-HttpOnly hint so the SPA can show OIDC-specific UI (e.g. the
 	// IAMBarn profile link) only for sessions that actually came from
 	// iambarn. Same expiry as the session.
@@ -113,7 +148,54 @@ func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.R
 	// Clear the short-lived state/nonce cookies.
 	http.SetCookie(w, oidcConfShortLivedCookie(oidcConfStateCookie, "", secure))
 	http.SetCookie(w, oidcConfShortLivedCookie(oidcConfNonceCookie, "", secure))
+
+	slog.InfoContext(r.Context(), "oidc login", "sub", claims.Subject, "sid", claims.SessionID, "username", username)
 	http.Redirect(w, r, "/dashboard", http.StatusFound)
+}
+
+// issueWebSession mints an opaque session handle, persists the session row,
+// and sets the session + CSRF cookies. Returns the session's absolute expiry.
+func (s *Server) issueWebSession(ctx context.Context, w http.ResponseWriter, secure bool, ws repository.WebSession) (time.Time, error) {
+	token, expires, err := s.sessionManager.Create()
+	if err != nil {
+		return time.Time{}, err
+	}
+	ws.IDHash = auth.HashSessionToken(token)
+	ws.CreatedAt = time.Now().UTC().Unix()
+	ws.AbsoluteExpiresAt = expires.Unix()
+	if err := s.webSessions.CreateWebSession(ctx, ws); err != nil {
+		return time.Time{}, err
+	}
+	http.SetCookie(w, auth.SessionCookie(token, expires, secure))
+	http.SetCookie(w, auth.CSRFCookie(s.sessionManager.CSRFToken(token), expires, secure))
+	return expires, nil
+}
+
+// marshalClaims snapshots the ID-token claims for storage in claims_json.
+func marshalClaims(claims auth.OIDCClaims) string {
+	b, err := json.Marshal(claims)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// unixOrZero converts a token expiry to unix seconds, mapping the zero time
+// (token response without expires_in) to 0 = "no expiry known".
+func unixOrZero(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.Unix()
+}
+
+// parseStateCookie splits the "state|verifier" value of the OIDC state cookie.
+func parseStateCookie(value string) (state, verifier string, ok bool) {
+	idx := strings.Index(value, "|")
+	if idx <= 0 || idx == len(value)-1 {
+		return "", "", false
+	}
+	return value[:idx], value[idx+1:], true
 }
 
 func oidcConfShortLivedCookie(name, value string, secure bool) *http.Cookie {

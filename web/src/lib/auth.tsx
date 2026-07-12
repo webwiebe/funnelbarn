@@ -37,8 +37,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     trackEvent('logout')
-    await api.logout()
+    const res = await api.logout()
     setUser(null)
+    // OIDC sessions get a logout_url: the IdP's end-session endpoint with
+    // id_token_hint. Following it ends the central IAMBarn session too —
+    // never do a front-end-only logout for SSO sessions.
+    if (res?.logout_url) {
+      window.location.assign(res.logout_url)
+    }
   }
 
   return (

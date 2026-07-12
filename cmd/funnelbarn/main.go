@@ -2,24 +2,18 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
-	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
-	"golang.org/x/crypto/bcrypt"
 
 	bb "github.com/wiebe-xyz/bugbarn-go"
 
@@ -27,8 +21,8 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
-	"github.com/wiebe-xyz/funnelbarn/internal/iambarn"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -45,8 +39,6 @@ var (
 	Version   = "dev"
 	BuildTime = "unknown"
 )
-
-var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 func main() {
 	defer func() {
@@ -273,25 +265,14 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// Sessions are token-bound server-side rows (web_sessions): the cookie is
+	// an opaque handle, so a logout/revocation is simply a row deletion —
+	// durable by construction, no separate revocation list needed.
 	sessionManager := auth.NewSessionManager(cfg.SessionSecret, cfg.SessionTTL)
-	// Wire durable session revocation (SESS-1): persist logouts and repopulate
-	// the in-memory revoked set so a logout survives a restart.
-	sessionManager.SetPersistRevocation(func(tokenHash string, expiresAt time.Time) {
-		if err := store.RevokeSession(context.Background(), tokenHash, expiresAt); err != nil {
-			slog.Error("persist session revocation", "err", err, "handled", true)
-		}
-	})
-	if err := store.DeleteExpiredRevokedSessions(ctx, time.Now().UTC()); err != nil {
-		slog.Warn("prune expired session revocations", "err", err)
-	}
-	if revoked, err := store.ActiveRevokedSessions(ctx, time.Now().UTC()); err != nil {
-		slog.Warn("load session revocations", "err", err)
-	} else {
-		seed := make(map[string]time.Time, len(revoked))
-		for _, r := range revoked {
-			seed[r.TokenHash] = r.ExpiresAt
-		}
-		sessionManager.LoadRevoked(seed)
+	if n, err := store.DeleteExpiredWebSessions(ctx, time.Now().UTC()); err != nil {
+		slog.Warn("prune expired web sessions", "err", err)
+	} else if n > 0 {
+		slog.Info("pruned expired web sessions", "count", n)
 	}
 	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.MaxBodyBytes)
 	handler.OnEventsReceived = func(ctx context.Context, projectID string) {
@@ -300,13 +281,6 @@ func run() error {
 		}
 	}
 	go handler.Start(ctx)
-
-	var iambarnProvider *iambarn.Provider
-	if cfg.IAMBarnClientID != "" && cfg.PublicURL != "" {
-		redirectURI := strings.TrimRight(cfg.PublicURL, "/") + "/api/v1/auth/oidc/callback"
-		iambarnProvider = iambarn.New(cfg.IAMBarnIssuer, cfg.IAMBarnClientID, redirectURI)
-		slog.Info("iambarn configured", "client_id", cfg.IAMBarnClientID, "redirect_uri", redirectURI, "flag_project", cfg.DogfoodProject)
-	}
 
 	oidcClient := buildOIDCClient(cfg)
 
@@ -319,12 +293,15 @@ func run() error {
 	}
 	slog.Info("authentication mechanisms",
 		"env_admin", userAuth.Enabled(),
-		"iambarn", iambarnProvider != nil,
 		"oidc_confidential", oidcClient != nil,
 		"local_users", localUserCount,
 	)
-	if !userAuth.Enabled() && iambarnProvider == nil && oidcClient == nil && localUserCount == 0 {
-		slog.Warn("no authentication mechanism configured; dashboard API routes will be served UNAUTHENTICATED — set FUNNELBARN_ADMIN_*, configure OIDC/IAMBarn, or run 'funnelbarn user create'",
+	authConfigured := userAuth.Enabled() || oidcClient != nil || localUserCount > 0
+	if err := validateFailClosed(environment.Normalize(cfg.SelfEnvironment), apiAuthorizer.Enabled(), authConfigured); err != nil {
+		return err
+	}
+	if !authConfigured {
+		slog.Warn("no authentication mechanism configured; dashboard API routes will be served UNAUTHENTICATED — set FUNNELBARN_ADMIN_*, configure OIDC, or run 'funnelbarn user create'",
 			"handled", false)
 	}
 
@@ -365,11 +342,12 @@ func run() error {
 		BugbarnProject:        cfg.SelfProject,
 		DogfoodAPIKey:         cfg.DogfoodAPIKey,
 		DogfoodProject:        cfg.DogfoodProject,
-		IAMBarnProvider:       iambarnProvider,
 		IAMBarnUsers:          store,
-		IAMBarnFlagProject:    cfg.DogfoodProject,
 		PostLogoutRedirectURI: cfg.PostLogoutRedirectURI,
 		OIDC:                  oidcClient,
+		WebSessions:           store,
+		Environment:           cfg.SelfEnvironment,
+		OIDCRefreshGrace:      time.Duration(cfg.OIDCRefreshGraceSeconds) * time.Second,
 		Recordings:            recordingsSvc,
 		RecordingSettings:     store,
 		ProjectHealth:         healthSvc,
@@ -415,22 +393,41 @@ func run() error {
 }
 
 // buildOIDCClient returns an OIDC adapter when all four FUNNELBARN_OIDC_* vars
-// are set, or nil otherwise (in which case the local single-user login and the
-// optional IAMBarn PKCE flow are the auth paths). Discovery is lazy so an
-// unreachable issuer at startup does not crash the process.
+// are set, or nil otherwise (in which case the local single-user login is the
+// auth path). Discovery is lazy so an unreachable issuer at startup does not
+// crash the process.
 func buildOIDCClient(cfg config.Config) *auth.OIDCClient {
 	oc := auth.OIDCConfig{
-		Issuer:        cfg.OIDCIssuer,
-		ClientID:      cfg.OIDCClientID,
-		ClientSecret:  cfg.OIDCClientSecret,
-		RedirectURL:   cfg.OIDCRedirectURL,
-		RequiredGroup: cfg.OIDCRequiredGroup,
+		Issuer:                cfg.OIDCIssuer,
+		ClientID:              cfg.OIDCClientID,
+		ClientSecret:          cfg.OIDCClientSecret,
+		RedirectURL:           cfg.OIDCRedirectURL,
+		RequiredGroup:         cfg.OIDCRequiredGroup,
+		PostLogoutRedirectURI: cfg.PostLogoutRedirectURI,
 	}
 	if !oc.Enabled() {
 		return nil
 	}
 	slog.Info("oidc: enabled", "issuer", oc.Issuer, "client_id", oc.ClientID, "required_group", oc.RequiredGroup)
 	return auth.NewOIDCClient(oc)
+}
+
+// validateFailClosed refuses to start a production deployment whose auth
+// surfaces would silently fail open: the ingest API accepting any key because
+// none is configured, or the dashboard API serving every route unauthenticated
+// because no login mechanism exists. Non-production tiers keep the permissive
+// behaviour for local development and throwaway environments.
+func validateFailClosed(env string, apiKeyConfigured, authConfigured bool) error {
+	if env != environment.Production {
+		return nil
+	}
+	if !apiKeyConfigured {
+		return errors.New("refusing to start in production without an API key: ingest would accept ANY key — set FUNNELBARN_API_KEY(_SHA256) or create a key with 'funnelbarn apikey create'")
+	}
+	if !authConfigured {
+		return errors.New("refusing to start in production without an authentication mechanism: dashboard routes would be served unauthenticated — set FUNNELBARN_ADMIN_*, configure FUNNELBARN_OIDC_*, or run 'funnelbarn user create'")
+	}
+	return nil
 }
 
 func newAPIAuthorizer(cfg config.Config, store *repository.Store) (*auth.Authorizer, error) {
@@ -476,6 +473,14 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 		case <-ctx.Done():
 			return
 		case <-purgeTicker.C:
+			// Sessions past their absolute cap are already unusable (the
+			// middleware enforces absolute_expires_at); this keeps the table
+			// from accumulating.
+			if n, err := store.DeleteExpiredWebSessions(ctx, time.Now().UTC()); err != nil {
+				slog.Error("purge expired web sessions", "err", err)
+			} else if n > 0 {
+				slog.Info("purged expired web sessions", "count", n)
+			}
 			if cfg.EventRetentionDays > 0 {
 				cutoff := time.Now().AddDate(0, 0, -cfg.EventRetentionDays)
 				n, err := store.PurgeOldEvents(ctx, cutoff)
@@ -661,188 +666,4 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 			}
 		}
 	}
-}
-
-// --------------------------------------------------------------------------
-// CLI subcommands
-// --------------------------------------------------------------------------
-
-// runWorkerOnce replays queued records into the persistent store.
-func runWorkerOnce(cfg config.Config) error {
-	store, err := repository.Open(cfg.DBPath)
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-
-	records, err := spool.ReadRecords(spool.Path(cfg.SpoolDir))
-	if err != nil {
-		return err
-	}
-
-	processed := 0
-	ctx := context.Background()
-	for _, record := range records {
-		event, err := worker.SafeProcess(record)
-		if err != nil {
-			slog.Error("worker-once: process record", "ingest_id", record.IngestID, "err", err)
-			continue
-		}
-		if record.ProjectSlug != "" {
-			proj, projErr := store.EnsureProject(ctx, record.ProjectSlug)
-			if projErr == nil {
-				event.ProjectID = proj.ID
-			}
-		}
-		if err := worker.PersistEvent(ctx, store, event, nil); err != nil {
-			slog.Error("worker-once: persist event", "ingest_id", record.IngestID, "err", err)
-			continue
-		}
-		processed++
-	}
-
-	fmt.Printf("{\"records\":%d,\"processed\":%d}\n", len(records), processed)
-	return nil
-}
-
-// runUserCmd handles: funnelbarn user create --username=X --password=Y
-func runUserCmd(cfg config.Config, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: funnelbarn user <create>")
-	}
-	switch args[0] {
-	case "create":
-		fs := flag.NewFlagSet("user create", flag.ContinueOnError)
-		username := fs.String("username", os.Getenv("FUNNELBARN_ADMIN_USERNAME"), "username")
-		password := fs.String("password", os.Getenv("FUNNELBARN_ADMIN_PASSWORD"), "plaintext password")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		*username = strings.TrimSpace(*username)
-		*password = strings.TrimSpace(*password)
-		if *username == "" {
-			return fmt.Errorf("--username is required")
-		}
-		if *password == "" {
-			return fmt.Errorf("--password is required")
-		}
-		hash, err := bcrypt.GenerateFromPassword([]byte(*password), bcrypt.DefaultCost)
-		if err != nil {
-			return fmt.Errorf("hash password: %w", err)
-		}
-		store, err := repository.Open(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer store.Close()
-		if err := store.UpsertUser(context.Background(), *username, string(hash)); err != nil {
-			return fmt.Errorf("upsert user: %w", err)
-		}
-		fmt.Printf("user %q created/updated\n", *username)
-		return nil
-	default:
-		return fmt.Errorf("unknown user subcommand %q", args[0])
-	}
-}
-
-// runProjectCmd handles: funnelbarn project create --name=X [--slug=Y]
-func runProjectCmd(cfg config.Config, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: funnelbarn project <create>")
-	}
-	switch args[0] {
-	case "create":
-		fs := flag.NewFlagSet("project create", flag.ContinueOnError)
-		name := fs.String("name", "", "project display name")
-		slug := fs.String("slug", "", "project slug (defaults to slugified name)")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		*name = strings.TrimSpace(*name)
-		if *name == "" {
-			return fmt.Errorf("--name is required")
-		}
-		if *slug == "" {
-			*slug = toSlugLocal(*name)
-		}
-		if !slugPattern.MatchString(*slug) {
-			return fmt.Errorf("invalid slug %q: must be lowercase alphanumeric with hyphens", *slug)
-		}
-		store, err := repository.Open(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer store.Close()
-		p, err := store.CreateProject(context.Background(), *name, *slug)
-		if err != nil {
-			return fmt.Errorf("create project: %w", err)
-		}
-		fmt.Printf("{\"id\":%q,\"name\":%q,\"slug\":%q}\n", p.ID, p.Name, p.Slug)
-		return nil
-	default:
-		return fmt.Errorf("unknown project subcommand %q", args[0])
-	}
-}
-
-// runAPIKeyCmd handles: funnelbarn apikey create --project=default --name=my-app
-func runAPIKeyCmd(cfg config.Config, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: funnelbarn apikey <create>")
-	}
-	switch args[0] {
-	case "create":
-		fs := flag.NewFlagSet("apikey create", flag.ContinueOnError)
-		projectSlug := fs.String("project", "default", "project slug")
-		name := fs.String("name", "", "key name/label")
-		scope := fs.String("scope", repository.APIKeyScopeFull, "key scope: full or ingest")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		*name = strings.TrimSpace(*name)
-		if *name == "" {
-			return fmt.Errorf("--name is required")
-		}
-		if *scope != repository.APIKeyScopeFull && *scope != repository.APIKeyScopeIngest {
-			return fmt.Errorf("--scope must be %q or %q", repository.APIKeyScopeFull, repository.APIKeyScopeIngest)
-		}
-		store, err := repository.Open(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer store.Close()
-		ctx := context.Background()
-		project, err := store.ProjectBySlug(ctx, *projectSlug)
-		if err != nil {
-			project, err = store.CreateProject(ctx, *projectSlug, *projectSlug)
-			if err != nil {
-				return fmt.Errorf("create project %q: %w", *projectSlug, err)
-			}
-			fmt.Printf("Project %q created automatically.\n", *projectSlug)
-		}
-		var raw [32]byte
-		if _, err := rand.Read(raw[:]); err != nil {
-			return fmt.Errorf("generate key: %w", err)
-		}
-		plaintext := hex.EncodeToString(raw[:])
-		sum := sha256.Sum256([]byte(plaintext))
-		keySHA256 := hex.EncodeToString(sum[:])
-
-		key, err := store.CreateAPIKey(ctx, *name, project.ID, keySHA256, *scope)
-		if err != nil {
-			return fmt.Errorf("create api key: %w", err)
-		}
-		fmt.Printf("API key created (id=%s, project=%s, name=%s, scope=%s)\n", key.ID, project.Slug, key.Name, key.Scope)
-		fmt.Printf("Key (shown once, store securely): %s\n", plaintext)
-		return nil
-	default:
-		return fmt.Errorf("unknown apikey subcommand %q", args[0])
-	}
-}
-
-// toSlugLocal converts a display name to a URL-safe slug.
-func toSlugLocal(name string) string {
-	s := strings.ToLower(name)
-	s = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(s, "-")
-	s = strings.Trim(s, "-")
-	return s
 }

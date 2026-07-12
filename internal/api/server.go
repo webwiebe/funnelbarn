@@ -9,11 +9,14 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/sync/singleflight"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/iambarn"
+	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -62,18 +65,31 @@ type ServerConfig struct {
 	DogfoodAPIKey    string
 	DogfoodProject   string
 
-	IAMBarnProvider    *iambarn.Provider
-	IAMBarnUsers       IAMBarnUserRepo
-	IAMBarnFlagProject string // dogfood project slug to read the iambarn-enabled flag from
+	IAMBarnUsers IAMBarnUserRepo
 
 	// PostLogoutRedirectURI is exposed to the frontend so the hosted IAMBarn
 	// components can pass it to /oauth2/end-session. It should point at the
 	// local session-clearing endpoint (/api/v1/auth/oidc/logged-out).
 	PostLogoutRedirectURI string
 
-	// OIDC, when non-nil, enables the bugbarn-style confidential-client OIDC
-	// login flow at /api/v1/oidc/{login,callback}. Independent of IAMBarnProvider.
+	// OIDC, when non-nil, enables the confidential-client OIDC login flow at
+	// /api/v1/oidc/{login,callback} — the single OIDC flow.
 	OIDC *auth.OIDCClient
+
+	// WebSessions is the server-side session store. Required whenever any
+	// authentication mechanism is configured: sessions are rows, and deleting
+	// a row revokes the session.
+	WebSessions WebSessionStore
+
+	// Environment is the normalized deployment tier (internal/environment).
+	// Outside development, cookies default to Secure=true even when the TLS
+	// terminator's X-Forwarded-Proto is missing or untrusted.
+	Environment string
+
+	// OIDCRefreshGrace bounds how long a session with a transiently failing
+	// refresh (IdP outage, network) is served stale before it is cut off.
+	// invalid_grant never gets grace. Zero means the 1h default.
+	OIDCRefreshGrace time.Duration
 
 	// LocalUsersExist reports whether any local/DB users exist at startup. It is
 	// one of the signals that authentication is configured: if true, DB-user
@@ -137,11 +153,13 @@ type Server struct {
 	dogfoodAPIKey       string
 	dogfoodProject      string
 	trustedProxies      []string
-	iambarnProvider     *iambarn.Provider
 	iambarnUsers        IAMBarnUserRepo
-	iambarnFlagProject  string
 	postLogoutRedirect  string
 	oidc                *auth.OIDCClient
+	webSessions         WebSessionStore
+	environment         string
+	oidcRefreshGrace    time.Duration
+	refreshGroup        singleflight.Group
 	localUsersExist     bool
 	instanceSettings    InstanceSettingsRepo
 	geoAnonymizer       GeoAnonymizer
@@ -202,11 +220,12 @@ func NewServer(cfg ServerConfig) *Server {
 		eventsLimiter:       newRateLimiter(cfg.IngestRatePerMinute, cfg.IngestRateBurst),
 		apiLimiter:          newRateLimiter(cfg.APIRatePerMinute, cfg.APIRateBurst),
 		setupLimiter:        newRateLimiter(setupRate, setupBurst),
-		iambarnProvider:     cfg.IAMBarnProvider,
 		iambarnUsers:        cfg.IAMBarnUsers,
-		iambarnFlagProject:  cfg.IAMBarnFlagProject,
 		postLogoutRedirect:  cfg.PostLogoutRedirectURI,
 		oidc:                cfg.OIDC,
+		webSessions:         cfg.WebSessions,
+		environment:         environment.Normalize(cfg.Environment),
+		oidcRefreshGrace:    cfg.OIDCRefreshGrace,
 		localUsersExist:     cfg.LocalUsersExist,
 		instanceSettings:    cfg.InstanceSettings,
 		geoAnonymizer:       cfg.GeoAnonymizer,
@@ -217,9 +236,24 @@ func NewServer(cfg ServerConfig) *Server {
 		projectHealth:       cfg.ProjectHealth,
 		flagAutoRegisterMax: cfg.FlagAutoRegisterMax,
 	}
+	if s.oidcRefreshGrace <= 0 {
+		s.oidcRefreshGrace = time.Hour
+	}
 	s.securityMW = securityHeaders(originOf(s.iambarnIssuer()))
 	s.registerRoutes()
 	return s
+}
+
+// WebSessionStore is the narrow interface over the web_sessions table used by
+// the session middleware, the OIDC callback, and the logout paths.
+type WebSessionStore interface {
+	CreateWebSession(ctx context.Context, ws repository.WebSession) error
+	GetWebSession(ctx context.Context, idHash string) (repository.WebSession, error)
+	UpdateWebSessionTokens(ctx context.Context, idHash, idToken, accessToken, refreshToken string, accessExpiresAt int64, claimsJSON string, lastRefreshAt int64) error
+	MarkWebSessionRefreshFailing(ctx context.Context, idHash string, since int64) error
+	DeleteWebSession(ctx context.Context, idHash string) error
+	DeleteWebSessionsByIdpSid(ctx context.Context, sid string) (int64, error)
+	DeleteWebSessionsByIdpSub(ctx context.Context, sub string) (int64, error)
 }
 
 // originOf returns the scheme://host origin of a URL, or "" if it can't be
@@ -268,17 +302,18 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/v1/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /api/v1/me", s.requireSession(s.handleMe))
 
-	// OIDC (gated by the iambarn-enabled feature flag in handlers)
-	s.mux.Handle("GET /api/v1/auth/oidc/login", s.limit(s.loginLimiter, http.HandlerFunc(s.handleOIDCLogin)))
-	s.mux.HandleFunc("GET /api/v1/auth/oidc/callback", s.handleOIDCCallback)
 	// Landing endpoint for IAMBarn RP-initiated logout — clears the local
-	// session, then redirects to /login. Registered as post_logout_redirect_uri.
+	// session, then redirects to /login. Registered as post_logout_redirect_uri
+	// (path kept stable so the IdP allowlist doesn't change).
 	s.mux.HandleFunc("GET /api/v1/auth/oidc/logged-out", s.handleOIDCLoggedOut)
 
-	// OIDC confidential-client flow (gated by FUNNELBARN_OIDC_* env vars).
-	// Independent of the IAMBarn PKCE flow above; both can coexist.
+	// OIDC confidential-client flow with PKCE (gated by FUNNELBARN_OIDC_* env
+	// vars) — the single OIDC login flow.
 	s.mux.Handle("GET /api/v1/oidc/login", s.limit(s.loginLimiter, http.HandlerFunc(s.handleOIDCConfidentialLogin)))
 	s.mux.HandleFunc("GET /api/v1/oidc/callback", s.handleOIDCConfidentialCallback)
+	// Back-channel logout: iambarn pushes a signed logout token; the token
+	// itself authenticates the request (public, rate-limited, no CSRF).
+	s.mux.Handle("POST /api/v1/oidc/backchannel-logout", s.limit(s.loginLimiter, http.HandlerFunc(s.handleBackchannelLogout)))
 
 	// Projects
 	s.mux.HandleFunc("GET /api/v1/projects", s.requireSession(s.handleListProjects))
@@ -544,17 +579,29 @@ func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Max-Age", "86400")
 }
 
-// requireSession wraps a handler to enforce session cookie authentication.
-// It also applies the apiLimiter rate limit and CSRF validation on mutating methods.
+// accessTokenSkew is subtracted from access_expires_at so a token is refreshed
+// slightly BEFORE it actually expires — a request must never go out the door
+// authorized by a token that dies mid-flight.
+const accessTokenSkew = 30 * time.Second
+
+// requireSession wraps a handler to enforce server-side session authentication.
+// The cookie is an opaque handle; the session row (username, expiry, iambarn
+// tokens) lives in web_sessions. For OIDC sessions with an expired access
+// token it runs the refresh_token grant (singleflight per session) before
+// serving. It also applies the apiLimiter rate limit and CSRF validation on
+// mutating methods.
+//
+// The no-auth pass-through below is a development convenience only: in
+// production, startup refuses to boot with no authentication mechanism
+// configured (cmd/funnelbarn), so this branch is unreachable there.
 func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// authConfigured must reflect EVERY way a user can obtain a session:
-		// the env-var admin, the IAMBarn PKCE flow, the confidential OIDC client,
-		// AND local/DB users. Missing any of these would leave every route below
-		// served unauthenticated on a deployment that authenticates only that way.
-		authConfigured := s.userAuth.Enabled() || s.iambarnProvider != nil ||
-			s.oidc != nil || s.localUsersExist
-		if s.sessionManager == nil || !authConfigured {
+		// the env-var admin, the confidential OIDC client, AND local/DB users.
+		// Missing any of these would leave every route below served
+		// unauthenticated on a deployment that authenticates only that way.
+		authConfigured := s.userAuth.Enabled() || s.oidc != nil || s.localUsersExist
+		if s.sessionManager == nil || s.webSessions == nil || !authConfigured {
 			if !s.apiLimiter.allow(s.clientIP(r)) {
 				jsonError(w, "too many requests", http.StatusTooManyRequests)
 				return
@@ -568,15 +615,33 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 			jsonError(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-
-		username, ok := s.sessionManager.Valid(cookie.Value)
-		if !ok {
+		idHash := auth.HashSessionToken(cookie.Value)
+		ws, err := s.webSessions.GetWebSession(r.Context(), idHash)
+		if err != nil {
+			// Unknown handle: revoked, pruned, or forged. Same response either
+			// way — nothing to enumerate.
+			jsonError(w, "session expired", http.StatusUnauthorized)
+			return
+		}
+		now := time.Now()
+		if ws.AbsoluteExpiresAt <= now.Unix() {
+			_ = s.webSessions.DeleteWebSession(r.Context(), idHash)
 			jsonError(w, "session expired", http.StatusUnauthorized)
 			return
 		}
 
+		// OIDC sessions are refresh-gated: session validity tracks the ~15m
+		// access token, so central revocation bites at the next refresh.
+		if ws.AuthMethod == "oidc" && s.oidc != nil && accessTokenExpired(ws, now) {
+			ws, err = s.refreshSession(r.Context(), idHash)
+			if err != nil {
+				jsonError(w, "session expired", http.StatusUnauthorized)
+				return
+			}
+		}
+
 		if isMutating(r.Method) {
-			expected := auth.CSRFToken(cookie.Value)
+			expected := s.sessionManager.CSRFToken(cookie.Value)
 			got := r.Header.Get("X-FunnelBarn-CSRF")
 			// Constant-time compare so the CSRF token can't be recovered by timing.
 			if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(expected)) != 1 {
@@ -590,31 +655,105 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		slog.Debug("session valid", "username", username)
-		next(w, r)
+		slog.Debug("session valid", "username", ws.Username)
+		next(w, r.WithContext(withSessionUser(r.Context(), ws.Username)))
 	}
 }
 
-// iambarnFlagEnabled evaluates the "iambarn-enabled" feature flag in the
-// dogfood project. evalCtx is passed as-is to the flag evaluator so that
-// targeting rules (e.g. user_agent contains "Chrome") can act on request data.
-func (s *Server) iambarnFlagEnabled(ctx context.Context, evalCtx map[string]any) bool {
-	if s.iambarnProvider == nil || s.iambarnFlagProject == "" {
-		return false
-	}
-	proj, err := s.projects.GetProjectBySlug(ctx, s.iambarnFlagProject)
+// accessTokenExpired reports whether the session's access token is past (or
+// within accessTokenSkew of) its expiry. Sessions without a known expiry
+// (no expires_in in the token response) are never treated as expired.
+func accessTokenExpired(ws repository.WebSession, now time.Time) bool {
+	return ws.AccessExpiresAt != 0 && now.Unix() >= ws.AccessExpiresAt-int64(accessTokenSkew.Seconds())
+}
+
+// refreshSession runs the refresh_token grant for one session, singleflighted
+// per session row so concurrent requests cannot replay the single-use refresh
+// token (a replay revokes the whole token family at the IdP).
+//
+// Outcomes:
+//   - success: tokens rotated + claims re-snapshotted in the row
+//   - invalid_grant: the session is dead centrally → row deleted, error
+//   - transient failure (IdP down): serve stale within the grace window
+//     measured from the FIRST failure; past the window → row deleted, error
+func (s *Server) refreshSession(ctx context.Context, idHash string) (repository.WebSession, error) {
+	// The refresh must complete even if the triggering request is canceled
+	// mid-rotation — losing the rotated refresh token kills the session.
+	// Waiting singleflight sharers also must not inherit a canceled context.
+	bgCtx := context.WithoutCancel(ctx)
+	v, err, _ := s.refreshGroup.Do(idHash, func() (any, error) {
+		ws, err := s.webSessions.GetWebSession(bgCtx, idHash)
+		if err != nil {
+			return nil, err
+		}
+		now := time.Now()
+		if !accessTokenExpired(ws, now) {
+			// Another flight already refreshed while we waited.
+			return ws, nil
+		}
+
+		refreshed, err := s.oidc.Refresh(bgCtx, ws.RefreshToken)
+		if errors.Is(err, auth.ErrRefreshInvalid) {
+			// Revoked / rotated-elsewhere / user suspended: kill the session
+			// immediately. invalid_grant never gets grace.
+			slog.InfoContext(bgCtx, "session refresh: invalid_grant, session revoked",
+				"username", ws.Username, "sub", ws.IdpSub)
+			_ = s.webSessions.DeleteWebSession(bgCtx, idHash)
+			return nil, err
+		}
+		if err != nil {
+			// Transient (network, IdP 5xx): serve stale within the grace
+			// window, measured from the first failure.
+			failingSince := ws.RefreshFailingSince
+			if failingSince == 0 {
+				failingSince = now.Unix()
+				if markErr := s.webSessions.MarkWebSessionRefreshFailing(bgCtx, idHash, failingSince); markErr != nil {
+					slog.WarnContext(bgCtx, "session refresh: mark failing", "err", markErr)
+				}
+				ws.RefreshFailingSince = failingSince
+			}
+			if now.Unix()-failingSince > int64(s.oidcRefreshGrace.Seconds()) {
+				slog.WarnContext(bgCtx, "session refresh: grace exceeded, session cut off",
+					"username", ws.Username, "failing_for", now.Unix()-failingSince)
+				_ = s.webSessions.DeleteWebSession(bgCtx, idHash)
+				return nil, err
+			}
+			slog.WarnContext(bgCtx, "session refresh failed, serving stale within grace",
+				"err", err, "username", ws.Username)
+			return ws, nil
+		}
+
+		claimsJSON := ""
+		if refreshed.Claims != nil {
+			// Re-snapshot groups/roles so central role changes propagate now,
+			// not at the next login.
+			claimsJSON = marshalClaims(*refreshed.Claims)
+		}
+		if err := s.webSessions.UpdateWebSessionTokens(bgCtx, idHash,
+			refreshed.IDToken, refreshed.AccessToken, refreshed.RefreshToken,
+			unixOrZero(refreshed.ExpiresAt), claimsJSON, now.Unix()); err != nil {
+			// The old refresh token is already burned; failing to store the new
+			// one makes the session unrenewable. Fail the request rather than
+			// pretend the session is healthy.
+			slog.ErrorContext(bgCtx, "session refresh: persist rotated tokens",
+				"err", err, "handled", false)
+			return nil, err
+		}
+		ws.IDToken = refreshed.IDToken
+		ws.AccessToken = refreshed.AccessToken
+		ws.RefreshToken = refreshed.RefreshToken
+		ws.AccessExpiresAt = unixOrZero(refreshed.ExpiresAt)
+		if claimsJSON != "" {
+			ws.ClaimsJSON = claimsJSON
+		}
+		ws.LastRefreshAt = now.Unix()
+		ws.RefreshFailingSince = 0
+		return ws, nil
+	})
 	if err != nil {
-		return false
+		return repository.WebSession{}, err
 	}
-	result, err := s.flags.EvaluateFlag(ctx, proj.ID, "iambarn-enabled", evalCtx)
-	if err != nil {
-		return false
-	}
-	if result.Variant == "on" {
-		return true
-	}
-	v, ok := result.Value.(bool)
-	return ok && v
+	return v.(repository.WebSession), nil
 }
 
 func isMutating(method string) bool {

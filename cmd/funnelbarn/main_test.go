@@ -19,6 +19,40 @@ func TestBuildOIDCClient_NilWhenUnconfigured(t *testing.T) {
 	}
 }
 
+// TestValidateFailClosed pins the production fail-closed startup contract:
+// production must refuse to boot when the API-key validator would fail open
+// or when no login mechanism exists; other tiers stay permissive for dev.
+func TestValidateFailClosed(t *testing.T) {
+	cases := []struct {
+		name             string
+		env              string
+		apiKeyConfigured bool
+		authConfigured   bool
+		wantErr          string
+	}{
+		{"production fully configured", "production", true, true, ""},
+		{"production without api key", "production", false, true, "API key"},
+		{"production without auth", "production", true, false, "authentication mechanism"},
+		{"development without anything", "development", false, false, ""},
+		{"test without anything", "test", false, false, ""},
+		{"staging without anything", "staging", false, false, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateFailClosed(tc.env, tc.apiKeyConfigured, tc.authConfigured)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected nil, got %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
 func TestSlugPattern(t *testing.T) {
 	valid := []string{"default", "my-project", "a1", "team-42-alpha"}
 	for _, s := range valid {
