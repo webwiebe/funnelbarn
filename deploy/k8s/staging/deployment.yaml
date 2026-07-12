@@ -152,12 +152,6 @@ spec:
                   name: funnelbarn-secrets
                   key: FUNNELBARN_SPANBARN_API_KEY
                   optional: true
-            - name: FUNNELBARN_IAMBARN_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: funnelbarn-secrets
-                  key: FUNNELBARN_IAMBARN_CLIENT_ID
-                  optional: true
             - name: FUNNELBARN_OIDC_ISSUER
               valueFrom:
                 secretKeyRef:
@@ -182,6 +176,10 @@ spec:
                   name: funnelbarn-secrets
                   key: FUNNELBARN_OIDC_REDIRECT_URL
                   optional: true
+            # Bounded grace for transient OIDC refresh failures (IdP outage):
+            # sessions are served stale for at most this long, then cut off.
+            - name: FUNNELBARN_OIDC_REFRESH_GRACE_SECONDS
+              value: "3600"
             - name: FUNNELBARN_GEOIP_CITY_DB
               value: /var/lib/funnelbarn/geoip/GeoLite2-City.mmdb
             - name: FUNNELBARN_GEOIP_ASN_DB

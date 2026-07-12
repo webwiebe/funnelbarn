@@ -19,12 +19,7 @@ function useAuthMode(): { mode: AuthMode; authError: boolean; localAuthAvailable
   useEffect(() => {
     api.getClientConfig().then((cfg) => {
       setLocalAuthAvailable(cfg.local_auth_available ?? false)
-      if (cfg.iambarn_enabled) {
-        setMode({ kind: 'redirect', url: '/api/v1/auth/oidc/login' })
-        if (!authError) {
-          window.location.assign('/api/v1/auth/oidc/login')
-        }
-      } else if (cfg.oidc?.enabled && cfg.oidc.loginURL) {
+      if (cfg.oidc?.enabled && cfg.oidc.loginURL) {
         setMode({ kind: 'redirect', url: cfg.oidc.loginURL })
         if (!authError) {
           window.location.assign(cfg.oidc.loginURL)

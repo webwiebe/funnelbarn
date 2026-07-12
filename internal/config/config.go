@@ -60,9 +60,6 @@ type Config struct {
 	SetupRatePerMinute   float64
 	SetupRateBurst       float64
 
-	IAMBarnClientID string
-	IAMBarnIssuer   string
-
 	// PostLogoutRedirectURI is where IAMBarn's RP-initiated logout
 	// (/oauth2/end-session) returns the browser after ending the IAMBarn
 	// session. It must point at a FunnelBarn URL registered on the client's
@@ -76,6 +73,11 @@ type Config struct {
 	OIDCClientSecret  string // FUNNELBARN_OIDC_CLIENT_SECRET
 	OIDCRedirectURL   string // FUNNELBARN_OIDC_REDIRECT_URL
 	OIDCRequiredGroup string // FUNNELBARN_OIDC_REQUIRED_GROUP — defaults to "funnelbarn-users"
+
+	// OIDCRefreshGraceSeconds bounds how long an OIDC session whose refresh is
+	// failing transiently (IdP outage / network) keeps being served stale
+	// before it is cut off. invalid_grant never gets grace. Default 3600.
+	OIDCRefreshGraceSeconds int // FUNNELBARN_OIDC_REFRESH_GRACE_SECONDS
 
 	GeoIPCityDB string // path to GeoLite2-City.mmdb; empty = geo disabled
 	GeoIPASNDB  string // path to GeoLite2-ASN.mmdb; empty = skip ASN enrichment
@@ -136,27 +138,12 @@ func Load() Config {
 			cfg.SessionTTL = time.Duration(parsed) * time.Second
 		}
 	}
-	cfg.EventRetentionDays = 90
-	if raw := os.Getenv("FUNNELBARN_EVENT_RETENTION_DAYS"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
-			cfg.EventRetentionDays = parsed
-		}
-	}
+	cfg.EventRetentionDays = envNonNegativeInt("FUNNELBARN_EVENT_RETENTION_DAYS", 90)
 
 	// Flag auto-registration — default cap 100 per project, prune stale
 	// never-configured auto flags after 30 days.
-	cfg.AutoRegisterMaxFlags = 100
-	if raw := os.Getenv("FUNNELBARN_FLAG_AUTOREGISTER_MAX"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
-			cfg.AutoRegisterMaxFlags = parsed
-		}
-	}
-	cfg.AutoRegisterTTLDays = 30
-	if raw := os.Getenv("FUNNELBARN_FLAG_AUTOREGISTER_TTL_DAYS"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
-			cfg.AutoRegisterTTLDays = parsed
-		}
-	}
+	cfg.AutoRegisterMaxFlags = envNonNegativeInt("FUNNELBARN_FLAG_AUTOREGISTER_MAX", 100)
+	cfg.AutoRegisterTTLDays = envNonNegativeInt("FUNNELBARN_FLAG_AUTOREGISTER_TTL_DAYS", 30)
 
 	// Login rate limit — default 20/min burst 20.
 	// Set higher (e.g. 1000) in test environments to avoid blocking E2E suites.
@@ -215,9 +202,6 @@ func Load() Config {
 		}
 	}
 
-	cfg.IAMBarnClientID = os.Getenv("FUNNELBARN_IAMBARN_CLIENT_ID")
-	cfg.IAMBarnIssuer = getenv("FUNNELBARN_IAMBARN_ISSUER", "https://iam.wiebe.xyz")
-
 	cfg.PostLogoutRedirectURI = defaultPostLogoutRedirectURI(
 		os.Getenv("FUNNELBARN_POST_LOGOUT_REDIRECT_URI"), cfg.PublicURL)
 
@@ -226,6 +210,7 @@ func Load() Config {
 	cfg.OIDCClientSecret = os.Getenv("FUNNELBARN_OIDC_CLIENT_SECRET")
 	cfg.OIDCRedirectURL = os.Getenv("FUNNELBARN_OIDC_REDIRECT_URL")
 	cfg.OIDCRequiredGroup = getenv("FUNNELBARN_OIDC_REQUIRED_GROUP", "funnelbarn-users")
+	cfg.OIDCRefreshGraceSeconds = envPositiveInt("FUNNELBARN_OIDC_REFRESH_GRACE_SECONDS", 3600)
 
 	cfg.GeoIPCityDB = os.Getenv("FUNNELBARN_GEOIP_CITY_DB")
 	cfg.GeoIPASNDB = os.Getenv("FUNNELBARN_GEOIP_ASN_DB")
@@ -276,6 +261,28 @@ func getenv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// envPositiveInt reads an integer env var, falling back to def for unset,
+// unparseable, or non-positive values.
+func envPositiveInt(key string, def int) int {
+	if raw := os.Getenv(key); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	return def
+}
+
+// envNonNegativeInt reads an integer env var, falling back to def for unset,
+// unparseable, or negative values (0 is a valid "disabled" setting).
+func envNonNegativeInt(key string, def int) int {
+	if raw := os.Getenv(key); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
+			return parsed
+		}
+	}
+	return def
 }
 
 // defaultPostLogoutRedirectURI resolves the IAMBarn post-logout redirect: an

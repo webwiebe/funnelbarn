@@ -43,14 +43,11 @@ func playgroundFlag(t *testing.T, srv *Server, store *repository.Store, slug str
 	if err != nil {
 		t.Fatalf("CreateFlag: %v", err)
 	}
-	// Mint a session token once and derive both the cookie and the matching
-	// CSRF token from it — they have to come from the same token because the
-	// CSRF check on the server side computes CSRFToken(cookie.Value).
-	token, expires, err := srv.sessionManager.Create("test-user")
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	return p, flag, auth.SessionCookie(token, expires, false), auth.CSRFToken(token)
+	// Mint a session once and derive both the cookie and the matching CSRF
+	// token from it — they have to come from the same token because the CSRF
+	// check on the server side computes CSRFToken(cookie.Value).
+	cookie := sessionCookieFor(t, srv, "test-user")
+	return p, flag, cookie, srv.sessionManager.CSRFToken(cookie.Value)
 }
 
 func TestPlaygroundEvaluate_HappyPath(t *testing.T) {
@@ -164,9 +161,8 @@ func TestPlaygroundEvaluate_ContextSplitsEvenly(t *testing.T) {
 		Status:         "active",
 	})
 
-	token, expires, _ := srv.sessionManager.Create("test-user")
-	cookie := auth.SessionCookie(token, expires, false)
-	csrf := auth.CSRFToken(token)
+	cookie := sessionCookieFor(t, srv, "test-user")
+	csrf := srv.sessionManager.CSRFToken(cookie.Value)
 
 	// 50 distinct user IDs — overwhelmingly improbable to all bucket to the
 	// same variant if the context is being honored.

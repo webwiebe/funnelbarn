@@ -7,19 +7,16 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
-// sessionAndCSRF mints a session token + matching CSRF for a server with auth
-// enabled. Both must come from the same token (server derives CSRF from cookie).
+// sessionAndCSRF mints a session (cookie + server-side row) + matching CSRF
+// for a server with auth enabled. Both must come from the same token (server
+// derives CSRF from cookie.Value with the session secret).
 func sessionAndCSRF(t *testing.T, srv *Server, username string) (*http.Cookie, string) {
 	t.Helper()
-	token, expires, err := srv.sessionManager.Create(username)
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	return auth.SessionCookie(token, expires, false), auth.CSRFToken(token)
+	cookie := sessionCookieFor(t, srv, username)
+	return cookie, srv.sessionManager.CSRFToken(cookie.Value)
 }
 
 func TestHandleListFlags_Empty(t *testing.T) {

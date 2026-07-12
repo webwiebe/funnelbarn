@@ -57,7 +57,7 @@ describe('Login', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     // Default: no SSO configured — show the local form.
-    mockGetClientConfig.mockResolvedValue({ iambarn_enabled: false })
+    mockGetClientConfig.mockResolvedValue({})
   })
 
   it('renders the sign-in form', async () => {
@@ -139,7 +139,7 @@ describe('Login', () => {
   })
 
   it('does not render the form when SSO is configured', async () => {
-    mockGetClientConfig.mockResolvedValue({ iambarn_enabled: true })
+    mockGetClientConfig.mockResolvedValue({ oidc: { enabled: true, loginURL: '/api/v1/oidc/login' } })
     renderLogin()
     // Spinner or redirect view — form inputs must not be present.
     await waitFor(() =>

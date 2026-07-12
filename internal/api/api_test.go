@@ -70,6 +70,7 @@ func newTestServer(t *testing.T) (*Server, *repository.Store) {
 		Widgets:             service.NewWidgetService(store),
 		UserAuth:            userAuth,
 		SessionManager:      sm,
+		WebSessions:         store,
 		SessionSecret:       "test-secret",
 		PublicURL:           "http://localhost",
 		LoginRatePerMinute:  1000,
@@ -106,6 +107,7 @@ func newAuthedServer(t *testing.T) (*Server, *repository.Store) {
 		Widgets:             service.NewWidgetService(store),
 		UserAuth:            userAuth,
 		SessionManager:      sm,
+		WebSessions:         store,
 		SessionSecret:       "test-secret",
 		PublicURL:           "http://localhost",
 		LoginRatePerMinute:  1000,
@@ -144,6 +146,7 @@ func TestRequireSession_FailsClosedWithLocalUsers(t *testing.T) {
 		Widgets:            service.NewWidgetService(store),
 		UserAuth:           userAuth,
 		SessionManager:     sm,
+		WebSessions:        store,
 		LocalUsersExist:    true, // e.g. created via `funnelbarn user create`
 		SessionSecret:      "test-secret",
 		PublicURL:          "http://localhost",
@@ -167,14 +170,35 @@ func TestRequireSession_FailsClosedWithLocalUsers(t *testing.T) {
 	}
 }
 
-// sessionCookieFor creates a valid session cookie for the given server.
+// sessionCookieFor mints a valid local session (cookie + server-side row) for
+// the given server. The returned cookie's opaque handle maps to a web_sessions
+// row keyed by its SHA-256.
 func sessionCookieFor(t *testing.T, srv *Server, username string) *http.Cookie {
 	t.Helper()
-	token, expires, err := srv.sessionManager.Create(username)
+	cookie, _ := sessionWithRow(t, srv, username)
+	return cookie
+}
+
+// sessionWithRow mints a local session and returns both the cookie and the
+// session row's id hash (for tests asserting on the row itself).
+func sessionWithRow(t *testing.T, srv *Server, username string) (*http.Cookie, string) {
+	t.Helper()
+	token, expires, err := srv.sessionManager.Create()
 	if err != nil {
-		t.Fatalf("Create session: %v", err)
+		t.Fatalf("Create session token: %v", err)
 	}
-	return auth.SessionCookie(token, expires, false)
+	idHash := auth.HashSessionToken(token)
+	err = srv.webSessions.CreateWebSession(context.Background(), repository.WebSession{
+		IDHash:            idHash,
+		Username:          username,
+		AuthMethod:        "local",
+		CreatedAt:         time.Now().Unix(),
+		AbsoluteExpiresAt: expires.Unix(),
+	})
+	if err != nil {
+		t.Fatalf("CreateWebSession: %v", err)
+	}
+	return auth.SessionCookie(token, expires, false), idHash
 }
 
 func postJSONWithCSRF(t *testing.T, srv *Server, path string, body any, cookie *http.Cookie, csrfToken string) *httptest.ResponseRecorder {

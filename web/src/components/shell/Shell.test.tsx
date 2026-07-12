@@ -66,14 +66,12 @@ describe('Shell', () => {
     mockGetClientConfig.mockResolvedValue({
       bugbarn_endpoint: '',
       bugbarn_ingest_key: '',
-      iambarn_enabled: false,
     })
   })
 
   const oidcConfig = {
     bugbarn_endpoint: '',
     bugbarn_ingest_key: '',
-    iambarn_enabled: true,
     iambarn: {
       server_url: 'https://iam.test.wiebe.xyz',
       client_id: 'ibc_test',

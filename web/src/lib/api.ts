@@ -1,6 +1,7 @@
 // Typed API client with 401 interceptor and BugBarn 5xx reporting
 import { reportError } from './bugbarn'
 import type { IambarnConfig } from './iambarn-config'
+import type { LogoutResponse } from './auth-types'
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -111,7 +112,7 @@ export const api = {
     request<User>('/api/v1/login', { method: 'POST', body: JSON.stringify(body) }),
 
   logout: () =>
-    request<void>('/api/v1/logout', { method: 'POST' }),
+    request<LogoutResponse | undefined>('/api/v1/logout', { method: 'POST' }),
 
   me: () =>
     request<User>('/api/v1/me'),
@@ -726,7 +727,6 @@ export interface ClientConfig {
   funnelbarn_project?: string
   funnelbarn_recording?: boolean
   funnelbarn_recording_rate?: number
-  iambarn_enabled: boolean
   local_auth_available?: boolean
   iambarn?: IambarnConfig
   oidc?: {

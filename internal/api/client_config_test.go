@@ -7,12 +7,10 @@ import (
 	"testing"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
-	"github.com/wiebe-xyz/funnelbarn/internal/iambarn"
 )
 
 type clientConfigResp struct {
-	IAMBarnEnabled bool `json:"iambarn_enabled"`
-	IAMBarn        struct {
+	IAMBarn struct {
 		ProfileURL            string `json:"profile_url,omitempty"`
 		ServerURL             string `json:"server_url,omitempty"`
 		ClientID              string `json:"client_id,omitempty"`
@@ -40,34 +38,40 @@ func getClientConfig(t *testing.T, srv *Server) clientConfigResp {
 	return out
 }
 
-func TestClientConfig_NoIAMBarnConfigured(t *testing.T) {
+func testOIDCClientConfig(issuer string) *auth.OIDCClient {
+	return auth.NewOIDCClient(auth.OIDCConfig{
+		Issuer:       issuer,
+		ClientID:     "fb_conf_client",
+		ClientSecret: "secret",
+		RedirectURL:  "https://funnelbarn.test/api/v1/oidc/callback",
+	})
+}
+
+func TestClientConfig_NoOIDCConfigured(t *testing.T) {
 	srv, _ := newTestServer(t)
 	got := getClientConfig(t, srv)
-	if got.IAMBarn.ProfileURL != "" {
-		t.Errorf("expected empty profile_url, got %q", got.IAMBarn.ProfileURL)
+	if got.IAMBarn.ProfileURL != "" || got.IAMBarn.ServerURL != "" || got.IAMBarn.ClientID != "" || got.IAMBarn.WidgetURL != "" {
+		t.Errorf("expected no iambarn fields without OIDC, got %+v", got.IAMBarn)
+	}
+	if got.OIDC.Enabled {
+		t.Error("expected oidc.enabled = false")
 	}
 }
 
-func TestClientConfig_LegacyIAMBarnProviderSetsProfileURL(t *testing.T) {
-	srv, _ := newTestServer(t)
-	srv.iambarnProvider = iambarn.New("https://iam.test.wiebe.xyz/", "test-client", "https://funnelbarn.test/cb")
-	got := getClientConfig(t, srv)
-	want := "https://iam.test.wiebe.xyz/admin#profile"
-	if got.IAMBarn.ProfileURL != want {
-		t.Errorf("profile_url: got %q, want %q", got.IAMBarn.ProfileURL, want)
-	}
-}
-
+// TestClientConfig_ExposesWidgetFields verifies the hosted IAMBarn widget
+// still gets issuer + client_id + post-logout URI from client-config now that
+// they derive from the confidential OIDC client (bugbarn feeds a confidential
+// client id to the same widget).
 func TestClientConfig_ExposesWidgetFields(t *testing.T) {
 	srv, _ := newTestServer(t)
-	srv.iambarnProvider = iambarn.New("https://iam.test.wiebe.xyz/", "ibc_test123", "https://funnelbarn.test/cb")
+	srv.oidc = testOIDCClientConfig("https://iam.test.wiebe.xyz/")
 	srv.postLogoutRedirect = "https://funnelbarn.test/api/v1/auth/oidc/logged-out"
 
 	got := getClientConfig(t, srv)
 	if got.IAMBarn.ServerURL != "https://iam.test.wiebe.xyz" {
 		t.Errorf("server_url: got %q", got.IAMBarn.ServerURL)
 	}
-	if got.IAMBarn.ClientID != "ibc_test123" {
+	if got.IAMBarn.ClientID != "fb_conf_client" {
 		t.Errorf("client_id: got %q", got.IAMBarn.ClientID)
 	}
 	if got.IAMBarn.WidgetURL != "https://iam.test.wiebe.xyz/widget/iambarn-widget.iife.js" {
@@ -78,28 +82,17 @@ func TestClientConfig_ExposesWidgetFields(t *testing.T) {
 	}
 }
 
-func TestClientConfig_NoWidgetFieldsWhenIAMBarnUnconfigured(t *testing.T) {
+func TestClientConfig_OIDCSetsProfileURLAndLoginURL(t *testing.T) {
 	srv, _ := newTestServer(t)
+	srv.oidc = testOIDCClientConfig("https://iam.staging.wiebe.xyz")
 	got := getClientConfig(t, srv)
-	if got.IAMBarn.ServerURL != "" || got.IAMBarn.ClientID != "" || got.IAMBarn.WidgetURL != "" {
-		t.Errorf("expected no widget fields, got %+v", got.IAMBarn)
-	}
-}
-
-func TestClientConfig_ConfidentialOIDCSetsProfileURL(t *testing.T) {
-	srv, _ := newTestServer(t)
-	srv.oidc = auth.NewOIDCClient(auth.OIDCConfig{
-		Issuer:       "https://iam.staging.wiebe.xyz",
-		ClientID:     "fb",
-		ClientSecret: "secret",
-		RedirectURL:  "https://funnelbarn.staging/cb",
-	})
-	got := getClientConfig(t, srv)
-	want := "https://iam.staging.wiebe.xyz/admin#profile"
-	if got.IAMBarn.ProfileURL != want {
+	if want := "https://iam.staging.wiebe.xyz/admin#profile"; got.IAMBarn.ProfileURL != want {
 		t.Errorf("profile_url: got %q, want %q", got.IAMBarn.ProfileURL, want)
 	}
 	if !got.OIDC.Enabled {
-		t.Errorf("expected oidc.enabled = true")
+		t.Error("expected oidc.enabled = true")
+	}
+	if got.OIDC.LoginURL != "/api/v1/oidc/login" {
+		t.Errorf("loginURL: got %q", got.OIDC.LoginURL)
 	}
 }

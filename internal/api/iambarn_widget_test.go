@@ -1,20 +1,23 @@
 package api
 
 import (
+	"context"
+	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/iambarn"
+	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 )
 
 // TestOIDCLoggedOut verifies the IAMBarn RP-initiated logout landing endpoint
-// clears the local session (revoking it server-side and expiring the cookies)
-// and redirects to /login.
+// destroys the local session (deleting the server-side row and expiring the
+// cookies) and redirects to /login.
 func TestOIDCLoggedOut(t *testing.T) {
 	srv, _ := newTestServer(t)
-	cookie := sessionCookieFor(t, srv, "alice")
+	cookie, idHash := sessionWithRow(t, srv, "alice")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/logged-out", nil)
 	req.AddCookie(cookie)
@@ -35,20 +38,20 @@ func TestOIDCLoggedOut(t *testing.T) {
 			cleared[c.Name] = true
 		}
 	}
-	for _, name := range []string{"funnelbarn_session", "funnelbarn_auth_method"} {
+	for _, name := range []string{"funnelbarn_session", "funnelbarn_csrf", "funnelbarn_auth_method"} {
 		if !cleared[name] {
 			t.Errorf("expected cookie %q to be cleared", name)
 		}
 	}
 
-	// The revoked session must no longer validate.
-	if _, ok := srv.sessionManager.Valid(cookie.Value); ok {
-		t.Errorf("expected session to be revoked after logout")
+	// The session row must be gone — row deletion IS the revocation.
+	if _, err := srv.webSessions.GetWebSession(context.Background(), idHash); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("expected session row to be deleted, got err=%v", err)
 	}
 }
 
 // TestSecurityCSP_StrictWithoutIAMBarn checks the default CSP is locked to
-// 'self' when no IAMBarn issuer is configured.
+// 'self' when no OIDC issuer is configured.
 func TestSecurityCSP_StrictWithoutIAMBarn(t *testing.T) {
 	srv, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
@@ -64,13 +67,18 @@ func TestSecurityCSP_StrictWithoutIAMBarn(t *testing.T) {
 	}
 }
 
-// TestSecurityCSP_AllowsIAMBarnOrigin checks the issuer origin is whitelisted in
-// script-src/connect-src/img-src when IAMBarn is configured at construction.
+// TestSecurityCSP_AllowsIAMBarnOrigin checks the issuer origin is whitelisted
+// in script-src/connect-src/img-src when OIDC is configured at construction —
+// the hosted IAMBarn components need it to load their bundle.
 func TestSecurityCSP_AllowsIAMBarnOrigin(t *testing.T) {
-	srv, _ := newTestServer(t)
-	// Rebuild the security middleware as NewServer would, with an issuer set.
-	srv.iambarnProvider = iambarn.New("https://iam.test.wiebe.xyz/", "ibc", "https://fb/cb")
-	srv.securityMW = securityHeaders(originOf(srv.iambarnIssuer()))
+	srv, _ := fullServer(t, func(cfg *ServerConfig) {
+		cfg.OIDC = auth.NewOIDCClient(auth.OIDCConfig{
+			Issuer:       "https://iam.test.wiebe.xyz/",
+			ClientID:     "ibc",
+			ClientSecret: "sek",
+			RedirectURL:  "https://fb/cb",
+		})
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 	w := httptest.NewRecorder()

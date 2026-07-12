@@ -218,10 +218,10 @@ func TestUserAuthenticator_Username(t *testing.T) {
 // SessionManager
 // ---------------------------------------------------------------------------
 
-func TestSessionManager_CreateAndValidate(t *testing.T) {
+func TestSessionManager_CreateOpaqueToken(t *testing.T) {
 	sm := NewSessionManager("test-secret-key", time.Hour)
 
-	token, expires, err := sm.Create("alice")
+	token, expires, err := sm.Create()
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -231,130 +231,56 @@ func TestSessionManager_CreateAndValidate(t *testing.T) {
 	if expires.IsZero() {
 		t.Fatal("expected non-zero expiry")
 	}
-
-	username, ok := sm.Valid(token)
-	if !ok {
-		t.Fatal("expected Valid==true for fresh token")
+	if got := time.Until(expires); got < 55*time.Minute || got > 65*time.Minute {
+		t.Errorf("expiry should be ~1h out, got %v", got)
 	}
-	if username != "alice" {
-		t.Errorf("username: want %q, got %q", "alice", username)
+	// Opaque handles must be unique and carry no structure the old
+	// payload.signature scheme had.
+	other, _, _ := sm.Create()
+	if token == other {
+		t.Error("two session tokens must never collide")
 	}
-}
-
-func TestSessionManager_Revoke(t *testing.T) {
-	sm := NewSessionManager("test-secret-key", time.Hour)
-
-	token, _, err := sm.Create("alice")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if _, ok := sm.Valid(token); !ok {
-		t.Fatal("token should be valid before revocation")
-	}
-
-	sm.Revoke(token)
-
-	if _, ok := sm.Valid(token); ok {
-		t.Error("token should be invalid after revocation")
-	}
-	// A different token for the same user must still be valid.
-	other, _, _ := sm.Create("alice")
-	if _, ok := sm.Valid(other); !ok {
-		t.Error("a freshly issued token must not be affected by another token's revocation")
+	if strings.Contains(token, ".") {
+		t.Errorf("opaque handle must not look like a signed token: %q", token)
 	}
 }
 
-func TestSessionManager_RevokePersistAndReload(t *testing.T) {
-	var persisted = map[string]time.Time{}
-	sm := NewSessionManager("test-secret-key", time.Hour)
-	sm.SetPersistRevocation(func(hash string, exp time.Time) { persisted[hash] = exp })
-
-	token, _, _ := sm.Create("bob")
-	sm.Revoke(token)
-	if len(persisted) != 1 {
-		t.Fatalf("expected 1 persisted revocation, got %d", len(persisted))
+func TestSessionManager_DefaultTTL(t *testing.T) {
+	sm := NewSessionManager("secret", 0)
+	if sm.TTL() != 12*time.Hour {
+		t.Errorf("default TTL: want 12h, got %v", sm.TTL())
 	}
-
-	// Simulate a restart: a fresh manager (same secret) reloads the revoked set.
-	fresh := NewSessionManager("test-secret-key", time.Hour)
-	fresh.LoadRevoked(persisted)
-	if _, ok := fresh.Valid(token); ok {
-		t.Error("revocation must survive a restart via LoadRevoked")
-	}
-}
-
-func TestSessionManager_ExpiredToken(t *testing.T) {
-	sm := NewSessionManager("secret", time.Hour)
-	// Override `now` to be in the future relative to token creation.
-	pastSM := &SessionManager{
-		secret: []byte("secret"),
-		ttl:    -time.Second, // negative TTL → already expired
-		now:    time.Now,
-	}
-
-	token, _, err := pastSM.Create("alice")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	_, ok := sm.Valid(token)
-	if ok {
-		t.Error("expected expired token to be invalid")
-	}
-}
-
-func TestSessionManager_WrongSecret(t *testing.T) {
-	sm1 := NewSessionManager("secret-a", time.Hour)
-	sm2 := NewSessionManager("secret-b", time.Hour)
-
-	token, _, _ := sm1.Create("alice")
-	_, ok := sm2.Valid(token)
-	if ok {
-		t.Error("token signed with different secret should be invalid")
-	}
-}
-
-func TestSessionManager_TamperedToken(t *testing.T) {
-	sm := NewSessionManager("secret", time.Hour)
-	token, _, _ := sm.Create("alice")
-
-	// Tamper with the token by appending a character.
-	tampered := token + "x"
-	_, ok := sm.Valid(tampered)
-	if ok {
-		t.Error("tampered token should be invalid")
-	}
-}
-
-func TestSessionManager_EmptyToken(t *testing.T) {
-	sm := NewSessionManager("secret", time.Hour)
-	_, ok := sm.Valid("")
-	if ok {
-		t.Error("empty token should be invalid")
+	var nilSM *SessionManager
+	if nilSM.TTL() != 0 {
+		t.Error("nil SessionManager.TTL should be 0")
 	}
 }
 
 func TestSessionManager_NilManager(t *testing.T) {
 	var sm *SessionManager
-	_, ok := sm.Valid("anything")
-	if ok {
-		t.Error("nil SessionManager.Valid should return false")
-	}
-	_, _, err := sm.Create("alice")
-	if err == nil {
+	if _, _, err := sm.Create(); err == nil {
 		t.Error("nil SessionManager.Create should return error")
+	}
+	if sm.CSRFToken("tok") != "" {
+		t.Error("nil SessionManager.CSRFToken should be empty")
 	}
 }
 
-func TestSessionManager_RandomSecretWhenEmpty(t *testing.T) {
-	sm := NewSessionManager("", time.Hour)
-	token, _, err := sm.Create("bob")
-	if err != nil {
-		t.Fatalf("Create with random secret: %v", err)
+func TestHashSessionToken(t *testing.T) {
+	h1 := HashSessionToken("token-a")
+	h2 := HashSessionToken("token-a")
+	if h1 != h2 {
+		t.Error("HashSessionToken not deterministic")
 	}
-	username, ok := sm.Valid(token)
-	if !ok || username != "bob" {
-		t.Error("token from randomly-seeded manager should be valid within same instance")
+	if len(h1) != 64 {
+		t.Errorf("expected 64 hex chars (sha256), got %d", len(h1))
+	}
+	if HashSessionToken("token-b") == h1 {
+		t.Error("different tokens must hash differently")
+	}
+	// Whitespace-trimmed so a cookie value with stray spaces still matches.
+	if HashSessionToken(" token-a ") != h1 {
+		t.Error("HashSessionToken must trim whitespace")
 	}
 }
 
@@ -390,8 +316,9 @@ func TestClearSessionCookie(t *testing.T) {
 }
 
 func TestCSRFToken_Deterministic(t *testing.T) {
-	t1 := CSRFToken("session-token")
-	t2 := CSRFToken("session-token")
+	sm := NewSessionManager("csrf-secret", time.Hour)
+	t1 := sm.CSRFToken("session-token")
+	t2 := sm.CSRFToken("session-token")
 	if t1 != t2 {
 		t.Error("CSRFToken not deterministic")
 	}
@@ -401,21 +328,36 @@ func TestCSRFToken_Deterministic(t *testing.T) {
 }
 
 func TestCSRFToken_DifferentInputs(t *testing.T) {
-	t1 := CSRFToken("token-a")
-	t2 := CSRFToken("token-b")
+	sm := NewSessionManager("csrf-secret", time.Hour)
+	t1 := sm.CSRFToken("token-a")
+	t2 := sm.CSRFToken("token-b")
 	if t1 == t2 {
 		t.Error("different session tokens should yield different CSRF tokens")
 	}
 }
 
+// TestCSRFToken_KeyedBySessionSecret pins the fix for the hard-coded "csrf"
+// HMAC key: the token must depend on the session secret, so an attacker who
+// knows the algorithm but not the secret cannot compute it.
+func TestCSRFToken_KeyedBySessionSecret(t *testing.T) {
+	smA := NewSessionManager("secret-a-is-long-enough-000000000", time.Hour)
+	smB := NewSessionManager("secret-b-is-long-enough-000000000", time.Hour)
+	if smA.CSRFToken("same-session-token") == smB.CSRFToken("same-session-token") {
+		t.Error("CSRF token must be keyed by the session secret, not a constant")
+	}
+}
+
 func TestCSRFCookie(t *testing.T) {
 	expires := time.Now().Add(time.Hour)
-	c := CSRFCookie("tok", expires, false)
+	c := CSRFCookie("csrf-value", expires, false)
 	if c.HttpOnly {
 		t.Error("CSRF cookie must NOT be HttpOnly (needs JS access)")
 	}
 	if c.Name != "funnelbarn_csrf" {
 		t.Errorf("cookie name: got %q", c.Name)
+	}
+	if c.Value != "csrf-value" {
+		t.Errorf("cookie value: got %q", c.Value)
 	}
 }
 

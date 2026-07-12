@@ -32,7 +32,6 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		FunnelbarnProject       string     `json:"funnelbarn_project,omitempty"`
 		FunnelbarnRecording     bool       `json:"funnelbarn_recording,omitempty"`
 		FunnelbarnRecordingRate float64    `json:"funnelbarn_recording_rate,omitempty"`
-		IAMBarnEnabled          bool       `json:"iambarn_enabled"`
 		IAMBarn                 iambarnOut `json:"iambarn,omitempty"`
 		OIDC                    oidcOut    `json:"oidc"`
 		LocalAuthAvailable      bool       `json:"local_auth_available"`
@@ -44,7 +43,6 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		FunnelbarnEndpoint: s.publicURL,
 		FunnelbarnAPIKey:   s.dogfoodAPIKey,
 		FunnelbarnProject:  s.dogfoodProject,
-		IAMBarnEnabled:     s.iambarnFlagEnabled(r.Context(), map[string]any{"user_agent": r.Header.Get("User-Agent")}),
 		LocalAuthAvailable: s.userAuth != nil && s.userAuth.Enabled(),
 	}
 
@@ -77,28 +75,22 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// iambarnIssuer returns the configured iambarn issuer URL from either the
-// new confidential-client OIDC config or the legacy IAMBarn PKCE provider.
-// Returns "" when neither path is configured.
+// iambarnIssuer returns the iambarn issuer URL from the confidential OIDC
+// config, or "" when OIDC is not configured.
 func (s *Server) iambarnIssuer() string {
 	if s.oidc != nil {
-		if iss := s.oidc.Config().Issuer; iss != "" {
-			return iss
-		}
-	}
-	if s.iambarnProvider != nil {
-		return s.iambarnProvider.Issuer()
+		return s.oidc.Config().Issuer
 	}
 	return ""
 }
 
-// iambarnClientID returns the public browser client id used by the hosted
-// IAMBarn web components. It comes from the IAMBarn PKCE provider (a registered
-// public client); the confidential-client OIDC flow is not a browser client and
-// is intentionally not used here. Returns "" when the PKCE provider is unset.
+// iambarnClientID returns the client id the hosted IAMBarn web components
+// present to the IdP. The widgets only need issuer + client id + post-logout
+// URI, and (like bugbarn) they work with the confidential client's id — they
+// never see its secret.
 func (s *Server) iambarnClientID() string {
-	if s.iambarnProvider != nil {
-		return s.iambarnProvider.ClientID()
+	if s.oidc != nil {
+		return s.oidc.Config().ClientID
 	}
 	return ""
 }

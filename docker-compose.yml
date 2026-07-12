@@ -10,6 +10,9 @@ services:
       - "8080:8080"
     environment:
       FUNNELBARN_ADDR: :8080
+      # Local dev tier: plain-http cookies (no forced Secure flag) and no
+      # production fail-closed startup checks.
+      FUNNELBARN_ENVIRONMENT: development
       FUNNELBARN_API_KEY: local-dev-key
       FUNNELBARN_SPOOL_DIR: /var/lib/funnelbarn/spool
       FUNNELBARN_DB_PATH: /var/lib/funnelbarn/funnelbarn.db

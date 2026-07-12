@@ -8,11 +8,10 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -164,32 +163,26 @@ func (a *UserAuthenticator) Username() string {
 // Session management
 // --------------------------------------------------------------------------
 
-// SessionManager creates and validates HMAC-signed session tokens.
+// SessionManager mints opaque session handles for token-bound server-side
+// sessions (the web_sessions table): the browser cookie holds only a random
+// handle, and the server keys the session row by the handle's SHA-256.
+// Nothing about the session (username, expiry, IdP tokens) lives client-side,
+// so deleting the row revokes the session instantly.
 //
-// Tokens are stateless (nothing per-token is stored on issue), but logout must
-// still invalidate a token before its natural expiry. We keep an in-memory set
-// of revoked token hashes — checked on the hot Valid() path with no DB hit — and
-// an optional persist hook so a revocation survives a process restart (the set
-// is repopulated at startup via LoadRevoked).
+// The manager also owns the session secret, which keys the CSRF-token HMAC.
 type SessionManager struct {
 	secret []byte
 	ttl    time.Duration
 	now    func() time.Time
-
-	mu      sync.Mutex
-	revoked map[string]int64 // token hash -> expiry unix seconds
-	// persist, when set, durably records a revocation (hash, expiry). Failures
-	// are the caller's concern; the in-memory set is authoritative at runtime.
-	persist func(tokenHash string, expiresAt time.Time)
 }
 
-type sessionClaims struct {
-	Username string `json:"u"`
-	Expires  int64  `json:"e"`
-	Nonce    string `json:"n"`
-}
+// sessionTokenBytes is the entropy of an opaque session handle. 32 bytes =
+// 256 bits, far beyond brute-force reach for a 12h-lived credential.
+const sessionTokenBytes = 32
 
 // NewSessionManager creates a SessionManager with the given secret and TTL.
+// The TTL is the ABSOLUTE session cap — with OIDC, real security tracks the
+// ~15m access token via the refresh gate; this is only the hard ceiling.
 func NewSessionManager(secret string, ttl time.Duration) *SessionManager {
 	if ttl <= 0 {
 		ttl = 12 * time.Hour
@@ -199,154 +192,55 @@ func NewSessionManager(secret string, ttl time.Duration) *SessionManager {
 		secret = randomSecret()
 	}
 	return &SessionManager{
-		secret:  []byte(secret),
-		ttl:     ttl,
-		now:     time.Now,
-		revoked: make(map[string]int64),
+		secret: []byte(secret),
+		ttl:    ttl,
+		now:    time.Now,
 	}
 }
 
-// SetPersistRevocation installs a hook used to durably store revocations so they
-// survive a restart. Call once at startup, before serving requests.
-func (m *SessionManager) SetPersistRevocation(fn func(tokenHash string, expiresAt time.Time)) {
+// TTL returns the absolute session lifetime.
+func (m *SessionManager) TTL() time.Duration {
 	if m == nil {
-		return
+		return 0
 	}
-	m.mu.Lock()
-	m.persist = fn
-	m.mu.Unlock()
+	return m.ttl
 }
 
-// LoadRevoked seeds the in-memory revocation set from durable storage at startup.
-func (m *SessionManager) LoadRevoked(hashes map[string]time.Time) {
-	if m == nil {
-		return
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for h, exp := range hashes {
-		m.revoked[h] = exp.Unix()
-	}
-}
-
-// Revoke invalidates a session token immediately (and durably, if a persist hook
-// is installed). Safe to call with an already-expired or malformed token.
-func (m *SessionManager) Revoke(token string) {
-	if m == nil || strings.TrimSpace(token) == "" {
-		return
-	}
-	// Determine the token's own expiry so the revocation can be pruned later.
-	exp := m.now().UTC().Add(m.ttl)
-	if _, claims, ok := m.parse(token); ok {
-		exp = time.Unix(claims.Expires, 0).UTC()
-	}
-	h := hashToken(token)
-
-	m.mu.Lock()
-	m.pruneLocked()
-	m.revoked[h] = exp.Unix()
-	persist := m.persist
-	m.mu.Unlock()
-
-	if persist != nil {
-		persist(h, exp)
-	}
-}
-
-// isRevoked reports whether the token hash is in the (non-expired) revoked set.
-func (m *SessionManager) isRevoked(token string) bool {
-	h := hashToken(token)
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	exp, ok := m.revoked[h]
-	if !ok {
-		return false
-	}
-	if exp <= m.now().UTC().Unix() {
-		delete(m.revoked, h)
-		return false
-	}
-	return true
-}
-
-// pruneLocked drops expired entries. Caller must hold m.mu.
-func (m *SessionManager) pruneLocked() {
-	now := m.now().UTC().Unix()
-	for h, exp := range m.revoked {
-		if exp <= now {
-			delete(m.revoked, h)
-		}
-	}
-}
-
-func hashToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
-}
-
-// Create issues a new signed session token for username.
-func (m *SessionManager) Create(username string) (string, time.Time, error) {
+// Create mints a fresh opaque session handle and returns it with its absolute
+// expiry. The value is random — it carries no claims and cannot be validated
+// offline; the server must look up its hash in the web_sessions table.
+func (m *SessionManager) Create() (string, time.Time, error) {
 	if m == nil {
 		return "", time.Time{}, errors.New("session manager is nil")
 	}
+	b := make([]byte, sessionTokenBytes)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand failure would mean a predictable session handle —
+		// refuse instead of degrading.
+		return "", time.Time{}, fmt.Errorf("session token entropy: %w", err)
+	}
 	expires := m.now().UTC().Add(m.ttl)
-	claims := sessionClaims{
-		Username: username,
-		Expires:  expires.Unix(),
-		Nonce:    randomSecret(),
-	}
-	payload, err := json.Marshal(claims)
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	signature := sign(m.secret, payload)
-	token := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(signature)
-	return token, expires, nil
+	return base64.RawURLEncoding.EncodeToString(b), expires, nil
 }
 
-// Valid validates a session token and returns the username.
-func (m *SessionManager) Valid(token string) (string, bool) {
-	_, claims, ok := m.parse(token)
-	if !ok {
-		return "", false
+// CSRFToken derives a CSRF token from a session token using HMAC-SHA256 keyed
+// with the session secret, so a token cannot be forged without it.
+func (m *SessionManager) CSRFToken(sessionToken string) string {
+	if m == nil {
+		return ""
 	}
-	// Reject tokens that were explicitly revoked (logout) even though their
-	// signature and expiry are still valid.
-	if m.isRevoked(token) {
-		return "", false
-	}
-	return claims.Username, true
+	mac := hmac.New(sha256.New, m.secret)
+	mac.Write([]byte(sessionToken))
+	sum := mac.Sum(nil)
+	return hex.EncodeToString(sum[:16])
 }
 
-// parse verifies a token's signature and expiry and returns its raw payload and
-// decoded claims. ok is false for any malformed, mis-signed, expired, or
-// empty-username token. It does NOT consult the revocation set.
-func (m *SessionManager) parse(token string) (payload []byte, claims sessionClaims, ok bool) {
-	if m == nil || strings.TrimSpace(token) == "" {
-		return nil, sessionClaims{}, false
-	}
-	parts := strings.Split(token, ".")
-	if len(parts) != 2 {
-		return nil, sessionClaims{}, false
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
-		return nil, sessionClaims{}, false
-	}
-	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, sessionClaims{}, false
-	}
-	if !hmac.Equal(signature, sign(m.secret, payload)) {
-		return nil, sessionClaims{}, false
-	}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return nil, sessionClaims{}, false
-	}
-	if claims.Expires <= m.now().UTC().Unix() || claims.Username == "" {
-		return nil, sessionClaims{}, false
-	}
-	return payload, claims, true
+// HashSessionToken derives the web_sessions primary key from a cookie value.
+// Storing only the SHA-256 means a leaked database (or backup) contains no
+// usable session credentials.
+func HashSessionToken(token string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
+	return hex.EncodeToString(sum[:])
 }
 
 // SessionCookie returns an HttpOnly session cookie.
@@ -375,12 +269,14 @@ func ClearSessionCookie(secure bool) *http.Cookie {
 	}
 }
 
-// CSRFCookie returns the companion CSRF cookie for a session token.
-// HttpOnly=false so JavaScript can read and attach it as X-FunnelBarn-CSRF.
-func CSRFCookie(sessionToken string, expires time.Time, secure bool) *http.Cookie {
+// CSRFCookie returns the companion CSRF cookie for a session. csrfToken is
+// the value derived via SessionManager.CSRFToken (HMAC keyed with the session
+// secret). HttpOnly=false so JavaScript can read and attach it as
+// X-FunnelBarn-CSRF.
+func CSRFCookie(csrfToken string, expires time.Time, secure bool) *http.Cookie {
 	return &http.Cookie{
 		Name:     "funnelbarn_csrf",
-		Value:    CSRFToken(sessionToken),
+		Value:    csrfToken,
 		Path:     "/",
 		Expires:  expires,
 		HttpOnly: false,
@@ -400,20 +296,6 @@ func ClearCSRFCookie(secure bool) *http.Cookie {
 		SameSite: http.SameSiteLaxMode,
 		Secure:   secure,
 	}
-}
-
-// CSRFToken derives a CSRF token from a session token using HMAC-SHA256.
-func CSRFToken(sessionToken string) string {
-	mac := hmac.New(sha256.New, []byte("csrf"))
-	mac.Write([]byte(sessionToken))
-	sum := mac.Sum(nil)
-	return hex.EncodeToString(sum[:16])
-}
-
-func sign(secret, payload []byte) []byte {
-	mac := hmac.New(sha256.New, secret)
-	mac.Write(payload)
-	return mac.Sum(nil)
 }
 
 func randomSecret() string {

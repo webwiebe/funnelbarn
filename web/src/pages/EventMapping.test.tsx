@@ -38,7 +38,6 @@ const mockApi = vi.hoisted(() => ({
   getClientConfig: vi.fn().mockResolvedValue({
     bugbarn_endpoint: '',
     bugbarn_ingest_key: '',
-    iambarn_enabled: false,
   }),
 }))
 

@@ -61,17 +61,23 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	secure := s.isSecureRequest(r)
 
-	token, expires, err := s.sessionManager.Create(body.Username)
-	if err != nil {
+	if s.sessionManager == nil || s.webSessions == nil {
+		slog.Error("login: session store not configured", "handled", false)
+		jsonError(w, "failed to create session", http.StatusInternalServerError)
+		return
+	}
+	// Local sessions get a row too (token columns NULL): one middleware, one
+	// revocation story — deleting the row logs the user out everywhere.
+	if _, err := s.issueWebSession(r.Context(), w, secure, repository.WebSession{
+		Username:   body.Username,
+		AuthMethod: "local",
+	}); err != nil {
 		slog.Error("failed to create session", "error", err, "handled", false)
 		jsonError(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}
-
-	http.SetCookie(w, auth.SessionCookie(token, expires, secure))
-	http.SetCookie(w, auth.CSRFCookie(token, expires, secure))
 
 	slog.InfoContext(r.Context(), "user login", "username", body.Username, "request_id", RequestIDFromContext(r.Context()))
 
@@ -80,21 +86,45 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// clearSession revokes the presented session token server-side and clears the
-// session, CSRF, and auth-method cookies. Shared by handleLogout (JSON API) and
+// clearSession destroys the presented session server-side and clears the
+// session, CSRF, and auth-method cookies. For OIDC sessions it also revokes
+// the refresh token at the issuer (best-effort) and returns the RP-initiated
+// logout URL ({issuer}/oauth2/end-session with id_token_hint) so the caller
+// can end the IdP session too. Shared by handleLogout (JSON API) and
 // handleOIDCLoggedOut (the IAMBarn RP-initiated logout landing endpoint).
-func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) {
-	// Revoke the presented session token server-side so it cannot be replayed
-	// before its natural expiry — clearing the cookie alone leaves a captured
-	// token valid.
-	if cookie, err := r.Cookie("funnelbarn_session"); err == nil && s.sessionManager != nil {
-		s.sessionManager.Revoke(cookie.Value)
+func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) (logoutURL string) {
+	if cookie, err := r.Cookie("funnelbarn_session"); err == nil && s.webSessions != nil {
+		idHash := auth.HashSessionToken(cookie.Value)
+		if ws, err := s.webSessions.GetWebSession(r.Context(), idHash); err == nil {
+			if ws.AuthMethod == "oidc" && s.oidc != nil {
+				// Best-effort: kill the token family server-side so a leaked
+				// refresh token dies with the session. Logout must succeed
+				// even when the IdP is unreachable.
+				if ws.RefreshToken != "" {
+					if err := s.oidc.RevokeRefreshToken(r.Context(), ws.RefreshToken); err != nil {
+						slog.WarnContext(r.Context(), "logout: revoke refresh token", "error", err)
+					}
+				}
+				if ws.IDToken != "" {
+					if u, err := s.oidc.EndSessionURL(ws.IDToken); err == nil {
+						logoutURL = u
+					} else {
+						slog.WarnContext(r.Context(), "logout: build end-session url", "error", err)
+					}
+				}
+			}
+			// Deleting the row IS the revocation — the opaque handle is
+			// worthless the moment the row is gone.
+			if err := s.webSessions.DeleteWebSession(r.Context(), idHash); err != nil {
+				slog.ErrorContext(r.Context(), "logout: delete session", "err", err, "handled", false)
+			}
+		}
 	}
 
-	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	secure := s.isSecureRequest(r)
 	http.SetCookie(w, auth.ClearSessionCookie(secure))
 	http.SetCookie(w, auth.ClearCSRFCookie(secure))
-	// Clear the auth-method hint set by the OIDC callbacks.
+	// Clear the auth-method hint set by the OIDC callback.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "funnelbarn_auth_method",
 		Value:    "",
@@ -103,24 +133,28 @@ func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) {
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
+	return logoutURL
 }
 
-// handleLogout clears the session cookie.
+// handleLogout destroys the session. For OIDC sessions the response carries a
+// logout_url the SPA must navigate to, completing the server-driven logout at
+// the IdP (RP-initiated logout with id_token_hint).
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	s.clearSession(w, r)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "logged out"})
+	logoutURL := s.clearSession(w, r)
+	resp := map[string]string{"status": "logged out"}
+	if logoutURL != "" {
+		resp["logout_url"] = logoutURL
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleMe returns the current user plus metadata useful for first-run detection.
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("funnelbarn_session")
-	if err != nil {
+	// requireSession already validated the session row and stashed the
+	// username in the context.
+	username := sessionUser(r.Context())
+	if username == "" {
 		jsonError(w, "not authenticated", http.StatusUnauthorized)
-		return
-	}
-	username, ok := s.sessionManager.Valid(cookie.Value)
-	if !ok {
-		jsonError(w, "session invalid", http.StatusUnauthorized)
 		return
 	}
 

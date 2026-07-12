@@ -32,6 +32,23 @@ func RequestIDFromContext(ctx context.Context) string {
 	return ""
 }
 
+const sessionUserKey contextKey = "session_user"
+
+// withSessionUser stores the authenticated session's username in the context.
+// Set by requireSession once the session row has been validated.
+func withSessionUser(ctx context.Context, username string) context.Context {
+	return context.WithValue(ctx, sessionUserKey, username)
+}
+
+// sessionUser retrieves the authenticated username, or "" when the request
+// was served without a session (dev pass-through).
+func sessionUser(ctx context.Context) string {
+	if u, ok := ctx.Value(sessionUserKey).(string); ok {
+		return u
+	}
+	return ""
+}
+
 // --------------------------------------------------------------------------
 // Security Headers Middleware
 // --------------------------------------------------------------------------
@@ -186,6 +203,41 @@ func (s *Server) isTrustedProxy(ip string) bool {
 		}
 	}
 	return false
+}
+
+// isSecureRequest decides whether cookies set on this response get the Secure
+// flag. Direct TLS always counts. X-Forwarded-Proto is honoured only when it
+// can be trusted: unconditionally when no trusted proxies are configured
+// (backwards compatible, mirrors clientIP), otherwise only when the direct
+// peer is a configured trusted proxy — a client dialing the pod directly must
+// not be able to strip Secure off the session cookie by omitting the header,
+// nor force it in confusing ways by spoofing it.
+//
+// Outside development the flag additionally defaults to true: every deployed
+// tier terminates TLS upstream, so a missing/untrusted XFP header must degrade
+// to the safe value, not to an insecure cookie.
+func (s *Server) isSecureRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if r.Header.Get("X-Forwarded-Proto") == "https" {
+		if len(s.trustedProxies) == 0 {
+			return true
+		}
+		remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			remoteIP = r.RemoteAddr
+		}
+		if s.isTrustedProxy(remoteIP) {
+			return true
+		}
+	}
+	switch s.environment {
+	case "", "development":
+		return false
+	default:
+		return true
+	}
 }
 
 // middleware returns an http.Handler that enforces the rate limit.

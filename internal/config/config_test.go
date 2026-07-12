@@ -43,6 +43,25 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.SelfEnvironment != "production" {
 		t.Errorf("SelfEnvironment default: got %q", cfg.SelfEnvironment)
 	}
+	if cfg.OIDCRefreshGraceSeconds != 3600 {
+		t.Errorf("OIDCRefreshGraceSeconds default: got %d, want 3600", cfg.OIDCRefreshGraceSeconds)
+	}
+}
+
+func TestLoad_OIDCRefreshGraceOverride(t *testing.T) {
+	t.Setenv("FUNNELBARN_OIDC_REFRESH_GRACE_SECONDS", "600")
+	if cfg := Load(); cfg.OIDCRefreshGraceSeconds != 600 {
+		t.Errorf("OIDCRefreshGraceSeconds: got %d, want 600", cfg.OIDCRefreshGraceSeconds)
+	}
+	// Invalid / non-positive values fall back to the default.
+	t.Setenv("FUNNELBARN_OIDC_REFRESH_GRACE_SECONDS", "nope")
+	if cfg := Load(); cfg.OIDCRefreshGraceSeconds != 3600 {
+		t.Errorf("invalid grace should default: got %d", cfg.OIDCRefreshGraceSeconds)
+	}
+	t.Setenv("FUNNELBARN_OIDC_REFRESH_GRACE_SECONDS", "0")
+	if cfg := Load(); cfg.OIDCRefreshGraceSeconds != 3600 {
+		t.Errorf("zero grace should default: got %d", cfg.OIDCRefreshGraceSeconds)
+	}
 }
 
 func TestLoad_EnvVars(t *testing.T) {

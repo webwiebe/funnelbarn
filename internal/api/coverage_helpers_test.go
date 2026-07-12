@@ -60,6 +60,7 @@ func fullServer(t *testing.T, mutate func(cfg *ServerConfig)) (*Server, *reposit
 		Segments:            service.NewSegmentService(store),
 		UserAuth:            userAuth,
 		SessionManager:      sm,
+		WebSessions:         store,
 		SessionSecret:       "test-secret",
 		PublicURL:           "http://localhost",
 		LoginRatePerMinute:  1000,

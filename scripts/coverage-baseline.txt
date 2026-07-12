@@ -12,7 +12,6 @@ internal/domain	100
 internal/enrich	91
 internal/environment	100
 internal/geoip	34
-internal/iambarn	1
 internal/ingest	72
 internal/middleware	100
 internal/repository	74
