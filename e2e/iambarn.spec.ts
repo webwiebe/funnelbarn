@@ -70,8 +70,13 @@ test.describe('OIDC login page', () => {
     await page.goto('/login')
     await page.waitForURL(/iam\./, { waitUntil: 'commit', timeout: 10000 })
     const url = page.url()
-    expect(url).toContain('/oauth2/authorize')
-    expect(url).toContain('code_challenge')
+    // An unauthenticated visitor is bounced to IAMBarn's /auth/login with the
+    // authorization request URL-encoded in redirect_uri, so decode before
+    // asserting the PKCE authorize request is present (works whether IAMBarn
+    // lands us directly on /oauth2/authorize or on the login page first).
+    const decoded = decodeURIComponent(url)
+    expect(decoded).toContain('/oauth2/authorize')
+    expect(decoded).toContain('code_challenge')
   })
 })
 
