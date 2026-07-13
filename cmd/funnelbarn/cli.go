@@ -14,9 +14,12 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 	"github.com/wiebe-xyz/funnelbarn/internal/worker"
 )
 
@@ -39,11 +42,16 @@ func runWorkerOnce(cfg config.Config) error {
 		return err
 	}
 
+	ctx, span := tracing.StartSpan(context.Background(), "worker.replay_spool",
+		attribute.Int("records", len(records)),
+	)
+	defer span.End()
+
 	processed := 0
-	ctx := context.Background()
 	for _, record := range records {
 		event, err := worker.SafeProcess(record)
 		if err != nil {
+			tracing.RecordError(span, err)
 			slog.Error("worker-once: process record", "ingest_id", record.IngestID, "err", err)
 			continue
 		}
@@ -54,11 +62,13 @@ func runWorkerOnce(cfg config.Config) error {
 			}
 		}
 		if err := worker.PersistEvent(ctx, store, event, nil); err != nil {
+			tracing.RecordError(span, err)
 			slog.Error("worker-once: persist event", "ingest_id", record.IngestID, "err", err)
 			continue
 		}
 		processed++
 	}
+	span.SetAttributes(attribute.Int("processed", processed))
 
 	fmt.Printf("{\"records\":%d,\"processed\":%d}\n", len(records), processed)
 	return nil

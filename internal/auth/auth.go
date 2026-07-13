@@ -9,7 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"log/slog"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -99,13 +99,7 @@ func (a *Authorizer) ValidWithProject(ctx context.Context, provided string) (pro
 		pid, sc, found, err := a.dbLookup(ctx, hexSum)
 		if err == nil && found {
 			if a.dbTouch != nil {
-				if touchErr := a.dbTouch(ctx, hexSum); touchErr != nil {
-					// Best-effort last-used update; auth already succeeded above,
-					// so this is non-fatal and doesn't affect the caller.
-					slog.WarnContext(ctx, "auth: failed to update api key last-used timestamp",
-						"err", touchErr, "project_id", pid,
-					)
-				}
+				_ = a.dbTouch(ctx, hexSum)
 			}
 			return pid, sc, true
 		}
