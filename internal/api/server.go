@@ -14,6 +14,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sync/singleflight"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
@@ -677,6 +679,9 @@ func accessTokenExpired(ws repository.WebSession, now time.Time) bool {
 //   - transient failure (IdP down): serve stale within the grace window
 //     measured from the FIRST failure; past the window → row deleted, error
 func (s *Server) refreshSession(ctx context.Context, idHash string) (repository.WebSession, error) {
+	ctx, span := tracing.StartSpan(ctx, "oidc.refresh_session")
+	defer span.End()
+
 	// The refresh must complete even if the triggering request is canceled
 	// mid-rotation — losing the rotated refresh token kills the session.
 	// Waiting singleflight sharers also must not inherit a canceled context.
@@ -686,9 +691,11 @@ func (s *Server) refreshSession(ctx context.Context, idHash string) (repository.
 		if err != nil {
 			return nil, err
 		}
+		span.SetAttributes(attribute.String("oidc.sub", ws.IdpSub))
 		now := time.Now()
 		if !accessTokenExpired(ws, now) {
 			// Another flight already refreshed while we waited.
+			span.SetAttributes(attribute.String("oidc.refresh_outcome", "already_refreshed"))
 			return ws, nil
 		}
 
@@ -696,6 +703,7 @@ func (s *Server) refreshSession(ctx context.Context, idHash string) (repository.
 		if errors.Is(err, auth.ErrRefreshInvalid) {
 			// Revoked / rotated-elsewhere / user suspended: kill the session
 			// immediately. invalid_grant never gets grace.
+			span.SetAttributes(attribute.String("oidc.refresh_outcome", "invalid_grant"))
 			slog.InfoContext(bgCtx, "session refresh: invalid_grant, session revoked",
 				"username", ws.Username, "sub", ws.IdpSub)
 			_ = s.webSessions.DeleteWebSession(bgCtx, idHash)
@@ -713,11 +721,14 @@ func (s *Server) refreshSession(ctx context.Context, idHash string) (repository.
 				ws.RefreshFailingSince = failingSince
 			}
 			if now.Unix()-failingSince > int64(s.oidcRefreshGrace.Seconds()) {
+				span.SetAttributes(attribute.String("oidc.refresh_outcome", "grace_exceeded"))
+				tracing.RecordError(span, err)
 				slog.WarnContext(bgCtx, "session refresh: grace exceeded, session cut off",
 					"username", ws.Username, "failing_for", now.Unix()-failingSince)
 				_ = s.webSessions.DeleteWebSession(bgCtx, idHash)
 				return nil, err
 			}
+			span.SetAttributes(attribute.String("oidc.refresh_outcome", "stale_within_grace"))
 			slog.WarnContext(bgCtx, "session refresh failed, serving stale within grace",
 				"err", err, "username", ws.Username)
 			return ws, nil
@@ -735,10 +746,13 @@ func (s *Server) refreshSession(ctx context.Context, idHash string) (repository.
 			// The old refresh token is already burned; failing to store the new
 			// one makes the session unrenewable. Fail the request rather than
 			// pretend the session is healthy.
+			span.SetAttributes(attribute.String("oidc.refresh_outcome", "persist_error"))
+			tracing.RecordError(span, err)
 			slog.ErrorContext(bgCtx, "session refresh: persist rotated tokens",
 				"err", err, "handled", false)
 			return nil, err
 		}
+		span.SetAttributes(attribute.String("oidc.refresh_outcome", "rotated"))
 		ws.IDToken = refreshed.IDToken
 		ws.AccessToken = refreshed.AccessToken
 		ws.RefreshToken = refreshed.RefreshToken
