@@ -4,6 +4,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // handleClientConfig returns public client-side configuration for the frontend.
@@ -36,6 +40,9 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		OIDC                    oidcOut    `json:"oidc"`
 		LocalAuthAvailable      bool       `json:"local_auth_available"`
 	}
+	ctx, span := tracing.StartSpan(r.Context(), "client_config.build")
+	defer span.End()
+
 	resp := response{
 		BugbarnEndpoint:    s.bugbarnEndpoint,
 		BugbarnIngestKey:   s.bugbarnIngestKey,
@@ -43,12 +50,13 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		FunnelbarnEndpoint: s.publicURL,
 		FunnelbarnAPIKey:   s.dogfoodAPIKey,
 		FunnelbarnProject:  s.dogfoodProject,
+		IAMBarnEnabled:     s.iambarnFlagEnabled(ctx, map[string]any{"user_agent": r.Header.Get("User-Agent")}),
 		LocalAuthAvailable: s.userAuth != nil && s.userAuth.Enabled(),
 	}
 
 	// Expose recording config when recording is enabled and settings are available.
 	if s.recordings != nil && s.instanceSettings != nil {
-		if settings, err := s.instanceSettings.GetAllInstanceSettings(r.Context()); err == nil {
+		if settings, err := s.instanceSettings.GetAllInstanceSettings(ctx); err == nil {
 			if settings["recording_enabled"] == "true" {
 				resp.FunnelbarnRecording = true
 				resp.FunnelbarnRecordingRate = 1.0
@@ -72,6 +80,13 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		resp.IAMBarn.ClientID = s.iambarnClientID()
 		resp.IAMBarn.PostLogoutRedirectURI = s.postLogoutRedirect
 	}
+
+	span.SetAttributes(
+		attribute.Bool("client_config.oidc_enabled", resp.OIDC.Enabled),
+		attribute.Bool("client_config.iambarn_enabled", resp.IAMBarnEnabled),
+		attribute.Bool("client_config.recording_enabled", resp.FunnelbarnRecording),
+	)
+
 	writeJSON(w, http.StatusOK, resp)
 }
 

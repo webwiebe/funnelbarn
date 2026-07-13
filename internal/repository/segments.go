@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -65,7 +66,9 @@ func (s *Store) SegmentByID(ctx context.Context, id string) (Segment, error) {
 	if err != nil {
 		return Segment{}, err
 	}
-	_ = json.Unmarshal([]byte(rulesJSON), &seg.Rules)
+	if err := json.Unmarshal([]byte(rulesJSON), &seg.Rules); err != nil {
+		slog.WarnContext(ctx, "segment: malformed rules JSON", "segment_id", seg.ID, "raw_len", len(rulesJSON), "error", err)
+	}
 	return seg, nil
 }
 
@@ -85,7 +88,9 @@ func (s *Store) ListSegments(ctx context.Context, projectID string) ([]Segment, 
 		if err := rows.Scan(&seg.ID, &seg.ProjectID, &seg.Name, &rulesJSON, &seg.CreatedAt); err != nil {
 			return nil, err
 		}
-		_ = json.Unmarshal([]byte(rulesJSON), &seg.Rules)
+		if err := json.Unmarshal([]byte(rulesJSON), &seg.Rules); err != nil {
+			slog.WarnContext(ctx, "segment: malformed rules JSON", "segment_id", seg.ID, "raw_len", len(rulesJSON), "error", err)
+		}
 		segs = append(segs, seg)
 	}
 	return segs, rows.Err()

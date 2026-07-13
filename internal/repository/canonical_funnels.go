@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -109,7 +110,9 @@ func (s *Store) CanonicalFunnelByID(ctx context.Context, id string) (CanonicalFu
 	if err := s.db.QueryRowContext(ctx, qf, id).Scan(&f.ID, &f.Name, &f.Description, &f.Scope, &projectIDsJSON, &f.Segment, &f.CreatedAt); err != nil {
 		return CanonicalFunnel{}, err
 	}
-	_ = json.Unmarshal([]byte(projectIDsJSON), &f.ProjectIDs)
+	if err := json.Unmarshal([]byte(projectIDsJSON), &f.ProjectIDs); err != nil {
+		slog.WarnContext(ctx, "canonical funnel: malformed project_ids JSON", "funnel_id", f.ID, "raw_len", len(projectIDsJSON), "error", err)
+	}
 	steps, err := s.canonicalFunnelSteps(ctx, id)
 	if err != nil {
 		return CanonicalFunnel{}, err
@@ -133,7 +136,9 @@ func (s *Store) ListCanonicalFunnels(ctx context.Context) ([]CanonicalFunnel, er
 		if err := rows.Scan(&f.ID, &f.Name, &f.Description, &f.Scope, &projectIDsJSON, &f.Segment, &f.CreatedAt); err != nil {
 			return nil, err
 		}
-		_ = json.Unmarshal([]byte(projectIDsJSON), &f.ProjectIDs)
+		if err := json.Unmarshal([]byte(projectIDsJSON), &f.ProjectIDs); err != nil {
+			slog.WarnContext(ctx, "canonical funnel: malformed project_ids JSON", "funnel_id", f.ID, "raw_len", len(projectIDsJSON), "error", err)
+		}
 		funnels = append(funnels, f)
 	}
 	if err := rows.Err(); err != nil {

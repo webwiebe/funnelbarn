@@ -9,8 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // maxRecordingChunkBytes caps the size of a single recording-chunk POST body.
@@ -39,6 +42,11 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	ctx, span := tracing.StartSpan(r.Context(), "recordings.ingest_chunk",
+		attribute.String("project.id", projectID),
+	)
+	defer span.End()
+
 	if s.projectHealth != nil {
 		pid := projectID
 		go func() {
@@ -48,8 +56,9 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 		}()
 	}
 
-	proj, err := s.projects.GetProject(r.Context(), projectID)
+	proj, err := s.projects.GetProject(ctx, projectID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleIngestRecordingChunk")
 		return
 	}
@@ -61,25 +70,26 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 		if errors.As(err, &maxBytesErr) {
 			// Surface 413s to BugBarn — this used to be the silent failure
 			// mode where the SDK retried/abandoned and we never knew.
-			slog.ErrorContext(r.Context(), "recording chunk rejected: body too large",
+			tracing.RecordError(span, err)
+			slog.ErrorContext(ctx, "recording chunk rejected: body too large",
 				"err", err, "handled", false,
 				"project_id", projectID,
 				"content_length", r.ContentLength,
 				"limit_bytes", int64(maxRecordingChunkBytes),
 				"user_agent", r.Header.Get("User-Agent"),
-				"request_id", RequestIDFromContext(r.Context()),
+				"request_id", RequestIDFromContext(ctx),
 			)
 			jsonError(w, "recording chunk too large", http.StatusRequestEntityTooLarge)
 			return
 		}
 		// JSON parse errors on this endpoint are unusual (the SDK is the only
 		// producer); log them so we can spot SDK regressions.
-		slog.WarnContext(r.Context(), "recording chunk rejected: invalid json",
+		slog.WarnContext(ctx, "recording chunk rejected: invalid json",
 			"err", err, "handled", true,
 			"project_id", projectID,
 			"content_length", r.ContentLength,
 			"user_agent", r.Header.Get("User-Agent"),
-			"request_id", RequestIDFromContext(r.Context()),
+			"request_id", RequestIDFromContext(ctx),
 		)
 		jsonError(w, "invalid json", http.StatusBadRequest)
 		return
@@ -102,13 +112,21 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 	chunk.Environment = r.Header.Get("x-funnelbarn-environment")
 	chunk.UserAgent = r.Header.Get("User-Agent")
 
-	if err := s.recordings.IngestChunk(r.Context(), chunk); err != nil {
-		slog.ErrorContext(r.Context(), "ingest recording chunk failed",
+	span.SetAttributes(
+		attribute.String("recording.id", chunk.RecordingID),
+		attribute.String("session.id", chunk.SessionID),
+		attribute.Int("chunk.index", chunk.ChunkIndex),
+		attribute.Int("chunk.events.count", len(chunk.Events)),
+	)
+
+	if err := s.recordings.IngestChunk(ctx, chunk); err != nil {
+		tracing.RecordError(span, err)
+		slog.ErrorContext(ctx, "ingest recording chunk failed",
 			"error", err, "handled", false,
 			"recording_id", chunk.RecordingID,
 			"project_id", chunk.ProjectID,
 			"chunk_index", chunk.ChunkIndex,
-			"request_id", RequestIDFromContext(r.Context()),
+			"request_id", RequestIDFromContext(ctx),
 		)
 		jsonError(w, "failed to ingest chunk", http.StatusInternalServerError)
 		return
@@ -173,14 +191,24 @@ func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	recordings, err := s.recordings.ListRecordings(r.Context(), projectID, opts)
+	ctx, span := tracing.StartSpan(r.Context(), "recordings.list",
+		attribute.String("project.id", projectID),
+		attribute.Int("limit", limit),
+		attribute.Int("offset", offset),
+		attribute.Bool("human_only", opts.HumanOnly),
+	)
+	defer span.End()
+
+	recordings, err := s.recordings.ListRecordings(ctx, projectID, opts)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleListRecordings")
 		return
 	}
 	if recordings == nil {
 		recordings = []repository.Recording{}
 	}
+	span.SetAttributes(attribute.Int("recordings.count", len(recordings)))
 	addPaginationHeaders(w, r, limit, offset, len(recordings))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"recordings": recordings,
@@ -207,23 +235,32 @@ func (s *Server) handleGetRecordingChunk(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	data, err := s.recordings.GetChunk(r.Context(), projectID, recordingID, index)
+	ctx, span := tracing.StartSpan(r.Context(), "recordings.get_chunk",
+		attribute.String("project.id", projectID),
+		attribute.String("recording.id", recordingID),
+		attribute.Int("chunk.index", index),
+	)
+	defer span.End()
+
+	data, err := s.recordings.GetChunk(ctx, projectID, recordingID, index)
 	if err != nil {
 		errStr := err.Error()
 		if strings.Contains(errStr, "not found") || strings.Contains(errStr, "NoSuchKey") || strings.Contains(errStr, "404") {
 			jsonError(w, "not found", http.StatusNotFound)
 			return
 		}
-		slog.ErrorContext(r.Context(), "fetch recording chunk failed",
+		tracing.RecordError(span, err)
+		slog.ErrorContext(ctx, "fetch recording chunk failed",
 			"error", err, "handled", false,
 			"recording_id", recordingID,
 			"project_id", projectID,
 			"chunk_index", index,
-			"request_id", RequestIDFromContext(r.Context()),
+			"request_id", RequestIDFromContext(ctx),
 		)
 		jsonError(w, "failed to fetch chunk", http.StatusInternalServerError)
 		return
 	}
+	span.SetAttributes(attribute.Int("chunk.bytes", len(data)))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "private, max-age=3600")
@@ -243,16 +280,23 @@ func (s *Server) handleDeleteRecording(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.recordings.DeleteRecording(r.Context(), projectID, recordingID); err != nil {
+	ctx, span := tracing.StartSpan(r.Context(), "recordings.delete",
+		attribute.String("project.id", projectID),
+		attribute.String("recording.id", recordingID),
+	)
+	defer span.End()
+
+	if err := s.recordings.DeleteRecording(ctx, projectID, recordingID); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			jsonError(w, "not found", http.StatusNotFound)
 			return
 		}
-		slog.ErrorContext(r.Context(), "delete recording failed",
+		tracing.RecordError(span, err)
+		slog.ErrorContext(ctx, "delete recording failed",
 			"error", err, "handled", false,
 			"recording_id", recordingID,
 			"project_id", projectID,
-			"request_id", RequestIDFromContext(r.Context()),
+			"request_id", RequestIDFromContext(ctx),
 		)
 		jsonError(w, "failed to delete recording", http.StatusInternalServerError)
 		return
@@ -272,24 +316,34 @@ func (s *Server) handleGetRecordingFlags(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	sessionID, err := s.recordings.GetRecordingSessionID(r.Context(), projectID, recordingID)
+	ctx, span := tracing.StartSpan(r.Context(), "recordings.get_flags",
+		attribute.String("project.id", projectID),
+		attribute.String("recording.id", recordingID),
+	)
+	defer span.End()
+
+	sessionID, err := s.recordings.GetRecordingSessionID(ctx, projectID, recordingID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			jsonError(w, "not found", http.StatusNotFound)
 			return
 		}
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleGetRecordingFlags")
 		return
 	}
+	span.SetAttributes(attribute.String("session.id", sessionID))
 
-	evals, err := s.recordings.FlagEvaluationsForSession(r.Context(), projectID, sessionID)
+	evals, err := s.recordings.FlagEvaluationsForSession(ctx, projectID, sessionID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleGetRecordingFlags")
 		return
 	}
 	if evals == nil {
 		evals = []repository.FlagEvaluationEntry{}
 	}
+	span.SetAttributes(attribute.Int("evaluations.count", len(evals)))
 	writeJSON(w, http.StatusOK, map[string]any{"evaluations": evals})
 }
 
@@ -320,11 +374,19 @@ func (s *Server) handleLookupTrace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lookup, found, err := s.recordings.LookupTrace(r.Context(), projectID, traceID)
+	ctx, span := tracing.StartSpan(r.Context(), "recordings.lookup_trace",
+		attribute.String("project.id", projectID),
+		attribute.String("trace.id", traceID),
+	)
+	defer span.End()
+
+	lookup, found, err := s.recordings.LookupTrace(ctx, projectID, traceID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleLookupTrace")
 		return
 	}
+	span.SetAttributes(attribute.Bool("trace.found", found))
 	if !found {
 		jsonError(w, "not found", http.StatusNotFound)
 		return
@@ -364,21 +426,30 @@ func (s *Server) handleGetRecordingChunkByKey(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	data, err := s.recordings.GetChunk(r.Context(), projectID, recordingID, index)
+	ctx, span := tracing.StartSpan(r.Context(), "recordings.get_chunk_by_key",
+		attribute.String("project.id", projectID),
+		attribute.String("recording.id", recordingID),
+		attribute.Int("chunk.index", index),
+	)
+	defer span.End()
+
+	data, err := s.recordings.GetChunk(ctx, projectID, recordingID, index)
 	if err != nil {
 		errStr := err.Error()
 		if strings.Contains(errStr, "not found") || strings.Contains(errStr, "NoSuchKey") || strings.Contains(errStr, "404") {
 			jsonError(w, "not found", http.StatusNotFound)
 			return
 		}
-		slog.ErrorContext(r.Context(), "fetch recording chunk (api key) failed",
+		tracing.RecordError(span, err)
+		slog.ErrorContext(ctx, "fetch recording chunk (api key) failed",
 			"error", err, "handled", false,
 			"recording_id", recordingID, "project_id", projectID, "chunk_index", index,
-			"request_id", RequestIDFromContext(r.Context()),
+			"request_id", RequestIDFromContext(ctx),
 		)
 		jsonError(w, "failed to fetch chunk", http.StatusInternalServerError)
 		return
 	}
+	span.SetAttributes(attribute.Int("chunk.bytes", len(data)))
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.WriteHeader(http.StatusOK)
@@ -399,18 +470,26 @@ func (s *Server) handleGetRecordingTraces(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	traces, err := s.recordings.TracesForRecording(r.Context(), projectID, recordingID)
+	ctx, span := tracing.StartSpan(r.Context(), "recordings.get_traces",
+		attribute.String("project.id", projectID),
+		attribute.String("recording.id", recordingID),
+	)
+	defer span.End()
+
+	traces, err := s.recordings.TracesForRecording(ctx, projectID, recordingID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			jsonError(w, "not found", http.StatusNotFound)
 			return
 		}
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleGetRecordingTraces")
 		return
 	}
 	if traces == nil {
 		traces = []repository.TraceLink{}
 	}
+	span.SetAttributes(attribute.Int("traces.count", len(traces)))
 	writeJSON(w, http.StatusOK, map[string]any{"traces": traces})
 }
 
@@ -445,14 +524,23 @@ func (s *Server) handleFunnelStepSessions(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	sessionIDs, err := s.recordings.SessionsAtStep(r.Context(), funnelID, projectID, step, from, to)
+	ctx, span := tracing.StartSpan(r.Context(), "recordings.funnel_step_sessions",
+		attribute.String("project.id", projectID),
+		attribute.String("funnel.id", funnelID),
+		attribute.Int("funnel.step", step),
+	)
+	defer span.End()
+
+	sessionIDs, err := s.recordings.SessionsAtStep(ctx, funnelID, projectID, step, from, to)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleFunnelStepSessions")
 		return
 	}
 	if sessionIDs == nil {
 		sessionIDs = []string{}
 	}
+	span.SetAttributes(attribute.Int("session_ids.count", len(sessionIDs)))
 	writeJSON(w, http.StatusOK, map[string]any{"session_ids": sessionIDs})
 }
 
@@ -485,13 +573,21 @@ func (s *Server) handleFlowPageSessions(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	sessionIDs, err := s.recordings.SessionsForPage(r.Context(), projectID, page, from, to)
+	ctx, span := tracing.StartSpan(r.Context(), "recordings.flow_page_sessions",
+		attribute.String("project.id", projectID),
+		attribute.String("page", page),
+	)
+	defer span.End()
+
+	sessionIDs, err := s.recordings.SessionsForPage(ctx, projectID, page, from, to)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleFlowPageSessions")
 		return
 	}
 	if sessionIDs == nil {
 		sessionIDs = []string{}
 	}
+	span.SetAttributes(attribute.Int("session_ids.count", len(sessionIDs)))
 	writeJSON(w, http.StatusOK, map[string]any{"session_ids": sessionIDs})
 }

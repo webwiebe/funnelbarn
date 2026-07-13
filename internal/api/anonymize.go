@@ -3,6 +3,10 @@ package api
 import (
 	"net"
 	"net/http"
+
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 func (s *Server) handleAnonymizeGeo(w http.ResponseWriter, r *http.Request) {
@@ -24,10 +28,17 @@ func (s *Server) handleAnonymizeGeo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctx, span := tracing.StartSpan(r.Context(), "anonymize.geo",
+		attribute.Bool("anonymize.by_session", body.SessionID != ""),
+		attribute.Bool("anonymize.by_ip", body.IP != ""),
+	)
+	defer span.End()
+
 	var anonymized int64
 
 	if body.SessionID != "" {
-		if err := s.geoAnonymizer.AnonymizeSessionGeo(r.Context(), body.SessionID); err != nil {
+		if err := s.geoAnonymizer.AnonymizeSessionGeo(ctx, body.SessionID); err != nil {
+			tracing.RecordError(span, err)
 			mapServiceError(w, err, "handleAnonymizeGeo.session")
 			return
 		}
@@ -39,13 +50,15 @@ func (s *Server) handleAnonymizeGeo(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, "invalid ip address", http.StatusUnprocessableEntity)
 			return
 		}
-		n, err := s.geoAnonymizer.AnonymizeSessionsByIP(r.Context(), body.IP)
+		n, err := s.geoAnonymizer.AnonymizeSessionsByIP(ctx, body.IP)
 		if err != nil {
+			tracing.RecordError(span, err)
 			mapServiceError(w, err, "handleAnonymizeGeo.ip")
 			return
 		}
 		anonymized += n
 	}
 
+	span.SetAttributes(attribute.Int64("anonymize.session_count", anonymized))
 	writeJSON(w, http.StatusOK, map[string]any{"anonymized": anonymized})
 }

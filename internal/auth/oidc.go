@@ -18,6 +18,10 @@ import (
 
 	oidcv3 "github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
+
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // OIDCConfig is the static configuration for the OIDC login flow.
@@ -107,28 +111,40 @@ func (c *OIDCClient) ExchangeFull(ctx context.Context, code, nonce, verifier str
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	var opts []oauth2.AuthCodeOption
-	if verifier != "" {
-		opts = append(opts, oauth2.VerifierOption(verifier))
-	}
-	tok, err := c.oauth.Exchange(ctx, code, opts...)
+	ctx, span := tracing.StartSpan(ctx, "oidc.exchange",
+		attribute.String("oidc.issuer", c.cfg.Issuer),
+		attribute.String("oidc.client_id", c.cfg.ClientID),
+	)
+	defer span.End()
+
+	tok, err := c.oauth.Exchange(ctx, code)
 	if err != nil {
-		return ExchangeResult{}, fmt.Errorf("oidc: token exchange: %w", err)
+		err = fmt.Errorf("oidc: token exchange: %w", err)
+		tracing.RecordError(span, err)
+		return OIDCClaims{}, err
 	}
 	rawID, ok := tok.Extra("id_token").(string)
 	if !ok || rawID == "" {
-		return ExchangeResult{}, errors.New("oidc: token response missing id_token")
+		err := errors.New("oidc: token response missing id_token")
+		tracing.RecordError(span, err)
+		return OIDCClaims{}, err
 	}
 	idToken, err := c.verifier.Verify(ctx, rawID)
 	if err != nil {
-		return ExchangeResult{}, fmt.Errorf("oidc: verify id_token: %w", err)
+		err = fmt.Errorf("oidc: verify id_token: %w", err)
+		tracing.RecordError(span, err)
+		return OIDCClaims{}, err
 	}
 	if idToken.Nonce != nonce {
-		return ExchangeResult{}, errors.New("oidc: nonce mismatch")
+		err := errors.New("oidc: nonce mismatch")
+		tracing.RecordError(span, err)
+		return OIDCClaims{}, err
 	}
 	var claims OIDCClaims
 	if err := idToken.Claims(&claims); err != nil {
-		return ExchangeResult{}, fmt.Errorf("oidc: decode claims: %w", err)
+		err = fmt.Errorf("oidc: decode claims: %w", err)
+		tracing.RecordError(span, err)
+		return OIDCClaims{}, err
 	}
 	return ExchangeResult{
 		Claims:       claims,
@@ -349,10 +365,17 @@ func (c *OIDCClient) ensureReady(ctx context.Context) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	issuer := strings.TrimRight(c.cfg.Issuer, "/")
-	prov, err := oidcv3.NewProvider(ctx, issuer)
+
+	ctx, span := tracing.StartSpan(ctx, "oidc.discover",
+		attribute.String("oidc.issuer", c.cfg.Issuer),
+	)
+	defer span.End()
+
+	prov, err := oidcv3.NewProvider(ctx, strings.TrimRight(c.cfg.Issuer, "/"))
 	if err != nil {
-		return fmt.Errorf("oidc: discover issuer %q: %w", c.cfg.Issuer, err)
+		err = fmt.Errorf("oidc: discover issuer %q: %w", c.cfg.Issuer, err)
+		tracing.RecordError(span, err)
+		return err
 	}
 	c.provider = prov
 	// Revocation + end-session endpoints are optional discovery fields; fall

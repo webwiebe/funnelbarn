@@ -47,6 +47,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	ctx, span := tracing.StartSpan(r.Context(), "dashboard.aggregate",
 		attribute.String("project.id", projectID),
 		attribute.String("range", rangeParam),
+		attribute.String("environment", env),
 	)
 	defer span.End()
 
@@ -126,6 +127,11 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if recordOnErr(err, "handleDashboard.avgEventsPerSession") {
 		return
 	}
+
+	span.SetAttributes(
+		attribute.Int64("dashboard.total_events", totalEvents),
+		attribute.Int64("dashboard.unique_sessions", uniqueSessions),
+	)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"project_id":             projectID,

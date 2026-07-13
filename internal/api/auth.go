@@ -12,8 +12,11 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // dummyBcryptHash is a valid bcrypt hash compared against on the user-not-found
@@ -35,27 +38,39 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	authMethod := "db_user"
+	if s.userAuth.Enabled() {
+		authMethod = "env_user"
+	}
+	ctx, span := tracing.StartSpan(r.Context(), "auth.login",
+		attribute.String("auth.method", authMethod),
+	)
+	defer span.End()
+
 	// Try env-var user auth.
 	if s.userAuth.Enabled() {
 		if !s.userAuth.Valid(body.Username, body.Password) {
-			slog.WarnContext(r.Context(), "login failed", "username", body.Username, "reason", "invalid_credentials", "request_id", RequestIDFromContext(r.Context()))
+			span.SetAttributes(attribute.String("auth.result", "invalid_credentials"))
+			slog.WarnContext(ctx, "login failed", "username", body.Username, "reason", "invalid_credentials", "request_id", RequestIDFromContext(ctx))
 			jsonError(w, "invalid credentials", http.StatusUnauthorized)
 			return
 		}
 	} else {
 		// Fall back to DB user.
-		user, err := s.projects.UserByUsername(r.Context(), body.Username)
+		user, err := s.projects.UserByUsername(ctx, body.Username)
 		if err != nil {
 			// Run a bcrypt comparison against a dummy hash so a missing username
 			// takes the same time as a wrong password — otherwise the fast
 			// no-bcrypt path here leaks which usernames exist.
 			_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(body.Password))
-			slog.WarnContext(r.Context(), "login failed", "username", body.Username, "reason", "user_not_found", "request_id", RequestIDFromContext(r.Context()))
+			span.SetAttributes(attribute.String("auth.result", "user_not_found"))
+			slog.WarnContext(ctx, "login failed", "username", body.Username, "reason", "user_not_found", "request_id", RequestIDFromContext(ctx))
 			jsonError(w, "invalid credentials", http.StatusUnauthorized)
 			return
 		}
 		if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(body.Password)) != nil {
-			slog.WarnContext(r.Context(), "login failed", "username", body.Username, "reason", "wrong_password", "request_id", RequestIDFromContext(r.Context()))
+			span.SetAttributes(attribute.String("auth.result", "wrong_password"))
+			slog.WarnContext(ctx, "login failed", "username", body.Username, "reason", "wrong_password", "request_id", RequestIDFromContext(ctx))
 			jsonError(w, "invalid credentials", http.StatusUnauthorized)
 			return
 		}
@@ -63,23 +78,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	secure := s.isSecureRequest(r)
 
-	if s.sessionManager == nil || s.webSessions == nil {
-		slog.Error("login: session store not configured", "handled", false)
-		jsonError(w, "failed to create session", http.StatusInternalServerError)
-		return
-	}
-	// Local sessions get a row too (token columns NULL): one middleware, one
-	// revocation story — deleting the row logs the user out everywhere.
-	if _, err := s.issueWebSession(r.Context(), w, secure, repository.WebSession{
-		Username:   body.Username,
-		AuthMethod: "local",
-	}); err != nil {
+	token, expires, err := s.sessionManager.Create(body.Username)
+	if err != nil {
+		tracing.RecordError(span, err)
 		slog.Error("failed to create session", "error", err, "handled", false)
 		jsonError(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}
 
-	slog.InfoContext(r.Context(), "user login", "username", body.Username, "request_id", RequestIDFromContext(r.Context()))
+	http.SetCookie(w, auth.SessionCookie(token, expires, secure))
+	http.SetCookie(w, auth.CSRFCookie(token, expires, secure))
+
+	span.SetAttributes(attribute.String("auth.result", "success"))
+	slog.InfoContext(ctx, "user login", "username", body.Username, "request_id", RequestIDFromContext(ctx))
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"username": body.Username,
@@ -200,12 +211,19 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		body.Slug = toSlug(body.Name)
 	}
 
-	project, err := s.projects.CreateProject(r.Context(), body.Name, body.Slug)
+	ctx, span := tracing.StartSpan(r.Context(), "projects.create",
+		attribute.String("project.slug", body.Slug),
+	)
+	defer span.End()
+
+	project, err := s.projects.CreateProject(ctx, body.Name, body.Slug)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleCreateProject")
 		return
 	}
-	slog.InfoContext(r.Context(), "project created", "project_id", project.ID, "name", body.Name, "request_id", RequestIDFromContext(r.Context()))
+	span.SetAttributes(attribute.String("project.id", project.ID))
+	slog.InfoContext(ctx, "project created", "project_id", project.ID, "name", body.Name, "request_id", RequestIDFromContext(ctx))
 	writeJSON(w, http.StatusCreated, project)
 }
 
@@ -282,8 +300,15 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		body.Scope = repository.APIKeyScopeIngest
 	}
 
+	ctx, span := tracing.StartSpan(r.Context(), "apikeys.create",
+		attribute.String("project.id", body.ProjectID),
+		attribute.String("apikey.scope", body.Scope),
+	)
+	defer span.End()
+
 	// Verify project exists.
-	if _, err := s.projects.GetProject(r.Context(), body.ProjectID); err != nil {
+	if _, err := s.projects.GetProject(ctx, body.ProjectID); err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleCreateAPIKey.getProject")
 		return
 	}
@@ -291,6 +316,7 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	// Generate random key.
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {
+		tracing.RecordError(span, err)
 		slog.Error("failed to generate api key random bytes", "error", err, "handled", false)
 		jsonError(w, "failed to generate key", http.StatusInternalServerError)
 		return
@@ -299,11 +325,13 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	sum := sha256.Sum256([]byte(plaintext))
 	keySHA256 := hex.EncodeToString(sum[:])
 
-	key, err := s.apikeys.CreateAPIKey(r.Context(), body.Name, body.ProjectID, keySHA256, body.Scope)
+	key, err := s.apikeys.CreateAPIKey(ctx, body.Name, body.ProjectID, keySHA256, body.Scope)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleCreateAPIKey")
 		return
 	}
+	span.SetAttributes(attribute.String("apikey.id", key.ID))
 
 	// Return the plaintext key once — it won't be shown again.
 	type safeKey struct {
@@ -312,7 +340,7 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		Scope     string `json:"scope"`
 		CreatedAt string `json:"created_at"`
 	}
-	slog.InfoContext(r.Context(), "api key created", "key_id", key.ID, "name", body.Name, "scope", body.Scope, "project_id", body.ProjectID, "request_id", RequestIDFromContext(r.Context()))
+	slog.InfoContext(ctx, "api key created", "key_id", key.ID, "name", body.Name, "scope", body.Scope, "project_id", body.ProjectID, "request_id", RequestIDFromContext(ctx))
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"api_key": safeKey{
 			ID:        key.ID,
@@ -346,17 +374,24 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "project id required", http.StatusBadRequest)
 		return
 	}
+	ctx, span := tracing.StartSpan(r.Context(), "projects.delete",
+		attribute.String("project.id", projectID),
+	)
+	defer span.End()
+
 	// Purge R2 recording blobs first: once the SQLite rows are gone we can no
 	// longer locate the chunk keys. A purge failure is logged but must not block
 	// tenant deletion — a stray blob orphan is preferable to an undeletable
 	// project (and the retention sweep will not reach orphaned blobs either).
 	if s.recordings != nil {
-		if err := s.recordings.PurgeProjectRecordings(r.Context(), projectID); err != nil {
-			slog.ErrorContext(r.Context(), "delete project: purge recordings failed",
+		if err := s.recordings.PurgeProjectRecordings(ctx, projectID); err != nil {
+			span.SetAttributes(attribute.Bool("project.recordings_purge_failed", true))
+			slog.ErrorContext(ctx, "delete project: purge recordings failed",
 				"err", err, "handled", true, "project_id", projectID)
 		}
 	}
-	if err := s.projects.DeleteProject(r.Context(), projectID); err != nil {
+	if err := s.projects.DeleteProject(ctx, projectID); err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleDeleteProject")
 		return
 	}

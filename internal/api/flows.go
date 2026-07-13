@@ -60,6 +60,8 @@ func (s *Server) handlePageFlows(w http.ResponseWriter, r *http.Request) {
 	ctx, span := tracing.StartSpan(r.Context(), "flows.pageFlows",
 		attribute.String("project.id", projectID),
 		attribute.String("page", page),
+		attribute.Int("depth", depth),
+		attribute.String("environment", env),
 	)
 	defer span.End()
 
@@ -69,6 +71,11 @@ func (s *Server) handlePageFlows(w http.ResponseWriter, r *http.Request) {
 		mapServiceError(w, err, "handlePageFlows")
 		return
 	}
+
+	span.SetAttributes(
+		attribute.Int("flows.node_count", len(result.Nodes)),
+		attribute.Int("flows.link_count", len(result.Links)),
+	)
 
 	writeJSON(w, http.StatusOK, result)
 }

@@ -1,6 +1,12 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
+
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
+)
 
 func (s *Server) handleGetInstanceSettings(w http.ResponseWriter, r *http.Request) {
 	if s.instanceSettings == nil {
@@ -25,14 +31,22 @@ func (s *Server) handlePutInstanceSettings(w http.ResponseWriter, r *http.Reques
 		jsonError(w, "invalid json", http.StatusBadRequest)
 		return
 	}
+
+	ctx, span := tracing.StartSpan(r.Context(), "instance_settings.update",
+		attribute.Int("instance_settings.key_count", len(body)),
+	)
+	defer span.End()
+
 	for key, value := range body {
-		if err := s.instanceSettings.SetInstanceSetting(r.Context(), key, value); err != nil {
+		if err := s.instanceSettings.SetInstanceSetting(ctx, key, value); err != nil {
+			tracing.RecordError(span, err)
 			mapServiceError(w, err, "handlePutInstanceSettings")
 			return
 		}
 	}
-	settings, err := s.instanceSettings.GetAllInstanceSettings(r.Context())
+	settings, err := s.instanceSettings.GetAllInstanceSettings(ctx)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handlePutInstanceSettings.get")
 		return
 	}

@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/oauth2"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // IAMBarnUserRepo is the storage interface needed by the OIDC callback handler
@@ -38,12 +38,18 @@ func (s *Server) handleOIDCConfidentialLogin(w http.ResponseWriter, r *http.Requ
 		jsonError(w, "oidc not configured", http.StatusNotFound)
 		return
 	}
+	ctx, span := tracing.StartSpan(r.Context(), "oidc_confidential.login",
+		attribute.String("auth.provider", "oidc_confidential"),
+	)
+	defer span.End()
+
 	state := oidcConfRandomToken()
 	nonce := oidcConfRandomToken()
 	verifier := oauth2.GenerateVerifier()
 	authURL, err := s.oidc.AuthorizeURL(state, nonce, verifier)
 	if err != nil {
-		slog.WarnContext(r.Context(), "oidc: build authorize url", "error", err)
+		tracing.RecordError(span, err)
+		slog.WarnContext(ctx, "oidc: build authorize url", "error", err)
 		jsonError(w, "oidc unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -61,44 +67,51 @@ func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.R
 		jsonError(w, "oidc not configured", http.StatusNotFound)
 		return
 	}
+
+	ctx, span := tracing.StartSpan(r.Context(), "oidc_confidential.callback",
+		attribute.String("auth.provider", "oidc_confidential"),
+	)
+	defer span.End()
+
 	stateCookie, err := r.Cookie(oidcConfStateCookie)
-	if err != nil || stateCookie.Value == "" {
-		slog.WarnContext(r.Context(), "oidc: state cookie missing")
-		jsonError(w, "oidc state mismatch", http.StatusBadRequest)
-		return
-	}
-	state, verifier, ok := parseStateCookie(stateCookie.Value)
-	if !ok || state != r.URL.Query().Get("state") {
-		slog.WarnContext(r.Context(), "oidc: state mismatch")
+	if err != nil || stateCookie.Value == "" || stateCookie.Value != r.URL.Query().Get("state") {
+		span.SetAttributes(attribute.String("oidc.failure_reason", "state_mismatch"))
+		slog.WarnContext(ctx, "oidc: state mismatch")
 		jsonError(w, "oidc state mismatch", http.StatusBadRequest)
 		return
 	}
 	nonceCookie, err := r.Cookie(oidcConfNonceCookie)
 	if err != nil || nonceCookie.Value == "" {
+		span.SetAttributes(attribute.String("oidc.failure_reason", "nonce_missing"))
 		jsonError(w, "oidc nonce missing", http.StatusBadRequest)
 		return
 	}
 	code := r.URL.Query().Get("code")
 	if code == "" {
+		span.SetAttributes(attribute.String("oidc.failure_reason", "code_missing"))
 		jsonError(w, "oidc code missing", http.StatusBadRequest)
 		return
 	}
-	result, err := s.oidc.ExchangeFull(r.Context(), code, nonceCookie.Value, verifier)
+	claims, err := s.oidc.Exchange(ctx, code, nonceCookie.Value)
 	if err != nil {
-		slog.WarnContext(r.Context(), "oidc: exchange failed", "error", err)
+		span.SetAttributes(attribute.String("oidc.failure_reason", "exchange_failed"))
+		tracing.RecordError(span, err)
+		slog.WarnContext(ctx, "oidc: exchange failed", "error", err)
 		jsonError(w, "oidc exchange failed", http.StatusUnauthorized)
 		return
 	}
-	claims := result.Claims
+	span.SetAttributes(attribute.String("user.sub", claims.Subject))
 	if !s.oidc.Allowed(claims) {
-		slog.WarnContext(r.Context(), "oidc: access denied",
+		span.SetAttributes(attribute.String("oidc.failure_reason", "access_denied"))
+		slog.WarnContext(ctx, "oidc: access denied",
 			"sub", claims.Subject, "groups", claims.Groups, "roles", claims.Roles)
 		jsonError(w, "access denied: user is not a member of the required group", http.StatusForbidden)
 		return
 	}
-	if s.sessionManager == nil || s.webSessions == nil {
-		// Misconfiguration: OIDC enabled but no session plumbing wired.
-		slog.ErrorContext(r.Context(), "oidc: session store not configured",
+	if s.sessionManager == nil {
+		// Misconfiguration: OIDC enabled but no session manager wired.
+		span.SetAttributes(attribute.String("oidc.failure_reason", "session_manager_unconfigured"))
+		slog.ErrorContext(ctx, "oidc: session manager not configured",
 			"handled", false, "sub", claims.Subject)
 		jsonError(w, "session unavailable", http.StatusServiceUnavailable)
 		return
@@ -129,7 +142,9 @@ func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.R
 		ClaimsJSON:      marshalClaims(claims),
 	})
 	if err != nil {
-		slog.ErrorContext(r.Context(), "oidc: failed to create session",
+		span.SetAttributes(attribute.String("oidc.failure_reason", "session_create_failed"))
+		tracing.RecordError(span, err)
+		slog.ErrorContext(ctx, "oidc: failed to create session",
 			"err", err, "handled", false, "sub", claims.Subject, "username", username)
 		jsonError(w, "session unavailable", http.StatusServiceUnavailable)
 		return

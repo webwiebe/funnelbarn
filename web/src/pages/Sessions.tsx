@@ -5,6 +5,7 @@ import Shell from '../components/shell/Shell'
 import { SessionReplay } from '../components/sessions/SessionReplay'
 import { api, type Recording } from '../lib/api'
 import { useProjects } from '../lib/projects'
+import { reportError } from '../lib/bugbarn'
 import { C } from '../lib/theme'
 
 const PAGE_SIZE = 50
@@ -147,7 +148,8 @@ export default function Sessions() {
     setRecordings((prev) => prev.filter((r) => r.id !== rec.id))
     try {
       await api.deleteRecording(projectId, rec.id)
-    } catch {
+    } catch (e) {
+      reportError(e, { source: 'Sessions.handleDelete' })
       void load(offset, filters)
     }
   }, [projectId, load, offset, filters])
@@ -160,7 +162,8 @@ export default function Sessions() {
     setRecordings((prev) => prev.filter((r) => !ids.includes(r.id)))
     try {
       await Promise.all(ids.map((id) => api.deleteRecording(projectId, id)))
-    } catch {
+    } catch (e) {
+      reportError(e, { source: 'Sessions.handleBulkDelete' })
       void load(offset, filters)
     }
   }, [projectId, selectedIds, load, offset, filters])

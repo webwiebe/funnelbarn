@@ -5,7 +5,10 @@ import (
 	"net/http"
 	"strconv"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // ProjectRecordingSettingsRepo is the narrow repo interface for per-project recording settings.
@@ -23,13 +26,23 @@ func (s *Server) handleGetProjectRecordingSettings(w http.ResponseWriter, r *htt
 	}
 	projectID := r.PathValue("id")
 
-	settings, err := s.recordingSettings.GetProjectRecordingSettings(r.Context(), projectID)
+	ctx, span := tracing.StartSpan(r.Context(), "recording_settings.get",
+		attribute.String("project.id", projectID),
+	)
+	defer span.End()
+
+	settings, err := s.recordingSettings.GetProjectRecordingSettings(ctx, projectID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleGetProjectRecordingSettings")
 		return
 	}
 
-	effective := s.resolveEffectiveRecordingConfig(r, settings)
+	effective := s.resolveEffectiveRecordingConfig(r.WithContext(ctx), settings)
+	span.SetAttributes(
+		attribute.Bool("recording.effective_enabled", effective.Enabled),
+		attribute.Float64("recording.effective_rate", effective.SampleRate),
+	)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enabled":           settings.Enabled,
 		"sample_rate":       settings.SampleRate,
@@ -76,13 +89,26 @@ func (s *Server) handleUpdateProjectRecordingSettings(w http.ResponseWriter, r *
 		body.Rules = []repository.RecordingRule{}
 	}
 
+	ctx, span := tracing.StartSpan(r.Context(), "recording_settings.update",
+		attribute.String("project.id", projectID),
+		attribute.Int("recording.rules.count", len(body.Rules)),
+	)
+	defer span.End()
+	if body.Enabled != nil {
+		span.SetAttributes(attribute.Bool("recording.enabled", *body.Enabled))
+	}
+	if body.SampleRate != nil {
+		span.SetAttributes(attribute.Float64("recording.sample_rate", *body.SampleRate))
+	}
+
 	settings := &repository.ProjectRecordingSettings{
 		ProjectID:  projectID,
 		Enabled:    body.Enabled,
 		SampleRate: body.SampleRate,
 		Rules:      body.Rules,
 	}
-	if err := s.recordingSettings.UpsertProjectRecordingSettings(r.Context(), settings); err != nil {
+	if err := s.recordingSettings.UpsertProjectRecordingSettings(ctx, settings); err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleUpdateProjectRecordingSettings")
 		return
 	}
@@ -140,9 +166,14 @@ func (s *Server) handleGetRecordingConfig(w http.ResponseWriter, r *http.Request
 	// Identify project via API key (same mechanism as event ingest).
 	projectID, _, ok := s.ingest.APIKeyProjectScope(r)
 	if !ok {
+		ctx, span := tracing.StartSpan(r.Context(), "recording_settings.get_config",
+			attribute.Bool("api_key.valid", false),
+		)
+		defer span.End()
 		// No valid API key — return the instance-level defaults (unauthenticated context).
 		// The SDK will use these as a fallback.
-		cfg := s.resolveEffectiveRecordingConfig(r, nil)
+		cfg := s.resolveEffectiveRecordingConfig(r.WithContext(ctx), nil)
+		span.SetAttributes(attribute.Bool("recording.effective_enabled", cfg.Enabled))
 		writeJSON(w, http.StatusOK, map[string]any{
 			"enabled":     cfg.Enabled,
 			"sample_rate": cfg.SampleRate,
@@ -151,14 +182,23 @@ func (s *Server) handleGetRecordingConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	ctx, span := tracing.StartSpan(r.Context(), "recording_settings.get_config",
+		attribute.String("project.id", projectID),
+	)
+	defer span.End()
+
 	var settings *repository.ProjectRecordingSettings
 	if s.recordingSettings != nil {
-		if ps, err := s.recordingSettings.GetProjectRecordingSettings(r.Context(), projectID); err == nil {
+		if ps, err := s.recordingSettings.GetProjectRecordingSettings(ctx, projectID); err == nil {
 			settings = ps
 		}
 	}
 
-	cfg := s.resolveEffectiveRecordingConfig(r, settings)
+	cfg := s.resolveEffectiveRecordingConfig(r.WithContext(ctx), settings)
+	span.SetAttributes(
+		attribute.Bool("recording.effective_enabled", cfg.Enabled),
+		attribute.Float64("recording.effective_rate", cfg.SampleRate),
+	)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enabled":     cfg.Enabled,
 		"sample_rate": cfg.SampleRate,

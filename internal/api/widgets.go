@@ -17,14 +17,21 @@ func (s *Server) handleListWidgets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	widgets, err := s.widgets.ListWidgets(r.Context(), projectID)
+	ctx, span := tracing.StartSpan(r.Context(), "widgets.list",
+		attribute.String("project.id", projectID),
+	)
+	defer span.End()
+
+	widgets, err := s.widgets.ListWidgets(ctx, projectID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleListWidgets")
 		return
 	}
 	if widgets == nil {
 		widgets = []repository.DashboardWidget{}
 	}
+	span.SetAttributes(attribute.Int("widgets.count", len(widgets)))
 	writeJSON(w, http.StatusOK, map[string]any{"widgets": widgets})
 }
 
@@ -51,7 +58,14 @@ func (s *Server) handleCreateWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	widget, err := s.widgets.CreateWidget(r.Context(), repository.DashboardWidget{
+	ctx, span := tracing.StartSpan(r.Context(), "widgets.create",
+		attribute.String("project.id", projectID),
+		attribute.String("event.name", body.EventName),
+		attribute.String("widget.property", body.Property),
+	)
+	defer span.End()
+
+	widget, err := s.widgets.CreateWidget(ctx, repository.DashboardWidget{
 		ProjectID: projectID,
 		EventName: body.EventName,
 		Property:  body.Property,
@@ -60,9 +74,11 @@ func (s *Server) handleCreateWidget(w http.ResponseWriter, r *http.Request) {
 		Size:      body.Size,
 	})
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleCreateWidget")
 		return
 	}
+	span.SetAttributes(attribute.String("widget.id", widget.ID))
 	writeJSON(w, http.StatusCreated, widget)
 }
 
@@ -85,7 +101,14 @@ func (s *Server) handleUpdateWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	widget, err := s.widgets.UpdateWidget(r.Context(), repository.DashboardWidget{
+	ctx, span := tracing.StartSpan(r.Context(), "widgets.update",
+		attribute.String("widget.id", widgetID),
+		attribute.String("event.name", body.EventName),
+		attribute.String("widget.property", body.Property),
+	)
+	defer span.End()
+
+	widget, err := s.widgets.UpdateWidget(ctx, repository.DashboardWidget{
 		ID:        widgetID,
 		EventName: body.EventName,
 		Property:  body.Property,
@@ -94,6 +117,7 @@ func (s *Server) handleUpdateWidget(w http.ResponseWriter, r *http.Request) {
 		Size:      body.Size,
 	})
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleUpdateWidget")
 		return
 	}
@@ -107,7 +131,13 @@ func (s *Server) handleDeleteWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.widgets.DeleteWidget(r.Context(), widgetID); err != nil {
+	ctx, span := tracing.StartSpan(r.Context(), "widgets.delete",
+		attribute.String("widget.id", widgetID),
+	)
+	defer span.End()
+
+	if err := s.widgets.DeleteWidget(ctx, widgetID); err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleDeleteWidget")
 		return
 	}
@@ -121,8 +151,14 @@ func (s *Server) handleWidgetBreakdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	widget, err := s.widgets.GetWidget(r.Context(), widgetID)
+	ctx, span := tracing.StartSpan(r.Context(), "widgets.breakdown",
+		attribute.String("widget.id", widgetID),
+	)
+	defer span.End()
+
+	widget, err := s.widgets.GetWidget(ctx, widgetID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleWidgetBreakdown")
 		return
 	}
@@ -139,15 +175,23 @@ func (s *Server) handleWidgetBreakdown(w http.ResponseWriter, r *http.Request) {
 			limit = n
 		}
 	}
+	span.SetAttributes(
+		attribute.String("project.id", widget.ProjectID),
+		attribute.String("event.name", widget.EventName),
+		attribute.Int("window", window),
+		attribute.Int("limit", limit),
+	)
 
-	breakdown, err := s.widgets.WidgetBreakdown(r.Context(), widget.ProjectID, widget.EventName, widget.Property, window, limit)
+	breakdown, err := s.widgets.WidgetBreakdown(ctx, widget.ProjectID, widget.EventName, widget.Property, window, limit)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleWidgetBreakdown")
 		return
 	}
 	if breakdown == nil {
 		breakdown = []repository.PropertyBreakdown{}
 	}
+	span.SetAttributes(attribute.Int("breakdown.count", len(breakdown)))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"widget":    widget,
 		"breakdown": breakdown,

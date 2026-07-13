@@ -1,10 +1,15 @@
 package geoip
 
 import (
+	"context"
 	"net"
 	"strings"
 
 	"github.com/oschwald/geoip2-golang"
+
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // GeoResult holds the geo-enriched fields for an IP address.
@@ -58,21 +63,37 @@ func (l *Lookup) Close() {
 
 // Lookup resolves a raw address (host:port or bare host) to geo data.
 // Returns nil if the address is unparseable or not in the database.
+//
+// This has no context to attach the lookup span to a caller's trace; hot-path
+// callers that have one should use LookupContext instead.
 func (l *Lookup) Lookup(rawAddr string) *GeoResult {
+	return l.LookupContext(context.Background(), rawAddr)
+}
+
+// LookupContext is Lookup but joins the caller's trace with a lightweight span
+// covering the per-event MaxMind lookup (already covered by the GeoLookups/
+// GeoHits Prometheus counters at the call site; this adds per-lookup tracing).
+func (l *Lookup) LookupContext(ctx context.Context, rawAddr string) *GeoResult {
 	if l == nil {
 		return nil
 	}
+	_, span := tracing.StartSpan(ctx, "geoip.lookup")
+	defer span.End()
+
 	host, _, err := net.SplitHostPort(rawAddr)
 	if err != nil {
 		host = rawAddr
 	}
 	ip := net.ParseIP(strings.TrimSpace(host))
 	if ip == nil {
+		span.SetAttributes(attribute.Bool("geoip.hit", false))
 		return nil
 	}
 
 	city, err := l.cityDB.City(ip)
 	if err != nil {
+		tracing.RecordError(span, err)
+		span.SetAttributes(attribute.Bool("geoip.hit", false))
 		return nil
 	}
 
@@ -94,6 +115,11 @@ func (l *Lookup) Lookup(rawAddr string) *GeoResult {
 			result.ConnectionClass = classifyASN(result.ASNOrg)
 		}
 	}
+
+	span.SetAttributes(
+		attribute.Bool("geoip.hit", result.CountryCode != ""),
+		attribute.String("geoip.connection_class", result.ConnectionClass),
+	)
 
 	return result
 }

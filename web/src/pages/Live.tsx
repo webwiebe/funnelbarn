@@ -6,6 +6,7 @@ import Shell from '../components/shell/Shell'
 import { api } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { Skeleton } from '../components/ui/Skeleton'
+import { reportError } from '../lib/bugbarn'
 import { C } from '../lib/theme'
 
 interface LiveEvent {
@@ -78,7 +79,8 @@ export default function Live() {
             // ignore parse errors
           }
         }
-      } catch {
+      } catch (e) {
+        reportError(e, { source: 'Live.trySSE' })
         startPolling()
       }
     }
@@ -103,8 +105,8 @@ export default function Live() {
             const newOnes = incoming.filter((e) => !existing.has(e.id))
             newOnes.forEach(addEvent)
           }
-        } catch {
-          // ignore
+        } catch (e) {
+          reportError(e, { source: 'Live.startPolling' })
         }
       }, 3000)
     }

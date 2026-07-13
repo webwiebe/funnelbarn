@@ -8,9 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 func (s *Server) handleListFlags(w http.ResponseWriter, r *http.Request) {
@@ -198,8 +201,16 @@ func (s *Server) handleFlagAnalysis(w http.ResponseWriter, r *http.Request) {
 		from = to.AddDate(0, 0, -30)
 	}
 
-	results, err := s.flags.AnalyzeFlag(r.Context(), flag, from, to)
+	ctx, span := tracing.StartSpan(r.Context(), "flags.analysis",
+		attribute.String("project.id", projectID),
+		attribute.String("flag.id", flagID),
+		attribute.String("flag.key", flag.FlagKey),
+	)
+	defer span.End()
+
+	results, err := s.flags.AnalyzeFlag(ctx, flag, from, to)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleFlagAnalysis")
 		return
 	}
@@ -216,6 +227,11 @@ func (s *Server) handleFlagAnalysis(w http.ResponseWriter, r *http.Request) {
 			results[1].Sample, results[1].Conversions,
 		)
 	}
+
+	span.SetAttributes(
+		attribute.Int("flag.variant_count", len(results)),
+		attribute.Bool("flag.significant", significant),
+	)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"flag":        flag,
@@ -276,12 +292,19 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 		body.Context = map[string]any{}
 	}
 
+	ctx, span := tracing.StartSpan(r.Context(), "flags.assignment",
+		attribute.String("project.id", projectID),
+		attribute.String("flag.key", body.FlagKey),
+		attribute.Bool("flag.auto_register", autoRegister),
+	)
+	defer span.End()
+
 	var result service.FlagEvalResult
 	var err error
 	if autoRegister {
-		result, err = s.flags.EvaluateOrRegisterFlag(r.Context(), projectID, body.FlagKey, body.Context, body.DefaultValue, s.flagAutoRegisterMax)
+		result, err = s.flags.EvaluateOrRegisterFlag(ctx, projectID, body.FlagKey, body.Context, body.DefaultValue, s.flagAutoRegisterMax)
 	} else {
-		result, err = s.flags.EvaluateFlag(r.Context(), projectID, body.FlagKey, body.Context)
+		result, err = s.flags.EvaluateFlag(ctx, projectID, body.FlagKey, body.Context)
 	}
 	if err != nil {
 		errorCode := "GENERAL"
@@ -291,23 +314,26 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 		case strings.Contains(err.Error(), "flag not found"):
 			errorCode = "FLAG_NOT_FOUND"
 		}
+		span.SetAttributes(attribute.String("flag.error_code", errorCode))
+
 		// FLAG_NOT_FOUND is normal client behaviour; AUTO_REGISTER_LIMIT is a
 		// possible-abuse signal worth a warning; everything else (DB failure,
 		// JSON corruption) is a real server problem to surface.
 		switch errorCode {
 		case "FLAG_NOT_FOUND":
-			slog.DebugContext(r.Context(), "flag evaluate: not found",
+			slog.DebugContext(ctx, "flag evaluate: not found",
 				"project_id", projectID, "flag_key", body.FlagKey)
 		case "AUTO_REGISTER_LIMIT":
-			slog.WarnContext(r.Context(), "flag auto-register limit reached",
+			slog.WarnContext(ctx, "flag auto-register limit reached",
 				"handled", true, "project_id", projectID, "flag_key", body.FlagKey)
 		default:
-			slog.ErrorContext(r.Context(), "flag evaluate failed",
+			tracing.RecordError(span, err)
+			slog.ErrorContext(ctx, "flag evaluate failed",
 				"err", err, "handled", false,
 				"project_id", projectID,
 				"flag_key", body.FlagKey,
 				"error_code", errorCode,
-				"request_id", RequestIDFromContext(r.Context()),
+				"request_id", RequestIDFromContext(ctx),
 			)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -321,6 +347,10 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
+	span.SetAttributes(
+		attribute.String("flag.reason", result.Reason),
+		attribute.String("flag.variant", result.Variant),
+	)
 	writeJSON(w, http.StatusOK, result)
 }
 

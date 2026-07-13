@@ -6,7 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // parseOverviewRange parses the shared time-range + environment query params used
@@ -40,44 +43,62 @@ func parseOverviewRange(r *http.Request) (from, to time.Time, env string) {
 // the visitors-per-site series, and top pages/referrers/countries.
 func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	from, to, env := parseOverviewRange(r)
-	ctx := r.Context()
+
+	ctx, span := tracing.StartSpan(r.Context(), "overview.aggregate",
+		attribute.String("environment", env),
+	)
+	defer span.End()
+
+	// recordOnErr surfaces an error onto the span and falls through to the
+	// standard service-error mapper, so a 5xx here isn't mislabeled "ok" in
+	// trace search.
+	recordOnErr := func(err error, op string) bool {
+		if err == nil {
+			return false
+		}
+		tracing.RecordError(span, err)
+		mapServiceError(w, err, op)
+		return true
+	}
 
 	totalEvents, totalSessions, err := s.overview.OverviewTotals(ctx, from, to, env)
-	if err != nil {
-		mapServiceError(w, err, "handleOverview.totals")
+	if recordOnErr(err, "handleOverview.totals") {
 		return
 	}
 	projects, err := s.overview.ProjectRollups(ctx, from, to, env)
-	if err != nil {
-		mapServiceError(w, err, "handleOverview.projectRollups")
+	if recordOnErr(err, "handleOverview.projectRollups") {
 		return
 	}
 	visitors, err := s.overview.OverviewVisitorsByProjectDaily(ctx, from, to, env)
-	if err != nil {
-		mapServiceError(w, err, "handleOverview.visitors")
+	if recordOnErr(err, "handleOverview.visitors") {
 		return
 	}
 	topPages, err := s.overview.OverviewTopPages(ctx, from, to, 10, env)
-	if err != nil {
-		mapServiceError(w, err, "handleOverview.topPages")
+	if recordOnErr(err, "handleOverview.topPages") {
 		return
 	}
 	topReferrers, err := s.overview.OverviewTopReferrers(ctx, from, to, 10, env)
-	if err != nil {
-		mapServiceError(w, err, "handleOverview.topReferrers")
+	if recordOnErr(err, "handleOverview.topReferrers") {
 		return
 	}
 	topCountries, err := s.overview.OverviewTopCountries(ctx, from, to, 10, env)
-	if err != nil {
-		mapServiceError(w, err, "handleOverview.topCountries")
+	if recordOnErr(err, "handleOverview.topCountries") {
 		return
 	}
+
+	span.SetAttributes(
+		attribute.Int64("overview.total_events", totalEvents),
+		attribute.Int64("overview.total_sessions", totalSessions),
+		attribute.Int("overview.projects.count", len(projects)),
+	)
 
 	// Optional dimension breakdown for the "per type" view.
 	var dimension []repository.DimensionStat
 	if dim := r.URL.Query().Get("dimension"); dim != "" {
+		span.SetAttributes(attribute.String("overview.dimension", dim))
 		dimension, err = s.overview.OverviewDimensionBreakdown(ctx, dim, from, to, 10, env)
 		if err != nil {
+			tracing.RecordError(span, err)
 			jsonError(w, "unsupported dimension", http.StatusBadRequest)
 			return
 		}
@@ -117,14 +138,24 @@ func (s *Server) handleOverviewEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	events, err := s.overview.ListAllEvents(r.Context(), f, limit)
+	ctx, span := tracing.StartSpan(r.Context(), "overview.events",
+		attribute.String("project.id", f.ProjectID),
+		attribute.String("event.name", f.Name),
+		attribute.String("environment", f.Environment),
+		attribute.Int("limit", limit),
+	)
+	defer span.End()
+
+	events, err := s.overview.ListAllEvents(ctx, f, limit)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleOverviewEvents")
 		return
 	}
 	if events == nil {
 		events = []repository.Event{}
 	}
+	span.SetAttributes(attribute.Int("events.count", len(events)))
 
 	// Cursor for the next page: the last row's (occurred_at, id). Present only
 	// when the page was full (more rows may follow).
@@ -211,14 +242,22 @@ func (s *Server) handleListMappings(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "project id required", http.StatusBadRequest)
 		return
 	}
-	mappings, err := s.overview.ListMappings(r.Context(), projectID)
+
+	ctx, span := tracing.StartSpan(r.Context(), "overview.mappings.list",
+		attribute.String("project.id", projectID),
+	)
+	defer span.End()
+
+	mappings, err := s.overview.ListMappings(ctx, projectID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleListMappings")
 		return
 	}
 	if mappings == nil {
 		mappings = []repository.EventNameMapping{}
 	}
+	span.SetAttributes(attribute.Int("mappings.count", len(mappings)))
 	writeJSON(w, http.StatusOK, map[string]any{"mappings": mappings})
 }
 
@@ -235,13 +274,22 @@ func (s *Server) handleSetMappings(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if err := s.overview.SetMappings(r.Context(), projectID, body.Mappings); err != nil {
+
+	ctx, span := tracing.StartSpan(r.Context(), "overview.mappings.set",
+		attribute.String("project.id", projectID),
+		attribute.Int("mappings.count", len(body.Mappings)),
+	)
+	defer span.End()
+
+	if err := s.overview.SetMappings(ctx, projectID, body.Mappings); err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleSetMappings")
 		return
 	}
 	// Return the fresh mapping set.
-	mappings, err := s.overview.ListMappings(r.Context(), projectID)
+	mappings, err := s.overview.ListMappings(ctx, projectID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleSetMappings.list")
 		return
 	}
@@ -255,7 +303,15 @@ func (s *Server) handleDeleteMapping(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "project id and raw name required", http.StatusBadRequest)
 		return
 	}
-	if err := s.overview.DeleteMapping(r.Context(), projectID, raw); err != nil {
+
+	ctx, span := tracing.StartSpan(r.Context(), "overview.mappings.delete",
+		attribute.String("project.id", projectID),
+		attribute.String("mapping.raw", raw),
+	)
+	defer span.End()
+
+	if err := s.overview.DeleteMapping(ctx, projectID, raw); err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleDeleteMapping")
 		return
 	}
@@ -268,14 +324,21 @@ func (s *Server) handleMappingSuggestions(w http.ResponseWriter, r *http.Request
 		jsonError(w, "project id required", http.StatusBadRequest)
 		return
 	}
-	suggestions, err := s.overview.MappingSuggestions(r.Context(), projectID)
+	ctx, span := tracing.StartSpan(r.Context(), "overview.mappings.suggestions",
+		attribute.String("project.id", projectID),
+	)
+	defer span.End()
+
+	suggestions, err := s.overview.MappingSuggestions(ctx, projectID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleMappingSuggestions")
 		return
 	}
 	if suggestions == nil {
 		suggestions = []repository.MappingSuggestion{}
 	}
+	span.SetAttributes(attribute.Int("suggestions.count", len(suggestions)))
 	writeJSON(w, http.StatusOK, map[string]any{"suggestions": suggestions})
 }
 
@@ -406,8 +469,16 @@ func (s *Server) handleCanonicalFunnelAnalysis(w http.ResponseWriter, r *http.Re
 	}
 	seg := parseSegment(segmentName)
 
-	result, err := s.overview.AnalyzeCanonicalFunnel(r.Context(), funnel, projectIDs, from, to, seg)
+	ctx, span := tracing.StartSpan(r.Context(), "overview.canonical_funnels.analyze",
+		attribute.String("funnel.id", id),
+		attribute.Int("funnel.project_ids.count", len(projectIDs)),
+		attribute.String("segment", segmentName),
+	)
+	defer span.End()
+
+	result, err := s.overview.AnalyzeCanonicalFunnel(ctx, funnel, projectIDs, from, to, seg)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleCanonicalFunnelAnalysis")
 		return
 	}
