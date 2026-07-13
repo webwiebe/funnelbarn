@@ -15,6 +15,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	selfsdk "github.com/webwiebe/funnelbarn/sdks/go"
 	bb "github.com/wiebe-xyz/bugbarn-go"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/api"
@@ -149,42 +150,11 @@ func run() error {
 		return fmt.Errorf("FUNNELBARN_SESSION_SECRET must be at least 32 characters (got %d)", len(secret))
 	}
 
-	store, err := repository.Open(cfg.DBPath)
-	if err != nil {
-		return fmt.Errorf("open storage: %w", err)
-	}
-	defer store.Close()
-
-	// Wire services.
-	projectsSvc := service.NewProjectService(store)
-	funnelsSvc := service.NewFunnelService(store)
-	abtestsSvc := service.NewABTestService(store)
-	flagsSvc := service.NewFlagService(store)
-	eventsSvc := service.NewEventService(store)
-	overviewSvc := service.NewOverviewService(store)
-	sessionsSvc := service.NewSessionService(store)
-	apikeysSvc := service.NewAPIKeyService(store)
-	widgetsSvc := service.NewWidgetService(store)
-	segmentsSvc := service.NewSegmentService(store)
-	healthSvc := service.NewProjectHealthService(store)
-
-	eventSpool, err := spool.NewWithLimit(cfg.SpoolDir, cfg.MaxSpoolBytes)
-	if err != nil {
-		return fmt.Errorf("open spool: %w", err)
-	}
-	defer eventSpool.Close()
-
-	var recordingsSvc service.Recordings
-	if cfg.R2Endpoint != "" && cfg.R2AccessKeyID != "" && cfg.R2SecretAccessKey != "" && cfg.R2Bucket != "" {
-		r2, r2err := storage.NewR2(cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
-		if r2err != nil {
-			slog.Warn("session recording disabled: failed to initialize R2 storage", "err", r2err)
-		} else {
-			recordingsSvc = service.NewRecordingService(store, store, store, r2)
-			slog.Info("session recording enabled", "bucket", cfg.R2Bucket)
-		}
-	}
-
+	// Telemetry (logging sinks, tracer, and OTel MeterProvider) is wired up
+	// front, before repository.Open: otelsql resolves otel.GetMeterProvider()
+	// exactly once, at Open time, and binds to whatever provider is current
+	// then. If InitMetrics ran later, otelsql would permanently bind to the
+	// no-op default provider and its db.sql.* histograms would never export.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -223,12 +193,30 @@ func run() error {
 		slog.Info("dogfood analytics enabled", "project", cfg.DogfoodProject)
 	}
 
+	// Backend self-tracking: fire events (e.g. first_event_ingested) that can
+	// only be observed server-side, against the same dogfood project used for
+	// frontend analytics and flag evaluation — via this repo's own Go SDK
+	// hitting this app's own public ingest endpoint.
+	if cfg.DogfoodAPIKey != "" && cfg.PublicURL != "" {
+		selfsdk.Init(selfsdk.Options{
+			APIKey:      cfg.DogfoodAPIKey,
+			Endpoint:    strings.TrimRight(cfg.PublicURL, "/"),
+			ProjectName: cfg.DogfoodProject,
+		})
+		defer selfsdk.Shutdown(2 * time.Second)
+	} else if cfg.DogfoodAPIKey != "" {
+		slog.Warn("dogfood analytics enabled but FUNNELBARN_PUBLIC_URL is unset; backend self-tracking disabled",
+			"handled", true)
+	}
+
 	shutdownTracer, err := tracing.Init(ctx, otelCfg)
 	if err != nil {
 		return fmt.Errorf("init tracing: %w", err)
 	}
 	defer shutdownTracer(context.Background())
 
+	// Must run before repository.Open (see comment above): this is what sets
+	// the real OTel MeterProvider via otel.SetMeterProvider.
 	shutdownMetrics, err := tracing.InitMetrics(ctx, otelCfg)
 	if err != nil {
 		return fmt.Errorf("init metrics: %w", err)
@@ -237,6 +225,42 @@ func run() error {
 
 	if cfg.SpanBarnEndpoint != "" {
 		slog.Info("spanbarn telemetry enabled", "endpoint", cfg.SpanBarnEndpoint, "signals", "traces,metrics,logs")
+	}
+
+	store, err := repository.Open(cfg.DBPath)
+	if err != nil {
+		return fmt.Errorf("open storage: %w", err)
+	}
+	defer store.Close()
+
+	// Wire services.
+	projectsSvc := service.NewProjectService(store)
+	funnelsSvc := service.NewFunnelService(store)
+	abtestsSvc := service.NewABTestService(store)
+	flagsSvc := service.NewFlagService(store)
+	eventsSvc := service.NewEventService(store)
+	overviewSvc := service.NewOverviewService(store)
+	sessionsSvc := service.NewSessionService(store)
+	apikeysSvc := service.NewAPIKeyService(store)
+	widgetsSvc := service.NewWidgetService(store)
+	segmentsSvc := service.NewSegmentService(store)
+	healthSvc := service.NewProjectHealthService(store)
+
+	eventSpool, err := spool.NewWithLimit(cfg.SpoolDir, cfg.MaxSpoolBytes)
+	if err != nil {
+		return fmt.Errorf("open spool: %w", err)
+	}
+	defer eventSpool.Close()
+
+	var recordingsSvc service.Recordings
+	if cfg.R2Endpoint != "" && cfg.R2AccessKeyID != "" && cfg.R2SecretAccessKey != "" && cfg.R2Bucket != "" {
+		r2, r2err := storage.NewR2(cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
+		if r2err != nil {
+			slog.Warn("session recording disabled: failed to initialize R2 storage", "err", r2err)
+		} else {
+			recordingsSvc = service.NewRecordingService(store, store, store, r2)
+			slog.Info("session recording enabled", "bucket", cfg.R2Bucket)
+		}
 	}
 
 	var geoLookup *geoip.Lookup
@@ -276,8 +300,22 @@ func run() error {
 	}
 	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.MaxBodyBytes)
 	handler.OnEventsReceived = func(ctx context.Context, projectID string) {
-		if err := healthSvc.MarkEventsReceived(ctx, projectID); err != nil {
+		firstEvent, err := healthSvc.MarkEventsReceived(ctx, projectID)
+		if err != nil {
 			slog.Warn("ingest: mark events received", "project_id", projectID, "err", err)
+			return
+		}
+		// firstEvent is true only on the call that flips this project's
+		// events_received health flag from false to true — i.e. this
+		// project's first ever ingested event. Reusing that existing
+		// per-project flag (rather than a new migration/counter) gives us an
+		// activation signal that can only be observed here, server-side: it
+		// happens via the customer's own SDK hitting this app's ingest
+		// endpoint, never through this app's own UI.
+		if firstEvent && projectID != "" {
+			selfsdk.Track("first_event_ingested", map[string]any{
+				"project_id": projectID,
+			})
 		}
 	}
 	go handler.Start(ctx)
@@ -473,25 +511,29 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 		case <-ctx.Done():
 			return
 		case <-purgeTicker.C:
+			purgeCtx, purgeSpan := tracing.StartSpan(ctx, "maintenance.purge")
 			// Sessions past their absolute cap are already unusable (the
 			// middleware enforces absolute_expires_at); this keeps the table
 			// from accumulating.
-			if n, err := store.DeleteExpiredWebSessions(ctx, time.Now().UTC()); err != nil {
+			if n, err := store.DeleteExpiredWebSessions(purgeCtx, time.Now().UTC()); err != nil {
+				tracing.RecordError(purgeSpan, err)
 				slog.Error("purge expired web sessions", "err", err)
 			} else if n > 0 {
 				slog.Info("purged expired web sessions", "count", n)
 			}
 			if cfg.EventRetentionDays > 0 {
 				cutoff := time.Now().AddDate(0, 0, -cfg.EventRetentionDays)
-				n, err := store.PurgeOldEvents(ctx, cutoff)
+				n, err := store.PurgeOldEvents(purgeCtx, cutoff)
 				if err != nil {
+					tracing.RecordError(purgeSpan, err)
 					slog.Error("purge old events", "err", err)
 				} else if n > 0 {
 					slog.Info("purged old events", "count", n, "before", cutoff.Format(time.DateOnly))
 					metrics.EventsPurged.Add(float64(n))
 				}
-				ne, err := store.PurgeOldEvaluations(ctx, cutoff)
+				ne, err := store.PurgeOldEvaluations(purgeCtx, cutoff)
 				if err != nil {
+					tracing.RecordError(purgeSpan, err)
 					slog.Error("purge old evaluations", "err", err)
 				} else if ne > 0 {
 					slog.Info("purged old evaluations", "count", ne, "before", cutoff.Format(time.DateOnly))
@@ -499,8 +541,9 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 			}
 			if cfg.AutoRegisterTTLDays > 0 {
 				cutoff := time.Now().AddDate(0, 0, -cfg.AutoRegisterTTLDays)
-				nf, err := store.PurgeStaleAutoFlags(ctx, cutoff)
+				nf, err := store.PurgeStaleAutoFlags(purgeCtx, cutoff)
 				if err != nil {
+					tracing.RecordError(purgeSpan, err)
 					slog.Error("purge stale auto flags", "err", err)
 				} else if nf > 0 {
 					slog.Info("purged stale auto flags", "count", nf, "before", cutoff.Format(time.DateOnly))
@@ -508,28 +551,38 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 			}
 			if recordings != nil {
 				retentionDays := 90 // default
-				if v, ok, _ := store.GetInstanceSetting(ctx, "recording_retention_days"); ok {
+				if v, ok, _ := store.GetInstanceSetting(purgeCtx, "recording_retention_days"); ok {
 					if n, err := strconv.Atoi(v); err == nil && n > 0 {
 						retentionDays = n
 					}
 				}
-				if err := recordings.PurgeOldRecordings(ctx, retentionDays); err != nil {
+				if err := recordings.PurgeOldRecordings(purgeCtx, retentionDays); err != nil {
+					tracing.RecordError(purgeSpan, err)
 					slog.Error("purge old recordings", "err", err)
 				} else {
 					slog.Debug("recording retention purge complete", "retention_days", retentionDays)
 				}
-				if n, err := recordings.PurgeBrokenRecordings(ctx); err != nil {
+				if n, err := recordings.PurgeBrokenRecordings(purgeCtx); err != nil {
+					tracing.RecordError(purgeSpan, err)
 					slog.Error("purge broken recordings", "err", err)
 				} else if n > 0 {
 					slog.Info("purged unplayable recordings", "count", n)
 				}
 			}
+			purgeSpan.End()
 		case <-ticker.C:
+			tickCtx, tickSpan := tracing.StartSpan(ctx, "worker.tick",
+				attribute.Int64("spool.offset", offset),
+			)
+
 			entries, err := spool.ReadRecordsFrom(spool.Path(cfg.SpoolDir), offset)
 			if err != nil {
+				tracing.RecordError(tickSpan, err)
+				tickSpan.End()
 				slog.Error("worker read spool", "err", err)
 				continue
 			}
+			tickSpan.SetAttributes(attribute.Int("spool.entries", len(entries)))
 			metrics.SpoolQueueDepth.Set(float64(len(entries)))
 
 			// Stall detection: if the spool has pending bytes the cursor isn't
@@ -558,7 +611,7 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 			// Check geo_enabled once per batch to avoid a DB round-trip per event.
 			geoEnabled := geoLookup != nil
 			if geoEnabled {
-				val, _, _ := store.GetInstanceSetting(ctx, "geo_enabled")
+				val, _, _ := store.GetInstanceSetting(tickCtx, "geo_enabled")
 				geoEnabled = val != "false"
 			}
 
@@ -581,19 +634,23 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 						if dlErr := spool.AppendDeadLetter(cfg.SpoolDir, record); dlErr != nil {
 							slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", dlErr)
 						}
-						metrics.EventErrors.Inc()
+						metrics.EventErrors.WithLabelValues("dead_letter").Inc()
 						delete(retryCounts, record.IngestID)
 						offset = entry.EndOffset
 						if err := spool.WriteCursor(cfg.SpoolDir, offset); err != nil {
 							slog.Error("worker write cursor", "err", err)
 						}
+					} else {
+						metrics.EventErrors.WithLabelValues("retry").Inc()
 					}
 					break
 				}
 
+				eventStart := time.Now()
+
 				// Resolve project from the slug stored in the spool record.
 				// Each DB operation gets a 30s timeout so a stuck write can't block the worker.
-				opCtx, opCancel := context.WithTimeout(ctx, 30*time.Second)
+				opCtx, opCancel := context.WithTimeout(tickCtx, 30*time.Second)
 				opCtx, span := tracing.StartSpan(opCtx, "worker.persist_event",
 					attribute.String("ingest.id", record.IngestID),
 					attribute.String("project.slug", record.ProjectSlug),
@@ -629,6 +686,7 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				}
 				span.End()
 				opCancel()
+				metrics.EventProcessingDuration.Observe(time.Since(eventStart).Seconds())
 				if persistErr != nil {
 					retryCounts[record.IngestID]++
 					slog.Error("worker persist record",
@@ -643,12 +701,14 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 						if dlErr := spool.AppendDeadLetter(cfg.SpoolDir, record); dlErr != nil {
 							slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", dlErr)
 						}
-						metrics.EventErrors.Inc()
+						metrics.EventErrors.WithLabelValues("dead_letter").Inc()
 						delete(retryCounts, record.IngestID)
 						offset = entry.EndOffset
 						if err := spool.WriteCursor(cfg.SpoolDir, offset); err != nil {
 							slog.Error("worker write cursor", "err", err)
 						}
+					} else {
+						metrics.EventErrors.WithLabelValues("retry").Inc()
 					}
 					break
 				}
@@ -662,8 +722,10 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 			}
 
 			if err := eventSpool.RotateIfExceeds(workerRotateThreshold); err != nil {
+				tracing.RecordError(tickSpan, err)
 				slog.Error("worker rotate spool", "err", err)
 			}
+			tickSpan.End()
 		}
 	}
 }

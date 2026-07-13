@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -209,7 +210,9 @@ func (s *Store) funnelSteps(ctx context.Context, funnelID string) ([]FunnelStep,
 			return nil, err
 		}
 		if filtersJSON != "" && filtersJSON != "[]" {
-			_ = json.Unmarshal([]byte(filtersJSON), &step.Filters)
+			if err := json.Unmarshal([]byte(filtersJSON), &step.Filters); err != nil {
+				slog.WarnContext(ctx, "funnel step: malformed filters JSON", "step_id", step.ID, "raw_len", len(filtersJSON), "error", err)
+			}
 		}
 		steps = append(steps, step)
 	}

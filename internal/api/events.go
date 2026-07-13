@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // addPaginationHeaders sets a Link header for the next page when more results
@@ -52,20 +56,29 @@ func (s *Server) handleEventProperties(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	props, err := s.events.DistinctEventProperties(r.Context(), projectID, eventName)
+	ctx, span := tracing.StartSpan(r.Context(), "events.properties",
+		attribute.String("project.id", projectID),
+		attribute.String("event.name", eventName),
+	)
+	defer span.End()
+
+	props, err := s.events.DistinctEventProperties(ctx, projectID, eventName)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleEventProperties")
 		return
 	}
 	if props == nil {
 		props = []string{}
 	}
-	populated, err := s.events.PopulatedMetadataColumns(r.Context(), projectID, eventName)
+	populated, err := s.events.PopulatedMetadataColumns(ctx, projectID, eventName)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleEventProperties.metadata")
 		return
 	}
 	all := append(populated, props...)
+	span.SetAttributes(attribute.Int("event.property_count", len(all)))
 	writeJSON(w, http.StatusOK, map[string]any{"properties": all})
 }
 
@@ -138,12 +151,21 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	events, err := s.events.ListEvents(r.Context(), projectID, limit, offset)
+	ctx, span := tracing.StartSpan(r.Context(), "events.list",
+		attribute.String("project.id", projectID),
+		attribute.Int("limit", limit),
+		attribute.Int("offset", offset),
+	)
+	defer span.End()
+
+	events, err := s.events.ListEvents(ctx, projectID, limit, offset)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleListEvents")
 		return
 	}
 
+	span.SetAttributes(attribute.Int("event.result_count", len(events)))
 	addPaginationHeaders(w, r, limit, offset, len(events))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"events": events,

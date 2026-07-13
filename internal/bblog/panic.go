@@ -37,6 +37,9 @@ func ReportPanic(endpoint, apiKey string, r any) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/api/v1/events", bytes.NewReader(body))
 	if err != nil {
+		// Deliberately not using slog here: this runs during panic recovery, and
+		// routing through the logging fan-out risks recursing back into a crash.
+		fmt.Fprintln(os.Stderr, "bblog: ReportPanic: failed to build panic report request:", err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")

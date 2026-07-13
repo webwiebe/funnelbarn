@@ -4,6 +4,7 @@ import Shell from '../components/shell/Shell'
 import { api, CanonicalEvent } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { OverviewTabs } from '../components/OverviewTabs'
+import { trackEvent } from '../lib/analytics'
 import { C } from '../lib/theme'
 
 // A single editable mapping row: a project's raw event name → a canonical key.
@@ -71,7 +72,10 @@ export default function EventMapping() {
     setError(null)
     const mappings = rows.filter((r) => r.canonical_key).map((r) => ({ raw_name: r.raw_name, canonical_key: r.canonical_key }))
     api.setMappings(projectId, mappings)
-      .then(() => setMsg(`Saved ${mappings.length} mapping${mappings.length === 1 ? '' : 's'}.`))
+      .then(() => {
+        trackEvent('event_mapping_created', { project_id: projectId, mapping_count: mappings.length })
+        setMsg(`Saved ${mappings.length} mapping${mappings.length === 1 ? '' : 's'}.`)
+      })
       .catch((e) => setError(e.message || 'save failed'))
       .finally(() => setSaving(false))
   }

@@ -7,6 +7,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
@@ -62,8 +63,16 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 		Steps:       body.Steps,
 	}
 
-	updated, err := s.funnels.UpdateFunnel(r.Context(), funnel)
+	ctx, span := tracing.StartSpan(r.Context(), "funnels.update",
+		attribute.String("project.id", projectID),
+		attribute.String("funnel.id", funnelID),
+		attribute.Int("funnel.step_count", len(body.Steps)),
+	)
+	defer span.End()
+
+	updated, err := s.funnels.UpdateFunnel(ctx, funnel)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleUpdateFunnel")
 		return
 	}
@@ -150,13 +159,21 @@ func (s *Server) handleCreateFunnel(w http.ResponseWriter, r *http.Request) {
 		Steps:       body.Steps,
 	}
 
-	created, err := s.funnels.CreateFunnel(r.Context(), funnel)
+	ctx, span := tracing.StartSpan(r.Context(), "funnels.create",
+		attribute.String("project.id", projectID),
+		attribute.Int("funnel.step_count", len(body.Steps)),
+	)
+	defer span.End()
+
+	created, err := s.funnels.CreateFunnel(ctx, funnel)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleCreateFunnel")
 		return
 	}
 
-	slog.InfoContext(r.Context(), "funnel created", "funnel_id", created.ID, "project_id", projectID, "request_id", RequestIDFromContext(r.Context()))
+	span.SetAttributes(attribute.String("funnel.id", created.ID))
+	slog.InfoContext(ctx, "funnel created", "funnel_id", created.ID, "project_id", projectID, "request_id", RequestIDFromContext(ctx))
 	writeJSON(w, http.StatusCreated, created)
 }
 
@@ -237,15 +254,21 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 	ctx, span := tracing.StartSpan(r.Context(), "funnels.analyze",
 		attribute.String("project.id", projectID),
 		attribute.String("funnel.id", funnelID),
+		attribute.Int("funnel.step_count", len(funnel.Steps)),
+		attribute.String("funnel.segment", r.URL.Query().Get("segment")),
 	)
 	defer span.End()
 
+	analysisStart := time.Now()
 	results, err := s.funnels.AnalyzeFunnel(ctx, funnel, from, to, seg, segRules...)
+	metrics.FunnelAnalysisDuration.Observe(time.Since(analysisStart).Seconds())
 	if err != nil {
 		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleFunnelAnalysis")
 		return
 	}
+
+	span.SetAttributes(attribute.Int("funnel.result_count", len(results)))
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"funnel":  funnel,
@@ -275,8 +298,15 @@ func (s *Server) handleFunnelSegments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	segs, err := s.funnels.FunnelSegmentData(r.Context(), projectID)
+	ctx, span := tracing.StartSpan(r.Context(), "funnels.segmentData",
+		attribute.String("project.id", projectID),
+		attribute.String("funnel.id", funnelID),
+	)
+	defer span.End()
+
+	segs, err := s.funnels.FunnelSegmentData(ctx, projectID)
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleFunnelSegments")
 		return
 	}

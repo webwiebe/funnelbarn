@@ -57,11 +57,17 @@ func TestProjectHealthService_MarkEventsReceived(t *testing.T) {
 
 	p := createTestProject(ctx, t, store, "health-events-svc", "health-events-svc")
 
-	require.NoError(t, svc.MarkEventsReceived(ctx, p.ID))
+	first, err := svc.MarkEventsReceived(ctx, p.ID)
+	require.NoError(t, err)
+	assert.True(t, first, "first call should report the transition to true")
 
 	h, err := svc.GetProjectHealth(ctx, p.ID)
 	require.NoError(t, err)
 	assert.True(t, h.EventsReceived)
+
+	again, err := svc.MarkEventsReceived(ctx, p.ID)
+	require.NoError(t, err)
+	assert.False(t, again, "second call must not re-report the transition")
 }
 
 func TestProjectHealthService_MarkFlagsEvaluated(t *testing.T) {
@@ -100,7 +106,8 @@ func TestProjectHealthService_ResetProjectHealth(t *testing.T) {
 	p := createTestProject(ctx, t, store, "health-reset-svc", "health-reset-svc")
 
 	require.NoError(t, svc.MarkSetupCalled(ctx, p.ID))
-	require.NoError(t, svc.MarkEventsReceived(ctx, p.ID))
+	_, err := svc.MarkEventsReceived(ctx, p.ID)
+	require.NoError(t, err)
 
 	require.NoError(t, svc.ResetProjectHealth(ctx, p.ID))
 
@@ -120,12 +127,17 @@ func TestProjectHealthService_CacheSkipsDBWrite(t *testing.T) {
 
 	p := createTestProject(ctx, t, store, "health-cache-skip", "health-cache-skip")
 
-	// First call: field is false → should write to DB (1 call).
-	require.NoError(t, svc.MarkEventsReceived(ctx, p.ID))
+	// First call: field is false → should write to DB (1 call) and report first=true.
+	first, err := svc.MarkEventsReceived(ctx, p.ID)
+	require.NoError(t, err)
+	assert.True(t, first)
 	assert.Equal(t, int32(1), spy.markEventsCalls.Load())
 
-	// Second call: cache has field=true → should skip DB entirely (still 1 call).
-	require.NoError(t, svc.MarkEventsReceived(ctx, p.ID))
+	// Second call: cache has field=true → should skip DB entirely (still 1 call)
+	// and report first=false.
+	first, err = svc.MarkEventsReceived(ctx, p.ID)
+	require.NoError(t, err)
+	assert.False(t, first)
 	assert.Equal(t, int32(1), spy.markEventsCalls.Load())
 }
 
@@ -139,13 +151,16 @@ func TestProjectHealthService_CacheEvictedOnReset(t *testing.T) {
 
 	p := createTestProject(ctx, t, store, "health-cache-evict", "health-cache-evict")
 
-	require.NoError(t, svc.MarkEventsReceived(ctx, p.ID))
+	_, err := svc.MarkEventsReceived(ctx, p.ID)
+	require.NoError(t, err)
 	assert.Equal(t, int32(1), spy.markEventsCalls.Load())
 
 	require.NoError(t, svc.ResetProjectHealth(ctx, p.ID))
 
 	// After reset the cache is evicted; the next Mark* must write to DB again.
-	require.NoError(t, svc.MarkEventsReceived(ctx, p.ID))
+	first, err := svc.MarkEventsReceived(ctx, p.ID)
+	require.NoError(t, err)
+	assert.True(t, first, "post-reset call should report the transition again")
 	assert.Equal(t, int32(2), spy.markEventsCalls.Load())
 }
 

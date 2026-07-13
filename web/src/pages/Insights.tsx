@@ -6,6 +6,7 @@ import { api } from '../lib/api'
 import type { DashboardWidget, PropertyBreakdown, DistributionEntry } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { Skeleton } from '../components/ui/Skeleton'
+import { reportError } from '../lib/bugbarn'
 import { C } from '../lib/theme'
 import { WidgetCard } from '../components/insights/WidgetCard'
 import { AddWidgetModal } from '../components/insights/AddWidgetModal'
@@ -29,8 +30,8 @@ export default function Insights() {
     try {
       const data = await api.getBatchBreakdowns(projectId)
       setWidgets(data.results)
-    } catch {
-      // silent
+    } catch (e) {
+      reportError(e, { source: 'Insights.fetchAll' })
     } finally {
       setLoading(false)
     }
@@ -52,8 +53,8 @@ export default function Insights() {
     try {
       await api.deleteWidget(projectId, widgetId)
       setWidgets((prev) => prev.filter((w) => w.widget.id !== widgetId))
-    } catch {
-      // silent
+    } catch (e) {
+      reportError(e, { source: 'Insights.handleDelete' })
     }
   }
 
@@ -74,8 +75,8 @@ export default function Insights() {
       setWidgets((prev) =>
         prev.map((w) => w.widget.id === widgetId ? { ...w, widget: updated } : w)
       )
-    } catch {
-      // silent
+    } catch (e) {
+      reportError(e, { source: 'Insights.handleResize' })
     }
   }
 

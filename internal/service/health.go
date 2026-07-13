@@ -51,14 +51,18 @@ func (s *projectHealthService) ResetProjectHealth(ctx context.Context, projectID
 }
 
 func (s *projectHealthService) MarkSetupCalled(ctx context.Context, projectID string) error {
-	return s.markField(ctx, projectID,
+	_, err := s.markField(ctx, projectID,
 		func(h repository.ProjectHealth) bool { return h.SetupCalled },
 		s.repo.MarkProjectHealthSetupCalled,
 		func(h *repository.ProjectHealth) { h.SetupCalled = true },
 	)
+	return err
 }
 
-func (s *projectHealthService) MarkEventsReceived(ctx context.Context, projectID string) error {
+// MarkEventsReceived records that at least one event was ingested for
+// projectID. See the ProjectHealth interface doc for the meaning of the
+// returned bool.
+func (s *projectHealthService) MarkEventsReceived(ctx context.Context, projectID string) (bool, error) {
 	return s.markField(ctx, projectID,
 		func(h repository.ProjectHealth) bool { return h.EventsReceived },
 		s.repo.MarkProjectHealthEventsReceived,
@@ -67,42 +71,46 @@ func (s *projectHealthService) MarkEventsReceived(ctx context.Context, projectID
 }
 
 func (s *projectHealthService) MarkFlagsEvaluated(ctx context.Context, projectID string) error {
-	return s.markField(ctx, projectID,
+	_, err := s.markField(ctx, projectID,
 		func(h repository.ProjectHealth) bool { return h.FlagsEvaluated },
 		s.repo.MarkProjectHealthFlagsEvaluated,
 		func(h *repository.ProjectHealth) { h.FlagsEvaluated = true },
 	)
+	return err
 }
 
 func (s *projectHealthService) MarkRecordingsReceived(ctx context.Context, projectID string) error {
-	return s.markField(ctx, projectID,
+	_, err := s.markField(ctx, projectID,
 		func(h repository.ProjectHealth) bool { return h.RecordingsReceived },
 		s.repo.MarkProjectHealthRecordingsReceived,
 		func(h *repository.ProjectHealth) { h.RecordingsReceived = true },
 	)
+	return err
 }
 
-// markField is the shared fast-path logic for all Mark* methods.
+// markField is the shared fast-path logic for all Mark* methods. The
+// returned bool is true only when this call is the one that flipped the
+// field from false to true (in the DB, not merely in this process's cache).
 func (s *projectHealthService) markField(
 	ctx context.Context,
 	projectID string,
 	isSet func(repository.ProjectHealth) bool,
 	dbMark func(context.Context, string) error,
 	cacheSet func(*repository.ProjectHealth),
-) error {
+) (bool, error) {
 	// Fast path: field already true in cache — skip all DB interaction.
 	s.mu.RLock()
 	cached, ok := s.cache[projectID]
 	s.mu.RUnlock()
 	if ok && isSet(cached) {
-		return nil
+		return false, nil
 	}
 
 	// Slow path: cache miss or field is false. Load from DB to confirm current state.
 	current, err := s.repo.GetProjectHealth(ctx, projectID)
 	if err != nil {
 		slog.WarnContext(ctx, "project health: get", "project_id", projectID, "err", err)
-		return err
+		return false, err
 	}
 
 	s.mu.Lock()
@@ -111,12 +119,12 @@ func (s *projectHealthService) markField(
 
 	if isSet(current) {
 		// DB already has it true — cache is now warm, nothing to write.
-		return nil
+		return false, nil
 	}
 
 	// Field is false in DB — write the transition.
 	if err := dbMark(ctx, projectID); err != nil {
-		return err
+		return false, err
 	}
 
 	// Update cache to reflect the new state.
@@ -126,5 +134,5 @@ func (s *projectHealthService) markField(
 	s.cache[projectID] = updated
 	s.mu.Unlock()
 
-	return nil
+	return true, nil
 }

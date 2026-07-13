@@ -10,6 +10,10 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // setupKey derives a deterministic ingest API key from the session secret and
@@ -41,15 +45,23 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
+	ctx, span := tracing.StartSpan(r.Context(), "setup.provision",
+		attribute.String("project.slug", slug),
+	)
+	defer span.End()
 
 	// Ensure project exists (pending if new).
 	project, err := s.projects.EnsureProjectPending(ctx, slug, slug)
 	if err != nil {
+		tracing.RecordError(span, err)
 		slog.Error("setup: ensure project", "slug", slug, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
+	span.SetAttributes(
+		attribute.String("project.id", project.ID),
+		attribute.String("project.status", project.Status),
+	)
 
 	// Derive deterministic ingest key. Fail closed if no session secret is set —
 	// deriving from a constant would hand out globally predictable keys.
@@ -62,6 +74,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 
 	// Upsert the setup key so it is valid for ingest.
 	if err := s.projects.EnsureSetupAPIKey(ctx, project.ID, keySHA256); err != nil {
+		tracing.RecordError(span, err)
 		slog.Error("setup: ensure api key", "project_id", project.ID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return

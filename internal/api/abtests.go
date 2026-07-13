@@ -71,7 +71,13 @@ func (s *Server) handleCreateABTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	test, err := s.abtests.CreateABTest(r.Context(), repository.ABTest{
+	ctx, span := tracing.StartSpan(r.Context(), "abtests.create",
+		attribute.String("project.id", projectID),
+		attribute.String("abtest.conversion_event", body.ConversionEvent),
+	)
+	defer span.End()
+
+	test, err := s.abtests.CreateABTest(ctx, repository.ABTest{
 		ProjectID:       projectID,
 		Name:            body.Name,
 		Status:          "running",
@@ -80,10 +86,12 @@ func (s *Server) handleCreateABTest(w http.ResponseWriter, r *http.Request) {
 		ConversionEvent: body.ConversionEvent,
 	})
 	if err != nil {
+		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleCreateABTest")
 		return
 	}
-	slog.InfoContext(r.Context(), "ab test created", "test_id", test.ID, "project_id", projectID, "request_id", RequestIDFromContext(r.Context()))
+	span.SetAttributes(attribute.String("abtest.id", test.ID))
+	slog.InfoContext(ctx, "ab test created", "test_id", test.ID, "project_id", projectID, "request_id", RequestIDFromContext(ctx))
 	writeJSON(w, http.StatusCreated, test)
 }
 
@@ -133,8 +141,8 @@ func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 		attribute.String("abtest.id", test.ID),
 		attribute.String("abtest.conversion_event", test.ConversionEvent),
 	)
+	defer span.End()
 	results, err := s.abtests.AnalyzeABTest(ctx, test, from, to)
-	span.End()
 	if err != nil {
 		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleABTestAnalysis")
@@ -156,6 +164,12 @@ func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 
 	// Two-proportion z-test for statistical significance.
 	zScore, significant := zTestTwoProportions(controlSample, controlConversions, variantSample, variantConversions)
+
+	span.SetAttributes(
+		attribute.Int64("abtest.control_sample", controlSample),
+		attribute.Int64("abtest.variant_sample", variantSample),
+		attribute.Bool("abtest.significant", significant),
+	)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"test":                test,

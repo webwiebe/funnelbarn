@@ -5,6 +5,10 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -36,9 +40,15 @@ func (s *Server) handleGetProjectHealth(w http.ResponseWriter, r *http.Request) 
 		jsonError(w, "project id required", http.StatusBadRequest)
 		return
 	}
-	health, err := s.projectHealth.GetProjectHealth(r.Context(), projectID)
+	ctx, span := tracing.StartSpan(r.Context(), "health.getProjectHealth",
+		attribute.String("project.id", projectID),
+	)
+	defer span.End()
+
+	health, err := s.projectHealth.GetProjectHealth(ctx, projectID)
 	if err != nil {
-		slog.ErrorContext(r.Context(), "get project health", "project_id", projectID, "err", err)
+		tracing.RecordError(span, err)
+		slog.ErrorContext(ctx, "get project health", "project_id", projectID, "err", err)
 		jsonError(w, "internal server error", http.StatusInternalServerError)
 		return
 	}

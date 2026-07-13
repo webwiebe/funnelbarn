@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { api } from '../../lib/api'
 import { Skeleton } from '../ui/Skeleton'
+import { reportError } from '../../lib/bugbarn'
 import { C } from '../../lib/theme'
 
 export function AddWidgetModal({ projectId, onClose, onAdded }: {
@@ -51,8 +52,8 @@ export function AddWidgetModal({ projectId, onClose, onAdded }: {
         title: title || defaultTitle,
       })
       onAdded()
-    } catch {
-      // silent
+    } catch (e) {
+      reportError(e, { source: 'AddWidgetModal.handleSave' })
     } finally {
       setSaving(false)
     }

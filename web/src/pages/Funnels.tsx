@@ -377,6 +377,7 @@ export default function Funnels() {
     setDeleting(true)
     try {
       await api.deleteFunnel(projectId, selected.id)
+      trackEvent('funnel_deleted', { funnel_id: selected.id, funnel_name: selected.name })
       setFunnels((prev) => prev.filter((f) => f.id !== selected.id))
       setSelected(null)
       setAnalysis(null)

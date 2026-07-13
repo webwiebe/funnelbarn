@@ -412,6 +412,7 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
     setDeleting(true)
     try {
       await api.deleteFlag(projectId, flag.id)
+      trackEvent('flag_deleted', { flag_key: flag.flag_key, flag_id: flag.id })
       onDeleted()
     } catch (e) {
       reportError(e instanceof Error ? e : new Error(String(e)), { source: 'Flags.delete' })
