@@ -60,6 +60,7 @@ require (
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
+	github.com/webwiebe/funnelbarn/sdks/go v0.0.0-00010101000000-000000000000
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0 // indirect
 	go.opentelemetry.io/otel/log v0.20.0 // indirect
@@ -81,3 +82,5 @@ require (
 )
 
 replace github.com/wiebe-xyz/bugbarn-go => ./sdks/go-bugbarn
+
+replace github.com/webwiebe/funnelbarn/sdks/go => ./sdks/go

@@ -102,6 +102,7 @@ export function SegmentManager({
     setDeletingId(seg.id)
     try {
       await api.deleteSegment(projectId, seg.id)
+      trackEvent('segment_deleted', { segment_name: seg.name, segment_id: seg.id })
       onSegmentsChange(segments.filter((s) => s.id !== seg.id))
     } catch (e) {
       alert('Failed to delete: ' + String(e))

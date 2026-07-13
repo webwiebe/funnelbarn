@@ -15,6 +15,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	selfsdk "github.com/webwiebe/funnelbarn/sdks/go"
 	bb "github.com/wiebe-xyz/bugbarn-go"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/api"
@@ -192,6 +193,22 @@ func run() error {
 		slog.Info("dogfood analytics enabled", "project", cfg.DogfoodProject)
 	}
 
+	// Backend self-tracking: fire events (e.g. first_event_ingested) that can
+	// only be observed server-side, against the same dogfood project used for
+	// frontend analytics and flag evaluation — via this repo's own Go SDK
+	// hitting this app's own public ingest endpoint.
+	if cfg.DogfoodAPIKey != "" && cfg.PublicURL != "" {
+		selfsdk.Init(selfsdk.Options{
+			APIKey:      cfg.DogfoodAPIKey,
+			Endpoint:    strings.TrimRight(cfg.PublicURL, "/"),
+			ProjectName: cfg.DogfoodProject,
+		})
+		defer selfsdk.Shutdown(2 * time.Second)
+	} else if cfg.DogfoodAPIKey != "" {
+		slog.Warn("dogfood analytics enabled but FUNNELBARN_PUBLIC_URL is unset; backend self-tracking disabled",
+			"handled", true)
+	}
+
 	shutdownTracer, err := tracing.Init(ctx, otelCfg)
 	if err != nil {
 		return fmt.Errorf("init tracing: %w", err)
@@ -283,8 +300,22 @@ func run() error {
 	}
 	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.MaxBodyBytes)
 	handler.OnEventsReceived = func(ctx context.Context, projectID string) {
-		if err := healthSvc.MarkEventsReceived(ctx, projectID); err != nil {
+		firstEvent, err := healthSvc.MarkEventsReceived(ctx, projectID)
+		if err != nil {
 			slog.Warn("ingest: mark events received", "project_id", projectID, "err", err)
+			return
+		}
+		// firstEvent is true only on the call that flips this project's
+		// events_received health flag from false to true — i.e. this
+		// project's first ever ingested event. Reusing that existing
+		// per-project flag (rather than a new migration/counter) gives us an
+		// activation signal that can only be observed here, server-side: it
+		// happens via the customer's own SDK hitting this app's ingest
+		// endpoint, never through this app's own UI.
+		if firstEvent && projectID != "" {
+			selfsdk.Track("first_event_ingested", map[string]any{
+				"project_id": projectID,
+			})
 		}
 	}
 	go handler.Start(ctx)

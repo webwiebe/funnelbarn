@@ -6,6 +6,7 @@ import { SessionReplay } from '../components/sessions/SessionReplay'
 import { api, type Recording } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { reportError } from '../lib/bugbarn'
+import { trackEvent } from '../lib/analytics'
 import { C } from '../lib/theme'
 
 const PAGE_SIZE = 50
@@ -148,6 +149,7 @@ export default function Sessions() {
     setRecordings((prev) => prev.filter((r) => r.id !== rec.id))
     try {
       await api.deleteRecording(projectId, rec.id)
+      trackEvent('recording_deleted', { recording_id: rec.id, session_id: rec.session_id })
     } catch (e) {
       reportError(e, { source: 'Sessions.handleDelete' })
       void load(offset, filters)
@@ -162,6 +164,7 @@ export default function Sessions() {
     setRecordings((prev) => prev.filter((r) => !ids.includes(r.id)))
     try {
       await Promise.all(ids.map((id) => api.deleteRecording(projectId, id)))
+      trackEvent('recording_deleted', { recording_ids: ids, count: ids.length })
     } catch (e) {
       reportError(e, { source: 'Sessions.handleBulkDelete' })
       void load(offset, filters)
@@ -463,7 +466,11 @@ export default function Sessions() {
               return (
                 <div
                   key={rec.id}
-                  onClick={() => { if (rec.has_snapshot) setSelected(rec) }}
+                  onClick={() => {
+                    if (!rec.has_snapshot) return
+                    trackEvent('recording_viewed', { recording_id: rec.id, session_id: rec.session_id })
+                    setSelected(rec)
+                  }}
                   style={{
                     display: 'grid',
                     gridTemplateColumns: isMobile ? '32px 1fr auto' : '32px 1fr 90px 90px 110px 90px 110px',

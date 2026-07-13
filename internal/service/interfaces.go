@@ -11,7 +11,15 @@ import (
 type ProjectHealth interface {
 	GetProjectHealth(ctx context.Context, projectID string) (repository.ProjectHealth, error)
 	MarkSetupCalled(ctx context.Context, projectID string) error
-	MarkEventsReceived(ctx context.Context, projectID string) error
+	// MarkEventsReceived records that at least one event was ingested for
+	// projectID. The returned bool is true only on the call that transitions
+	// the health flag from false to true in the DB (i.e. this project's first
+	// ever ingested event) — a cheap, best-effort "first event" signal reused
+	// from the existing integration-health tracking rather than new schema.
+	// Under rare concurrent first-request races it may report true more than
+	// once for the same project; callers treating it as an activation signal
+	// should tolerate that.
+	MarkEventsReceived(ctx context.Context, projectID string) (firstTime bool, err error)
 	MarkFlagsEvaluated(ctx context.Context, projectID string) error
 	MarkRecordingsReceived(ctx context.Context, projectID string) error
 	ResetProjectHealth(ctx context.Context, projectID string) error
