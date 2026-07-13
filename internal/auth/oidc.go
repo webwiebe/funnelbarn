@@ -18,6 +18,11 @@ import (
 
 	oidcv3 "github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
+
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // OIDCConfig is the static configuration for the OIDC login flow.
@@ -111,25 +116,47 @@ func (c *OIDCClient) ExchangeFull(ctx context.Context, code, nonce, verifier str
 	if verifier != "" {
 		opts = append(opts, oauth2.VerifierOption(verifier))
 	}
+	ctx, span := tracing.StartSpan(ctx, "oidc.exchange")
+	defer span.End()
+	start := time.Now()
+
 	tok, err := c.oauth.Exchange(ctx, code, opts...)
+	metrics.OIDCRequestDuration.WithLabelValues("exchange").Observe(time.Since(start).Seconds())
 	if err != nil {
-		return ExchangeResult{}, fmt.Errorf("oidc: token exchange: %w", err)
+		metrics.OIDCRequests.WithLabelValues("exchange", "error").Inc()
+		err = fmt.Errorf("oidc: token exchange: %w", err)
+		tracing.RecordError(span, err)
+		return ExchangeResult{}, err
 	}
 	rawID, ok := tok.Extra("id_token").(string)
 	if !ok || rawID == "" {
-		return ExchangeResult{}, errors.New("oidc: token response missing id_token")
+		metrics.OIDCRequests.WithLabelValues("exchange", "error").Inc()
+		err := errors.New("oidc: token response missing id_token")
+		tracing.RecordError(span, err)
+		return ExchangeResult{}, err
 	}
 	idToken, err := c.verifier.Verify(ctx, rawID)
 	if err != nil {
-		return ExchangeResult{}, fmt.Errorf("oidc: verify id_token: %w", err)
+		metrics.OIDCRequests.WithLabelValues("exchange", "error").Inc()
+		err = fmt.Errorf("oidc: verify id_token: %w", err)
+		tracing.RecordError(span, err)
+		return ExchangeResult{}, err
 	}
 	if idToken.Nonce != nonce {
-		return ExchangeResult{}, errors.New("oidc: nonce mismatch")
+		metrics.OIDCRequests.WithLabelValues("exchange", "error").Inc()
+		err := errors.New("oidc: nonce mismatch")
+		tracing.RecordError(span, err)
+		return ExchangeResult{}, err
 	}
 	var claims OIDCClaims
 	if err := idToken.Claims(&claims); err != nil {
-		return ExchangeResult{}, fmt.Errorf("oidc: decode claims: %w", err)
+		metrics.OIDCRequests.WithLabelValues("exchange", "error").Inc()
+		err = fmt.Errorf("oidc: decode claims: %w", err)
+		tracing.RecordError(span, err)
+		return ExchangeResult{}, err
 	}
+	metrics.OIDCRequests.WithLabelValues("exchange", "success").Inc()
+	span.SetAttributes(attribute.String("oidc.sub", claims.Subject))
 	return ExchangeResult{
 		Claims:       claims,
 		IDToken:      rawID,
@@ -175,14 +202,25 @@ func (c *OIDCClient) Refresh(ctx context.Context, refreshToken string) (Refreshe
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
+	ctx, span := tracing.StartSpan(ctx, "oidc.refresh")
+	defer span.End()
+	start := time.Now()
+
 	tok, err := c.oauth.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken}).Token()
+	metrics.OIDCRequestDuration.WithLabelValues("refresh").Observe(time.Since(start).Seconds())
 	if err != nil {
 		var retrieveErr *oauth2.RetrieveError
 		if errors.As(err, &retrieveErr) && retrieveErr.ErrorCode == "invalid_grant" {
+			metrics.OIDCRequests.WithLabelValues("refresh", "invalid_grant").Inc()
+			tracing.RecordError(span, ErrRefreshInvalid)
 			return RefreshedTokens{}, ErrRefreshInvalid
 		}
-		return RefreshedTokens{}, fmt.Errorf("oidc: refresh token: %w", err)
+		metrics.OIDCRequests.WithLabelValues("refresh", "error").Inc()
+		err = fmt.Errorf("oidc: refresh token: %w", err)
+		tracing.RecordError(span, err)
+		return RefreshedTokens{}, err
 	}
+	metrics.OIDCRequests.WithLabelValues("refresh", "success").Inc()
 	// golang.org/x/oauth2 falls back to the refresh_token we sent if the
 	// response omits one (its accommodation for non-rotating providers), so
 	// tok.RefreshToken is never empty here on a successful response —
@@ -221,6 +259,10 @@ func (c *OIDCClient) RevokeRefreshToken(ctx context.Context, refreshToken string
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
+	ctx, span := tracing.StartSpan(ctx, "oidc.revoke")
+	defer span.End()
+	start := time.Now()
+
 	form := url.Values{}
 	form.Set("token", refreshToken)
 	form.Set("token_type_hint", "refresh_token")
@@ -228,18 +270,28 @@ func (c *OIDCClient) RevokeRefreshToken(ctx context.Context, refreshToken string
 	form.Set("client_secret", c.cfg.ClientSecret)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.revocationEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
+		metrics.OIDCRequests.WithLabelValues("revoke", "error").Inc()
+		tracing.RecordError(span, err)
 		return err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := http.DefaultClient.Do(req)
+	metrics.OIDCRequestDuration.WithLabelValues("revoke").Observe(time.Since(start).Seconds())
 	if err != nil {
-		return fmt.Errorf("oidc: revoke refresh token: %w", err)
+		metrics.OIDCRequests.WithLabelValues("revoke", "error").Inc()
+		err = fmt.Errorf("oidc: revoke refresh token: %w", err)
+		tracing.RecordError(span, err)
+		return err
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("oidc: revoke refresh token: status %d", resp.StatusCode)
+		metrics.OIDCRequests.WithLabelValues("revoke", "error").Inc()
+		err := fmt.Errorf("oidc: revoke refresh token: status %d", resp.StatusCode)
+		tracing.RecordError(span, err)
+		return err
 	}
+	metrics.OIDCRequests.WithLabelValues("revoke", "success").Inc()
 	return nil
 }
 
@@ -289,9 +341,17 @@ func (c *OIDCClient) VerifyLogoutToken(ctx context.Context, raw string) (LogoutC
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
+	ctx, span := tracing.StartSpan(ctx, "oidc.verify_logout_token")
+	defer span.End()
+	start := time.Now()
+
 	tok, err := c.verifier.Verify(ctx, raw)
+	metrics.OIDCRequestDuration.WithLabelValues("verify_logout_token").Observe(time.Since(start).Seconds())
 	if err != nil {
-		return LogoutClaims{}, fmt.Errorf("oidc: verify logout token: %w", err)
+		metrics.OIDCRequests.WithLabelValues("verify_logout_token", "error").Inc()
+		err = fmt.Errorf("oidc: verify logout token: %w", err)
+		tracing.RecordError(span, err)
+		return LogoutClaims{}, err
 	}
 	var claims struct {
 		Sub    string                     `json:"sub"`
@@ -301,24 +361,41 @@ func (c *OIDCClient) VerifyLogoutToken(ctx context.Context, raw string) (LogoutC
 		Events map[string]json.RawMessage `json:"events"`
 	}
 	if err := tok.Claims(&claims); err != nil {
-		return LogoutClaims{}, fmt.Errorf("oidc: decode logout token claims: %w", err)
+		metrics.OIDCRequests.WithLabelValues("verify_logout_token", "error").Inc()
+		err = fmt.Errorf("oidc: decode logout token claims: %w", err)
+		tracing.RecordError(span, err)
+		return LogoutClaims{}, err
 	}
 	if claims.Nonce != nil {
 		// The spec REQUIRES rejecting logout tokens with a nonce — it is what
 		// distinguishes them from ID tokens, blocking cross-protocol replay.
-		return LogoutClaims{}, errors.New("oidc: logout token must not contain nonce")
+		metrics.OIDCRequests.WithLabelValues("verify_logout_token", "error").Inc()
+		err := errors.New("oidc: logout token must not contain nonce")
+		tracing.RecordError(span, err)
+		return LogoutClaims{}, err
 	}
 	if _, ok := claims.Events[backchannelLogoutEvent]; !ok {
-		return LogoutClaims{}, errors.New("oidc: logout token missing backchannel-logout event")
+		metrics.OIDCRequests.WithLabelValues("verify_logout_token", "error").Inc()
+		err := errors.New("oidc: logout token missing backchannel-logout event")
+		tracing.RecordError(span, err)
+		return LogoutClaims{}, err
 	}
 	iat := time.Unix(claims.Iat, 0)
 	now := time.Now()
 	if claims.Iat == 0 || now.Sub(iat) > logoutTokenMaxAge || iat.Sub(now) > logoutTokenMaxAge {
-		return LogoutClaims{}, errors.New("oidc: logout token iat outside acceptance window")
+		metrics.OIDCRequests.WithLabelValues("verify_logout_token", "error").Inc()
+		err := errors.New("oidc: logout token iat outside acceptance window")
+		tracing.RecordError(span, err)
+		return LogoutClaims{}, err
 	}
 	if claims.Sub == "" && claims.Sid == "" {
-		return LogoutClaims{}, errors.New("oidc: logout token has neither sub nor sid")
+		metrics.OIDCRequests.WithLabelValues("verify_logout_token", "error").Inc()
+		err := errors.New("oidc: logout token has neither sub nor sid")
+		tracing.RecordError(span, err)
+		return LogoutClaims{}, err
 	}
+	metrics.OIDCRequests.WithLabelValues("verify_logout_token", "success").Inc()
+	span.SetAttributes(attribute.String("oidc.sid", claims.Sid))
 	return LogoutClaims{Subject: claims.Sub, SessionID: claims.Sid}, nil
 }
 
@@ -349,11 +426,21 @@ func (c *OIDCClient) ensureReady(ctx context.Context) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
+
+	ctx, span := tracing.StartSpan(ctx, "oidc.discover", attribute.String("oidc.issuer", c.cfg.Issuer))
+	defer span.End()
+	start := time.Now()
+
 	issuer := strings.TrimRight(c.cfg.Issuer, "/")
 	prov, err := oidcv3.NewProvider(ctx, issuer)
+	metrics.OIDCRequestDuration.WithLabelValues("discover").Observe(time.Since(start).Seconds())
 	if err != nil {
-		return fmt.Errorf("oidc: discover issuer %q: %w", c.cfg.Issuer, err)
+		metrics.OIDCRequests.WithLabelValues("discover", "error").Inc()
+		err = fmt.Errorf("oidc: discover issuer %q: %w", c.cfg.Issuer, err)
+		tracing.RecordError(span, err)
+		return err
 	}
+	metrics.OIDCRequests.WithLabelValues("discover", "success").Inc()
 	c.provider = prov
 	// Revocation + end-session endpoints are optional discovery fields; fall
 	// back to iambarn's conventional paths when the document omits them.

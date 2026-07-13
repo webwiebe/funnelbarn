@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -12,8 +13,11 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // IAMBarnUserRepo is the storage interface needed by the OIDC callback handler
@@ -38,11 +42,16 @@ func (s *Server) handleOIDCConfidentialLogin(w http.ResponseWriter, r *http.Requ
 		jsonError(w, "oidc not configured", http.StatusNotFound)
 		return
 	}
+	ctx, span := tracing.StartSpan(r.Context(), "oidc.login_start")
+	defer span.End()
+	r = r.WithContext(ctx)
+
 	state := oidcConfRandomToken()
 	nonce := oidcConfRandomToken()
 	verifier := oauth2.GenerateVerifier()
 	authURL, err := s.oidc.AuthorizeURL(state, nonce, verifier)
 	if err != nil {
+		tracing.RecordError(span, err)
 		slog.WarnContext(r.Context(), "oidc: build authorize url", "error", err)
 		jsonError(w, "oidc unavailable", http.StatusServiceUnavailable)
 		return
@@ -61,36 +70,47 @@ func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.R
 		jsonError(w, "oidc not configured", http.StatusNotFound)
 		return
 	}
+	ctx, span := tracing.StartSpan(r.Context(), "oidc.login_callback")
+	defer span.End()
+	r = r.WithContext(ctx)
+
 	stateCookie, err := r.Cookie(oidcConfStateCookie)
 	if err != nil || stateCookie.Value == "" {
+		tracing.RecordError(span, errors.New("oidc: state cookie missing"))
 		slog.WarnContext(r.Context(), "oidc: state cookie missing")
 		jsonError(w, "oidc state mismatch", http.StatusBadRequest)
 		return
 	}
 	state, verifier, ok := parseStateCookie(stateCookie.Value)
 	if !ok || state != r.URL.Query().Get("state") {
+		tracing.RecordError(span, errors.New("oidc: state mismatch"))
 		slog.WarnContext(r.Context(), "oidc: state mismatch")
 		jsonError(w, "oidc state mismatch", http.StatusBadRequest)
 		return
 	}
 	nonceCookie, err := r.Cookie(oidcConfNonceCookie)
 	if err != nil || nonceCookie.Value == "" {
+		tracing.RecordError(span, errors.New("oidc: nonce cookie missing"))
 		jsonError(w, "oidc nonce missing", http.StatusBadRequest)
 		return
 	}
 	code := r.URL.Query().Get("code")
 	if code == "" {
+		tracing.RecordError(span, errors.New("oidc: code missing"))
 		jsonError(w, "oidc code missing", http.StatusBadRequest)
 		return
 	}
 	result, err := s.oidc.ExchangeFull(r.Context(), code, nonceCookie.Value, verifier)
 	if err != nil {
+		tracing.RecordError(span, err)
 		slog.WarnContext(r.Context(), "oidc: exchange failed", "error", err)
 		jsonError(w, "oidc exchange failed", http.StatusUnauthorized)
 		return
 	}
 	claims := result.Claims
+	span.SetAttributes(attribute.String("oidc.sub", claims.Subject))
 	if !s.oidc.Allowed(claims) {
+		tracing.RecordError(span, errors.New("oidc: access denied"))
 		slog.WarnContext(r.Context(), "oidc: access denied",
 			"sub", claims.Subject, "groups", claims.Groups, "roles", claims.Roles)
 		jsonError(w, "access denied: user is not a member of the required group", http.StatusForbidden)
@@ -98,6 +118,8 @@ func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.R
 	}
 	if s.sessionManager == nil || s.webSessions == nil {
 		// Misconfiguration: OIDC enabled but no session plumbing wired.
+		err := errors.New("oidc: session store not configured")
+		tracing.RecordError(span, err)
 		slog.ErrorContext(r.Context(), "oidc: session store not configured",
 			"handled", false, "sub", claims.Subject)
 		jsonError(w, "session unavailable", http.StatusServiceUnavailable)
@@ -129,6 +151,7 @@ func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.R
 		ClaimsJSON:      marshalClaims(claims),
 	})
 	if err != nil {
+		tracing.RecordError(span, err)
 		slog.ErrorContext(r.Context(), "oidc: failed to create session",
 			"err", err, "handled", false, "sub", claims.Subject, "username", username)
 		jsonError(w, "session unavailable", http.StatusServiceUnavailable)

@@ -14,6 +14,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
 // dummyBcryptHash is a valid bcrypt hash compared against on the user-not-found
@@ -93,6 +94,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 // can end the IdP session too. Shared by handleLogout (JSON API) and
 // handleOIDCLoggedOut (the IAMBarn RP-initiated logout landing endpoint).
 func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) (logoutURL string) {
+	ctx, span := tracing.StartSpan(r.Context(), "oidc.logout")
+	defer span.End()
+	r = r.WithContext(ctx)
+
 	if cookie, err := r.Cookie("funnelbarn_session"); err == nil && s.webSessions != nil {
 		idHash := auth.HashSessionToken(cookie.Value)
 		if ws, err := s.webSessions.GetWebSession(r.Context(), idHash); err == nil {
@@ -102,6 +107,7 @@ func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) (logoutURL
 				// even when the IdP is unreachable.
 				if ws.RefreshToken != "" {
 					if err := s.oidc.RevokeRefreshToken(r.Context(), ws.RefreshToken); err != nil {
+						tracing.RecordError(span, err)
 						slog.WarnContext(r.Context(), "logout: revoke refresh token", "error", err)
 					}
 				}
@@ -109,6 +115,7 @@ func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) (logoutURL
 					if u, err := s.oidc.EndSessionURL(ws.IDToken); err == nil {
 						logoutURL = u
 					} else {
+						tracing.RecordError(span, err)
 						slog.WarnContext(r.Context(), "logout: build end-session url", "error", err)
 					}
 				}
@@ -116,6 +123,7 @@ func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) (logoutURL
 			// Deleting the row IS the revocation — the opaque handle is
 			// worthless the moment the row is gone.
 			if err := s.webSessions.DeleteWebSession(r.Context(), idHash); err != nil {
+				tracing.RecordError(span, err)
 				slog.ErrorContext(r.Context(), "logout: delete session", "err", err, "handled", false)
 			}
 		}
