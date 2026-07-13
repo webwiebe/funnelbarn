@@ -6,11 +6,11 @@ WORKDIR /src
 
 COPY go.mod go.sum ./
 COPY sdks/go-bugbarn ./sdks/go-bugbarn
+COPY sdks/go ./sdks/go
 RUN go mod download
 
 COPY cmd ./cmd
 COPY internal ./internal
-COPY sdks/go ./sdks/go
 
 RUN CGO_ENABLED=1 go build -o /out/funnelbarn ./cmd/funnelbarn
 
