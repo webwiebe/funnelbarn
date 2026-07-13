@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -12,6 +13,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -44,16 +46,20 @@ func (s *R2Store) Put(ctx context.Context, key string, data []byte) error {
 	)
 	defer span.End()
 
+	start := time.Now()
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
 		Body:   bytes.NewReader(data),
 	})
+	metrics.R2RequestDuration.WithLabelValues("put").Observe(time.Since(start).Seconds())
 	if err != nil {
+		metrics.R2Requests.WithLabelValues("put", "error").Inc()
 		err = fmt.Errorf("r2 put %q: %w", key, err)
 		tracing.RecordError(span, err)
 		return err
 	}
+	metrics.R2Requests.WithLabelValues("put", "success").Inc()
 	return nil
 }
 
@@ -65,22 +71,28 @@ func (s *R2Store) Get(ctx context.Context, key string) ([]byte, error) {
 	)
 	defer span.End()
 
+	start := time.Now()
 	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
+		metrics.R2RequestDuration.WithLabelValues("get").Observe(time.Since(start).Seconds())
+		metrics.R2Requests.WithLabelValues("get", "error").Inc()
 		err = fmt.Errorf("r2 get %q: %w", key, err)
 		tracing.RecordError(span, err)
 		return nil, err
 	}
 	defer out.Body.Close()
 	data, err := io.ReadAll(out.Body)
+	metrics.R2RequestDuration.WithLabelValues("get").Observe(time.Since(start).Seconds())
 	if err != nil {
+		metrics.R2Requests.WithLabelValues("get", "error").Inc()
 		err = fmt.Errorf("r2 read %q: %w", key, err)
 		tracing.RecordError(span, err)
 		return nil, err
 	}
+	metrics.R2Requests.WithLabelValues("get", "success").Inc()
 	span.SetAttributes(attribute.Int("r2.bytes", len(data)))
 	return data, nil
 }
@@ -93,14 +105,18 @@ func (s *R2Store) Delete(ctx context.Context, key string) error {
 	)
 	defer span.End()
 
+	start := time.Now()
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
 	})
+	metrics.R2RequestDuration.WithLabelValues("delete").Observe(time.Since(start).Seconds())
 	if err != nil {
+		metrics.R2Requests.WithLabelValues("delete", "error").Inc()
 		err = fmt.Errorf("r2 delete %q: %w", key, err)
 		tracing.RecordError(span, err)
 		return err
 	}
+	metrics.R2Requests.WithLabelValues("delete", "success").Inc()
 	return nil
 }

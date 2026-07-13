@@ -7,6 +7,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
@@ -258,7 +259,9 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
+	analysisStart := time.Now()
 	results, err := s.funnels.AnalyzeFunnel(ctx, funnel, from, to, seg, segRules...)
+	metrics.FunnelAnalysisDuration.Observe(time.Since(analysisStart).Seconds())
 	if err != nil {
 		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleFunnelAnalysis")

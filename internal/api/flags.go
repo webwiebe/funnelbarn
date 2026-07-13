@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
@@ -299,6 +300,11 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 	)
 	defer span.End()
 
+	evalStart := time.Now()
+	defer func() {
+		metrics.FlagEvaluationDuration.Observe(time.Since(evalStart).Seconds())
+	}()
+
 	var result service.FlagEvalResult
 	var err error
 	if autoRegister {
@@ -315,6 +321,7 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 			errorCode = "FLAG_NOT_FOUND"
 		}
 		span.SetAttributes(attribute.String("flag.error_code", errorCode))
+		metrics.FlagEvaluations.WithLabelValues("ERROR").Inc()
 
 		// FLAG_NOT_FOUND is normal client behaviour; AUTO_REGISTER_LIMIT is a
 		// possible-abuse signal worth a warning; everything else (DB failure,
@@ -351,6 +358,7 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 		attribute.String("flag.reason", result.Reason),
 		attribute.String("flag.variant", result.Variant),
 	)
+	metrics.FlagEvaluations.WithLabelValues(result.Reason).Inc()
 	writeJSON(w, http.StatusOK, result)
 }
 

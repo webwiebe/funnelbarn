@@ -149,42 +149,11 @@ func run() error {
 		return fmt.Errorf("FUNNELBARN_SESSION_SECRET must be at least 32 characters (got %d)", len(secret))
 	}
 
-	store, err := repository.Open(cfg.DBPath)
-	if err != nil {
-		return fmt.Errorf("open storage: %w", err)
-	}
-	defer store.Close()
-
-	// Wire services.
-	projectsSvc := service.NewProjectService(store)
-	funnelsSvc := service.NewFunnelService(store)
-	abtestsSvc := service.NewABTestService(store)
-	flagsSvc := service.NewFlagService(store)
-	eventsSvc := service.NewEventService(store)
-	overviewSvc := service.NewOverviewService(store)
-	sessionsSvc := service.NewSessionService(store)
-	apikeysSvc := service.NewAPIKeyService(store)
-	widgetsSvc := service.NewWidgetService(store)
-	segmentsSvc := service.NewSegmentService(store)
-	healthSvc := service.NewProjectHealthService(store)
-
-	eventSpool, err := spool.NewWithLimit(cfg.SpoolDir, cfg.MaxSpoolBytes)
-	if err != nil {
-		return fmt.Errorf("open spool: %w", err)
-	}
-	defer eventSpool.Close()
-
-	var recordingsSvc service.Recordings
-	if cfg.R2Endpoint != "" && cfg.R2AccessKeyID != "" && cfg.R2SecretAccessKey != "" && cfg.R2Bucket != "" {
-		r2, r2err := storage.NewR2(cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
-		if r2err != nil {
-			slog.Warn("session recording disabled: failed to initialize R2 storage", "err", r2err)
-		} else {
-			recordingsSvc = service.NewRecordingService(store, store, store, r2)
-			slog.Info("session recording enabled", "bucket", cfg.R2Bucket)
-		}
-	}
-
+	// Telemetry (logging sinks, tracer, and OTel MeterProvider) is wired up
+	// front, before repository.Open: otelsql resolves otel.GetMeterProvider()
+	// exactly once, at Open time, and binds to whatever provider is current
+	// then. If InitMetrics ran later, otelsql would permanently bind to the
+	// no-op default provider and its db.sql.* histograms would never export.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -229,6 +198,8 @@ func run() error {
 	}
 	defer shutdownTracer(context.Background())
 
+	// Must run before repository.Open (see comment above): this is what sets
+	// the real OTel MeterProvider via otel.SetMeterProvider.
 	shutdownMetrics, err := tracing.InitMetrics(ctx, otelCfg)
 	if err != nil {
 		return fmt.Errorf("init metrics: %w", err)
@@ -237,6 +208,42 @@ func run() error {
 
 	if cfg.SpanBarnEndpoint != "" {
 		slog.Info("spanbarn telemetry enabled", "endpoint", cfg.SpanBarnEndpoint, "signals", "traces,metrics,logs")
+	}
+
+	store, err := repository.Open(cfg.DBPath)
+	if err != nil {
+		return fmt.Errorf("open storage: %w", err)
+	}
+	defer store.Close()
+
+	// Wire services.
+	projectsSvc := service.NewProjectService(store)
+	funnelsSvc := service.NewFunnelService(store)
+	abtestsSvc := service.NewABTestService(store)
+	flagsSvc := service.NewFlagService(store)
+	eventsSvc := service.NewEventService(store)
+	overviewSvc := service.NewOverviewService(store)
+	sessionsSvc := service.NewSessionService(store)
+	apikeysSvc := service.NewAPIKeyService(store)
+	widgetsSvc := service.NewWidgetService(store)
+	segmentsSvc := service.NewSegmentService(store)
+	healthSvc := service.NewProjectHealthService(store)
+
+	eventSpool, err := spool.NewWithLimit(cfg.SpoolDir, cfg.MaxSpoolBytes)
+	if err != nil {
+		return fmt.Errorf("open spool: %w", err)
+	}
+	defer eventSpool.Close()
+
+	var recordingsSvc service.Recordings
+	if cfg.R2Endpoint != "" && cfg.R2AccessKeyID != "" && cfg.R2SecretAccessKey != "" && cfg.R2Bucket != "" {
+		r2, r2err := storage.NewR2(cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
+		if r2err != nil {
+			slog.Warn("session recording disabled: failed to initialize R2 storage", "err", r2err)
+		} else {
+			recordingsSvc = service.NewRecordingService(store, store, store, r2)
+			slog.Info("session recording enabled", "bucket", cfg.R2Bucket)
+		}
 	}
 
 	var geoLookup *geoip.Lookup
@@ -587,15 +594,19 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 						if dlErr := spool.AppendDeadLetter(cfg.SpoolDir, record); dlErr != nil {
 							slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", dlErr)
 						}
-						metrics.EventErrors.Inc()
+						metrics.EventErrors.WithLabelValues("dead_letter").Inc()
 						delete(retryCounts, record.IngestID)
 						offset = entry.EndOffset
 						if err := spool.WriteCursor(cfg.SpoolDir, offset); err != nil {
 							slog.Error("worker write cursor", "err", err)
 						}
+					} else {
+						metrics.EventErrors.WithLabelValues("retry").Inc()
 					}
 					break
 				}
+
+				eventStart := time.Now()
 
 				// Resolve project from the slug stored in the spool record.
 				// Each DB operation gets a 30s timeout so a stuck write can't block the worker.
@@ -635,6 +646,7 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				}
 				span.End()
 				opCancel()
+				metrics.EventProcessingDuration.Observe(time.Since(eventStart).Seconds())
 				if persistErr != nil {
 					retryCounts[record.IngestID]++
 					slog.Error("worker persist record",
@@ -649,12 +661,14 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 						if dlErr := spool.AppendDeadLetter(cfg.SpoolDir, record); dlErr != nil {
 							slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", dlErr)
 						}
-						metrics.EventErrors.Inc()
+						metrics.EventErrors.WithLabelValues("dead_letter").Inc()
 						delete(retryCounts, record.IngestID)
 						offset = entry.EndOffset
 						if err := spool.WriteCursor(cfg.SpoolDir, offset); err != nil {
 							slog.Error("worker write cursor", "err", err)
 						}
+					} else {
+						metrics.EventErrors.WithLabelValues("retry").Inc()
 					}
 					break
 				}

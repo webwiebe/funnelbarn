@@ -9,6 +9,8 @@ import (
 	"github.com/XSAM/otelsql"
 	"github.com/pressly/goose/v3"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/sqlcgen"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	_ "modernc.org/sqlite"
 )
@@ -18,8 +20,9 @@ var migrations embed.FS
 
 // Store wraps a SQLite database connection.
 type Store struct {
-	db *sql.DB
-	q  *sqlcgen.Queries
+	db       *sql.DB
+	q        *sqlcgen.Queries
+	statsReg metric.Registration
 }
 
 // Open opens the SQLite database at path and runs goose migrations.
@@ -33,6 +36,12 @@ func Open(path string) (*Store, error) {
 	// it silently ignores them, leaving foreign keys OFF. modernc expects
 	// PRAGMAs expressed as repeated `_pragma=` params. Foreign keys are required
 	// for the schema's ON DELETE CASCADE constraints to actually fire.
+	//
+	// NOTE: otelsql.Open resolves otel.GetMeterProvider() exactly once, right
+	// here, and binds to it permanently — it does not react to a later
+	// otel.SetMeterProvider call. Open must therefore run AFTER
+	// tracing.InitMetrics has installed the real MeterProvider, or the
+	// db.sql.* histograms are silently bound to the no-op default forever.
 	dsn := path + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
 	db, err := otelsql.Open("sqlite", dsn,
 		otelsql.WithAttributes(semconv.DBSystemSqlite),
@@ -47,6 +56,23 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
+	// Connection-pool gauges (open/in-use/idle, wait counts). Uses
+	// otel.GetMeterProvider() at call time — the caller (main.go's run())
+	// must have already called tracing.InitMetrics before repository.Open so
+	// this binds to the real provider instead of the no-op default; see the
+	// comment on otelsql.Open above.
+	statsReg, err := otelsql.RegisterDBStatsMetrics(db, otelsql.WithMeterProvider(otel.GetMeterProvider()))
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("register db stats metrics: %w", err)
+	}
+	// closeAll tears down both the stats callback registration and the DB
+	// connection; used on every error path below now that both exist.
+	closeAll := func() {
+		statsReg.Unregister()
+		db.Close()
+	}
+
 	// SQLite should use a single writer connection.
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
@@ -56,32 +82,32 @@ func Open(path string) (*Store, error) {
 	// mismatch would silently disable every ON DELETE CASCADE in the schema.
 	var fkEnabled int
 	if err := db.QueryRow("PRAGMA foreign_keys").Scan(&fkEnabled); err != nil {
-		db.Close()
+		closeAll()
 		return nil, fmt.Errorf("check foreign_keys pragma: %w", err)
 	}
 	if fkEnabled != 1 {
-		db.Close()
+		closeAll()
 		return nil, fmt.Errorf("foreign keys are not enabled (PRAGMA foreign_keys=%d); schema cascade constraints would not fire", fkEnabled)
 	}
 
 	goose.SetBaseFS(migrations)
 	if err := goose.SetDialect("sqlite3"); err != nil {
-		db.Close()
+		closeAll()
 		return nil, fmt.Errorf("goose dialect: %w", err)
 	}
 	if err := goose.Up(db, "migrations"); err != nil {
-		db.Close()
+		closeAll()
 		return nil, fmt.Errorf("goose up: %w", err)
 	}
 
 	// Backfill columns added to the schema after the initial migration was applied.
 	// Safe to run on any DB regardless of how old it is.
 	if err := ensureColumns(db); err != nil {
-		db.Close()
+		closeAll()
 		return nil, fmt.Errorf("ensure columns: %w", err)
 	}
 
-	return &Store{db: db, q: sqlcgen.New(db)}, nil
+	return &Store{db: db, q: sqlcgen.New(db), statsReg: statsReg}, nil
 }
 
 // ensureColumns adds any columns that may be missing on databases older than
@@ -126,6 +152,9 @@ func ensureColumns(db *sql.DB) error {
 func (s *Store) Close() error {
 	if s == nil || s.db == nil {
 		return nil
+	}
+	if s.statsReg != nil {
+		s.statsReg.Unregister()
 	}
 	return s.db.Close()
 }
