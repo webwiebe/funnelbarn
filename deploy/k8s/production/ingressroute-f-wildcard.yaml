@@ -18,11 +18,20 @@
 # the `f.` label — see internal/api/server.go). So a customer can hand out `f.<brand>` as a friendly
 # link and a browser hitting it lands on their app, while the SDK still ingests to the same host.
 # The dashboard SPA is NOT exposed on customer domains — non-ingest paths only ever reach the Go
-# service, never funnelbarn-web. `priority: 1` keeps any concrete per-host Ingress that deliberately
-# overrides the default (e.g. f.bananasketch.nl, which exposes its own SPA on funnelbarn-web with a
-# Cloudflare-issued cert) winning for its own host and TLS; the three routes below match disjoint path
-# sets, so they never tie at equal priority. Any other f.<domain> is served entirely by this route —
-# onboarding a new project is DNS-only (CNAME + port 80 for ACME), no manifest change.
+# service, never funnelbarn-web. Any other f.<domain> is served entirely by this route — onboarding a
+# new project is DNS-only (CNAME + port 80 for ACME), no manifest change.
+#
+# PRIORITIES — the `f.` label is RESERVED for FunnelBarn ingest, so the ingest paths must win even when
+# a consuming app is co-located on this same cluster and greedily claims all of its own subdomains.
+# That is exactly what profotograaf does: its `profotograaf-profotograaf-subdomain` IngressRoute matches
+# `HostRegexp(^…\.profotograaf\.nl$)` (i.e. ALL of *.profotograaf.nl, including f.profotograaf.nl) with
+# priority up to 115 on `/api`. A pinned `priority: 1` here loses that race, so f.profotograaf.nl/api
+# silently 404s into the profotograaf app (the #206 incident). So the ingest routes below run at a high
+# priority (200) to decisively win `f.*` ingest over any co-located app; they route to the SAME services
+# a concrete f.<host> Ingress would (funnelbarn / funnelbarn-web), so this never changes a destination —
+# it only wins the tie. The bare-host redirect (root) stays at `priority: 1` so a concrete per-host
+# Ingress that deliberately exposes its own SPA (f.bananasketch.nl → funnelbarn-web) still wins its root,
+# and a co-located app keeps serving its own root — the browser lands on the app either way.
 #
 # Onboarding a customer: point f.<brand> at the shared cluster (CNAME, same target as bt.*/sb.*) with
 # port 80 reachable so the HTTP-01 ACME challenge can validate. See deploy/RUNBOOK.md §"Custom ingest domain".
@@ -34,21 +43,24 @@ spec:
   entryPoints:
     - websecure
   routes:
+    # Reserved-prefix ingest routes: priority 200 so `f.*` ingest wins over any co-located app that
+    # greedily claims its own subdomains (see the PRIORITIES note above). Same destinations a concrete
+    # f.<host> Ingress would use, so winning the tie never changes where a request goes.
     - match: HostRegexp(`^f\..+$`) && (Path(`/sdk.js`) || Path(`/sdk/funnelbarn.js`))
       kind: Rule
-      priority: 1
+      priority: 200
       services:
         - name: funnelbarn-web
           port: 3000
     - match: HostRegexp(`^f\..+$`) && PathPrefix(`/api`)
       kind: Rule
-      priority: 1
+      priority: 200
       services:
         - name: funnelbarn
           port: 8080
     # Bare-host redirect: every non-ingest, non-SDK path (root `/` and anything else) goes to the Go
-    # service, which 301s it to https://<domain> (drops the `f.` label). Disjoint from the two routes
-    # above, so priority: 1 is safe. Keeps the dashboard SPA off customer domains (Go service only).
+    # service, which 301s it to https://<domain> (drops the `f.` label). Kept at priority: 1 so a
+    # concrete per-host Ingress (f.bananasketch.nl → its own SPA) or a co-located app keeps its own root.
     - match: HostRegexp(`^f\..+$`) && !PathPrefix(`/api`) && !Path(`/sdk.js`) && !Path(`/sdk/funnelbarn.js`)
       kind: Rule
       priority: 1

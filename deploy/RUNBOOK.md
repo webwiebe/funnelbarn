@@ -168,6 +168,24 @@ the `f.` label and sends the visitor to the app the host fronts (e.g. `https://f
 endpoint. The redirect lives in the Go app (`internal/api/server.go`) and fires for `GET`/`HEAD` on
 any non-ingest path; the dashboard SPA is never exposed on customer domains.
 
+**Co-located app collision (why the ingest routes run at `priority: 200`).** When the consuming app
+is deployed on this *same* cluster and greedily claims all of its own subdomains, its IngressRoute
+will otherwise swallow `f.<its-domain>` before FunnelBarn sees it. Real case: `profotograaf`'s app
+(`profotograaf-production/profotograaf-profotograaf-subdomain`) matches `HostRegexp(^…\.profotograaf\.nl$)`
+— i.e. *all* of `*.profotograaf.nl`, including `f.profotograaf.nl` — with priority up to 115 on `/api`.
+FunnelBarn's ingest routes therefore run at **priority 200** so the reserved `f.` label wins ingest
+regardless of any co-located app. The `f.` label is reserved for FunnelBarn; the root redirect stays
+at `priority: 1`, so `f.<domain>/` still lands on a co-located app's own root (which is the point of
+the redirect anyway). **The same collision breaks `sb.`/`bb.`/`iam.` on such a domain** — each barn
+tool must assert its own prefix priority (or the app must exclude the reserved labels from its matcher).
+
+**Debugging tip:** if `f.<domain>` 404s, `curl -sI` it and check whether the response is from your
+cluster or the customer's edge. A `server: cloudflare` 404 with the host resolving into the *customer's*
+Cloudflare zone means their DNS isn't pointed at the shared cluster yet (onboarding step 1). If it
+resolves to the shared cluster and *still* 404s, hit the origin directly
+(`curl -k --resolve f.<domain>:443:<cluster-ip> https://f.<domain>/api/v1/health`) — a 404 there is a
+Traefik routing collision with a co-located app (see the priority note above).
+
 **Onboarding a customer (one-time, DNS side only):**
 
 1. Point `f.<brand>` at the shared cluster — a CNAME to the same target the customer's other barn
