@@ -443,14 +443,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	// Redirect GET / on f.* subdomains back to their root domain.
-	// e.g. f.example.com → https://example.com
-	if r.Method == http.MethodGet && r.URL.Path == "/" {
+	// Bare-host redirect for the f.<domain> vanity ingest hosts: a browser
+	// navigating to https://f.example.com/ (root, or any non-ingest path) gets
+	// 301'd to https://example.com — strip the "f." label and send it to the
+	// app the host fronts. e.g. f.profotograaf.nl → profotograaf.nl.
+	//
+	// This is the app half of the wildcard vanity-host feature. The edge
+	// (deploy/k8s/.../ingressroute-f-wildcard.yaml) routes the ingest API and
+	// SDK bundle on any f.<domain> to their services and sends every other path
+	// here, so this redirect works for any customer domain with no per-project
+	// ingress wiring. Only GET/HEAD navigations redirect (curl -sI sends HEAD);
+	// the ingest/SDK paths pass through to their handlers untouched.
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		host := r.Host
 		if i := strings.IndexByte(host, ':'); i >= 0 {
 			host = host[:i]
 		}
-		if strings.HasPrefix(host, "f.") {
+		if strings.HasPrefix(host, "f.") && !isIngestPassthroughPath(r.URL.Path) {
 			http.Redirect(w, r, "https://"+strings.TrimPrefix(host, "f."), http.StatusMovedPermanently)
 			return
 		}
@@ -493,6 +502,17 @@ func (s *Server) metricsHandler() http.Handler {
 		}
 		promH.ServeHTTP(w, r)
 	})
+}
+
+// isIngestPassthroughPath reports whether a request on an f.<domain> vanity
+// host should pass through to its handler instead of being 301-redirected to
+// the app root. These mirror the paths the edge IngressRoute allows on wildcard
+// f.* hosts: the ingest/config API (/api/*) and the browser SDK bundle. Every
+// other path is a stray browser hit that belongs on the real app domain.
+func isIngestPassthroughPath(path string) bool {
+	return strings.HasPrefix(path, "/api") ||
+		path == "/sdk.js" ||
+		path == "/sdk/funnelbarn.js"
 }
 
 // publicIngestCORSPaths are the endpoints a browser SDK on an arbitrary
