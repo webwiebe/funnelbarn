@@ -13,8 +13,16 @@
 # Scope is intentionally tight — only the paths the browser SDK fetches from its origin:
 #   - /sdk.js (+ legacy /sdk/funnelbarn.js) served by nginx (funnelbarn-web)
 #   - /api/*  (events, evaluate, recording-config, recordings/chunk, health) served by the Go service
-# The dashboard SPA is NOT exposed on customer domains. `priority: 1` keeps FunnelBarn's own concrete
-# per-host Ingresses (f.bananasketch.nl, ingress-f.yaml) winning for their own hosts and TLS.
+# Every OTHER path (the bare root `/`, or any stray browser navigation) goes to the Go service, which
+# 301-redirects it to the app the host fronts: `https://f.<domain>/…` → `https://<domain>` (it strips
+# the `f.` label — see internal/api/server.go). So a customer can hand out `f.<brand>` as a friendly
+# link and a browser hitting it lands on their app, while the SDK still ingests to the same host.
+# The dashboard SPA is NOT exposed on customer domains — non-ingest paths only ever reach the Go
+# service, never funnelbarn-web. `priority: 1` keeps any concrete per-host Ingress that deliberately
+# overrides the default (e.g. f.bananasketch.nl, which exposes its own SPA on funnelbarn-web with a
+# Cloudflare-issued cert) winning for its own host and TLS; the three routes below match disjoint path
+# sets, so they never tie at equal priority. Any other f.<domain> is served entirely by this route —
+# onboarding a new project is DNS-only (CNAME + port 80 for ACME), no manifest change.
 #
 # Onboarding a customer: point f.<brand> at the shared cluster (CNAME, same target as bt.*/sb.*) with
 # port 80 reachable so the HTTP-01 ACME challenge can validate. See deploy/RUNBOOK.md §"Custom ingest domain".
@@ -33,6 +41,15 @@ spec:
         - name: funnelbarn-web
           port: 3000
     - match: HostRegexp(`^f\..+$`) && PathPrefix(`/api`)
+      kind: Rule
+      priority: 1
+      services:
+        - name: funnelbarn
+          port: 8080
+    # Bare-host redirect: every non-ingest, non-SDK path (root `/` and anything else) goes to the Go
+    # service, which 301s it to https://<domain> (drops the `f.` label). Disjoint from the two routes
+    # above, so priority: 1 is safe. Keeps the dashboard SPA off customer domains (Go service only).
+    - match: HostRegexp(`^f\..+$`) && !PathPrefix(`/api`) && !Path(`/sdk.js`) && !Path(`/sdk/funnelbarn.js`)
       kind: Rule
       priority: 1
       services:

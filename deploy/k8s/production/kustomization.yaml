@@ -9,7 +9,6 @@ resources:
   - service.yaml
   - web-service.yaml
   - ingress.yaml
-  - ingress-f.yaml
   - ingressroute-f-wildcard.yaml
 images:
   - name: funnelbarn/service

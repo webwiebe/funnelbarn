@@ -161,6 +161,13 @@ the same pattern the sibling barn tools use (`bt.*` for BrandTrace, `sb.*` for S
 still resolved by API key + the `x-funnelbarn-project` header, so the custom host needs no app-side
 mapping.
 
+**Bare-host redirect.** Every other path on `f.<domain>` (the root `/`, or any stray browser
+navigation) is routed to the Go service, which `301`-redirects it to `https://<domain>` — it strips
+the `f.` label and sends the visitor to the app the host fronts (e.g. `https://f.profotograaf.nl/` →
+`https://profotograaf.nl`). So `f.<brand>` doubles as a friendly link, not just a machine ingest
+endpoint. The redirect lives in the Go app (`internal/api/server.go`) and fires for `GET`/`HEAD` on
+any non-ingest path; the dashboard SPA is never exposed on customer domains.
+
 **Onboarding a customer (one-time, DNS side only):**
 
 1. Point `f.<brand>` at the shared cluster — a CNAME to the same target the customer's other barn
@@ -178,6 +185,7 @@ Only `/sdk.js` and `/api/*` are exposed on customer domains — the dashboard SP
 ```sh
 curl -sI https://f.<brand>/sdk.js            # expect HTTP 200 (served by nginx)
 curl -sI https://f.<brand>/api/v1/health     # expect HTTP 200 (Go service)
+curl -sI https://f.<brand>/                  # expect HTTP 301 → https://<brand> (bare-host redirect)
 ```
 
 Then load a page embedding the snippet and confirm in the browser console that `window.funnelbarn`
