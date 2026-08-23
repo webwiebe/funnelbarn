@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -34,6 +35,20 @@ func (s *Server) handleListFlags(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"flags": flags})
 }
 
+// normalizeFlagKind defaults an unset kind to "experiment" (what every flag was
+// before the column existed) and rejects anything else, so a typo can't create
+// a flag whose evaluation semantics nobody can predict.
+func normalizeFlagKind(kind string) (string, error) {
+	switch kind {
+	case "":
+		return repository.FlagKindExperiment, nil
+	case repository.FlagKindExperiment, repository.FlagKindConfig:
+		return kind, nil
+	default:
+		return "", fmt.Errorf("flag_kind must be %q or %q", repository.FlagKindExperiment, repository.FlagKindConfig)
+	}
+}
+
 func (s *Server) handleCreateFlag(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
@@ -50,6 +65,7 @@ func (s *Server) handleCreateFlag(w http.ResponseWriter, r *http.Request) {
 		Split           string `json:"split"`
 		ConversionEvent string `json:"conversion_event"`
 		TargetingRules  string `json:"targeting_rules"`
+		Kind            string `json:"flag_kind"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid json", http.StatusBadRequest)
@@ -69,6 +85,11 @@ func (s *Server) handleCreateFlag(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
+	kind, err := normalizeFlagKind(body.Kind)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
 
 	flag, err := s.flags.CreateFlag(r.Context(), repository.FeatureFlag{
 		ProjectID:       projectID,
@@ -81,6 +102,7 @@ func (s *Server) handleCreateFlag(w http.ResponseWriter, r *http.Request) {
 		ConversionEvent: body.ConversionEvent,
 		TargetingRules:  body.TargetingRules,
 		Status:          "active",
+		Kind:            kind,
 	})
 	if err != nil {
 		mapServiceError(w, err, "handleCreateFlag")
@@ -120,6 +142,7 @@ func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
 		ConversionEvent string `json:"conversion_event"`
 		TargetingRules  string `json:"targeting_rules"`
 		Status          string `json:"status"`
+		Kind            string `json:"flag_kind"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid json", http.StatusBadRequest)
@@ -132,14 +155,26 @@ func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Preserve flag_type from the existing record when the caller omits it.
-	if body.FlagType == "" {
+	// Preserve flag_type and flag_kind from the existing record when the caller
+	// omits them, so a partial update can't silently turn a config flag back
+	// into an experiment (and start writing evaluation rows again).
+	if body.FlagType == "" || body.Kind == "" {
 		existing, err := s.flags.GetFlag(r.Context(), flagID)
 		if err != nil {
 			mapServiceError(w, err, "handleUpdateFlag.get")
 			return
 		}
-		body.FlagType = existing.FlagType
+		if body.FlagType == "" {
+			body.FlagType = existing.FlagType
+		}
+		if body.Kind == "" {
+			body.Kind = existing.Kind
+		}
+	}
+	kind, err := normalizeFlagKind(body.Kind)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		return
 	}
 
 	flag, err := s.flags.UpdateFlag(r.Context(), repository.FeatureFlag{
@@ -152,6 +187,7 @@ func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
 		ConversionEvent: body.ConversionEvent,
 		TargetingRules:  body.TargetingRules,
 		Status:          body.Status,
+		Kind:            kind,
 	})
 	if err != nil {
 		mapServiceError(w, err, "handleUpdateFlag")
@@ -208,6 +244,22 @@ func (s *Server) handleFlagAnalysis(w http.ResponseWriter, r *http.Request) {
 		attribute.String("flag.key", flag.FlagKey),
 	)
 	defer span.End()
+
+	// A config flag records no evaluations, so a variant/conversion report for
+	// it would be an empty table dressed up as a result. Say so instead.
+	if flag.Kind == repository.FlagKindConfig {
+		span.SetAttributes(attribute.String("flag.kind", flag.Kind))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"flag":        flag,
+			"results":     []repository.FlagAnalysisResult{},
+			"significant": false,
+			"z_score":     0,
+			"from":        from.Format(time.RFC3339),
+			"to":          to.Format(time.RFC3339),
+			"unavailable": "config",
+		})
+		return
+	}
 
 	results, err := s.flags.AnalyzeFlag(ctx, flag, from, to)
 	if err != nil {
@@ -280,6 +332,10 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 		FlagKey      string         `json:"flag_key"`
 		DefaultValue any            `json:"default_value"`
 		Context      map[string]any `json:"context"`
+		// Kind declares what this flag is ("experiment" or "config") and is
+		// honoured only when the flag is auto-registered on this call. An
+		// existing flag keeps whatever the dashboard says.
+		Kind string `json:"kind"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid json", http.StatusBadRequest)
@@ -308,7 +364,7 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 	var result service.FlagEvalResult
 	var err error
 	if autoRegister {
-		result, err = s.flags.EvaluateOrRegisterFlag(ctx, projectID, body.FlagKey, body.Context, body.DefaultValue, s.flagAutoRegisterMax)
+		result, err = s.flags.EvaluateOrRegisterFlag(ctx, projectID, body.FlagKey, body.Context, body.DefaultValue, s.flagAutoRegisterMax, body.Kind)
 	} else {
 		result, err = s.flags.EvaluateFlag(ctx, projectID, body.FlagKey, body.Context)
 	}
@@ -343,13 +399,17 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 				"request_id", RequestIDFromContext(ctx),
 			)
 		}
+		// An error result is the caller's own default, not a resolved value —
+		// never let it be cached.
+		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, map[string]any{
-			"value":      body.DefaultValue,
-			"variant":    "",
-			"reason":     "ERROR",
-			"flag_key":   body.FlagKey,
-			"error_code": errorCode,
-			"error":      err.Error(),
+			"value":                 body.DefaultValue,
+			"variant":               "",
+			"reason":                "ERROR",
+			"flag_key":              body.FlagKey,
+			"error_code":            errorCode,
+			"error":                 err.Error(),
+			"cache_max_age_seconds": 0,
 		})
 		return
 	}
@@ -359,6 +419,16 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 		attribute.String("flag.variant", result.Variant),
 	)
 	metrics.FlagEvaluations.WithLabelValues(result.Reason).Inc()
+
+	// One sanctioned polling interval beats N guesses. A config flag holds the
+	// same value for everyone, so it is safe to reuse for its advertised
+	// max-age; an experiment resolves per targeting key and every read is a
+	// data point, so it advertises 0 and must not be cached.
+	if result.CacheMaxAgeSeconds > 0 {
+		w.Header().Set("Cache-Control", fmt.Sprintf("private, max-age=%d", result.CacheMaxAgeSeconds))
+	} else {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	writeJSON(w, http.StatusOK, result)
 }
 

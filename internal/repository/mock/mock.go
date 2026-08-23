@@ -35,6 +35,9 @@ type Store struct {
 	events   []repository.Event
 	widgets  map[string]repository.DashboardWidget
 	flags    map[string]repository.FeatureFlag
+	// evaluations records what RecordEvaluation was asked to write, so tests can
+	// assert that config flags write nothing.
+	evaluations []repository.FlagEvaluation
 }
 
 // New returns a fresh empty Store.
@@ -617,6 +620,9 @@ func (s *Store) CreateFlag(_ context.Context, f repository.FeatureFlag) (reposit
 	if f.Origin == "" {
 		f.Origin = "manual"
 	}
+	if f.Kind == "" {
+		f.Kind = repository.FlagKindExperiment
+	}
 	if s.flags == nil {
 		s.flags = make(map[string]repository.FeatureFlag)
 	}
@@ -727,6 +733,9 @@ func (s *Store) UpdateFlag(_ context.Context, f repository.FeatureFlag) (reposit
 	f.FlagKey = existing.FlagKey
 	f.CreatedAt = existing.CreatedAt
 	f.Origin = "manual" // a human edit claims the flag
+	if f.Kind == "" {
+		f.Kind = existing.Kind
+	}
 	s.flags[f.ID] = f
 	return f, nil
 }
@@ -738,7 +747,20 @@ func (s *Store) DeleteFlag(_ context.Context, id string) error {
 	return nil
 }
 
-func (s *Store) RecordEvaluation(_ context.Context, _ repository.FlagEvaluation) error {
+// RecordedEvaluations returns the evaluation rows RecordEvaluation was asked to
+// write, so tests can assert that a config flag writes none.
+func (s *Store) RecordedEvaluations() []repository.FlagEvaluation {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]repository.FlagEvaluation, len(s.evaluations))
+	copy(out, s.evaluations)
+	return out
+}
+
+func (s *Store) RecordEvaluation(_ context.Context, e repository.FlagEvaluation) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.evaluations = append(s.evaluations, e)
 	return nil
 }
 

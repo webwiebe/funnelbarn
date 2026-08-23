@@ -426,6 +426,8 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
 
   const results = analysis?.results ?? []
   const bestRate = Math.max(...results.map(r => r.rate), 0)
+  const isConfig = flag.flag_kind === 'config'
+  const configValue = isConfig ? variants[flag.default_variant] : undefined
 
   return (
     <div>
@@ -472,8 +474,9 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
       </div>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16, fontSize: 13, color: C.muted }}>
+        <div>Kind: <span style={{ color: C.text }}>{isConfig ? 'config value' : 'experiment'}</span></div>
         <div>Type: <span style={{ color: C.text }}>{flag.flag_type}</span></div>
-        {flag.flag_type !== 'boolean' && (
+        {!isConfig && flag.flag_type !== 'boolean' && (
           <div>Default: <span style={{ color: C.text }}>{flag.default_variant}</span></div>
         )}
         {flag.conversion_event && <div>Conversion: <span style={{ color: C.text }}>{flag.conversion_event}</span></div>}
@@ -483,6 +486,7 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
         // For boolean flags, only render the split tiles when there's a real
         // rollout (neither side is 0%). A 100/0 split is just "use the
         // default" and the header toggle already conveys that.
+        if (isConfig) return null
         const entries = Object.entries(split)
         const hasRollout = flag.flag_type !== 'boolean' || entries.every(([, pct]) => pct !== 0)
         if (!hasRollout) return null
@@ -502,6 +506,18 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
         )
       })()}
 
+      {isConfig && (
+        <div style={{
+          background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10,
+          padding: '1rem 1.25rem', marginBottom: 16,
+        }}>
+          <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Current value</div>
+          <code style={{ fontSize: 20, color: C.amber, fontWeight: 700, overflowWrap: 'anywhere' }}>
+            {JSON.stringify(configValue)}
+          </code>
+        </div>
+      )}
+
       <TargetingRulesDisplay rulesJSON={flag.targeting_rules} />
 
       <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${C.border}`, margin: '12px 0 16px' }}>
@@ -511,6 +527,14 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
 
       {tab === 'tryit' ? (
         <FlagPlayground projectId={projectId} flag={flag} />
+      ) : analysis?.unavailable === 'config' ? (
+        <div style={{ color: C.muted, fontSize: 14, textAlign: 'center', padding: '2rem', lineHeight: 1.6 }}>
+          Config values record no evaluations, so there is no variant or conversion
+          report for this flag.
+          <br />
+          That is the point — a server polling this value would otherwise write
+          thousands of meaningless rows a day.
+        </div>
       ) : loading ? (
         <div style={{ display: 'flex', gap: '1rem' }}>
           <Skeleton height={180} />
