@@ -184,14 +184,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version: '1.26'
           cache: true
 
       - name: Install nfpm
-        # Pin nfpm: v2.47.0+ bumped its go directive to go 1.26.4, which fails
-        # `go install` under GOTOOLCHAIN=local on the go 1.25 runner. v2.46.0 is the
-        # newest release still on the go 1.25 line. Bump when the runner's Go is >= 1.26.
-        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.0
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
       - name: Build binary
         env:
@@ -237,7 +234,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version: '1.26'
           cache: true
 
       - name: Build macOS binary
