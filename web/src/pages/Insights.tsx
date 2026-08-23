@@ -29,7 +29,9 @@ export default function Insights() {
     if (!projectId) return
     try {
       const data = await api.getBatchBreakdowns(projectId)
-      setWidgets(data.results)
+      // A Go nil slice marshals as null, and `widgets.map` on null is what
+      // took the whole Insights page down behind an ErrorBoundary (FUN-8).
+      setWidgets(data.results ?? [])
     } catch (e) {
       reportError(e, { source: 'Insights.fetchAll' })
     } finally {

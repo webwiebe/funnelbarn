@@ -1,14 +1,10 @@
 // Typed API client with 401 interceptor and BugBarn 5xx reporting
 import { reportError } from './bugbarn'
+import { ApiError } from './api-error'
 import type { IambarnConfig } from './iambarn-config'
 import type { LogoutResponse } from './auth-types'
 
-export class ApiError extends Error {
-  constructor(public status: number, message: string) {
-    super(message)
-    this.name = 'ApiError'
-  }
-}
+export { ApiError }
 
 function getCookie(name: string): string | undefined {
   const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
