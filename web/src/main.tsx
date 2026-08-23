@@ -3,6 +3,11 @@ import ReactDOM from 'react-dom/client'
 import './index.css'
 import App from './App'
 import { reportError } from './lib/bugbarn'
+import { initInstrumentation } from './lib/instrumentation'
+
+// Started before anything else so the very first API call already carries a
+// traceparent — the header is what joins the browser's spans to the server's.
+initInstrumentation()
 
 // Global unhandled error handler — catches errors outside React's tree.
 window.onerror = (message, source, lineno, colno, error) => {

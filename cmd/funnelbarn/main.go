@@ -225,8 +225,14 @@ func run() error {
 	}
 	defer shutdownMetrics(context.Background())
 
+	// Relays the dashboard's own browser spans to SpanBarn, so a trace shows the
+	// page and the client-side view of each API call above the server spans that
+	// already join it via the traceparent header.
+	spanRelay := tracing.NewSpanRelay(otelCfg)
+	defer spanRelay.Shutdown()
+
 	if cfg.SpanBarnEndpoint != "" {
-		slog.Info("spanbarn telemetry enabled", "endpoint", cfg.SpanBarnEndpoint, "signals", "traces,metrics,logs")
+		slog.Info("spanbarn telemetry enabled", "endpoint", cfg.SpanBarnEndpoint, "signals", "traces,metrics,logs,browser-spans")
 	}
 
 	store, err := repository.Open(cfg.DBPath)
@@ -392,6 +398,7 @@ func run() error {
 		RecordingSettings:     store,
 		ProjectHealth:         healthSvc,
 		FlagAutoRegisterMax:   cfg.AutoRegisterMaxFlags,
+		SpanRelay:             spanRelay,
 	})
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)

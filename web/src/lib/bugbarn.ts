@@ -1,3 +1,5 @@
+import { currentTraceId, markTraceError } from './instrumentation'
+
 // BugBarn error reporting utility.
 // Config is fetched from /api/v1/client-config at runtime so the Docker image
 // is environment-agnostic. Errors arriving before config loads are queued and
@@ -76,12 +78,27 @@ export function reportError(
 ): void {
   const message = error instanceof Error ? error.message : String(error)
   const stack = error instanceof Error ? (error.stack ?? '') : ''
+
+  // Tagging the report with the current page trace is what makes the two
+  // halves navigable: a BugBarn issue names the SpanBarn trace that produced
+  // it, and that trace already carries the server spans and the DB query.
+  // Also keeps the trace off the sampling floor, so the trace behind an error
+  // is always kept.
+  let traceId = ''
+  try {
+    markTraceError()
+    traceId = currentTraceId()
+  } catch {
+    // Instrumentation not started (very early failure) — report without it.
+  }
+
   reportToBugBarn({
     name: 'error',
     properties: {
       message,
       stack,
       url: typeof window !== 'undefined' ? window.location.href : '',
+      ...(traceId ? { trace_id: traceId } : {}),
       ...context,
     },
   })
