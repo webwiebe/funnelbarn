@@ -13,10 +13,15 @@ const TELEMETRY_ENDPOINT = '/api/v1/telemetry'
 const CLIENT_ERRORS_ENDPOINT = '/api/v1/client-errors'
 const SERVICE_NAME = 'funnelbarn-web'
 
-/** Percent of traces kept. Errors are always kept regardless. */
-const SAMPLE_PERCENT = 5
+// No client-side sampling. SpanBarn samples again at ingest — it buffers each
+// trace and keeps it only if the trace errored or its ID falls in
+// 1-in-ingest.sample_ratio (default 1000, i.e. 0.1%). Sampling here too made
+// the two multiply: a 5% client rate against that 0.1% left roughly 1 trace in
+// 20,000, which on a dashboard with a handful of daily visits means you never
+// see one. SpanBarn is the single sampling authority; adjust
+// `ingest.sample_ratio.project.<id>` there to see more.
 const FLUSH_INTERVAL_MS = 5000
-/** Flush threshold for a sampled trace, to keep batches small. */
+/** Flush threshold, to keep batches small. */
 const FLUSH_AT_SPANS = 25
 /** Hard ceiling so a long-lived page can't grow the buffer without bound. */
 const MAX_BUFFERED_SPANS = 100
@@ -45,7 +50,6 @@ let flushTimer: ReturnType<typeof setInterval> | null = null
 let pageTraceId = ''
 let pageSpanId = ''
 let pendingPageSpan: SpanPayload | null = null
-let traceSampled = false
 let traceHasError = false
 
 // ---------------------------------------------------------------------------
@@ -65,26 +69,16 @@ export function traceparent(traceId: string, spanId: string): string {
   return `00-${traceId}-${spanId}-01`
 }
 
-/**
- * Deterministic sampler over the trace ID's first 8 bytes. Deterministic rather
- * than random so the same trace ID yields the same decision wherever it is
- * evaluated — a sampled-here / dropped-there split produces traces with holes.
- */
-export function shouldSampleTrace(traceId: string, percent = SAMPLE_PERCENT): boolean {
-  if (traceId.length < 16) return false
-  try {
-    return BigInt('0x' + traceId.slice(0, 16)) % 100n < BigInt(percent)
-  } catch {
-    return false
-  }
-}
-
 /** The current page trace's ID, for correlating an error report with the trace. */
 export function currentTraceId(): string {
   return pageTraceId
 }
 
-/** Marks the current trace as containing an error, so it is never sampled out. */
+/**
+ * Marks the current trace as containing an error. SpanBarn keeps error traces
+ * unconditionally, and this also flushes the buffer immediately so the trace
+ * survives the page closing.
+ */
 export function markTraceError(): void {
   traceHasError = true
 }
@@ -124,18 +118,10 @@ function finalizePageSpan(): void {
   pendingPageSpan = null
 }
 
-/**
- * Ends the current page trace. Buffered spans are sent only if the trace was
- * sampled or hit an error — an unsampled, clean trace is dropped whole rather
- * than partially, so SpanBarn never shows a trace with missing children.
- */
+/** Ends the current page trace and sends whatever it collected. */
 function commitTrace(): void {
   finalizePageSpan()
   if (spanQueue.length === 0) return
-  if (!traceSampled && !traceHasError) {
-    spanQueue.length = 0
-    return
-  }
   sendBatch(spanQueue.splice(0))
 }
 
@@ -144,7 +130,6 @@ function startPageTrace(path: string, fromPath?: string): void {
 
   pageTraceId = hex(16)
   pageSpanId = hex(8)
-  traceSampled = shouldSampleTrace(pageTraceId)
   traceHasError = false
 
   const attributes: Record<string, string | number | boolean> = { 'navigation.to': path }
@@ -174,7 +159,7 @@ function enqueueSpan(span: SpanPayload): void {
     sendBatch(spanQueue.splice(0))
     return
   }
-  if (traceSampled && spanQueue.length >= FLUSH_AT_SPANS) {
+  if (spanQueue.length >= FLUSH_AT_SPANS) {
     flushSpans()
     return
   }
@@ -182,7 +167,6 @@ function enqueueSpan(span: SpanPayload): void {
 }
 
 function flushSpans(): void {
-  if (!traceSampled) return
   finalizePageSpan()
   if (spanQueue.length === 0) return
   sendBatch(spanQueue.splice(0, 50))
@@ -359,7 +343,6 @@ export function __resetForTests(fetchImpl?: typeof fetch): void {
   pendingPageSpan = null
   pageTraceId = ''
   pageSpanId = ''
-  traceSampled = false
   traceHasError = false
   if (flushTimer) {
     clearInterval(flushTimer)
