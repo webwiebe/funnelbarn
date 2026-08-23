@@ -18,6 +18,17 @@ type Options struct {
 	Endpoint    string
 	ProjectName string
 	QueueSize   int // default 256
+
+	// FlagCacheTTL is how long a resolved flag is reused when the server sends
+	// no cache hint of its own. Zero means DefaultFlagCacheTTL; negative
+	// disables the cache entirely. A server that does advertise
+	// cache_max_age_seconds always wins over this.
+	FlagCacheTTL time.Duration
+
+	// FlagKind is sent as "kind" on evaluation and is honoured only when the
+	// call auto-registers a flag that does not exist yet: "config" for a
+	// singleton value this service polls, "" or "experiment" otherwise.
+	FlagKind string
 }
 
 // eventPayload is the JSON body sent to POST /api/v1/events.
@@ -123,6 +134,7 @@ type transport struct {
 	queue  chan eventPayload
 	done   chan struct{}
 	client *http.Client
+	flags  *flagCache
 }
 
 func newTransport(o Options) *transport {
@@ -131,6 +143,7 @@ func newTransport(o Options) *transport {
 		queue:  make(chan eventPayload, o.QueueSize),
 		done:   make(chan struct{}),
 		client: &http.Client{Timeout: 5 * time.Second},
+		flags:  newFlagCache(),
 	}
 	go t.run()
 	return t
