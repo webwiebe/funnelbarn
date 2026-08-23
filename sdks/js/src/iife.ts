@@ -31,7 +31,7 @@ function identify(userId: string): void {
 export { init, track, page, identify };
 
 // Auto-init from script tag data attributes:
-//   <script src="/sdk.js" data-api-key="fb_xxx"></script>
+//   <script src="/sdk.js" data-api-key="fb_xxx" data-environment="staging"></script>
 if (typeof document !== "undefined") {
   const script = document.currentScript as HTMLScriptElement | null;
   if (script) {
@@ -39,8 +39,9 @@ if (typeof document !== "undefined") {
     if (apiKey) {
       const endpoint = script.getAttribute("data-endpoint") || script.src.replace(/\/sdk\.js.*$/, "");
       const projectName = script.getAttribute("data-project-name") ?? undefined;
+      const environment = script.getAttribute("data-environment") ?? undefined;
       const recording = script.getAttribute("data-recording") === "true";
-      init({ apiKey, endpoint, projectName, recording });
+      init({ apiKey, endpoint, projectName, environment, recording });
       page();
     }
   }

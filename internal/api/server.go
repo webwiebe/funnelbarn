@@ -363,13 +363,18 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels/{fid}/analysis", s.requireSession(s.handleFunnelAnalysis))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels/{fid}/segments", s.requireSession(s.handleFunnelSegments))
 
-	// Feature Flags (session required)
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags", s.requireSession(s.handleListFlags))
+	// Feature Flags. Reads and updates also accept a project-scoped API token
+	// (scope flags:read / flags:write) so a service can report and toggle a
+	// flag without a browser session — see internal/api/flag_tokens.go.
+	// Creation and deletion stay session-only: auto-registration already covers
+	// creation, and a token that can turn an outbound-email gate off should not
+	// also be able to delete the gate.
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags", s.requireSessionOrFlagToken(repository.APIKeyScopeFlagsRead, s.handleListFlags))
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/flags", s.requireSession(s.handleCreateFlag))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/{fid}", s.requireSession(s.handleGetFlag))
-	s.mux.HandleFunc("PUT /api/v1/projects/{id}/flags/{fid}", s.requireSession(s.handleUpdateFlag))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/{fid}", s.requireSessionOrFlagToken(repository.APIKeyScopeFlagsRead, s.handleGetFlag))
+	s.mux.HandleFunc("PUT /api/v1/projects/{id}/flags/{fid}", s.requireSessionOrFlagToken(repository.APIKeyScopeFlagsWrite, s.handleUpdateFlag))
 	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/flags/{fid}", s.requireSession(s.handleDeleteFlag))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/{fid}/analysis", s.requireSession(s.handleFlagAnalysis))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/{fid}/analysis", s.requireSessionOrFlagToken(repository.APIKeyScopeFlagsRead, s.handleFlagAnalysis))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/context-keys", s.requireSession(s.handleFlagContextKeys))
 	// Dogfooding playground — same flag-eval logic as the customer endpoint
 	// but session-authed so the dashboard can call it without an API key in the browser.

@@ -19,6 +19,12 @@ type Options struct {
 	ProjectName string
 	QueueSize   int // default 256
 
+	// Environment tags every event ("production", "staging", "test",
+	// "development"), so one key and project can be reused across deployments
+	// and filtered apart in the dashboard. Aliases are normalised server-side;
+	// an unrecognised value is filed under production and warned about.
+	Environment string
+
 	// FlagCacheTTL is how long a resolved flag is reused when the server sends
 	// no cache hint of its own. Zero means DefaultFlagCacheTTL; negative
 	// disables the cache entirely. A server that does advertise
@@ -43,6 +49,7 @@ type eventPayload struct {
 	UserID      string         `json:"user_id,omitempty"`
 	SessionID   string         `json:"session_id,omitempty"`
 	Timestamp   time.Time      `json:"timestamp"`
+	Environment string         `json:"environment,omitempty"`
 }
 
 var (
@@ -150,6 +157,9 @@ func newTransport(o Options) *transport {
 }
 
 func (t *transport) enqueue(e eventPayload) bool {
+	// Stamped here so no event can escape untagged — an option that reaches
+	// only some events makes the dashboard filter silently under-count.
+	e.Environment = t.opts.Environment
 	select {
 	case t.queue <- e:
 		return true

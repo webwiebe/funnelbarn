@@ -135,9 +135,12 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
-      - name: Build SDK
+      # `npm test` builds first, so this covers the SDK's own suite as well as
+      # producing the bundle the web app links against. It was previously only
+      # built, never tested, in CI.
+      - name: Build and test SDK
         working-directory: sdks/js
-        run: npm ci && npm run build
+        run: npm ci && npm test
 
       - name: Install web deps
         working-directory: web

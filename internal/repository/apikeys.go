@@ -17,6 +17,10 @@ type APIKey struct {
 	KeyHash   string    `json:"-"`
 	Scope     string    `json:"scope"`
 	CreatedAt time.Time `json:"created_at"`
+	// LastUsedAt is when a request last authenticated with this key. Nil means
+	// never used — which is how you tell a token that was issued and forgotten
+	// from one something depends on before revoking it.
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 
 // ValidAPIKeySHA256 looks up an API key by its SHA256 hex digest.
@@ -104,7 +108,7 @@ func isNoRows(err error) bool {
 }
 
 func apiKeyFromGen(k sqlcgen.ApiKey) APIKey {
-	return APIKey{
+	key := APIKey{
 		ID:        k.ID,
 		ProjectID: k.ProjectID,
 		Name:      k.Name,
@@ -112,4 +116,9 @@ func apiKeyFromGen(k sqlcgen.ApiKey) APIKey {
 		Scope:     k.Scope,
 		CreatedAt: k.CreatedAt,
 	}
+	if k.LastUsedAt.Valid {
+		t := k.LastUsedAt.Time
+		key.LastUsedAt = &t
+	}
+	return key
 }

@@ -15,21 +15,49 @@ const C = {
   success: '#10b981',
 }
 
+// scopeTone colours a badge by how much the key can do: amber for
+// send-or-read-only, green for anything that can change state. The point is
+// that "this token can turn the outbound-email gate off" reads differently at
+// a glance from "this token sends page views".
+export function scopeTone(scope: string): 'read' | 'write' {
+  return scope === 'full' || scope === 'flags:write' ? 'write' : 'read'
+}
+
+// scopeHint explains, in one line, what a key with this scope may do.
+export function scopeHint(scope: string): string {
+  switch (scope) {
+    case 'ingest': return 'Send events. Cannot read or change anything.'
+    case 'flags:read': return "Read this project's flags. Cannot change them."
+    case 'flags:write': return "Read and update this project's flags. Cannot create or delete them."
+    case 'full': return 'Full API access to this project.'
+    default: return 'Unknown scope — this key grants nothing.'
+  }
+}
+
 function ScopeBadge({ scope }: { scope: string }) {
-  const isIngest = scope === 'ingest'
+  const write = scopeTone(scope) === 'write'
   return (
-    <span style={{
+    <span title={scopeHint(scope)} style={{
       fontSize: 12,
       fontWeight: 600,
-      background: isIngest ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)',
-      color: isIngest ? C.amber : C.success,
-      border: `1px solid ${isIngest ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.3)'}`,
+      background: write ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
+      color: write ? C.success : C.amber,
+      border: `1px solid ${write ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)'}`,
       borderRadius: 99,
       padding: '0.15rem 0.6rem',
+      whiteSpace: 'nowrap',
     }}>
       {scope}
     </span>
   )
+}
+
+// formatLastUsed distinguishes a token something depends on from one that was
+// issued and forgotten — the question you actually have before revoking.
+export function formatLastUsed(iso?: string): string {
+  if (!iso) return 'never'
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? 'never' : d.toLocaleString()
 }
 
 interface ApiKeySettingsProps {
@@ -106,7 +134,8 @@ export function ApiKeySettings({
         <div>
           <div style={{ fontWeight: 700, fontSize: 15 }}>API Keys</div>
           <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
-            Keys for sending events or full management access.
+            Keys for sending events, reading or toggling this project&apos;s
+            feature flags, or full management access.
           </div>
         </div>
       </div>
@@ -176,7 +205,7 @@ export function ApiKeySettings({
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                  {['Name', 'Scope', 'Created', ''].map((h) => (
+                  {['Name', 'Scope', 'Created', 'Last used', ''].map((h) => (
                     <th key={h} style={{
                       textAlign: 'left',
                       padding: '0.75rem 1.5rem',
@@ -203,6 +232,9 @@ export function ApiKeySettings({
                     </td>
                     <td style={{ padding: '0.875rem 1.5rem', fontSize: 13, color: C.muted, whiteSpace: 'nowrap' }}>
                       {new Date(key.created_at).toLocaleDateString()}
+                    </td>
+                    <td style={{ padding: '0.875rem 1.5rem', fontSize: 13, color: key.last_used_at ? C.muted : '#4a4d5a', whiteSpace: 'nowrap' }}>
+                      {formatLastUsed(key.last_used_at)}
                     </td>
                     <td style={{ padding: '0.875rem 1.5rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
                       {deleteConfirm === key.id ? (
@@ -274,7 +306,7 @@ export function ApiKeySettings({
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 12, color: C.muted }}>
-                    Created: {new Date(key.created_at).toLocaleDateString()}
+                    Created: {new Date(key.created_at).toLocaleDateString()} · Last used: {formatLastUsed(key.last_used_at)}
                   </span>
                   {deleteConfirm === key.id ? (
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -390,8 +422,10 @@ export function ApiKeySettings({
               outline: 'none',
             }}
           >
-            <option value="ingest">ingest</option>
-            <option value="full">full</option>
+            <option value="ingest">ingest — send events</option>
+            <option value="flags:read">flags:read — read this project&apos;s flags</option>
+            <option value="flags:write">flags:write — read and toggle flags</option>
+            <option value="full">full — everything</option>
           </select>
           <button
             onClick={handleCreate}

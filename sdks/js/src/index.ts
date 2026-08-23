@@ -18,6 +18,14 @@ export interface FunnelBarnOptions {
   endpoint: string;
   /** Optional project name sent as x-funnelbarn-project header */
   projectName?: string;
+  /**
+   * Deployment environment tagged on every event, so one API key and project
+   * can be reused across dev / staging / production and filtered apart in the
+   * dashboard. Aliases are normalised server-side ("prod" and "live" both mean
+   * production); an unrecognised value is treated as production, so a typo is
+   * worth avoiding.
+   */
+  environment?: string;
   /** Flush interval in ms (default: 5000) */
   flushInterval?: number;
   /** Session idle timeout in ms (default: 30 minutes) */
@@ -89,6 +97,7 @@ interface EventPayload {
   page_view_id?: string;
   session_signals?: Record<string, unknown>;
   vitals?: Record<string, number>;
+  environment?: string;
 }
 
 const SESSION_KEY = "funnelbarn_sid";
@@ -115,6 +124,7 @@ export class FunnelBarnClient {
   private readonly apiKey: string;
   private readonly endpoint: string;
   private readonly projectName?: string;
+  private readonly environment?: string;
   private readonly flushInterval: number;
   private readonly sessionTimeout: number;
 
@@ -162,6 +172,7 @@ export class FunnelBarnClient {
     this.apiKey = options.apiKey;
     this.endpoint = options.endpoint.replace(/\/$/, "");
     this.projectName = options.projectName;
+    this.environment = options.environment;
     this.flushInterval = options.flushInterval ?? 5000;
     this.sessionTimeout = options.sessionTimeout ?? SESSION_TIMEOUT_DEFAULT;
     this.recordingOptions = options;
@@ -177,7 +188,7 @@ export class FunnelBarnClient {
         if (this.vitalsFlushed || !this.vitalsPageViewId) return;
         if (Object.keys(this.pendingVitals).length === 0) return;
         this.vitalsFlushed = true;
-        this.queue.push({
+        this.enqueue({
           name: "web_vitals",
           page_view_id: this.vitalsPageViewId,
           session_id: this.getOrCreateSessionID(),
@@ -287,10 +298,22 @@ export class FunnelBarnClient {
       payload.vitals = vitalsForEvent;
     }
 
-    this.queue.push(payload);
+    this.enqueue(payload);
 
     // Start engagement tracking for this page view.
     this.startEngagementTracking();
+  }
+
+  /**
+   * Queue an event, stamping the configured environment on it.
+   *
+   * Every enqueue goes through here so no event can escape untagged — an
+   * option that only reaches some events is worse than no option at all,
+   * because the dashboard filter then silently under-counts.
+   */
+  private enqueue(payload: EventPayload): void {
+    if (this.environment) payload.environment = this.environment;
+    this.queue.push(payload);
   }
 
   /**
@@ -301,7 +324,7 @@ export class FunnelBarnClient {
     const url = this.detectURL();
     const utms = this.extractUTMs(url);
 
-    this.queue.push({
+    this.enqueue({
       name,
       url,
       ...utms,
@@ -492,7 +515,7 @@ export class FunnelBarnClient {
       if (this.engagementFired) return;
       this.engagementFired = true;
       this.cleanupEngagement();
-      this.queue.push({
+      this.enqueue({
         name: "page_engaged",
         page_view_id: pageViewId,
         session_id: this.getOrCreateSessionID(),

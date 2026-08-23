@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
@@ -59,8 +60,14 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 		occurredAt = record.ReceivedAt
 	}
 
-	// Normalize environment to a canonical value.
+	// Normalize environment to a canonical value. An unrecognised value is
+	// filed as production rather than rejected — dropping an event over a typo
+	// is worse than mis-filing it — but say so once per distinct value, or
+	// "prodution" silently pollutes production reporting forever.
 	env := environment.Normalize(payload.Environment)
+	if !environment.IsKnown(payload.Environment) {
+		warnUnknownEnvironment(payload.Environment, env)
+	}
 
 	// Derive session ID.
 	sessionID := payload.SessionID
@@ -278,4 +285,33 @@ func coalesce(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// unknownEnvironments bounds the "unrecognised environment" warning to one line
+// per distinct value per process, so a misconfigured client reports its typo
+// once instead of thousands of times a day. The cap stops a caller that sends a
+// random value per event from growing the set without limit.
+var unknownEnvironments = struct {
+	sync.Mutex
+	seen map[string]struct{}
+}{seen: make(map[string]struct{})}
+
+const maxTrackedUnknownEnvironments = 64
+
+func warnUnknownEnvironment(raw, filedAs string) {
+	unknownEnvironments.Lock()
+	_, already := unknownEnvironments.seen[raw]
+	if !already && len(unknownEnvironments.seen) < maxTrackedUnknownEnvironments {
+		unknownEnvironments.seen[raw] = struct{}{}
+	}
+	unknownEnvironments.Unlock()
+	if already {
+		return
+	}
+	slog.Warn("event carries an unrecognised environment; filing it under the default",
+		"handled", true,
+		"environment", raw,
+		"filed_as", filedAs,
+		"known", environment.Canonical(),
+	)
 }

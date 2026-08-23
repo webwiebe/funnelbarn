@@ -24,6 +24,9 @@ func main() {
         APIKey:      "your-api-key",
         Endpoint:    "https://funnelbarn.example.com",
         ProjectName: "my-app",
+        // Tags every event, so one key and project can be reused across
+        // deployments and filtered apart in the dashboard.
+        Environment: "production",
     })
     defer funnelbarn.Shutdown(5 * time.Second)
 
