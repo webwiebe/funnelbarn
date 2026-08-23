@@ -239,7 +239,7 @@ func run() error {
 	projectsSvc := service.NewProjectService(store)
 	funnelsSvc := service.NewFunnelService(store)
 	abtestsSvc := service.NewABTestService(store)
-	flagsSvc := service.NewFlagService(store)
+	flagsSvc := service.NewFlagService(store).WithConfigCacheTTL(time.Duration(cfg.ConfigFlagCacheSeconds) * time.Second)
 	eventsSvc := service.NewEventService(store)
 	overviewSvc := service.NewOverviewService(store)
 	sessionsSvc := service.NewSessionService(store)

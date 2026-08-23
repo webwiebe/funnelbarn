@@ -400,3 +400,92 @@ func TestPlaygroundEvaluate_DoesNotAutoRegister(t *testing.T) {
 		t.Errorf("playground must not auto-register: flag count changed %d -> %d", len(before), len(after))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Config-kind flags over HTTP
+// ---------------------------------------------------------------------------
+
+// A caller can declare the kind on the call that auto-registers the flag, so a
+// config value lands in the dashboard already shaped as one.
+func TestSDKEvaluate_AutoRegistersConfigKind(t *testing.T) {
+	srv, store, projectID, apiKey := newSDKServer(t, 100)
+
+	w := postEvaluateSDK(t, srv, apiKey, map[string]any{
+		"flag_key":      "cold_email_daily_cap",
+		"default_value": float64(250),
+		"kind":          "config",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	flags, err := store.ListFlags(context.Background(), projectID)
+	if err != nil {
+		t.Fatalf("ListFlags: %v", err)
+	}
+	if len(flags) != 1 || flags[0].Kind != repository.FlagKindConfig {
+		t.Fatalf("want one config-kind flag, got %+v", flags)
+	}
+	if flags[0].FlagType != "number" {
+		t.Errorf("a numeric default should infer flag_type=number, got %q", flags[0].FlagType)
+	}
+}
+
+// The response carries one sanctioned polling interval, in the body and as a
+// Cache-Control header. An experiment advertises none: it resolves per
+// targeting key and every read is a data point.
+func TestSDKEvaluate_CacheControlByKind(t *testing.T) {
+	srv, store, projectID, apiKey := newSDKServer(t, 100)
+	ctx := context.Background()
+
+	mustFlag := func(key, kind string) {
+		t.Helper()
+		if _, err := store.CreateFlag(ctx, repository.FeatureFlag{
+			ProjectID: projectID, FlagKey: key, Name: key, FlagType: "number",
+			Variants: `{"default":42}`, DefaultVariant: "default",
+			Split: `{"default":100}`, TargetingRules: "[]", Status: "active", Kind: kind,
+		}); err != nil {
+			t.Fatalf("CreateFlag(%s): %v", key, err)
+		}
+	}
+	mustFlag("cfg", repository.FlagKindConfig)
+	mustFlag("exp", repository.FlagKindExperiment)
+
+	w := postEvaluateSDK(t, srv, apiKey, map[string]any{"flag_key": "cfg", "default_value": float64(0)})
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["reason"] != "STATIC" {
+		t.Errorf("config flag reason: want STATIC, got %v", resp["reason"])
+	}
+	if resp["cache_max_age_seconds"] != float64(60) {
+		t.Errorf("cache_max_age_seconds: want 60, got %v", resp["cache_max_age_seconds"])
+	}
+	if got := w.Header().Get("Cache-Control"); got != "private, max-age=60" {
+		t.Errorf("Cache-Control: want private, max-age=60, got %q", got)
+	}
+
+	w = postEvaluateSDK(t, srv, apiKey, map[string]any{"flag_key": "exp", "default_value": float64(0)})
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["cache_max_age_seconds"] != float64(0) {
+		t.Errorf("experiment cache_max_age_seconds: want 0, got %v", resp["cache_max_age_seconds"])
+	}
+	if got := w.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control: want no-store for an experiment, got %q", got)
+	}
+}
+
+// An error result is the caller's own default, never a resolved value — it must
+// not be cached even when the flag it names is a config flag.
+func TestSDKEvaluate_ErrorIsNeverCached(t *testing.T) {
+	srv, _, _, apiKey := newSDKServer(t, 0) // auto-registration off
+
+	w := postEvaluateSDK(t, srv, apiKey, map[string]any{"flag_key": "missing", "default_value": true})
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["reason"] != "ERROR" || resp["error_code"] != "FLAG_NOT_FOUND" {
+		t.Fatalf("want ERROR/FLAG_NOT_FOUND, got %v", resp)
+	}
+	if got := w.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control: want no-store, got %q", got)
+	}
+}

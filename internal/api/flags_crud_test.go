@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -178,5 +179,124 @@ func TestHandleDeleteFlag(t *testing.T) {
 	w2 := getJSON(t, srv, "/api/v1/projects/"+p.ID+"/flags/"+flag.ID, cookie)
 	if w2.Code != http.StatusNotFound {
 		t.Errorf("after delete: want 404, got %d", w2.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// flag_kind
+// ---------------------------------------------------------------------------
+
+// A flag created without a kind is an experiment — what every flag was before
+// the column existed.
+func TestHandleCreateFlag_KindDefaultsToExperiment(t *testing.T) {
+	srv, store := newAuthedServer(t)
+	p, _ := store.CreateProject(context.Background(), "KindDefault", "kinddefault")
+	cookie, csrf := sessionAndCSRF(t, srv, "u")
+
+	w := postJSONWithCSRF(t, srv, "/api/v1/projects/"+p.ID+"/flags", map[string]any{
+		"flag_key": "k", "name": "K", "variants": `{"on":true}`, "default_variant": "on",
+	}, cookie, csrf)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["flag_kind"] != repository.FlagKindExperiment {
+		t.Errorf("flag_kind: want experiment, got %v", resp["flag_kind"])
+	}
+}
+
+// A partial update must not silently turn a config flag back into an
+// experiment — that would start writing an evaluation row per read again.
+func TestHandleUpdateFlag_PreservesKind(t *testing.T) {
+	srv, store := newAuthedServer(t)
+	ctx := context.Background()
+	p, _ := store.CreateProject(ctx, "KindKeep", "kindkeep")
+	f, err := store.CreateFlag(ctx, repository.FeatureFlag{
+		ProjectID: p.ID, FlagKey: "cap", Name: "Cap", FlagType: "number",
+		Variants: `{"default":10}`, DefaultVariant: "default", Split: `{"default":100}`,
+		TargetingRules: "[]", Status: "active", Kind: repository.FlagKindConfig,
+	})
+	if err != nil {
+		t.Fatalf("CreateFlag: %v", err)
+	}
+	cookie, csrf := sessionAndCSRF(t, srv, "u")
+
+	w := putJSONWithCSRF(t, srv, "/api/v1/projects/"+p.ID+"/flags/"+f.ID, map[string]any{
+		"name": "Cap (renamed)", "variants": `{"default":25}`,
+		"default_variant": "default", "split": `{"default":100}`, "status": "active",
+	}, cookie, csrf)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["flag_kind"] != repository.FlagKindConfig {
+		t.Errorf("flag_kind: want config preserved through a partial update, got %v", resp["flag_kind"])
+	}
+}
+
+// A typo would otherwise create a flag whose evaluation semantics nobody can
+// predict, so an unknown kind is refused outright.
+func TestHandleCreateFlag_RejectsUnknownKind(t *testing.T) {
+	srv, store := newAuthedServer(t)
+	p, _ := store.CreateProject(context.Background(), "KindBad", "kindbad")
+	cookie, csrf := sessionAndCSRF(t, srv, "u")
+
+	w := postJSONWithCSRF(t, srv, "/api/v1/projects/"+p.ID+"/flags", map[string]any{
+		"flag_key": "k", "name": "K", "flag_kind": "configuration",
+	}, cookie, csrf)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("want 422 for an unknown flag_kind, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+// putJSONWithCSRF is putJSON with the CSRF header the mutating routes require.
+func putJSONWithCSRF(t *testing.T, srv *Server, path string, body any, cookie *http.Cookie, csrfToken string) *httptest.ResponseRecorder {
+	t.Helper()
+	var buf bytes.Buffer
+	json.NewEncoder(&buf).Encode(body) //nolint:errcheck
+	req := httptest.NewRequest(http.MethodPut, path, &buf)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-FunnelBarn-CSRF", csrfToken)
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	return w
+}
+
+// A config flag records no evaluations, so its variant/conversion report would
+// be an empty table dressed up as a result. The endpoint says so instead.
+func TestHandleFlagAnalysis_ConfigKindReportsUnavailable(t *testing.T) {
+	srv, store := newAuthedServer(t)
+	ctx := context.Background()
+	p, _ := store.CreateProject(ctx, "KindAnalysis", "kindanalysis")
+	f, err := store.CreateFlag(ctx, repository.FeatureFlag{
+		ProjectID: p.ID, FlagKey: "cap", Name: "Cap", FlagType: "number",
+		Variants: `{"default":10}`, DefaultVariant: "default", Split: `{"default":100}`,
+		TargetingRules: "[]", Status: "active", Kind: repository.FlagKindConfig,
+	})
+	if err != nil {
+		t.Fatalf("CreateFlag: %v", err)
+	}
+	cookie, _ := sessionAndCSRF(t, srv, "u")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+p.ID+"/flags/"+f.ID+"/analysis", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["unavailable"] != "config" {
+		t.Errorf(`want unavailable="config", got %v`, resp["unavailable"])
+	}
+	if results, ok := resp["results"].([]any); !ok || len(results) != 0 {
+		t.Errorf("want an empty results list, got %v", resp["results"])
 	}
 }

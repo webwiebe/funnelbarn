@@ -45,20 +45,24 @@ type Config struct {
 	// disables pruning).
 	AutoRegisterMaxFlags int
 	AutoRegisterTTLDays  int
-	LoginRatePerMinute   float64
-	LoginRateBurst       float64
-	APIRatePerMinute     float64
-	APIRateBurst         float64
-	MetricsToken         string
-	LogLevel             slog.Level
-	IngestRatePerMinute  float64
-	IngestRateBurst      float64
-	SpanBarnEndpoint     string
-	SpanBarnAPIKey       string
-	SpanBarnLogLevel     slog.Level // min level shipped to SpanBarn via OTLP logs (default info)
-	TrustedProxies       []string
-	SetupRatePerMinute   float64
-	SetupRateBurst       float64
+	// ConfigFlagCacheSeconds is the max-age advertised on a config flag's
+	// evaluation response — the one sanctioned polling interval, so consumers
+	// don't each invent their own.
+	ConfigFlagCacheSeconds int
+	LoginRatePerMinute     float64
+	LoginRateBurst         float64
+	APIRatePerMinute       float64
+	APIRateBurst           float64
+	MetricsToken           string
+	LogLevel               slog.Level
+	IngestRatePerMinute    float64
+	IngestRateBurst        float64
+	SpanBarnEndpoint       string
+	SpanBarnAPIKey         string
+	SpanBarnLogLevel       slog.Level // min level shipped to SpanBarn via OTLP logs (default info)
+	TrustedProxies         []string
+	SetupRatePerMinute     float64
+	SetupRateBurst         float64
 
 	// PostLogoutRedirectURI is where IAMBarn's RP-initiated logout
 	// (/oauth2/end-session) returns the browser after ending the IAMBarn
@@ -144,6 +148,7 @@ func Load() Config {
 	// never-configured auto flags after 30 days.
 	cfg.AutoRegisterMaxFlags = envNonNegativeInt("FUNNELBARN_FLAG_AUTOREGISTER_MAX", 100)
 	cfg.AutoRegisterTTLDays = envNonNegativeInt("FUNNELBARN_FLAG_AUTOREGISTER_TTL_DAYS", 30)
+	cfg.ConfigFlagCacheSeconds = envNonNegativeInt("FUNNELBARN_FLAG_CONFIG_CACHE_SECONDS", 60)
 
 	// Login rate limit — default 20/min burst 20.
 	// Set higher (e.g. 1000) in test environments to avoid blocking E2E suites.

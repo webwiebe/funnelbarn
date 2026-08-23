@@ -5,6 +5,10 @@ import type { FeatureFlag, TargetingRule } from '../../lib/api'
 import { trackEvent } from '../../lib/analytics'
 import { parseFlagFormState } from '../../pages/Flags'
 import { TargetingRuleEditor } from './TargetingRuleEditor'
+import {
+  booleanShape, configShape, initialConfigValue, stringShape,
+  type StringVariantRow,
+} from './shape'
 
 const C = {
   bg: '#0f1117',
@@ -17,11 +21,6 @@ const C = {
   error: '#ef4444',
 }
 
-interface StringVariantRow {
-  name: string
-  returnValue: string
-  splitPct: number
-}
 
 interface FlagFormModalProps {
   projectId: string
@@ -33,6 +32,13 @@ interface FlagFormModalProps {
 export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormModalProps) {
   const isEdit = flag !== undefined
   const initial = isEdit ? parseFlagFormState(flag) : null
+
+  // A config flag holds one value for everyone: no bucketing, no evaluation
+  // rows, no variant/conversion report. See the setup doc's "Two kinds of flag".
+  const [flagKind, setFlagKind] = useState<'experiment' | 'config'>(
+    flag?.flag_kind === 'config' ? 'config' : 'experiment'
+  )
+  const [configValue, setConfigValue] = useState(initialConfigValue(flag))
 
   const [flagKey, setFlagKey] = useState(flag?.flag_key ?? '')
   const [name, setName] = useState(flag?.name ?? '')
@@ -99,28 +105,12 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
   const handleSave = async () => {
     if (!flagKey.trim() || !name.trim()) { setError('Key and name are required'); return }
 
-    let variantsObj: Record<string, unknown>
-    let splitObj: Record<string, number>
-    let resolvedDefault: string
-
-    if (flagType === 'boolean') {
-      variantsObj = { on: true, off: false }
-      resolvedDefault = defaultBool
-      // No rollout → 100% to default. With rollout → that % goes to the
-      // *opposite* of the default ("flip X% of users"), the rest stays default.
-      if (!rolloutEnabled || rolloutPct === 0) {
-        splitObj = { [defaultBool]: 100, [defaultBool === 'on' ? 'off' : 'on']: 0 }
-      } else {
-        const opposite = defaultBool === 'on' ? 'off' : 'on'
-        splitObj = { [defaultBool]: 100 - rolloutPct, [opposite]: rolloutPct }
-      }
-    } else {
-      const err = validateString()
-      if (err) { setError(err); return }
-      variantsObj = Object.fromEntries(variants.map((v) => [v.name.trim(), v.returnValue]))
-      splitObj = Object.fromEntries(variants.map((v) => [v.name.trim(), v.splitPct]))
-      resolvedDefault = defaultVariant
-    }
+    const shape = flagKind === 'config'
+      ? configShape(configValue)
+      : booleanShape(flagType, defaultBool, rolloutEnabled, rolloutPct)
+        ?? stringShape(variants, defaultVariant, validateString())
+    if ('error' in shape) { setError(shape.error); return }
+    const { variantsObj, splitObj, resolvedDefault, resolvedType } = shape
 
     setSaving(true)
     setError(null)
@@ -128,7 +118,8 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
       const body = {
         flag_key: flagKey,
         name,
-        flag_type: flagType,
+        flag_type: resolvedType,
+        flag_kind: flagKind,
         variants: JSON.stringify(variantsObj),
         default_variant: resolvedDefault,
         split: JSON.stringify(splitObj),
@@ -196,6 +187,12 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
             placeholder="e.g. checkout-redesign"
             style={{ ...inputStyle, marginBottom: 16, fontFamily: 'monospace', opacity: isEdit ? 0.6 : 1, cursor: isEdit ? 'not-allowed' : 'text' }} />
 
+          <FlagKindSelector value={flagKind} onChange={setFlagKind} />
+
+          {flagKind === 'config' ? (
+            <ConfigValueField value={configValue} onChange={setConfigValue} inputStyle={inputStyle} />
+          ) : (
+          <>
           <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>
             Type {isEdit && <span style={{ color: C.muted, fontWeight: 400 }}>(immutable)</span>}
           </label>
@@ -213,7 +210,157 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
             ))}
           </div>
 
-          {flagType === 'boolean' && (
+          <BooleanVariantFields
+            visible={flagType === 'boolean'}
+            defaultBool={defaultBool}
+            setDefaultBool={setDefaultBool}
+            rolloutEnabled={rolloutEnabled}
+            setRolloutEnabled={setRolloutEnabled}
+            rolloutPct={rolloutPct}
+            setRolloutPct={setRolloutPct}
+          />
+
+          <StringVariantFields
+            visible={flagType === 'string'}
+            variants={variants}
+            setVariants={setVariants}
+            defaultVariant={defaultVariant}
+            setDefaultVariant={setDefaultVariant}
+            advancedReturnValues={advancedReturnValues}
+            setAdvancedReturnValues={setAdvancedReturnValues}
+            splitSum={splitSum}
+            inputStyle={inputStyle}
+          />
+
+          </>
+          )}
+
+          {flagKind === 'experiment' && (
+          <>
+          <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Conversion event</label>
+          <select value={conversionEvent} onChange={(e) => setConversionEvent(e.target.value)}
+            style={{ ...inputStyle, marginBottom: 16 }}>
+            <option value="">Select an event (optional)...</option>
+            {eventNames.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+
+          <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
+            <button onClick={() => setShowRules(!showRules)} type="button" style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '0.75rem 1rem', background: 'transparent', border: 'none',
+              color: C.muted, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}>
+              <span>Targeting Rules ({targetingRules.length})</span>
+              {showRules ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+
+            {showRules && (
+              <div style={{ padding: '0 1rem 1rem', borderTop: `1px solid ${C.border}` }}>
+                <TargetingRuleEditor
+                  rules={targetingRules}
+                  onChange={setTargetingRules}
+                  variantNames={variantNames}
+                  defaultNewVariant={defaultNewVariant}
+                  contextKeySuggestions={contextKeySuggestions}
+                  activeKeyInput={activeKeyInput}
+                  onActiveKeyInputChange={setActiveKeyInput}
+                  inputStyle={inputStyle}
+                />
+              </div>
+            )}
+          </div>
+          </>
+          )}
+        </div>
+
+        <div style={{ padding: '1rem 1.5rem', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onClose} style={{ padding: '0.5rem 1rem', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving || !flagKey || !name}
+            style={{
+              padding: '0.5rem 1rem', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: saving ? 'default' : 'pointer',
+              background: saving || !flagKey || !name ? '#4a4d5a' : C.amber,
+              color: saving || !flagKey || !name ? C.muted : '#000',
+            }}>
+            {saving ? 'Saving...' : (isEdit ? 'Save changes' : 'Create Flag')}
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// FlagKindSelector picks what the flag is. The kind decides the evaluation
+// semantics, not just the label, so the copy spells out the difference.
+function FlagKindSelector({ value, onChange }: {
+  value: 'experiment' | 'config'
+  onChange: (k: 'experiment' | 'config') => void
+}) {
+  return (
+    <>
+      <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Kind</label>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+        {([['experiment', 'Experiment'], ['config', 'Config value']] as const).map(([k, label]) => {
+          const active = value === k
+          return (
+            <button key={k} type="button" onClick={() => onChange(k)} style={{
+              flex: 1, padding: '0.5rem', border: `1px solid ${active ? C.amber : C.border}`,
+              borderRadius: 8, background: active ? 'rgba(245,158,11,0.1)' : 'transparent',
+              color: active ? C.amber : C.muted, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}>
+              {label}
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ fontSize: 12, color: C.muted, marginBottom: 16, lineHeight: 1.5 }}>
+        {value === 'config'
+          ? 'One value for everyone, read by a server. No bucketing, no evaluation rows, and no variant report \u2014 change the value here and the fleet picks it up without a deploy.'
+          : 'Bucketed per user by targeting key. Every evaluation is recorded and reported on by variant and conversion.'}
+      </div>
+    </>
+  )
+}
+
+// ConfigValueField edits the single value a config flag holds.
+function ConfigValueField({ value, onChange, inputStyle }: {
+  value: string
+  onChange: (v: string) => void
+  inputStyle: React.CSSProperties
+}) {
+  return (
+    <>
+      <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Value</label>
+      <input value={value} onChange={(e) => onChange(e.target.value)}
+        placeholder={'e.g. 250, true, or {"mode":"slow"}'}
+        style={{ ...inputStyle, marginBottom: 6, fontFamily: 'monospace' }} />
+      <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>
+        Read as JSON, so <code style={{ color: C.text }}>250</code> is a number and{' '}
+        <code style={{ color: C.text }}>true</code> is a boolean. Anything that isn&apos;t valid
+        JSON is kept as a string.
+      </div>
+    </>
+  )
+}
+
+
+// BooleanVariantFields edits a release flag: an on/off default plus an optional
+// gradual rollout that flips a percentage of users to the other side.
+function BooleanVariantFields({
+  visible, defaultBool, setDefaultBool, rolloutEnabled, setRolloutEnabled, rolloutPct, setRolloutPct,
+}: {
+  visible: boolean
+  defaultBool: 'on' | 'off'
+  setDefaultBool: (v: 'on' | 'off') => void
+  rolloutEnabled: boolean
+  setRolloutEnabled: (v: boolean) => void
+  rolloutPct: number
+  setRolloutPct: (v: number) => void
+}) {
+  if (!visible) return null
+  return (
+    <>
             <>
               <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Default value</label>
               <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -245,9 +392,28 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
                 )}
               </div>
             </>
-          )}
+    </>
+  )
+}
 
-          {flagType === 'string' && (
+// StringVariantFields edits a multi-variant experiment: named variants, their
+// return values, and the split that must add up to 100%.
+function StringVariantFields({
+  visible, variants, setVariants, defaultVariant, setDefaultVariant,
+  advancedReturnValues, setAdvancedReturnValues, splitSum, inputStyle,
+}: {
+  visible: boolean
+  variants: StringVariantRow[]
+  setVariants: React.Dispatch<React.SetStateAction<StringVariantRow[]>>
+  defaultVariant: string
+  setDefaultVariant: (v: string) => void
+  advancedReturnValues: boolean
+  setAdvancedReturnValues: (v: boolean) => void
+  splitSum: number
+  inputStyle: React.CSSProperties
+}) {
+  if (!visible) return null
+  return (
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Variants</label>
               {variants.map((v, i) => (
@@ -320,56 +486,5 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
                 Use a different return value than the variant name
               </label>
             </div>
-          )}
-
-          <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Conversion event</label>
-          <select value={conversionEvent} onChange={(e) => setConversionEvent(e.target.value)}
-            style={{ ...inputStyle, marginBottom: 16 }}>
-            <option value="">Select an event (optional)...</option>
-            {eventNames.map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
-
-          <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
-            <button onClick={() => setShowRules(!showRules)} type="button" style={{
-              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '0.75rem 1rem', background: 'transparent', border: 'none',
-              color: C.muted, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-            }}>
-              <span>Targeting Rules ({targetingRules.length})</span>
-              {showRules ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            </button>
-
-            {showRules && (
-              <div style={{ padding: '0 1rem 1rem', borderTop: `1px solid ${C.border}` }}>
-                <TargetingRuleEditor
-                  rules={targetingRules}
-                  onChange={setTargetingRules}
-                  variantNames={variantNames}
-                  defaultNewVariant={defaultNewVariant}
-                  contextKeySuggestions={contextKeySuggestions}
-                  activeKeyInput={activeKeyInput}
-                  onActiveKeyInputChange={setActiveKeyInput}
-                  inputStyle={inputStyle}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div style={{ padding: '1rem 1.5rem', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button onClick={onClose} style={{ padding: '0.5rem 1rem', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            Cancel
-          </button>
-          <button onClick={handleSave} disabled={saving || !flagKey || !name}
-            style={{
-              padding: '0.5rem 1rem', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: saving ? 'default' : 'pointer',
-              background: saving || !flagKey || !name ? '#4a4d5a' : C.amber,
-              color: saving || !flagKey || !name ? C.muted : '#000',
-            }}>
-            {saving ? 'Saving...' : (isEdit ? 'Save changes' : 'Create Flag')}
-          </button>
-        </div>
-      </div>
-    </>
   )
 }

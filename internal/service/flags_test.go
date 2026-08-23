@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
@@ -378,7 +379,7 @@ func TestEvaluateOrRegisterFlag_CreatesInactiveDefaultFlag(t *testing.T) {
 	svc := service.NewFlagService(store)
 
 	res, err := svc.EvaluateOrRegisterFlag(context.Background(), "proj-1", "anon_qr_limit",
-		map[string]any{"targeting_key": "device-1"}, float64(3), 100)
+		map[string]any{"targeting_key": "device-1"}, float64(3), 100, "")
 	require.NoError(t, err)
 	require.Equal(t, "DISABLED", res.Reason)
 	require.Equal(t, float64(3), res.Value)
@@ -400,7 +401,7 @@ func TestEvaluateOrRegisterFlag_Idempotent(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "pricing_default_billing",
-			map[string]any{"targeting_key": "s1"}, "monthly", 100)
+			map[string]any{"targeting_key": "s1"}, "monthly", 100, "")
 		require.NoError(t, err)
 	}
 	flags, err := svc.ListFlags(ctx, "proj-1")
@@ -413,10 +414,10 @@ func TestEvaluateOrRegisterFlag_CapReached(t *testing.T) {
 	svc := service.NewFlagService(store)
 	ctx := context.Background()
 
-	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "flag_a", nil, true, 1)
+	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "flag_a", nil, true, 1, "")
 	require.NoError(t, err)
 
-	_, err = svc.EvaluateOrRegisterFlag(ctx, "proj-1", "flag_b", nil, true, 1)
+	_, err = svc.EvaluateOrRegisterFlag(ctx, "proj-1", "flag_b", nil, true, 1, "")
 	require.ErrorIs(t, err, domain.ErrAutoRegisterLimit)
 
 	flags, _ := svc.ListFlags(ctx, "proj-1")
@@ -433,11 +434,11 @@ func TestEvaluateOrRegisterFlag_ManualFlagsNotCounted(t *testing.T) {
 	for _, k := range []string{"m1", "m2", "m3"} {
 		createTestFlag(t, svc, "proj-1", k, map[string]any{"on": true, "off": false}, map[string]int{"on": 100}, "off")
 	}
-	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "auto_1", nil, true, 1)
+	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "auto_1", nil, true, 1, "")
 	require.NoError(t, err)
 
 	// A second auto key now hits the cap of 1 auto flag.
-	_, err = svc.EvaluateOrRegisterFlag(ctx, "proj-1", "auto_2", nil, true, 1)
+	_, err = svc.EvaluateOrRegisterFlag(ctx, "proj-1", "auto_2", nil, true, 1, "")
 	require.ErrorIs(t, err, domain.ErrAutoRegisterLimit)
 }
 
@@ -447,7 +448,7 @@ func TestEvaluateOrRegisterFlag_InvalidKeyNotCreated(t *testing.T) {
 	ctx := context.Background()
 
 	bad := "has spaces & symbols!"
-	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", bad, nil, true, 100)
+	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", bad, nil, true, 100, "")
 	require.ErrorIs(t, err, sql.ErrNoRows, "invalid keys fall through to not-found, never created")
 
 	flags, _ := svc.ListFlags(ctx, "proj-1")
@@ -459,7 +460,7 @@ func TestEvaluateOrRegisterFlag_DisabledWhenMaxZero(t *testing.T) {
 	svc := service.NewFlagService(store)
 	ctx := context.Background()
 
-	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "some_flag", nil, true, 0)
+	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "some_flag", nil, true, 0, "")
 	require.ErrorIs(t, err, sql.ErrNoRows, "maxAuto=0 disables auto-registration")
 
 	flags, _ := svc.ListFlags(ctx, "proj-1")
@@ -470,7 +471,7 @@ func TestEvaluateOrRegisterFlag_NoProjectSkips(t *testing.T) {
 	store := mock.New()
 	svc := service.NewFlagService(store)
 
-	_, err := svc.EvaluateOrRegisterFlag(context.Background(), "", "some_flag", nil, true, 100)
+	_, err := svc.EvaluateOrRegisterFlag(context.Background(), "", "some_flag", nil, true, 100, "")
 	require.ErrorIs(t, err, sql.ErrNoRows, "an empty project (admin key) must not auto-register")
 }
 
@@ -479,7 +480,7 @@ func TestUpdateFlag_ClaimsAutoFlagAsManual(t *testing.T) {
 	svc := service.NewFlagService(store)
 	ctx := context.Background()
 
-	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "claim_me", nil, true, 100)
+	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "claim_me", nil, true, 100, "")
 	require.NoError(t, err)
 	flags, _ := svc.ListFlags(ctx, "proj-1")
 	require.Len(t, flags, 1)
@@ -490,4 +491,152 @@ func TestUpdateFlag_ClaimsAutoFlagAsManual(t *testing.T) {
 	updated, err := svc.UpdateFlag(ctx, f)
 	require.NoError(t, err)
 	require.Equal(t, "manual", updated.Origin, "a human edit claims the flag")
+}
+
+// ---------------------------------------------------------------------------
+// Config-kind flags
+// ---------------------------------------------------------------------------
+
+func createConfigFlag(t *testing.T, svc *service.FlagService, projectID, flagKey string, value any) repository.FeatureFlag {
+	t.Helper()
+	variantsJSON, _ := json.Marshal(map[string]any{"default": value})
+	f, err := svc.CreateFlag(context.Background(), repository.FeatureFlag{
+		ProjectID:      projectID,
+		FlagKey:        flagKey,
+		Name:           flagKey,
+		FlagType:       "number",
+		Variants:       string(variantsJSON),
+		DefaultVariant: "default",
+		Split:          `{"default":100}`,
+		TargetingRules: "[]",
+		Status:         "active",
+		Kind:           repository.FlagKindConfig,
+	})
+	require.NoError(t, err)
+	return f
+}
+
+// A server polling a config value must not write an evaluation row per read —
+// one value polled every 60s from 3 pods would otherwise write ~4.3k rows/day.
+func TestEvaluateFlag_ConfigKindRecordsNothing(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+	createConfigFlag(t, svc, "proj-1", "cold_email_daily_cap", float64(250))
+
+	for i := 0; i < 25; i++ {
+		res, err := svc.EvaluateFlag(context.Background(), "proj-1", "cold_email_daily_cap", nil)
+		require.NoError(t, err)
+		require.Equal(t, float64(250), res.Value)
+		require.Equal(t, "STATIC", res.Reason)
+	}
+
+	require.Empty(t, store.RecordedEvaluations(),
+		"a config flag must not write evaluation rows")
+}
+
+// An experiment is the opposite: every read is a data point.
+func TestEvaluateFlag_ExperimentKindStillRecords(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+	createTestFlag(t, svc, "proj-1", "my-flag",
+		map[string]any{"on": true, "off": false},
+		map[string]int{"on": 50, "off": 50}, "off")
+
+	for i := 0; i < 3; i++ {
+		_, err := svc.EvaluateFlag(context.Background(), "proj-1", "my-flag",
+			map[string]any{"targetingKey": "user-1"})
+		require.NoError(t, err)
+	}
+	require.Len(t, store.RecordedEvaluations(), 3)
+}
+
+// Config values are the same for everyone. Bucketing by targeting key would let
+// separate pods read different values for one setting.
+func TestEvaluateFlag_ConfigKindIgnoresBucketing(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+	variantsJSON, _ := json.Marshal(map[string]any{"low": float64(10), "high": float64(999)})
+	_, err := svc.CreateFlag(context.Background(), repository.FeatureFlag{
+		ProjectID:      "proj-1",
+		FlagKey:        "batch_size",
+		Name:           "batch_size",
+		FlagType:       "number",
+		Variants:       string(variantsJSON),
+		DefaultVariant: "low",
+		Split:          `{"low":50,"high":50}`,
+		TargetingRules: "[]",
+		Status:         "active",
+		Kind:           repository.FlagKindConfig,
+	})
+	require.NoError(t, err)
+
+	for _, pod := range []string{"pod-a", "pod-b", "pod-c", "pod-d"} {
+		res, err := svc.EvaluateFlag(context.Background(), "proj-1", "batch_size",
+			map[string]any{"targetingKey": pod})
+		require.NoError(t, err)
+		require.Equal(t, float64(10), res.Value, "every caller must see the default variant")
+		require.Equal(t, "low", res.Variant)
+	}
+}
+
+// The cache hint is the one sanctioned polling interval. Experiments advertise
+// 0 — caching one would mis-bucket and silently drop the analytics.
+func TestEvaluateFlag_CacheHint(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store).WithConfigCacheTTL(90 * time.Second)
+	createConfigFlag(t, svc, "proj-1", "cfg", float64(1))
+	createTestFlag(t, svc, "proj-1", "exp",
+		map[string]any{"on": true, "off": false},
+		map[string]int{"on": 100}, "on")
+
+	cfg, err := svc.EvaluateFlag(context.Background(), "proj-1", "cfg", nil)
+	require.NoError(t, err)
+	require.Equal(t, 90, cfg.CacheMaxAgeSeconds)
+
+	exp, err := svc.EvaluateFlag(context.Background(), "proj-1", "exp", nil)
+	require.NoError(t, err)
+	require.Zero(t, exp.CacheMaxAgeSeconds)
+}
+
+// An inactive config flag still returns the flag's own stored default and still
+// advertises its cache hint — that is how a value is configured from the
+// dashboard before anyone activates it.
+func TestEvaluateFlag_ConfigKindDisabledKeepsHint(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+	f := createConfigFlag(t, svc, "proj-1", "cap", float64(7))
+	f.Status = "inactive"
+	_, err := svc.UpdateFlag(context.Background(), f)
+	require.NoError(t, err)
+
+	res, err := svc.EvaluateFlag(context.Background(), "proj-1", "cap", nil)
+	require.NoError(t, err)
+	require.Equal(t, "DISABLED", res.Reason)
+	require.Equal(t, float64(7), res.Value)
+	require.Equal(t, int(service.DefaultConfigCacheTTL.Seconds()), res.CacheMaxAgeSeconds)
+	require.Empty(t, store.RecordedEvaluations())
+}
+
+// A caller can declare the kind on first evaluation so the auto-registered flag
+// lands in the dashboard already shaped as a config value.
+func TestEvaluateOrRegisterFlag_HonoursDeclaredKind(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+
+	res, err := svc.EvaluateOrRegisterFlag(context.Background(), "proj-1", "daily_cap",
+		nil, float64(500), 100, repository.FlagKindConfig)
+	require.NoError(t, err)
+	require.Equal(t, float64(500), res.Value)
+
+	f, err := svc.GetFlagByKey(context.Background(), "proj-1", "daily_cap")
+	require.NoError(t, err)
+	require.Equal(t, repository.FlagKindConfig, f.Kind)
+	require.Equal(t, "number", f.FlagType)
+
+	// Unset (and unknown) kinds stay experiments — the pre-existing behaviour.
+	_, err = svc.EvaluateOrRegisterFlag(context.Background(), "proj-1", "other", nil, true, 100, "")
+	require.NoError(t, err)
+	other, err := svc.GetFlagByKey(context.Background(), "proj-1", "other")
+	require.NoError(t, err)
+	require.Equal(t, repository.FlagKindExperiment, other.Kind)
 }

@@ -8,9 +8,17 @@ import (
 	"time"
 )
 
+// FlagKindExperiment is the A/B-test shape: bucketed per targeting key, every
+// evaluation recorded, reported on by variant and conversion.
+const FlagKindExperiment = "experiment"
+
+// FlagKindConfig is a singleton value read by a server: no bucketing, no
+// evaluation rows, and no variant/conversion report.
+const FlagKindConfig = "config"
+
 // flagColumns is the shared SELECT column list for feature_flags, kept in one
 // place so every read path scans an identical row shape via scanFlag.
-const flagColumns = `id, project_id, flag_key, name, flag_type, variants, default_variant, split, COALESCE(conversion_event,''), COALESCE(targeting_rules,'[]'), status, created_at, COALESCE(origin,'manual'), last_evaluated_at`
+const flagColumns = `id, project_id, flag_key, name, flag_type, variants, default_variant, split, COALESCE(conversion_event,''), COALESCE(targeting_rules,'[]'), status, created_at, COALESCE(origin,'manual'), last_evaluated_at, COALESCE(flag_kind,'experiment')`
 
 // rowScanner is satisfied by both *sql.Row and *sql.Rows.
 type rowScanner interface {
@@ -23,7 +31,7 @@ func scanFlag(sc rowScanner) (FeatureFlag, error) {
 	if err := sc.Scan(
 		&f.ID, &f.ProjectID, &f.FlagKey, &f.Name, &f.FlagType,
 		&f.Variants, &f.DefaultVariant, &f.Split, &f.ConversionEvent,
-		&f.TargetingRules, &f.Status, &f.CreatedAt, &f.Origin, &lastEval,
+		&f.TargetingRules, &f.Status, &f.CreatedAt, &f.Origin, &lastEval, &f.Kind,
 	); err != nil {
 		return FeatureFlag{}, err
 	}
@@ -52,6 +60,10 @@ type FeatureFlag struct {
 	// auto flag so stale, never-configured ones can be pruned.
 	Origin          string     `json:"origin"`
 	LastEvaluatedAt *time.Time `json:"last_evaluated_at,omitempty"`
+	// Kind is "experiment" (bucketed per user, every read is an analytics data
+	// point) or "config" (a singleton value a server reads on a loop — no
+	// bucketing, no evaluation rows, no variant/conversion report).
+	Kind string `json:"flag_kind"`
 }
 
 // FlagEvaluation records a single flag evaluation.
@@ -93,10 +105,13 @@ func (s *Store) CreateFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, err
 	if f.Origin == "" {
 		f.Origin = "manual"
 	}
-	const q = `INSERT INTO feature_flags (id, project_id, flag_key, name, flag_type, variants, default_variant, split, conversion_event, targeting_rules, status, origin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	if f.Kind == "" {
+		f.Kind = FlagKindExperiment
+	}
+	const q = `INSERT INTO feature_flags (id, project_id, flag_key, name, flag_type, variants, default_variant, split, conversion_event, targeting_rules, status, origin, flag_kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	if _, err := s.db.ExecContext(ctx, q,
 		f.ID, f.ProjectID, f.FlagKey, f.Name, f.FlagType,
-		f.Variants, f.DefaultVariant, f.Split, f.ConversionEvent, f.TargetingRules, f.Status, f.Origin,
+		f.Variants, f.DefaultVariant, f.Split, f.ConversionEvent, f.TargetingRules, f.Status, f.Origin, f.Kind,
 	); err != nil {
 		return FeatureFlag{}, fmt.Errorf("create flag: %w", err)
 	}
@@ -118,12 +133,15 @@ func (s *Store) EnsureAutoFlag(ctx context.Context, f FeatureFlag) (FeatureFlag,
 	if f.Origin == "" {
 		f.Origin = "auto"
 	}
-	const q = `INSERT INTO feature_flags (id, project_id, flag_key, name, flag_type, variants, default_variant, split, conversion_event, targeting_rules, status, origin)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	if f.Kind == "" {
+		f.Kind = FlagKindExperiment
+	}
+	const q = `INSERT INTO feature_flags (id, project_id, flag_key, name, flag_type, variants, default_variant, split, conversion_event, targeting_rules, status, origin, flag_kind)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(project_id, flag_key) DO NOTHING`
 	if _, err := s.db.ExecContext(ctx, q,
 		id, f.ProjectID, f.FlagKey, f.Name, f.FlagType,
-		f.Variants, f.DefaultVariant, f.Split, f.ConversionEvent, f.TargetingRules, f.Status, f.Origin,
+		f.Variants, f.DefaultVariant, f.Split, f.ConversionEvent, f.TargetingRules, f.Status, f.Origin, f.Kind,
 	); err != nil {
 		return FeatureFlag{}, fmt.Errorf("ensure auto flag: %w", err)
 	}
@@ -198,10 +216,13 @@ func (s *Store) UpdateFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, err
 	}
 	// A human editing a flag claims it (origin='manual'): it now appears as a
 	// normal flag and is exempt from the stale-auto-flag sweep.
-	const q = `UPDATE feature_flags SET name=?, flag_type=?, variants=?, default_variant=?, split=?, conversion_event=?, targeting_rules=?, status=?, origin='manual' WHERE id=?`
+	if f.Kind == "" {
+		f.Kind = FlagKindExperiment
+	}
+	const q = `UPDATE feature_flags SET name=?, flag_type=?, variants=?, default_variant=?, split=?, conversion_event=?, targeting_rules=?, status=?, flag_kind=?, origin='manual' WHERE id=?`
 	if _, err := s.db.ExecContext(ctx, q,
 		f.Name, f.FlagType, f.Variants, f.DefaultVariant, f.Split,
-		f.ConversionEvent, f.TargetingRules, f.Status, f.ID,
+		f.ConversionEvent, f.TargetingRules, f.Status, f.Kind, f.ID,
 	); err != nil {
 		return FeatureFlag{}, fmt.Errorf("update flag: %w", err)
 	}

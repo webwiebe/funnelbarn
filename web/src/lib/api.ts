@@ -570,60 +570,25 @@ export interface ApiKey {
   created_at: string
 }
 
-export type TargetingOperator = 'eq' | 'neq' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'in' | 'not_in' | 'present' | 'not_present'
+// Feature-flag shapes live in ./api.flags and are re-exported here so every
+// existing `from '../lib/api'` import keeps working.
+import type {
+  FeatureFlag,
+  FlagAnalysis,
+  FlagEvaluationResult,
+  FlagEvaluationEntry,
+} from './api.flags'
 
-export interface TargetingCondition {
-  context_key: string
-  operator: TargetingOperator
-  value: string
-}
-
-export interface TargetingRule {
-  name: string
-  variant: string
-  match: 'all' | 'any'
-  conditions: TargetingCondition[]
-}
-
-export interface FeatureFlag {
-  id: string
-  project_id: string
-  flag_key: string
-  name: string
-  flag_type: string
-  variants: string
-  default_variant: string
-  split: string
-  conversion_event?: string
-  targeting_rules: string
-  status: string
-  created_at: string
-  origin: string // 'manual' | 'auto' — 'auto' flags were created on first evaluation
-  last_evaluated_at?: string
-}
-
-export interface FlagAnalysisVariant {
-  variant: string
-  sample: number
-  conversions: number
-  rate: number
-}
-
-export interface FlagAnalysis {
-  flag: FeatureFlag
-  results: FlagAnalysisVariant[]
-  significant?: boolean
-  z_score?: number
-}
-
-export interface FlagEvaluationResult {
-  flag_key: string
-  variant: string
-  value: unknown
-  reason: string
-  error_code?: string
-  error?: string
-}
+export type {
+  TargetingOperator,
+  TargetingCondition,
+  TargetingRule,
+  FeatureFlag,
+  FlagAnalysisVariant,
+  FlagAnalysis,
+  FlagEvaluationResult,
+  FlagEvaluationEntry,
+} from './api.flags'
 
 export interface DashboardWidget {
   id: string
@@ -701,12 +666,6 @@ export interface ProjectRecordingSettings {
   rules: RecordingRule[]
   effective_enabled: boolean
   effective_rate: number
-}
-
-export interface FlagEvaluationEntry {
-  flag_name: string
-  variant: string
-  evaluated_at: string
 }
 
 export interface ProjectHealth {

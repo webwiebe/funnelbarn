@@ -30,6 +30,12 @@ type FlagEvalResult struct {
 	FlagKey      string         `json:"flag_key"`
 	ErrorCode    string         `json:"error_code,omitempty"`
 	FlagMetadata map[string]any `json:"flag_metadata,omitempty"`
+	// CacheMaxAgeSeconds is how long the caller may reuse this result without
+	// re-evaluating. It is the one sanctioned polling interval, so every
+	// consumer doesn't invent its own. Zero means "do not cache": an experiment
+	// resolves per targeting key and each read is a data point, so caching one
+	// would both mis-bucket and silently drop the analytics.
+	CacheMaxAgeSeconds int `json:"cache_max_age_seconds"`
 }
 
 type TargetingCondition struct {
@@ -86,12 +92,41 @@ func ValidateTargetingRules(rulesJSON string) error {
 	return nil
 }
 
+// DefaultConfigCacheTTL is how long a config flag's value may be cached by
+// default. Long enough that a fleet polling a value costs the database almost
+// nothing; short enough that widening a cap from the dashboard takes effect
+// while you are still looking at the page.
+const DefaultConfigCacheTTL = 60 * time.Second
+
 type FlagService struct {
-	store ports.FlagRepo
+	store          ports.FlagRepo
+	configCacheTTL time.Duration
 }
 
 func NewFlagService(store ports.FlagRepo) *FlagService {
-	return &FlagService{store: store}
+	return &FlagService{store: store, configCacheTTL: DefaultConfigCacheTTL}
+}
+
+// WithConfigCacheTTL overrides the cache hint returned for config flags.
+// A non-positive ttl restores the default.
+func (svc *FlagService) WithConfigCacheTTL(ttl time.Duration) *FlagService {
+	if ttl <= 0 {
+		ttl = DefaultConfigCacheTTL
+	}
+	svc.configCacheTTL = ttl
+	return svc
+}
+
+// cacheHintSeconds is the max-age advertised for a resolved flag.
+func (svc *FlagService) cacheHintSeconds(flag repository.FeatureFlag) int {
+	if flag.Kind != repository.FlagKindConfig {
+		return 0
+	}
+	ttl := svc.configCacheTTL
+	if ttl <= 0 {
+		ttl = DefaultConfigCacheTTL
+	}
+	return int(ttl.Seconds())
 }
 
 func (svc *FlagService) CreateFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error) {
@@ -157,12 +192,20 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 		span.SetAttributes(attribute.String("flag.reason", "DISABLED"))
 		val, _ := variantValue(flag.Variants, flag.DefaultVariant)
 		return FlagEvalResult{
-			Value:   val,
-			Variant: flag.DefaultVariant,
-			Reason:  "DISABLED",
-			FlagKey: flag.FlagKey,
+			Value:              val,
+			Variant:            flag.DefaultVariant,
+			Reason:             "DISABLED",
+			FlagKey:            flag.FlagKey,
+			CacheMaxAgeSeconds: svc.cacheHintSeconds(flag),
 		}, nil
 	}
+
+	// A config flag is a singleton value polled by a server: no user, no bucket,
+	// no conversion. Recording a row per read would write thousands a day for a
+	// value that changes twice, and would drown the flag's own analytics in
+	// machine reads.
+	records := flag.Kind != repository.FlagKindConfig
+	span.SetAttributes(attribute.String("flag.kind", flag.Kind))
 
 	targetingKey := contextString(evalContext, "targetingKey")
 	if targetingKey == "" {
@@ -182,26 +225,47 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 			attribute.String("flag.reason", "TARGETING_MATCH"),
 			attribute.String("flag.rule_name", ruleName),
 		)
-		if recErr := svc.store.RecordEvaluation(ctx, repository.FlagEvaluation{
-			FlagID:      flag.ID,
-			ProjectID:   flag.ProjectID,
-			Variant:     variant,
-			ContextHash: hashContext(targetingKey),
-			SessionID:   sessionID,
-			ContextKeys: ctxKeys,
-		}); recErr != nil {
-			// Best-effort: an evaluation already happened, we just lost the
-			// analytics row. Warn so silent storage failures surface.
-			slog.WarnContext(ctx, "flag: record evaluation (targeting)",
-				"err", recErr, "handled", true,
-				"flag_id", flag.ID, "project_id", flag.ProjectID)
+		if records {
+			if recErr := svc.store.RecordEvaluation(ctx, repository.FlagEvaluation{
+				FlagID:      flag.ID,
+				ProjectID:   flag.ProjectID,
+				Variant:     variant,
+				ContextHash: hashContext(targetingKey),
+				SessionID:   sessionID,
+				ContextKeys: ctxKeys,
+			}); recErr != nil {
+				// Best-effort: an evaluation already happened, we just lost the
+				// analytics row. Warn so silent storage failures surface.
+				slog.WarnContext(ctx, "flag: record evaluation (targeting)",
+					"err", recErr, "handled", true,
+					"flag_id", flag.ID, "project_id", flag.ProjectID)
+			}
 		}
 		return FlagEvalResult{
-			Value:        val,
-			Variant:      variant,
-			Reason:       "TARGETING_MATCH",
-			FlagKey:      flag.FlagKey,
-			FlagMetadata: map[string]any{"evaluated_rule_name": ruleName},
+			Value:              val,
+			Variant:            variant,
+			Reason:             "TARGETING_MATCH",
+			FlagKey:            flag.FlagKey,
+			FlagMetadata:       map[string]any{"evaluated_rule_name": ruleName},
+			CacheMaxAgeSeconds: svc.cacheHintSeconds(flag),
+		}, nil
+	}
+
+	// A config flag holds one value for everyone. Bucketing it by targeting key
+	// would let separate pods read different values for the same setting, which
+	// is exactly the failure the kind exists to prevent.
+	if !records {
+		val, _ := variantValue(flag.Variants, flag.DefaultVariant)
+		span.SetAttributes(
+			attribute.String("flag.variant", flag.DefaultVariant),
+			attribute.String("flag.reason", "STATIC"),
+		)
+		return FlagEvalResult{
+			Value:              val,
+			Variant:            flag.DefaultVariant,
+			Reason:             "STATIC",
+			FlagKey:            flag.FlagKey,
+			CacheMaxAgeSeconds: svc.cacheHintSeconds(flag),
 		}, nil
 	}
 
@@ -257,7 +321,10 @@ func inferFlagType(v any) string {
 // buildAutoFlag describes an inert, auto-created flag: a single "default" variant
 // holding the caller's default value, status "inactive" so evaluation returns that
 // default (reason DISABLED) until a human configures it.
-func buildAutoFlag(projectID, flagKey string, defaultValue any) repository.FeatureFlag {
+func buildAutoFlag(projectID, flagKey string, defaultValue any, kind string) repository.FeatureFlag {
+	if kind != repository.FlagKindConfig {
+		kind = repository.FlagKindExperiment
+	}
 	variants := map[string]any{"default": defaultValue}
 	vb, err := json.Marshal(variants)
 	if err != nil {
@@ -274,6 +341,7 @@ func buildAutoFlag(projectID, flagKey string, defaultValue any) repository.Featu
 		TargetingRules: "[]",
 		Status:         "inactive",
 		Origin:         "auto",
+		Kind:           kind,
 	}
 }
 
@@ -285,7 +353,9 @@ func buildAutoFlag(projectID, flagKey string, defaultValue any) repository.Featu
 // maxAuto caps auto-created flags per project (0 disables auto-registration).
 // Invalid keys, a missing project, or hitting the cap fall back to the original
 // not-found behaviour (the cap case via domain.ErrAutoRegisterLimit).
-func (svc *FlagService) EvaluateOrRegisterFlag(ctx context.Context, projectID, flagKey string, evalContext map[string]any, defaultValue any, maxAuto int) (FlagEvalResult, error) {
+// kind is the caller's declared flag kind, honoured only when the flag is
+// auto-created here; an existing flag keeps whatever the dashboard says.
+func (svc *FlagService) EvaluateOrRegisterFlag(ctx context.Context, projectID, flagKey string, evalContext map[string]any, defaultValue any, maxAuto int, kind string) (FlagEvalResult, error) {
 	res, err := svc.EvaluateFlag(ctx, projectID, flagKey, evalContext)
 	if err == nil {
 		// Keep auto, still-unconfigured flags alive in the retention sweep while
@@ -305,7 +375,7 @@ func (svc *FlagService) EvaluateOrRegisterFlag(ctx context.Context, projectID, f
 	if n, cerr := svc.store.CountAutoFlags(ctx, projectID); cerr == nil && n >= maxAuto {
 		return FlagEvalResult{}, fmt.Errorf("project %s: %w", projectID, domain.ErrAutoRegisterLimit)
 	}
-	if _, cerr := svc.store.EnsureAutoFlag(ctx, buildAutoFlag(projectID, flagKey, defaultValue)); cerr != nil {
+	if _, cerr := svc.store.EnsureAutoFlag(ctx, buildAutoFlag(projectID, flagKey, defaultValue, kind)); cerr != nil {
 		slog.WarnContext(ctx, "flag: auto-register failed", "err", cerr, "handled", true,
 			"project_id", projectID, "flag_key", flagKey)
 		// Still hand the caller its default so the SDK is unaffected.
