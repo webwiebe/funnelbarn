@@ -489,6 +489,36 @@ const (
 	workerRotateThreshold = 64 << 20 // 64 MiB
 )
 
+// deadLetterRecord parks an unprocessable record and advances the cursor past
+// it, so one bad record can never wedge the spool. reason labels the metric:
+// "dead_letter" for a record that exhausted its retries, "unresolved_project"
+// for one that could never have been persisted at all. Returns the new offset.
+func deadLetterRecord(spoolDir string, record spool.Record, endOffset int64, reason string) int64 {
+	if err := spool.AppendDeadLetter(spoolDir, record); err != nil {
+		slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", err)
+	}
+	metrics.EventErrors.WithLabelValues(reason).Inc()
+	if err := spool.WriteCursor(spoolDir, endOffset); err != nil {
+		slog.Error("worker write cursor", "err", err)
+	}
+	return endOffset
+}
+
+// resolveEventProject looks up the project a spool record belongs to. A record
+// with no slug, or one whose slug can never resolve, comes back wrapped in
+// repository.ErrProjectUnresolvable: events.project_id is NOT NULL REFERENCES
+// projects(id), so persisting it could only ever fail the foreign key.
+func resolveEventProject(ctx context.Context, store *repository.Store, slug string) (string, error) {
+	if slug == "" {
+		return "", fmt.Errorf("%w: spool record carries no project slug", repository.ErrProjectUnresolvable)
+	}
+	proj, err := store.EnsureProject(ctx, slug)
+	if err != nil {
+		return "", err
+	}
+	return proj.ID, nil
+}
+
 func runBackgroundWorker(ctx context.Context, cfg config.Config, store *repository.Store, eventSpool *spool.Spool, geoLookup *geoip.Lookup, recordings service.Recordings) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -633,15 +663,8 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 							"ingest_id", record.IngestID,
 							"attempts", retryCounts[record.IngestID],
 						)
-						if dlErr := spool.AppendDeadLetter(cfg.SpoolDir, record); dlErr != nil {
-							slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", dlErr)
-						}
-						metrics.EventErrors.WithLabelValues("dead_letter").Inc()
 						delete(retryCounts, record.IngestID)
-						offset = entry.EndOffset
-						if err := spool.WriteCursor(cfg.SpoolDir, offset); err != nil {
-							slog.Error("worker write cursor", "err", err)
-						}
+						offset = deadLetterRecord(cfg.SpoolDir, record, entry.EndOffset, "dead_letter")
 					} else {
 						metrics.EventErrors.WithLabelValues("retry").Inc()
 					}
@@ -657,40 +680,26 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 					attribute.String("ingest.id", record.IngestID),
 					attribute.String("project.slug", record.ProjectSlug),
 				)
-				// Resolve the project up front. Without a project ID the insert
-				// can only fail the events.project_id foreign key, so a record
-				// we cannot attribute is unrecoverable: dead-letter it now
-				// rather than retrying an insert that is guaranteed to fail.
-				projectErr := error(nil)
-				if record.ProjectSlug == "" {
-					projectErr = fmt.Errorf("%w: spool record carries no project slug", repository.ErrProjectUnresolvable)
-				} else if proj, err := store.EnsureProject(opCtx, record.ProjectSlug); err == nil {
-					event.ProjectID = proj.ID
-				} else {
-					projectErr = err
-				}
-				if projectErr != nil {
-					if errors.Is(projectErr, repository.ErrProjectUnresolvable) {
-						tracing.RecordError(span, projectErr)
-						span.End()
-						opCancel()
-						slog.Error("worker dead-lettering record: project cannot be resolved",
-							"err", projectErr, "handled", false,
-							"ingest_id", record.IngestID,
-							"project_slug", record.ProjectSlug,
-							"event_name", event.Name,
-						)
-						if dlErr := spool.AppendDeadLetter(cfg.SpoolDir, record); dlErr != nil {
-							slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", dlErr)
-						}
-						metrics.EventErrors.WithLabelValues("unresolved_project").Inc()
-						delete(retryCounts, record.IngestID)
-						offset = entry.EndOffset
-						if err := spool.WriteCursor(cfg.SpoolDir, offset); err != nil {
-							slog.Error("worker write cursor", "err", err)
-						}
-						continue
-					}
+				projectID, projectErr := resolveEventProject(opCtx, store, record.ProjectSlug)
+				switch {
+				case projectErr == nil:
+					event.ProjectID = projectID
+				case errors.Is(projectErr, repository.ErrProjectUnresolvable):
+					// Unrecoverable: retrying an insert that must fail the
+					// project_id foreign key only burns attempts.
+					tracing.RecordError(span, projectErr)
+					span.End()
+					opCancel()
+					slog.Error("worker dead-lettering record: project cannot be resolved",
+						"err", projectErr, "handled", false,
+						"ingest_id", record.IngestID,
+						"project_slug", record.ProjectSlug,
+						"event_name", event.Name,
+					)
+					delete(retryCounts, record.IngestID)
+					offset = deadLetterRecord(cfg.SpoolDir, record, entry.EndOffset, "unresolved_project")
+					continue
+				default:
 					// A transient lookup failure (DB busy, timeout) — leave
 					// ProjectID unset and let the persist path retry the record.
 					slog.Warn("worker ensure project", "slug", record.ProjectSlug, "err", projectErr, "handled", true)
@@ -730,15 +739,8 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 						slog.Error("worker dead-lettering record after persist failures",
 							"ingest_id", record.IngestID,
 						)
-						if dlErr := spool.AppendDeadLetter(cfg.SpoolDir, record); dlErr != nil {
-							slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", dlErr)
-						}
-						metrics.EventErrors.WithLabelValues("dead_letter").Inc()
 						delete(retryCounts, record.IngestID)
-						offset = entry.EndOffset
-						if err := spool.WriteCursor(cfg.SpoolDir, offset); err != nil {
-							slog.Error("worker write cursor", "err", err)
-						}
+						offset = deadLetterRecord(cfg.SpoolDir, record, entry.EndOffset, "dead_letter")
 					} else {
 						metrics.EventErrors.WithLabelValues("retry").Inc()
 					}
