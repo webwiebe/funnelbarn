@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import {
-  initInstrumentation, shutdownInstrumentation, shouldSampleTrace, traceparent,
+  initInstrumentation, shutdownInstrumentation, traceparent,
   requestURL, currentTraceId, markTraceError, __resetForTests, __bufferedSpans,
   type SpanPayload,
 } from './instrumentation'
@@ -41,24 +41,6 @@ describe('traceparent', () => {
   it('builds a sampled W3C header', () => {
     expect(traceparent('4bf92f3577b34da6a3ce929d0e0e4736', '00f067aa0ba902b7'))
       .toBe('00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01')
-  })
-})
-
-describe('shouldSampleTrace', () => {
-  it('is deterministic — the same trace ID always decides the same way', () => {
-    const id = 'ff'.repeat(16)
-    expect(shouldSampleTrace(id, 50)).toBe(shouldSampleTrace(id, 50))
-  })
-
-  it('keeps everything at 100 and nothing at 0', () => {
-    const id = '0123456789abcdef' + '0'.repeat(16)
-    expect(shouldSampleTrace(id, 100)).toBe(true)
-    expect(shouldSampleTrace(id, 0)).toBe(false)
-  })
-
-  it('drops rather than throwing on a malformed trace ID', () => {
-    expect(shouldSampleTrace('', 100)).toBe(false)
-    expect(shouldSampleTrace('zzzz', 100)).toBe(false)
   })
 })
 
@@ -174,31 +156,29 @@ describe('navigation', () => {
   })
 })
 
-describe('sampling', () => {
-  it('drops an unsampled, error-free trace whole rather than in part', async () => {
+describe('delivery', () => {
+  // SpanBarn samples again at ingest (1-in-1000 by default, errors always
+  // kept). Sampling here too multiplied the two into roughly 1 trace in
+  // 20,000 — a dashboard with a handful of daily visits never produced one.
+  it('sends every trace, leaving the sampling decision to SpanBarn', async () => {
     installFetch()
     initInstrumentation()
     await window.fetch('/api/v1/funnels')
-
-    // Force the commit path without an error. Whether this trace was sampled
-    // is decided by its ID, so assert the invariant: a batch is either sent
-    // in full or not at all — never a partial trace.
-    const before = sent.length
     shutdownInstrumentation()
-    const batches = sent.slice(before).filter((s) => s.url === '/api/v1/telemetry')
-    if (batches.length > 0) {
-      const spans = batches.flatMap((b) => b.body.spans ?? [])
-      expect(spans.some((s) => s.kind === 'INTERNAL')).toBe(true) // the page span came too
-    }
+
+    const spans = sent.filter((s) => s.url === '/api/v1/telemetry').flatMap((b) => b.body.spans ?? [])
+    expect(spans.some((s) => s.kind === 'CLIENT')).toBe(true)
+    expect(spans.some((s) => s.kind === 'INTERNAL')).toBe(true) // the page span too
     expect(__bufferedSpans()).toHaveLength(0)
   })
 
-  it('always keeps a trace that hit an error', async () => {
+  it('flushes immediately when a trace hits an error, so it survives the page closing', async () => {
     installFetch((url) =>
       url === '/api/v1/boom' ? new Response('', { status: 500 }) : new Response('{}', { status: 200 }))
     initInstrumentation()
     await window.fetch('/api/v1/boom')
 
+    // Sent without waiting for the flush timer or a navigation.
     const spans = sent.filter((s) => s.url === '/api/v1/telemetry').flatMap((b) => b.body.spans ?? [])
     expect(spans.some((s) => s.status === 'ERROR')).toBe(true)
   })
