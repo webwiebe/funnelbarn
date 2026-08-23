@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -148,9 +149,19 @@ type EventPersister interface {
 	UpsertSessionSignals(ctx context.Context, sessionID string, signals repository.SessionSignals) error
 }
 
+// ErrNoProject means the event carries no project ID. events.project_id is
+// NOT NULL REFERENCES projects(id), so inserting one produces an opaque
+// "FOREIGN KEY constraint failed (787)" that says nothing about which parent
+// row was missing. Catch it here, where the cause is still nameable.
+var ErrNoProject = errors.New("event has no project ID")
+
 // PersistEvent stores an event and upserts the associated session.
 // geo may be nil when geo collection is disabled or the database is unconfigured.
 func PersistEvent(ctx context.Context, store EventPersister, event repository.Event, geo *geoip.GeoResult) error {
+	if event.ProjectID == "" {
+		return fmt.Errorf("%w (ingest_id %s, event %q)", ErrNoProject, event.IngestID, event.Name)
+	}
+
 	// Check idempotency: skip if already stored.
 	existing, err := store.GetEventByIngestID(ctx, event.IngestID)
 	if err != nil {

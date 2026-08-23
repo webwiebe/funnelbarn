@@ -29,6 +29,15 @@ var (
 		Help: "Current number of events waiting in the in-memory ingest queue.",
 	})
 
+	// EventsRejected counts events refused at the ingest edge, labeled by
+	// "reason". "unattributed" means the request carried no resolvable project
+	// (a global API key with no x-funnelbarn-project header), which the worker
+	// could only ever fail to insert against the events.project_id foreign key.
+	EventsRejected = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "funnelbarn_events_rejected_total",
+		Help: "Total events rejected at the ingest edge, labeled by reason.",
+	}, []string{"reason"})
+
 	// Worker pipeline
 	EventsProcessed = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "funnelbarn_events_processed_total",
@@ -37,8 +46,10 @@ var (
 
 	// EventErrors is labeled by "reason": "retry" for a processing failure
 	// that will be retried, "dead_letter" for one that exhausted retries and
-	// was written to the dead-letter spool. All increment call sites must
-	// supply this label (CounterVec requires it on every observation).
+	// was written to the dead-letter spool, "unresolved_project" for one whose
+	// project can never be resolved (dead-lettered immediately, since retrying
+	// cannot help). All increment call sites must supply this label
+	// (CounterVec requires it on every observation).
 	EventErrors = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "funnelbarn_event_errors_total",
 		Help: "Total events that failed processing, labeled by reason (retry vs dead_letter).",

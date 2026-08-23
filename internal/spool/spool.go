@@ -366,12 +366,30 @@ func ReadRecordsFrom(path string, offset int64) ([]RecordAtOffset, error) {
 	return records, nil
 }
 
+// DeadLetterPath returns the dead-letter file path for dir.
+func DeadLetterPath(dir string) string {
+	if dir == "" {
+		dir = ".data/spool"
+	}
+	return filepath.Join(dir, deadLetterFileName)
+}
+
+// TruncateDeadLetter empties the dead-letter file, used after a successful
+// replay so records are not applied twice. A missing file is not an error.
+func TruncateDeadLetter(dir string) error {
+	err := os.Truncate(DeadLetterPath(dir), 0)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
 // AppendDeadLetter writes a record to the dead-letter file in dir.
 func AppendDeadLetter(dir string, record Record) error {
 	if dir == "" {
 		dir = ".data/spool"
 	}
-	path := filepath.Join(dir, deadLetterFileName)
+	path := DeadLetterPath(dir)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err

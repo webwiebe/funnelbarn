@@ -302,6 +302,49 @@ Replace `funnelbarn-production` with `funnelbarn-staging` or `funnelbarn-testing
 
 ---
 
+## 4b. Recovering dead-lettered events
+
+An event the worker cannot persist after `FUNNELBARN_WORKER_MAX_RETRIES`
+attempts is appended to `deadletter.ndjson` in the spool directory rather than
+discarded. The dominant cause is an event that names no project: an
+instance-wide API key sent without an `x-funnelbarn-project` header leaves
+`project_id` empty, and `events.project_id` is `NOT NULL REFERENCES
+projects(id)`, so the insert fails the foreign key every time. (The ingest
+endpoint now rejects those with a 400 up front, so new traffic no longer
+reaches this state — this is for recovering what was already dropped.)
+
+Check what is sitting there:
+
+```sh
+kubectl -n funnelbarn-production exec deploy/funnelbarn -- \
+  sh -c 'wc -l "$FUNNELBARN_SPOOL_DIR/deadletter.ndjson"'
+```
+
+Preview a replay without writing anything:
+
+```sh
+kubectl -n funnelbarn-production exec deploy/funnelbarn -- \
+  funnelbarn replay-dead-letter --project=<slug> --dry-run
+```
+
+Then replay for real. Records that carry their own project slug are
+re-attributed to it; `--project` supplies one for the records that do not:
+
+```sh
+kubectl -n funnelbarn-production exec deploy/funnelbarn -- \
+  funnelbarn replay-dead-letter --project=<slug>
+```
+
+Both commands print `{"records":N,"replayed":N,"skipped":N,"dry_run":bool}`.
+The file is truncated only when `skipped` is `0`, so a partial run can be
+retried safely — persistence is idempotent on `ingest_id`, and already-stored
+events are skipped rather than duplicated.
+
+> Only pass `--project` when you know the events belong to that project.
+> Attributing them to the wrong one is worse than leaving them dead-lettered.
+
+---
+
 ## 5. Log Access
 
 ### Tail service logs (production)

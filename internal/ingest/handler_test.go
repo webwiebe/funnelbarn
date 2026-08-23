@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
@@ -101,6 +102,9 @@ func TestServeHTTP_Accepted(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(auth.HeaderAPIKey, "mykey")
+	// The static env-var key is instance-wide and resolves with no project, so
+	// the event has to name one itself.
+	req.Header.Set("x-funnelbarn-project", "my-site")
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -221,4 +225,84 @@ func TestStart_DrainOnCancel(t *testing.T) {
 
 	cancel()
 	<-done // should complete promptly after cancel
+}
+
+// ---------------------------------------------------------------------------
+// ServeHTTP — unattributable events
+// ---------------------------------------------------------------------------
+
+// An instance-wide key with no x-funnelbarn-project header leaves the event
+// with no project. events.project_id is NOT NULL REFERENCES projects(id), so
+// the worker could only ever fail its insert on the foreign key and
+// dead-letter the record — long after the client saw a 202. Reject it here.
+func TestServeHTTP_RejectsUnattributedEvent(t *testing.T) {
+	sp := newTestSpool(t)
+	h := NewHandler(auth.New("mykey"), sp, 0)
+
+	body := `{"name":"pageview","url":"https://example.com/page"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(auth.HeaderAPIKey, "mykey")
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for an event with no resolvable project, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "x-funnelbarn-project") {
+		t.Errorf("error message should name the fix, got %s", w.Body.String())
+	}
+}
+
+// The header is only trusted when the key is not bound to a project; a
+// project-scoped key attributes the event on its own.
+func TestServeHTTP_ProjectScopedKeyNeedsNoHeader(t *testing.T) {
+	sp := newTestSpool(t)
+	lookup := func(_ context.Context, _ string) (string, string, bool, error) {
+		return "proj-123", "ingest", true, nil
+	}
+	h := NewHandler(auth.New("static").WithDBLookup(lookup, nil), sp, 0)
+
+	body := `{"name":"pageview"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(auth.HeaderAPIKey, "project-key")
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for a project-scoped key, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+// The alert escalates to error level once per window and stays at warn in
+// between, so one misconfigured client cannot flood the issue tracker.
+func TestLogUnattributed_ThrottlesEscalation(t *testing.T) {
+	sp := newTestSpool(t)
+	h := NewHandler(auth.New("mykey"), sp, 0)
+
+	now := time.Unix(1_700_000_000, 0)
+	h.now = func() time.Time { return now }
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader("{}"))
+
+	h.logUnattributed(req)
+	first := h.lastUnattributedAt
+	if first.IsZero() {
+		t.Fatal("first occurrence should escalate and stamp the throttle")
+	}
+
+	now = now.Add(unattributedReAlert / 2)
+	h.logUnattributed(req)
+	if !h.lastUnattributedAt.Equal(first) {
+		t.Error("must not re-escalate inside the re-alert window")
+	}
+
+	now = now.Add(unattributedReAlert)
+	h.logUnattributed(req)
+	if h.lastUnattributedAt.Equal(first) {
+		t.Error("expected a fresh escalation after the re-alert window elapsed")
+	}
 }

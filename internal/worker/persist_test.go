@@ -5,6 +5,8 @@ package worker
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,5 +93,33 @@ func TestPersistEvent_Idempotency(t *testing.T) {
 	// Session upsert should still happen on the first call only.
 	if len(store.sessions) != 1 {
 		t.Errorf("idempotency: want 1 session upsert, got %d", len(store.sessions))
+	}
+}
+
+// An event with no project ID can only fail the events.project_id foreign key,
+// which SQLite reports as an unattributable "FOREIGN KEY constraint failed
+// (787)". PersistEvent names the cause before the insert is attempted.
+func TestPersistEvent_RejectsEventWithoutProject(t *testing.T) {
+	store := &fakeEventStore{}
+	event := repository.Event{
+		ID:         "evt-1",
+		SessionID:  "sess-1",
+		Name:       "signup",
+		IngestID:   "ingest-1",
+		OccurredAt: time.Now(),
+	}
+
+	err := PersistEvent(context.Background(), store, event, nil)
+	if err == nil {
+		t.Fatal("expected an error for an event with no project ID")
+	}
+	if !errors.Is(err, ErrNoProject) {
+		t.Errorf("expected ErrNoProject, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "ingest-1") {
+		t.Errorf("error should name the ingest ID so it is traceable, got %q", err)
+	}
+	if len(store.events) != 0 {
+		t.Errorf("expected no insert attempt, got %d events", len(store.events))
 	}
 }

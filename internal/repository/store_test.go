@@ -3,6 +3,7 @@ package repository_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -1347,4 +1348,29 @@ func TestStore_CountNewEvents(t *testing.T) {
 	n, err := s.CountNewEvents(ctx, p.ID, now.Add(-time.Hour), "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), n)
+}
+
+// EnsureProject marks deterministically hopeless slugs with
+// ErrProjectUnresolvable so the ingest worker can dead-letter the record
+// immediately instead of retrying an insert that must fail the project_id
+// foreign key every time.
+func TestEnsureProject_UnresolvableSlugsAreMarked(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	cases := map[string]string{
+		"UUID with no matching project": "bad8320c-8aef-408b-a0bf-df4b0adc3877",
+		"path traversal":                "../../etc/passwd",
+	}
+	for name, slug := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := store.EnsureProject(ctx, slug)
+			if err == nil {
+				t.Fatalf("expected EnsureProject(%q) to fail", slug)
+			}
+			if !errors.Is(err, repository.ErrProjectUnresolvable) {
+				t.Errorf("expected ErrProjectUnresolvable, got %v", err)
+			}
+		})
+	}
 }
