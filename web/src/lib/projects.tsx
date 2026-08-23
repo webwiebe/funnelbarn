@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react'
-import { api, ApiError, Project } from './api'
+import { api, Project } from './api'
 import { reportError } from './bugbarn'
 
 const STORAGE_KEY = 'funnelbarn_default_project'
@@ -46,13 +46,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     api.listProjects()
       .then((d) => setProjects(d.projects || []))
       .catch((e) => {
-        // Skip noise:
-        // - 401: expected when session expired / before login. api.request already redirects.
-        // - 0:   network failure (TypeError: Failed to fetch). User's network, not our code.
-        const isNoise = e instanceof ApiError && (e.status === 401 || e.status === 0)
-        if (!isNoise) {
-          reportError(e, { source: 'ProjectProvider.listProjects' })
-        }
+        // Expired sessions and network blips are filtered inside reportError.
+        reportError(e, { source: 'ProjectProvider.listProjects' })
         setProjects([])
       })
       .finally(() => setIsLoading(false))

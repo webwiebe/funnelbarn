@@ -356,8 +356,11 @@ export default function Funnels() {
       })
       .catch((e) => {
         console.error(e)
-        const isNoise = e instanceof ApiError && (e.status === 404 || e.status === 0)
-        if (!isNoise) reportError(e, { source: 'Funnels.getFunnelAnalysis' })
+        // A 404 here is a funnel deleted in another tab — specific to this
+        // view, so it stays local. Network blips and expired sessions are
+        // filtered inside reportError.
+        const isStale = e instanceof ApiError && e.status === 404
+        if (!isStale) reportError(e, { source: 'Funnels.getFunnelAnalysis' })
         setAnalysisError(String(e))
       })
       .finally(() => setAnalysisLoading(false))

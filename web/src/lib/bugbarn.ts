@@ -1,4 +1,5 @@
 import { currentTraceId, markTraceError } from './instrumentation'
+import { isNonActionableError } from './api-error'
 
 // BugBarn error reporting utility.
 // Config is fetched from /api/v1/client-config at runtime so the Docker image
@@ -76,6 +77,12 @@ export function reportError(
   error: unknown,
   context: Record<string, unknown> = {},
 ): void {
+  // Filter at the reporting boundary, not per call site. The API client already
+  // documents a status-0 failure as "the user's network, not our code", but
+  // only 2 of 25 call sites acted on that — so a dropped connection on any of
+  // the other 23 opened a BugBarn issue nobody could fix.
+  if (isNonActionableError(error)) return
+
   const message = error instanceof Error ? error.message : String(error)
   const stack = error instanceof Error ? (error.stack ?? '') : ''
 
