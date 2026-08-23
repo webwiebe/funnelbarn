@@ -54,7 +54,8 @@ cursor.json
 web/coverage/
 /funnelbarn
 
-# bb CLI project pin — written by the `bb` CLI on first use in this repo so
-# `bb issues` scopes to the funnelbarn project instead of the whole fleet.
-# Local convenience, not repo config.
+# barn CLI project pins — written by the `bb` / `sb` CLIs on first use in this
+# repo so their queries scope to the funnelbarn project instead of the whole
+# fleet. Local convenience, not repo config.
 .bugbarn.json
+.spanbarn.json
