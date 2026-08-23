@@ -56,11 +56,15 @@ func (s *memStorage) Delete(_ context.Context, key string) error {
 
 // newRecordingServer builds a server with session recording enabled and a
 // DB-backed API key authorizer (so a key can be bound to a real project).
-func newRecordingServer(t *testing.T) (*Server, *repository.Store) {
+func newRecordingServer(t *testing.T, staticKey ...string) (*Server, *repository.Store) {
 	t.Helper()
 	store := openMemoryStore(t)
 	sp := newTestSpool(t)
-	authz := auth.New("").WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
+	global := ""
+	if len(staticKey) > 0 {
+		global = staticKey[0]
+	}
+	authz := auth.New(global).WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
 	ingestHandler := ingest.NewHandler(authz, sp, 0)
 	sm := auth.NewSessionManager("test-secret", time.Hour)
 	userAuth, _ := auth.NewUserAuthenticator("", "", "")

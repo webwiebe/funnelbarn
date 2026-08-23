@@ -11,6 +11,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
@@ -47,6 +48,20 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 	)
 	defer span.End()
 
+	// The global env-var key (FUNNELBARN_API_KEY) resolves with an empty
+	// project ID. Recording chunks must be attributed to a specific project, so
+	// this key cannot be used here. A common misconfiguration is setting
+	// BUGBARN_FUNNELBARN_API_KEY (or equivalent cross-barn env vars) to the
+	// global key instead of a per-project key from the project settings page.
+	if projectID == "" {
+		slog.WarnContext(ctx, "recording chunk: global API key cannot be used for recording; project-scoped key required",
+			"user_agent", r.Header.Get("User-Agent"),
+			"request_id", RequestIDFromContext(ctx),
+		)
+		jsonError(w, "recording requires a project-scoped API key — use the key from the project settings page, not the global FUNNELBARN_API_KEY", http.StatusUnauthorized)
+		return
+	}
+
 	if s.projectHealth != nil {
 		pid := projectID
 		go func() {
@@ -58,7 +73,18 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 
 	proj, err := s.projects.GetProject(ctx, projectID)
 	if err != nil {
-		tracing.RecordError(span, err)
+		// A key that resolves to a project that no longer exists is a client
+		// misconfiguration (404), not a server fault — log it so the case is
+		// distinguishable, but keep it off the span's error count.
+		if domain.IsNotFound(err) {
+			slog.WarnContext(ctx, "recording chunk: project not found for API key",
+				"project_id", projectID,
+				"user_agent", r.Header.Get("User-Agent"),
+				"request_id", RequestIDFromContext(ctx),
+			)
+		} else {
+			tracing.RecordError(span, err)
+		}
 		mapServiceError(w, err, "handleIngestRecordingChunk")
 		return
 	}
