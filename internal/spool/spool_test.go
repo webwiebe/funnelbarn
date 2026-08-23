@@ -471,3 +471,40 @@ func TestActiveSize(t *testing.T) {
 		t.Fatalf("after append: want >0,nil got %d,%v", n, err)
 	}
 }
+
+func TestDeadLetterRoundTripAndTruncate(t *testing.T) {
+	dir := t.TempDir()
+
+	rec := spool.Record{IngestID: "dl-1", ProjectSlug: "site", BodyBase64: "e30="}
+	if err := spool.AppendDeadLetter(dir, rec); err != nil {
+		t.Fatalf("AppendDeadLetter: %v", err)
+	}
+
+	got, err := spool.ReadRecords(spool.DeadLetterPath(dir))
+	if err != nil {
+		t.Fatalf("ReadRecords: %v", err)
+	}
+	if len(got) != 1 || got[0].IngestID != "dl-1" {
+		t.Fatalf("expected the dead-lettered record back, got %+v", got)
+	}
+
+	// Replay truncates rather than deletes, so the file stays where operators
+	// (and any log shipper) expect it.
+	if err := spool.TruncateDeadLetter(dir); err != nil {
+		t.Fatalf("TruncateDeadLetter: %v", err)
+	}
+	got, err = spool.ReadRecords(spool.DeadLetterPath(dir))
+	if err != nil {
+		t.Fatalf("ReadRecords after truncate: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected an empty dead-letter file, got %d records", len(got))
+	}
+}
+
+// Truncating a spool that never dead-lettered anything is a no-op, not an error.
+func TestTruncateDeadLetter_MissingFile(t *testing.T) {
+	if err := spool.TruncateDeadLetter(t.TempDir()); err != nil {
+		t.Fatalf("expected no error for a missing dead-letter file, got %v", err)
+	}
+}

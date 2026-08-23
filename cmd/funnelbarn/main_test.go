@@ -1,10 +1,16 @@
 package main
 
 import (
+	"context"
+	"encoding/base64"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 )
 
 func TestBuildOIDCClient_NilWhenUnconfigured(t *testing.T) {
@@ -140,5 +146,58 @@ func TestRunAPIKeyCmd_Validation(t *testing.T) {
 	err := runAPIKeyCmd(config.Config{}, []string{"create", "--name=app", "--scope=wat"})
 	if err == nil || !strings.Contains(err.Error(), "scope") {
 		t.Errorf("expected scope validation error, got %v", err)
+	}
+}
+
+// Dead-lettered events are recoverable: replay re-attributes records that
+// carry no project slug to --project, persists them, and clears the file only
+// when every record landed.
+func TestRunReplayDeadLetter(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Config{DBPath: filepath.Join(dir, "test.db"), SpoolDir: dir}
+
+	body := base64.StdEncoding.EncodeToString([]byte(`{"name":"pageview","url":"https://example.com/x"}`))
+	// No projectSlug — exactly the shape that used to fail the project_id
+	// foreign key and get dead-lettered.
+	rec := spool.Record{IngestID: "dl-1", ReceivedAt: time.Now().UTC(), BodyBase64: body}
+	if err := spool.AppendDeadLetter(dir, rec); err != nil {
+		t.Fatalf("AppendDeadLetter: %v", err)
+	}
+
+	// Without --project there is nothing to attribute the record to, so it is
+	// skipped and the file is left intact for a later, correct replay.
+	if err := runReplayDeadLetter(cfg, []string{"--dry-run"}); err != nil {
+		t.Fatalf("dry run: %v", err)
+	}
+	left, err := spool.ReadRecords(spool.DeadLetterPath(dir))
+	if err != nil {
+		t.Fatalf("ReadRecords: %v", err)
+	}
+	if len(left) != 1 {
+		t.Fatalf("expected the record to survive a skipped replay, got %d", len(left))
+	}
+
+	if err := runReplayDeadLetter(cfg, []string{"--project=recovered"}); err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	left, err = spool.ReadRecords(spool.DeadLetterPath(dir))
+	if err != nil {
+		t.Fatalf("ReadRecords after replay: %v", err)
+	}
+	if len(left) != 0 {
+		t.Errorf("expected the dead-letter file to be cleared after a clean replay, got %d records", len(left))
+	}
+
+	store, err := repository.Open(cfg.DBPath)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer store.Close()
+	got, err := store.GetEventByIngestID(context.Background(), "dl-1")
+	if err != nil || got == nil {
+		t.Fatalf("expected the replayed event to be stored, got %v (err %v)", got, err)
+	}
+	if got.ProjectID == "" {
+		t.Error("replayed event should be attributed to the --project project")
 	}
 }

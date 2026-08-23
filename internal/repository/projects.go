@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"regexp"
 	"time"
@@ -59,6 +60,12 @@ func (s *Store) ProjectBySlug(ctx context.Context, slug string) (Project, error)
 	return projectFromGen(p), nil
 }
 
+// ErrProjectUnresolvable marks a slug that can never resolve to a project, no
+// matter how often the caller retries: a UUID with no matching project, or a
+// slug we refuse to auto-create from. Callers use it to fail fast instead of
+// burning retries on a lookup that is deterministically hopeless.
+var ErrProjectUnresolvable = errors.New("project cannot be resolved from slug")
+
 // EnsureProject fetches a project by slug, creating it if absent.
 //
 // As a defence against misconfigured trackers that send a project's *ID* in
@@ -85,14 +92,14 @@ func (s *Store) EnsureProject(ctx context.Context, slug string) (Project, error)
 		// UUID-shaped slug with no matching project either way — refuse to
 		// auto-create. A UUID is never a meaningful slug; creating one
 		// produces the "project shows up as a UUID in the picker" UX bug.
-		return Project{}, fmt.Errorf("slug %q looks like a UUID but no project with that ID exists; refusing to auto-create", slug)
+		return Project{}, fmt.Errorf("%w: slug %q looks like a UUID but no project with that ID exists; refusing to auto-create", ErrProjectUnresolvable, slug)
 	}
 
 	// Only auto-create for well-formed slugs. This blocks path-traversal /
 	// garbage values (e.g. from a forged x-funnelbarn-project header on an
 	// instance-wide key) from spawning junk projects.
 	if !projectSlugPattern.MatchString(slug) {
-		return Project{}, fmt.Errorf("refusing to auto-create project for invalid slug %q", slug)
+		return Project{}, fmt.Errorf("%w: refusing to auto-create project for invalid slug %q", ErrProjectUnresolvable, slug)
 	}
 
 	return s.CreateProject(ctx, slug, slug)

@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -35,6 +36,43 @@ type Handler struct {
 	// OnEventsReceived is called once per request after successful auth.
 	// It is optional; set by the server to track integration health.
 	OnEventsReceived func(ctx context.Context, projectID string)
+
+	// unattributedMu guards the throttle for the "no resolvable project" alert.
+	unattributedMu     sync.Mutex
+	lastUnattributedAt time.Time
+}
+
+// unattributedReAlert is the minimum gap between error-level alerts for events
+// that arrive without a resolvable project. One misconfigured client can send
+// thousands a day; the condition must be visible without flooding BugBarn, so
+// the first occurrence in each window escalates and the rest stay at warn.
+const unattributedReAlert = time.Hour
+
+// logUnattributed reports an event that could not be attributed to a project.
+// The first occurrence per unattributedReAlert window is an error (so it
+// reaches BugBarn as an issue); subsequent ones are warns.
+func (h *Handler) logUnattributed(r *http.Request) {
+	now := h.now()
+	h.unattributedMu.Lock()
+	escalate := h.lastUnattributedAt.IsZero() || now.Sub(h.lastUnattributedAt) >= unattributedReAlert
+	if escalate {
+		h.lastUnattributedAt = now
+	}
+	h.unattributedMu.Unlock()
+
+	const msg = "ingest: event rejected, no project could be resolved from the API key or x-funnelbarn-project header"
+	if escalate {
+		slog.ErrorContext(r.Context(), msg,
+			"err", errors.New("unattributed ingest event"), "handled", false,
+			"user_agent", r.Header.Get("User-Agent"),
+			"origin", r.Header.Get("Origin"),
+		)
+		return
+	}
+	slog.WarnContext(r.Context(), msg, "handled", true,
+		"user_agent", r.Header.Get("User-Agent"),
+		"origin", r.Header.Get("Origin"),
+	)
 }
 
 // NewHandler creates an ingest Handler.
@@ -195,6 +233,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	projectSlug := projectID
 	if projectSlug == "" {
 		projectSlug = r.Header.Get("x-funnelbarn-project")
+	}
+
+	// An event we cannot attribute to a project has nowhere to land:
+	// events.project_id is NOT NULL REFERENCES projects(id), so the worker's
+	// INSERT fails the foreign-key check (SQLITE_CONSTRAINT_FOREIGNKEY, 787)
+	// and the record is dead-lettered minutes after the client was told 202.
+	// That is silent data loss — the caller has already moved on. Refuse it
+	// here instead, where the response can name the fix.
+	if projectSlug == "" {
+		metrics.EventsRejected.WithLabelValues("unattributed").Inc()
+		h.logUnattributed(r)
+		jsonErr(w, "event cannot be attributed to a project — use a project-scoped API key from the project settings page, or send the project slug in the x-funnelbarn-project header", http.StatusBadRequest)
+		return
 	}
 
 	record := spool.Record{

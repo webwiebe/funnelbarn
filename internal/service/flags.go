@@ -141,7 +141,15 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 
 	flag, err := svc.store.FlagByKey(ctx, projectID, flagKey)
 	if err != nil {
-		tracing.RecordError(span, err)
+		// A missing flag is an expected, well-defined outcome — the caller gets
+		// its own default (FLAG_NOT_FOUND), and auto-registration is built on
+		// exactly this path. Recording it as a span error made every evaluation
+		// of an unregistered flag look like a fault in SpanBarn.
+		if errors.Is(err, sql.ErrNoRows) {
+			span.SetAttributes(attribute.String("flag.reason", "FLAG_NOT_FOUND"))
+		} else {
+			tracing.RecordError(span, err)
+		}
 		return FlagEvalResult{}, fmt.Errorf("flag not found: %w", err)
 	}
 

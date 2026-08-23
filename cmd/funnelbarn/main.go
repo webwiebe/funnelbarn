@@ -130,6 +130,8 @@ func run() error {
 			return nil
 		case "worker-once":
 			return runWorkerOnce(cfg)
+		case "replay-dead-letter":
+			return runReplayDeadLetter(cfg, os.Args[2:])
 		case "user":
 			return runUserCmd(cfg, os.Args[2:])
 		case "project":
@@ -655,13 +657,43 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 					attribute.String("ingest.id", record.IngestID),
 					attribute.String("project.slug", record.ProjectSlug),
 				)
-				if record.ProjectSlug != "" {
-					proj, err := store.EnsureProject(opCtx, record.ProjectSlug)
-					if err == nil {
-						event.ProjectID = proj.ID
-					} else {
-						slog.Warn("worker ensure project", "slug", record.ProjectSlug, "err", err)
+				// Resolve the project up front. Without a project ID the insert
+				// can only fail the events.project_id foreign key, so a record
+				// we cannot attribute is unrecoverable: dead-letter it now
+				// rather than retrying an insert that is guaranteed to fail.
+				projectErr := error(nil)
+				if record.ProjectSlug == "" {
+					projectErr = fmt.Errorf("%w: spool record carries no project slug", repository.ErrProjectUnresolvable)
+				} else if proj, err := store.EnsureProject(opCtx, record.ProjectSlug); err == nil {
+					event.ProjectID = proj.ID
+				} else {
+					projectErr = err
+				}
+				if projectErr != nil {
+					if errors.Is(projectErr, repository.ErrProjectUnresolvable) {
+						tracing.RecordError(span, projectErr)
+						span.End()
+						opCancel()
+						slog.Error("worker dead-lettering record: project cannot be resolved",
+							"err", projectErr, "handled", false,
+							"ingest_id", record.IngestID,
+							"project_slug", record.ProjectSlug,
+							"event_name", event.Name,
+						)
+						if dlErr := spool.AppendDeadLetter(cfg.SpoolDir, record); dlErr != nil {
+							slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", dlErr)
+						}
+						metrics.EventErrors.WithLabelValues("unresolved_project").Inc()
+						delete(retryCounts, record.IngestID)
+						offset = entry.EndOffset
+						if err := spool.WriteCursor(cfg.SpoolDir, offset); err != nil {
+							slog.Error("worker write cursor", "err", err)
+						}
+						continue
 					}
+					// A transient lookup failure (DB busy, timeout) — leave
+					// ProjectID unset and let the persist path retry the record.
+					slog.Warn("worker ensure project", "slug", record.ProjectSlug, "err", projectErr, "handled", true)
 				}
 
 				var geoResult *geoip.GeoResult
