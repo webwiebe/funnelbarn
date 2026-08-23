@@ -68,6 +68,37 @@ jobs:
           name: go-coverage
           path: coverage.out
 
+  # sdks/go is its own module, so the root `go test ./...` never reached it and
+  # the SDK shipped untested. Give it its own job.
+  go-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+          # The SDK has no third-party dependencies, so there is no go.sum for
+          # setup-go's cache to key on.
+          cache: false
+
+      - name: go fmt
+        working-directory: sdks/go
+        run: |
+          gofmt_output=$(gofmt -l .)
+          if [ -n "$gofmt_output" ]; then
+            echo "Files not formatted:"
+            echo "$gofmt_output"
+            exit 1
+          fi
+
+      - name: go vet
+        working-directory: sdks/go
+        run: go vet ./...
+
+      - name: Go SDK tests with race detector
+        working-directory: sdks/go
+        run: go test -race -count=1 ./...
+
   frontend-lint:
     runs-on: ubuntu-latest
     steps:
