@@ -42,3 +42,20 @@ func Normalize(s string) string {
 	}
 	return Production
 }
+
+// IsKnown reports whether s is a recognised environment alias. An unrecognised
+// value still normalises to Production rather than being rejected — dropping an
+// event over a typo is worse than mis-filing it — but callers use this to say
+// so out loud instead of silently mis-filing "prodution" as production.
+func IsKnown(s string) bool {
+	if s == "" {
+		return true
+	}
+	_, ok := aliases[strings.ToLower(strings.TrimSpace(s))]
+	return ok
+}
+
+// Canonical returns the four canonical environment values, in reporting order.
+func Canonical() []string {
+	return []string{Production, Staging, Test, Development}
+}

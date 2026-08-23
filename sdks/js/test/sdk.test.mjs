@@ -52,6 +52,30 @@ describe('FunnelBarnClient', () => {
     assert.equal(body.name, 'page_view');
   });
 
+  it('tags every event with the configured environment', async () => {
+    // The guide documented an `environment` option the client silently
+    // dropped, so events arrived untagged and the dashboard filter had
+    // nothing to filter on. Every event the SDK sends must carry it.
+    const client = new FunnelBarnClient({
+      apiKey: 'test-key', endpoint: 'http://localhost:8080', environment: 'staging',
+    });
+    client.page();
+    client.track('signup');
+    await client.flush();
+
+    assert.equal(requests.length, 2);
+    for (const r of requests) {
+      assert.equal(JSON.parse(r.options.body).environment, 'staging');
+    }
+  });
+
+  it('omits environment when it is not configured', async () => {
+    const client = new FunnelBarnClient({ apiKey: 'test-key', endpoint: 'http://localhost:8080' });
+    client.track('signup');
+    await client.flush();
+    assert.equal(JSON.parse(requests[0].options.body).environment, undefined);
+  });
+
   it('identify() sets user_id on subsequent events', async () => {
     const client = new FunnelBarnClient({ apiKey: 'test-key', endpoint: 'http://localhost:8080' });
     client.identify('user-123');

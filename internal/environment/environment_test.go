@@ -40,3 +40,33 @@ func TestNormalize(t *testing.T) {
 		}
 	}
 }
+
+func TestIsKnown(t *testing.T) {
+	known := []string{"", "prod", "PROD", " staging ", "qa", "local"}
+	for _, s := range known {
+		if !IsKnown(s) {
+			t.Errorf("IsKnown(%q) = false, want true", s)
+		}
+	}
+	// These still normalise to production, but the caller can now say so.
+	for _, s := range []string{"prodution", "feat-branch", "not-a-real-env"} {
+		if IsKnown(s) {
+			t.Errorf("IsKnown(%q) = true, want false", s)
+		}
+		if got := Normalize(s); got != Production {
+			t.Errorf("Normalize(%q) = %q, want %q — a typo must still be filed, not dropped", s, got, Production)
+		}
+	}
+}
+
+func TestCanonical(t *testing.T) {
+	got := Canonical()
+	if len(got) != 4 || got[0] != Production {
+		t.Errorf("Canonical() = %v", got)
+	}
+	for _, e := range got {
+		if Normalize(e) != e {
+			t.Errorf("canonical value %q does not normalise to itself", e)
+		}
+	}
+}

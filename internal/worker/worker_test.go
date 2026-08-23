@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 )
 
@@ -295,5 +296,43 @@ func TestCoalesce(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("coalesce(%v) = %q, want %q", tc.vals, got, tc.want)
 		}
+	}
+}
+
+// An unrecognised environment is filed under the default rather than rejected —
+// dropping an event over a typo is worse than mis-filing it — but the process
+// says so once per distinct value instead of silently polluting reporting.
+func TestProcessRecord_UnknownEnvironmentIsFiledNotDropped(t *testing.T) {
+	body := base64.StdEncoding.EncodeToString([]byte(
+		`{"name":"page_view","environment":"prodution"}`))
+	rec := spool.Record{
+		IngestID:   "ingest-env-1",
+		ReceivedAt: time.Now().UTC(),
+		BodyBase64: body,
+	}
+
+	event, err := ProcessRecord(rec)
+	if err != nil {
+		t.Fatalf("ProcessRecord: %v", err)
+	}
+	if event.Environment != environment.Production {
+		t.Errorf("environment: want %q, got %q", environment.Production, event.Environment)
+	}
+	if event.Name != "page_view" {
+		t.Errorf("the event must still be processed, got name %q", event.Name)
+	}
+}
+
+func TestProcessRecord_KnownEnvironmentAliasIsCanonicalised(t *testing.T) {
+	body := base64.StdEncoding.EncodeToString([]byte(
+		`{"name":"page_view","environment":"STG"}`))
+	event, err := ProcessRecord(spool.Record{
+		IngestID: "ingest-env-2", ReceivedAt: time.Now().UTC(), BodyBase64: body,
+	})
+	if err != nil {
+		t.Fatalf("ProcessRecord: %v", err)
+	}
+	if event.Environment != environment.Staging {
+		t.Errorf("environment: want %q, got %q", environment.Staging, event.Environment)
 	}
 }

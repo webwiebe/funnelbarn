@@ -161,14 +161,16 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(b, "<script src=\"%s\"\n", sdkURL)
 	fmt.Fprintf(b, "  data-api-key=\"%s\"\n", plaintext)
 	fmt.Fprintf(b, "  data-project-name=\"%s\"\n", slug)
+	fmt.Fprintf(b, "  data-environment=\"production\"\n")
 	fmt.Fprintf(b, "  data-recording=\"true\"\n")
 	fmt.Fprintf(b, "  defer></script>\n")
 	fmt.Fprintf(b, "```\n\n")
 	fmt.Fprintf(b, "> Remove `data-recording=\"true\"` to disable session recording. The SDK fetches server-side config regardless, so an admin can also toggle recording without a code deploy.\n\n")
 	fmt.Fprintf(b, "**Module-based projects**:\n\n")
-	fmt.Fprintf(b, "```bash\n")
-	fmt.Fprintf(b, "npm install @funnelbarn/js\n")
-	fmt.Fprintf(b, "```\n\n")
+	fmt.Fprintf(b, "> `@funnelbarn/js` is not on the public npm registry yet, so\n")
+	fmt.Fprintf(b, "> `npm install @funnelbarn/js` 404s. The script tag above is the supported\n")
+	fmt.Fprintf(b, "> path today and works in bundled apps too; vendor `sdks/js` if you need\n")
+	fmt.Fprintf(b, "> the module build. The API below is what the package exposes.\n\n")
 	fmt.Fprintf(b, "```typescript\n")
 	fmt.Fprintf(b, "import { FunnelBarnClient } from '@funnelbarn/js'\n\n")
 	fmt.Fprintf(b, "const fb = new FunnelBarnClient({\n")
@@ -422,6 +424,9 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(b, "// server advertises rather than one you invent.\n")
 	fmt.Fprintf(b, "cap := funnelbarn.EvaluateInt(ctx, \"cold_email_daily_cap\", 25, nil)\n")
 	fmt.Fprintf(b, "```\n\n")
+
+	writeFlagAPISection(b, publicURL, slug)
+
 	fmt.Fprintf(b, "### Python\n\n")
 	fmt.Fprintf(b, "```python\n")
 	fmt.Fprintf(b, "def evaluate(flag_key: str, default, context: dict):\n")
@@ -510,4 +515,42 @@ func writeFlagKindsSection(b *strings.Builder, maxAutoFlags int) {
 	fmt.Fprintf(b, "> A config flag needs **one variant at 100%%**. If you give it several and\n")
 	fmt.Fprintf(b, "> a split, the default variant still wins — a config value is the same for\n")
 	fmt.Fprintf(b, "> everyone by definition — but the extra variants are just noise in the UI.\n\n")
+}
+
+// writeFlagAPISection documents the server-to-server path for reading and
+// toggling a flag. Without it the only way to flip a switch is a browser
+// session, so an operator surface has to send people to a second dashboard —
+// and splitting one deliberate action across two systems is how "we thought it
+// was off" happens.
+func writeFlagAPISection(b *strings.Builder, publicURL, slug string) {
+	const keyHeader = "X-FunnelBarn-Api-Key"
+
+	fmt.Fprintf(b, "### Reading and toggling flags from a service\n\n")
+	fmt.Fprintf(b, "Evaluation (above) tells a client what *it* resolves. To report what the\n")
+	fmt.Fprintf(b, "project actually holds — and to change it — use a **project-scoped flag\n")
+	fmt.Fprintf(b, "token**. That distinction matters: \"the flag is off\" and \"the flag does not\n")
+	fmt.Fprintf(b, "exist and you are seeing your own default\" are very different answers.\n\n")
+	fmt.Fprintf(b, "Create one in the dashboard under **Settings → API Keys**, with scope:\n\n")
+	fmt.Fprintf(b, "| Scope | May |\n")
+	fmt.Fprintf(b, "|-------|-----|\n")
+	fmt.Fprintf(b, "| `flags:read` | list and read this project's flags |\n")
+	fmt.Fprintf(b, "| `flags:write` | the above, plus update an existing flag (enable / disable / change its value) |\n\n")
+	fmt.Fprintf(b, "Tokens are bound to one project, hashed at rest, revocable, and carry a\n")
+	fmt.Fprintf(b, "last-used timestamp. Neither scope can **create or delete** a flag:\n")
+	fmt.Fprintf(b, "auto-registration already covers creation, and a token that can turn a gate\n")
+	fmt.Fprintf(b, "off should not also be able to delete the gate.\n\n")
+	fmt.Fprintf(b, "```bash\n")
+	fmt.Fprintf(b, "# Read the project's real flag state\n")
+	fmt.Fprintf(b, "curl -s '%s/api/v1/projects/<project-id>/flags' \\\n", publicURL)
+	fmt.Fprintf(b, "  -H '%s: <flags-token>'\n\n", keyHeader)
+	fmt.Fprintf(b, "# Turn a gate off. Fields you omit keep their current values, so a toggle\n")
+	fmt.Fprintf(b, "# is exactly this and nothing else.\n")
+	fmt.Fprintf(b, "curl -s -X PUT '%s/api/v1/projects/<project-id>/flags/<flag-id>' \\\n", publicURL)
+	fmt.Fprintf(b, "  -H '%s: <flags-token>' \\\n", keyHeader)
+	fmt.Fprintf(b, "  -H 'Content-Type: application/json' \\\n")
+	fmt.Fprintf(b, "  -d '{\"status\": \"paused\"}'\n")
+	fmt.Fprintf(b, "```\n\n")
+	fmt.Fprintf(b, "The instance-wide `FUNNELBARN_API_KEY` is refused here: it resolves with no\n")
+	fmt.Fprintf(b, "project, which would make it a master key for every project's flags. Use a\n")
+	fmt.Fprintf(b, "key issued for `%s`.\n\n", slug)
 }

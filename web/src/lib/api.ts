@@ -566,8 +566,11 @@ export interface Segment {
 export interface ApiKey {
   id: string
   name: string
+  /** 'ingest' | 'flags:read' | 'flags:write' | 'full' */
   scope: string
   created_at: string
+  /** Absent when the key has never authenticated a request. */
+  last_used_at?: string
 }
 
 // Feature-flag shapes live in ./api.flags and are re-exported here so every

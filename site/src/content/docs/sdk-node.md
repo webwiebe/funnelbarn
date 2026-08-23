@@ -14,6 +14,10 @@ The same `@funnelbarn/js` package works server-side in Node.js. It buffers event
 npm install @funnelbarn/js
 ```
 
+> **The package is not on the public npm registry yet** — the publish job in
+> `binary-release.yml` is skipped while the `NPM_TOKEN` secret is unset, so this
+> command 404s today. Vendor `sdks/js` from the repo in the meantime.
+
 ## Basic setup
 
 ```typescript
@@ -23,6 +27,7 @@ export const analytics = new FunnelBarnClient({
   apiKey: process.env.FUNNELBARN_API_KEY!,
   endpoint: process.env.FUNNELBARN_ENDPOINT!,
   projectName: 'my-api',
+  environment: process.env.NODE_ENV === 'production' ? 'production' : 'development',
   flushInterval: 2000,   // flush every 2 seconds (default 5s)
 });
 ```

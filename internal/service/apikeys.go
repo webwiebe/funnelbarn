@@ -26,10 +26,26 @@ func (svc *APIKeyService) CreateAPIKey(ctx context.Context, name, projectID, key
 	if strings.TrimSpace(projectID) == "" {
 		return repository.APIKey{}, &domain.ValidationError{Field: "project_id", Message: "required"}
 	}
-	if scope != repository.APIKeyScopeFull && scope != repository.APIKeyScopeIngest {
-		return repository.APIKey{}, &domain.ValidationError{Field: "scope", Message: "must be \"full\" or \"ingest\""}
+	if !validAPIKeyScope(scope) {
+		return repository.APIKey{}, &domain.ValidationError{
+			Field:   "scope",
+			Message: `must be one of "full", "ingest", "flags:read", "flags:write"`,
+		}
 	}
 	return svc.store.CreateAPIKey(ctx, name, projectID, keySHA256, scope)
+}
+
+// validAPIKeyScope gates what a key may be issued with. Anything not listed is
+// refused outright rather than stored and silently treated as no access.
+func validAPIKeyScope(scope string) bool {
+	switch scope {
+	case repository.APIKeyScopeFull,
+		repository.APIKeyScopeIngest,
+		repository.APIKeyScopeFlagsRead,
+		repository.APIKeyScopeFlagsWrite:
+		return true
+	}
+	return false
 }
 
 func (svc *APIKeyService) ListAPIKeys(ctx context.Context, projectID string) ([]repository.APIKey, error) {

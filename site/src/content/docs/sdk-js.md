@@ -10,22 +10,27 @@ The `@funnelbarn/js` package works in all modern browsers (and Node.js — see t
 
 ## Installation
 
-### npm / yarn / pnpm
+### Script tag (recommended)
 
-```bash
-npm install @funnelbarn/js
-```
-
-### Script tag (no bundler)
-
-If you are not using a bundler, load the SDK from your FunnelBarn instance's built-in CDN path:
+Load the SDK from your FunnelBarn instance's built-in path:
 
 ```html
 <script src="https://funnelbarn.example.com/sdk.js"
-        data-api-key="your-ingest-api-key" defer></script>
+        data-api-key="your-ingest-api-key"
+        data-project-name="my-website"
+        data-environment="production" defer></script>
 ```
 
 The SDK auto-initialises from `data-api-key`, infers the endpoint from the script's `src` URL, and exposes a global `funnelbarn` object with `track()`, `page()`, and `identify()` methods.
+
+### npm / yarn / pnpm
+
+> **The package is not on the public npm registry yet.** `npm install
+> @funnelbarn/js` 404s today — the publish job in `binary-release.yml` is
+> skipped while the `NPM_TOKEN` secret is unset. Until it is published, load
+> the SDK from your instance's built-in path (below), which serves the same
+> build. In a bundler project you can also vendor `sdks/js` directly.
+
 
 ## Usage with a bundler
 
@@ -36,6 +41,7 @@ const analytics = new FunnelBarnClient({
   apiKey: 'your-ingest-api-key',
   endpoint: 'https://funnelbarn.example.com',
   projectName: 'my-website',   // optional but recommended
+  environment: 'production',   // tags every event; filter by it in the dashboard
 });
 
 // Track current page view (auto-reads window.location and document.referrer)

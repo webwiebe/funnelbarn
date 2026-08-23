@@ -217,6 +217,32 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, project)
 }
 
+// safeKey is an API key as returned to the dashboard: never the hash, and with
+// last_used_at so an operator can tell a token something depends on from one
+// that was issued and forgotten before revoking it.
+type safeKey struct {
+	ID         string `json:"id"`
+	ProjectID  string `json:"project_id"`
+	Name       string `json:"name"`
+	Scope      string `json:"scope"`
+	CreatedAt  string `json:"created_at"`
+	LastUsedAt string `json:"last_used_at,omitempty"`
+}
+
+func toSafeKey(k repository.APIKey) safeKey {
+	sk := safeKey{
+		ID:        k.ID,
+		ProjectID: k.ProjectID,
+		Name:      k.Name,
+		Scope:     k.Scope,
+		CreatedAt: k.CreatedAt.Format(time.RFC3339),
+	}
+	if k.LastUsedAt != nil {
+		sk.LastUsedAt = k.LastUsedAt.Format(time.RFC3339)
+	}
+	return sk
+}
+
 // handleListAPIKeys lists API keys.
 // Accepts an optional ?project_id= query param to filter by project.
 // When omitted, returns all API keys across all projects.
@@ -235,21 +261,9 @@ func (s *Server) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mask key hashes in the response.
-	type safeKey struct {
-		ID        string `json:"id"`
-		Name      string `json:"name"`
-		Scope     string `json:"scope"`
-		CreatedAt string `json:"created_at"`
-	}
 	var safe []safeKey
 	for _, k := range keys {
-		safe = append(safe, safeKey{
-			ID:        k.ID,
-			Name:      k.Name,
-			Scope:     k.Scope,
-			CreatedAt: k.CreatedAt.Format(time.RFC3339),
-		})
+		safe = append(safe, toSafeKey(k))
 	}
 	if safe == nil {
 		safe = []safeKey{}
@@ -314,21 +328,10 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return the plaintext key once — it won't be shown again.
-	type safeKey struct {
-		ID        string `json:"id"`
-		Name      string `json:"name"`
-		Scope     string `json:"scope"`
-		CreatedAt string `json:"created_at"`
-	}
 	slog.InfoContext(r.Context(), "api key created", "key_id", key.ID, "name", body.Name, "scope", body.Scope, "project_id", body.ProjectID, "request_id", RequestIDFromContext(r.Context()))
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"api_key": safeKey{
-			ID:        key.ID,
-			Name:      key.Name,
-			Scope:     key.Scope,
-			CreatedAt: key.CreatedAt.Format(time.RFC3339),
-		},
-		"key": plaintext,
+		"api_key": toSafeKey(key),
+		"key":     plaintext,
 	})
 }
 

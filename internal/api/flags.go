@@ -112,26 +112,45 @@ func (s *Server) handleCreateFlag(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, flag)
 }
 
-func (s *Server) handleGetFlag(w http.ResponseWriter, r *http.Request) {
+// flagInProject loads the flag named by {fid} and confirms it belongs to the
+// project named by {id}. Without this, a project-scoped API token could reach
+// any flag in the instance by ID and the URL's project would be decoration —
+// the scoping these routes advertise has to be real.
+func (s *Server) flagInProject(w http.ResponseWriter, r *http.Request, op string) (repository.FeatureFlag, bool) {
+	projectID := r.PathValue("id")
 	flagID := r.PathValue("fid")
 	if flagID == "" {
 		jsonError(w, "flag id required", http.StatusBadRequest)
-		return
+		return repository.FeatureFlag{}, false
 	}
 	flag, err := s.flags.GetFlag(r.Context(), flagID)
 	if err != nil {
-		mapServiceError(w, err, "handleGetFlag")
+		mapServiceError(w, err, op)
+		return repository.FeatureFlag{}, false
+	}
+	// 404 rather than 403: a caller scoped to another project should not learn
+	// that this flag ID exists at all.
+	if projectID != "" && flag.ProjectID != projectID {
+		jsonError(w, "flag not found", http.StatusNotFound)
+		return repository.FeatureFlag{}, false
+	}
+	return flag, true
+}
+
+func (s *Server) handleGetFlag(w http.ResponseWriter, r *http.Request) {
+	flag, ok := s.flagInProject(w, r, "handleGetFlag")
+	if !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, flag)
 }
 
 func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
-	flagID := r.PathValue("fid")
-	if flagID == "" {
-		jsonError(w, "flag id required", http.StatusBadRequest)
+	existing, ok := s.flagInProject(w, r, "handleUpdateFlag.get")
+	if !ok {
 		return
 	}
+	flagID := existing.ID
 
 	var body struct {
 		Name            string `json:"name"`
@@ -155,21 +174,33 @@ func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Preserve flag_type and flag_kind from the existing record when the caller
-	// omits them, so a partial update can't silently turn a config flag back
-	// into an experiment (and start writing evaluation rows again).
-	if body.FlagType == "" || body.Kind == "" {
-		existing, err := s.flags.GetFlag(r.Context(), flagID)
-		if err != nil {
-			mapServiceError(w, err, "handleUpdateFlag.get")
-			return
-		}
-		if body.FlagType == "" {
-			body.FlagType = existing.FlagType
-		}
-		if body.Kind == "" {
-			body.Kind = existing.Kind
-		}
+	// Preserve fields the caller omits, so a partial update can't silently turn
+	// a config flag back into an experiment (and start writing evaluation rows
+	// again) or blank out its value. A service toggling a gate sends
+	// {"status": "paused"} and nothing else.
+	if body.FlagType == "" {
+		body.FlagType = existing.FlagType
+	}
+	if body.Kind == "" {
+		body.Kind = existing.Kind
+	}
+	if body.Name == "" {
+		body.Name = existing.Name
+	}
+	if body.Variants == "" {
+		body.Variants = existing.Variants
+	}
+	if body.DefaultVariant == "" {
+		body.DefaultVariant = existing.DefaultVariant
+	}
+	if body.Split == "" {
+		body.Split = existing.Split
+	}
+	if body.TargetingRules == "" {
+		body.TargetingRules = existing.TargetingRules
+	}
+	if body.Status == "" {
+		body.Status = existing.Status
 	}
 	kind, err := normalizeFlagKind(body.Kind)
 	if err != nil {
@@ -197,12 +228,11 @@ func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteFlag(w http.ResponseWriter, r *http.Request) {
-	flagID := r.PathValue("fid")
-	if flagID == "" {
-		jsonError(w, "flag id required", http.StatusBadRequest)
+	flag, ok := s.flagInProject(w, r, "handleDeleteFlag.get")
+	if !ok {
 		return
 	}
-	if err := s.flags.DeleteFlag(r.Context(), flagID); err != nil {
+	if err := s.flags.DeleteFlag(r.Context(), flag.ID); err != nil {
 		mapServiceError(w, err, "handleDeleteFlag")
 		return
 	}
@@ -211,21 +241,15 @@ func (s *Server) handleDeleteFlag(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleFlagAnalysis(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
-	flagID := r.PathValue("fid")
-	if projectID == "" || flagID == "" {
+	if projectID == "" {
 		jsonError(w, "project id and flag id required", http.StatusBadRequest)
 		return
 	}
-
-	flag, err := s.flags.GetFlag(r.Context(), flagID)
-	if err != nil {
-		mapServiceError(w, err, "handleFlagAnalysis.getFlag")
+	flag, ok := s.flagInProject(w, r, "handleFlagAnalysis.getFlag")
+	if !ok {
 		return
 	}
-	if flag.ProjectID != projectID {
-		jsonError(w, "flag not found", http.StatusNotFound)
-		return
-	}
+	flagID := flag.ID
 
 	to := time.Now().UTC()
 	from := to.AddDate(0, 0, -30)
