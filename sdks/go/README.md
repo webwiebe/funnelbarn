@@ -40,6 +40,54 @@ func main() {
 }
 ```
 
+### Fully-specified events
+
+`Track` and `Page` are conveniences over `TrackEvent`, which reaches every field
+the payload carries:
+
+```go
+funnelbarn.TrackEvent(funnelbarn.Event{
+    Name:        "outreach_opened",
+    UTMSource:   "outreach",
+    UTMMedium:   "email",
+    UTMCampaign: "nl-intro",
+    Properties:  map[string]any{"step": "intro-1"},
+    UserID:      "lead-77607",
+    SessionID:   "send-abc123",
+    Timestamp:   openedAt, // zero means now
+})
+```
+
+**`SessionID` is what funnel reports group on.** An event sent without one is
+still recorded, but it cannot take part in a funnel — so a server-side sequence
+(`sent` → `opened` → `clicked` → `converted`) must set it to something stable
+for the subject being followed: a recipient, an order, a job. Browser traffic
+gets this from the JS SDK; a Go service has to supply it.
+
+Set `Timestamp` explicitly for anything replayed from a spool or a retry queue.
+Left zero it stamps at enqueue, which records when you got around to sending the
+event rather than when it happened.
+
+### Knowing when events are dropped
+
+Enqueueing is non-blocking: when the buffer (`Options.QueueSize`, default 256)
+is full the event is discarded rather than stalling the caller. That is the
+right trade for page views and the wrong one for a funnel-critical step — a lost
+`converted` looks exactly like a conversion that never happened.
+
+```go
+funnelbarn.Init(funnelbarn.Options{
+    // ...
+    OnDrop: func(e funnelbarn.Event) {
+        slog.Warn("funnelbarn dropped an event", "name", e.Name)
+    },
+})
+
+funnelbarn.Dropped() // cumulative since the last Init
+```
+
+`OnDrop` runs on the caller's goroutine — keep it non-blocking.
+
 ## Feature flags
 
 ```go
