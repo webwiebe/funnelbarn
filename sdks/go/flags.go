@@ -78,7 +78,7 @@ func Evaluate(ctx context.Context, key string, def any, evalCtx map[string]any) 
 	if key == "" {
 		return EvalResult{FlagKey: key, Value: def, Reason: "ERROR", ErrorCode: "GENERAL"}
 	}
-	if t == nil || o.Endpoint == "" {
+	if t == nil || t.opts.Endpoint == "" {
 		// Not initialised: behave exactly like an outage.
 		return EvalResult{FlagKey: key, Value: def, Reason: "ERROR", ErrorCode: "TRANSPORT"}
 	}
@@ -202,7 +202,8 @@ func (t *transport) evaluate(ctx context.Context, key string, def any, evalCtx m
 	ctx, cancel := context.WithTimeout(ctx, flagEvalTimeout)
 	defer cancel()
 
-	url := strings.TrimRight(t.opts.Endpoint, "/") + "/api/v1/evaluate"
+	// Endpoint is normalised by newTransport, so it is a bare base URL here.
+	url := t.opts.Endpoint + "/api/v1/evaluate"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fail("TRANSPORT")

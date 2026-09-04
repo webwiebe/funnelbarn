@@ -120,6 +120,18 @@ interface RecordingState {
 /**
  * FunnelBarnClient is the main analytics client.
  */
+/**
+ * Reduces whatever was configured to a base URL. `endpoint` is the server root
+ * — the SDK appends `/api/v1/events` itself — but the setup page used to hand
+ * out the full ingest URL, so a config value copied from there produced
+ * `/api/v1/events/api/v1/events` and 404'd every event. Accepting both
+ * spellings costs one line and removes the whole failure mode. See #237.
+ */
+function normaliseEndpoint(endpoint: string): string {
+  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  return trimmed.replace(/\/api\/v1\/events$/, "");
+}
+
 export class FunnelBarnClient {
   private readonly apiKey: string;
   private readonly endpoint: string;
@@ -170,7 +182,7 @@ export class FunnelBarnClient {
 
   constructor(options: FunnelBarnOptions) {
     this.apiKey = options.apiKey;
-    this.endpoint = options.endpoint.replace(/\/$/, "");
+    this.endpoint = normaliseEndpoint(options.endpoint);
     this.projectName = options.projectName;
     this.environment = options.environment;
     this.flushInterval = options.flushInterval ?? 5000;

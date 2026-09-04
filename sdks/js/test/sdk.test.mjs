@@ -145,6 +145,22 @@ describe('FunnelBarnClient', () => {
     assert.equal(requests[0].url, 'http://example.com/api/v1/events');
   });
 
+  // The setup page used to print the full ingest URL in the JS example, so a
+  // config value copied from it doubled the path and 404'd every event. See #237.
+  it('accepts the full ingest URL as the endpoint', async () => {
+    const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'http://example.com/api/v1/events' });
+    client.track('test');
+    await client.flush();
+    assert.equal(requests[0].url, 'http://example.com/api/v1/events');
+  });
+
+  it('leaves an unrelated mount path alone', async () => {
+    const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'http://example.com/funnelbarn' });
+    client.track('test');
+    await client.flush();
+    assert.equal(requests[0].url, 'http://example.com/funnelbarn/api/v1/events');
+  });
+
   it('event timestamp is a valid ISO string', async () => {
     const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'http://localhost:8080' });
     client.track('ts-test');

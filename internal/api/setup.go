@@ -94,7 +94,12 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		publicURL = "https://funnelbarn.wiebe.xyz"
 	}
 
-	endpoint := publicURL + "/api/v1/events"
+	// Two different things, and conflating them is what made funnelbarn#237
+	// expensive: every SDK takes the BASE url and appends the path itself, while
+	// curl and the header docs want the full ingest URL. Naming them apart here
+	// keeps an SDK example from ever being handed ingestURL again.
+	baseURL := publicURL
+	ingestURL := publicURL + "/api/v1/events"
 	sdkURL := publicURL + "/sdk.js"
 	setupURL := publicURL + "/api/v1/setup/" + slug
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -108,11 +113,12 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(b, "## Project Configuration\n\n")
 	fmt.Fprintf(b, "| Key        | Value |\n")
 	fmt.Fprintf(b, "|------------|-------|\n")
-	fmt.Fprintf(b, "| Endpoint   | %s |\n", endpoint)
+	fmt.Fprintf(b, "| Endpoint   | %s |\n", baseURL)
 	fmt.Fprintf(b, "| Project    | %s |\n", slug)
 	fmt.Fprintf(b, "| API Key    | %s |\n", plaintext)
 	fmt.Fprintf(b, "| Status     | %s |\n", project.Status)
 	fmt.Fprintf(b, "| Setup URL  | %s |\n\n", setupURL)
+	fmt.Fprintf(b, "> **Endpoint is the base URL**, not the ingest path. Every SDK appends `/api/v1/events` itself — pass `%s`, not `%s`. (Posting to the doubled path 404s, and older SDK versions reported that as success.) Only the raw `curl` example below uses the full URL.\n\n", baseURL, ingestURL)
 	fmt.Fprintf(b, "> The API key above is scoped to **ingest** only (event tracking). It is deterministic and will be identical on every visit. No plaintext is stored server-side.\n\n")
 	fmt.Fprintf(b, "> **One key, all environments.** Use the same API key and project across development, staging, and production. Tag each event with `\"environment\": \"dev\"` (or `\"staging\"`, `\"prod\"`, etc.) — aliases are normalised server-side. The dashboard lets you filter to a single environment so your dev traffic never pollutes production numbers.\n\n---\n\n")
 
@@ -174,7 +180,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(b, "```typescript\n")
 	fmt.Fprintf(b, "import { FunnelBarnClient } from '@funnelbarn/js'\n\n")
 	fmt.Fprintf(b, "const fb = new FunnelBarnClient({\n")
-	fmt.Fprintf(b, "  endpoint:    '%s',\n", endpoint)
+	fmt.Fprintf(b, "  endpoint:    '%s',\n", baseURL)
 	fmt.Fprintf(b, "  projectName: '%s',\n", slug)
 	fmt.Fprintf(b, "  apiKey:      '%s',\n", plaintext)
 	fmt.Fprintf(b, "  // Tag every event with the deployment environment.\n")
@@ -301,7 +307,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Fprintf(b, "## HTTP API (curl)\n\n")
 	fmt.Fprintf(b, "```bash\n")
-	fmt.Fprintf(b, "curl -s -X POST '%s' \\\n", endpoint)
+	fmt.Fprintf(b, "curl -s -X POST '%s' \\\n", ingestURL)
 	fmt.Fprintf(b, "  -H 'Content-Type: application/json' \\\n")
 	fmt.Fprintf(b, "  -H '%s: %s' \\\n", keyHeader, plaintext)
 	fmt.Fprintf(b, "  -H '%s: %s' \\\n", projHeader, slug)

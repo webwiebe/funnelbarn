@@ -68,6 +68,48 @@ Set `Timestamp` explicitly for anything replayed from a spool or a retry queue.
 Left zero it stamps at enqueue, which records when you got around to sending the
 event rather than when it happened.
 
+### `Endpoint` is a base URL
+
+```go
+Endpoint: "https://funnelbarn.example.com"   // the SDK appends /api/v1/events
+```
+
+The full ingest URL is accepted too — a trailing `/api/v1/events` is stripped
+before the path is appended, so one config value can feed this SDK and a browser
+SDK without either of them 404ing. (It used to produce
+`/api/v1/events/api/v1/events`, which 404s on every event and reported success.)
+
+### Knowing when events are rejected
+
+**Delivery is best-effort, not guaranteed — but it is no longer silent.** A
+non-2xx response or a failed request is counted, and either handed to `OnError`
+or, if you set no hook, written to the standard logger once per `Init`:
+
+```go
+funnelbarn.Init(funnelbarn.Options{
+    // ...
+    OnError: func(e funnelbarn.Event, err error) {
+        slog.Error("funnelbarn rejected an event", "name", e.Name, "err", err)
+    },
+})
+
+funnelbarn.Rejected() // cumulative since the last Init
+```
+
+This exists because it didn't. `send` used to discard the status code, so a
+`404` (wrong endpoint), a `401` (wrong key) and a `403` (key minted for another
+project) all returned success — a whole app's server-side events went nowhere
+for two months with nothing logged, counted or returned ([#237][issue-237]).
+
+`Rejected()` is the number to alert on. A count that tracks everything you send
+is a configuration bug, not a blip: 4xx will not clear on its own, and the SDK
+does not retry.
+
+`OnError` runs on the SDK's background goroutine, once per failed event — it may
+block, but a slow hook stalls delivery and fills the queue.
+
+[issue-237]: https://github.com/webwiebe/funnelbarn/issues/237
+
 ### Knowing when events are dropped
 
 Enqueueing is non-blocking: when the buffer (`Options.QueueSize`, default 256)
@@ -87,6 +129,10 @@ funnelbarn.Dropped() // cumulative since the last Init
 ```
 
 `OnDrop` runs on the caller's goroutine — keep it non-blocking.
+
+`Dropped` and `Rejected` are different failures: `Dropped` means you produced
+faster than the queue drained, `Rejected` means FunnelBarn would not take what
+did get sent.
 
 ## Feature flags
 

@@ -7,7 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,8 +18,18 @@ import (
 
 // Options configures the SDK.
 type Options struct {
-	APIKey      string
-	Endpoint    string
+	APIKey string
+
+	// Endpoint is the FunnelBarn base URL — "https://funnelbarn.example.com".
+	// The SDK appends the API paths itself.
+	//
+	// A full ingest URL is accepted too: a trailing "/api/v1/events" is
+	// stripped before the path is appended. Handing the same config value to
+	// this SDK and to a browser SDK is the natural thing to do, and getting it
+	// wrong used to produce ".../api/v1/events/api/v1/events" — a 404 on every
+	// event, reported as success. See issue #237.
+	Endpoint string
+
 	ProjectName string
 	QueueSize   int // default 256
 
@@ -50,6 +63,20 @@ type Options struct {
 	// does I/O turns a full buffer into backpressure on the very code path the
 	// non-blocking enqueue exists to protect.
 	OnDrop func(Event)
+
+	// OnError, when set, is called with an event the server did not accept and
+	// the reason: a non-2xx response, or a transport error.
+	//
+	// OnDrop's argument applies here with more force. A queue-full drop needs a
+	// busy producer to happen at all; a misconfigured endpoint or a key minted
+	// for the wrong project rejects *every* event, forever, and until this hook
+	// existed the SDK reported that identically to success. Two months of
+	// events went to a 404 that way (issue #237).
+	//
+	// It runs on the SDK's background goroutine, not the caller's, so it may
+	// block — but it is called once per failed event, so a slow hook stalls
+	// delivery and fills the queue. Rate-limit anything expensive.
+	OnError func(Event, error)
 }
 
 // eventPayload is the JSON body sent to POST /api/v1/events.
@@ -88,6 +115,7 @@ func Init(o Options) {
 	opts = o
 	tp = newTransport(o)
 	dropped.Store(0)
+	rejected.Store(0)
 }
 
 // Event is a fully-specified analytics event.
@@ -154,13 +182,45 @@ func (e Event) payload() eventPayload {
 	}
 }
 
+// event converts back to the caller-facing shape for OnError. Every Event field
+// round-trips; Environment is transport-owned and has no Event field to land in.
+func (p eventPayload) event() Event {
+	return Event{
+		Name:        p.Name,
+		URL:         p.URL,
+		Referrer:    p.Referrer,
+		UTMSource:   p.UTMSource,
+		UTMMedium:   p.UTMMedium,
+		UTMCampaign: p.UTMCampaign,
+		UTMTerm:     p.UTMTerm,
+		UTMContent:  p.UTMContent,
+		Properties:  p.Properties,
+		UserID:      p.UserID,
+		SessionID:   p.SessionID,
+		Timestamp:   p.Timestamp,
+	}
+}
+
 // dropped counts events discarded because the queue was full. Reset by Init.
 var dropped atomic.Uint64
+
+// rejected counts events that left the queue but were never accepted. Reset by
+// Init.
+var rejected atomic.Uint64
 
 // Dropped returns how many events have been discarded because the queue was
 // full since the last Init. Enqueueing is non-blocking by design, so a busy
 // producer loses events rather than stalling; this is how you find out.
 func Dropped() uint64 { return dropped.Load() }
+
+// Rejected returns how many events left the queue but were not accepted since
+// the last Init — the server answered non-2xx, or the request never completed.
+//
+// Read it alongside Dropped. A non-zero Dropped means you are producing faster
+// than the queue drains; a Rejected that tracks everything you send means
+// FunnelBarn is refusing the lot, which is a configuration bug (wrong endpoint,
+// wrong key, wrong project) and not something that will clear on its own.
+func Rejected() uint64 { return rejected.Load() }
 
 // TrackEvent sends a fully-specified event. Returns false if the SDK is not
 // initialised, the Name is empty, or the queue was full.
@@ -233,9 +293,16 @@ type transport struct {
 	done   chan struct{}
 	client *http.Client
 	flags  *flagCache
+
+	// loggedErr guards the one-line stderr warning on the first failed send.
+	// A library should not narrate, but silence is what let a permanent 404 run
+	// for two months; one line, once, is the cheapest thing that would have
+	// caught it. Callers who wire OnError get that instead.
+	loggedErr atomic.Bool
 }
 
 func newTransport(o Options) *transport {
+	o.Endpoint = normaliseEndpoint(o.Endpoint)
 	t := &transport{
 		opts:   o,
 		queue:  make(chan eventPayload, o.QueueSize),
@@ -245,6 +312,23 @@ func newTransport(o Options) *transport {
 	}
 	go t.run()
 	return t
+}
+
+// normaliseEndpoint reduces whatever the caller configured to a base URL.
+//
+// The setup page hands out the full ingest URL, and an app that keeps a single
+// "FunnelBarn endpoint" value naturally feeds it to every SDK. Appending the
+// path to that produces "/api/v1/events/api/v1/events", which 404s. Accepting
+// both spellings costs a TrimSuffix and removes a whole class of silent
+// misconfiguration.
+func normaliseEndpoint(endpoint string) string {
+	e := strings.TrimRight(strings.TrimSpace(endpoint), "/")
+	for _, path := range []string{"/api/v1/events", "/api/v1/evaluate"} {
+		if strings.HasSuffix(e, path) {
+			return strings.TrimRight(strings.TrimSuffix(e, path), "/")
+		}
+	}
+	return e
 }
 
 func (t *transport) enqueue(e eventPayload) bool {
@@ -263,9 +347,22 @@ func (t *transport) run() {
 	defer close(t.done)
 	for e := range t.queue {
 		if err := t.send(e); err != nil {
-			// Best-effort: drop on error.
-			_ = err
+			t.reportErr(e, err)
 		}
+	}
+}
+
+// reportErr accounts for an event the server never took. Delivery stays
+// best-effort — there is still no retry — but the loss is no longer invisible.
+func (t *transport) reportErr(e eventPayload, err error) {
+	rejected.Add(1)
+	if t.opts.OnError != nil {
+		t.opts.OnError(e.event(), err)
+		return
+	}
+	if t.loggedErr.CompareAndSwap(false, true) {
+		log.Printf("funnelbarn: %v (event %q was not delivered; further send errors are silent — "+
+			"set Options.OnError or read Rejected() to observe them)", err, e.Name)
 	}
 }
 
@@ -295,7 +392,21 @@ func (t *transport) send(e eventPayload) error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+
+	// A 404 (wrong endpoint), a 401 (missing or wrong key) and a 403 (key
+	// minted for another project) are permanent, and every one of them used to
+	// return nil. The body carries the server's own explanation, so include a
+	// slice of it: "404 Not Found" alone does not say which of those it is.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		if detail := strings.TrimSpace(string(snippet)); detail != "" {
+			return fmt.Errorf("funnelbarn: ingest rejected the event: %s: %s", resp.Status, detail)
+		}
+		return fmt.Errorf("funnelbarn: ingest rejected the event: %s", resp.Status)
+	}
+	// Drained so the connection can be reused; nothing else reads the body.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	return nil
 }
 
