@@ -204,6 +204,14 @@ func run() error {
 			APIKey:      cfg.DogfoodAPIKey,
 			Endpoint:    strings.TrimRight(cfg.PublicURL, "/"),
 			ProjectName: cfg.DogfoodProject,
+			// Without this the SDK falls back to its own log.Printf, which
+			// bypasses slog and so never reaches BugBarn. A dogfood key minted
+			// for the wrong project rejects every event permanently; that has
+			// to look like a problem, not like silence.
+			OnError: func(e selfsdk.Event, err error) {
+				slog.Warn("dogfood analytics event was rejected",
+					"event", e.Name, "err", err, "handled", true)
+			},
 		})
 		defer selfsdk.Shutdown(2 * time.Second)
 	} else if cfg.DogfoodAPIKey != "" {

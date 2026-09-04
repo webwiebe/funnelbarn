@@ -44,7 +44,13 @@ class FunnelBarnClient:
         timeout: float = 5.0,
     ) -> None:
         self._api_key = api_key
-        self._endpoint = endpoint.rstrip("/")
+        # endpoint is the server root — the client appends the API path itself.
+        # The setup page used to print the full ingest URL, so a config value
+        # copied from there produced "/api/v1/events/api/v1/events" and 404'd
+        # every event, silently. Accept both spellings. See funnelbarn#237.
+        self._endpoint = endpoint.strip().rstrip("/")
+        if self._endpoint.endswith("/api/v1/events"):
+            self._endpoint = self._endpoint[: -len("/api/v1/events")].rstrip("/")
         self._project_name = project_name
         self._flush_interval = flush_interval
         self._timeout = timeout
