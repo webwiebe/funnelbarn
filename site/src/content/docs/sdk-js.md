@@ -57,6 +57,7 @@ analytics.page();
 | `projectName` | `string` | — | Project identifier sent as `x-funnelbarn-project` header (events only; not used for recording) |
 | `flushInterval` | `number` | `5000` | How often (ms) the event queue is flushed |
 | `sessionTimeout` | `number` | `1800000` | Session idle timeout in ms (default 30 min) |
+| `sessionMaxAge` | `number` | `86400000` | Hard cap on session lifetime in ms, regardless of activity (default 24 h) |
 | `recording` | `boolean` | `false` | Enable session recording immediately on init (server config can also enable it) |
 | `recordingChunkMs` | `number` | `10000` | How often (ms) a recording chunk is flushed to the server |
 | `recordInclude` | `string[]` | — | URL path glob patterns to always record (e.g. `['/checkout/**']`) |
@@ -102,7 +103,9 @@ analytics.identify('');
 
 ## Sessions
 
-The SDK generates a random session ID and stores it in `localStorage` under `funnelbarn_sid`. Sessions expire after the `sessionTimeout` idle period. A new session ID is created when the previous one expires.
+The SDK generates a random session ID and stores it in `localStorage` under `funnelbarn_sid`. A new session ID is created when either bound is reached: the `sessionTimeout` idle period passes with no events, or the session reaches `sessionMaxAge` counted from when it started. The second bound matters for pages that never go quiet — a kiosk, a dashboard left open, anything with a polling heartbeat — because the idle window slides forward on every event and would otherwise never expire.
+
+If a client sends no session ID at all, the server derives an anonymous one from the visitor's IP prefix, user agent, project, and a 30-minute time window. It is a fallback: it cannot tell two visitors behind one NAT apart, and it splits a visit that straddles a window boundary into two sessions. Send your own session ID for accurate session counts.
 
 The session ID is sent with every event so FunnelBarn can group page views and custom events into sessions without requiring cookies.
 
