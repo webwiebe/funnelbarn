@@ -25,15 +25,9 @@ package-repository bucket, under the `brew/` prefix.
 | `R2_ENDPOINT` | R2 account S3 endpoint URL |
 | `R2_BUCKET` | Bucket name (`webwiebe-apt-repository-production`) |
 
-These replace the former `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` /
-`MINIO_ENDPOINT` / `MINIO_BUCKET` secrets. The self-hosted MinIO on layer7
-(`s3.wiebe.xyz`) was wound down in favour of R2 — see
-`wiebe-xyz/rapid-root#2799` for the migration, and note that the `brew/` prefix
-is shared with other publishers, so this repo only ever writes and prunes its
-own `funnelbarn-darwin-*` keys.
-
-The old `MINIO_*` secrets can be deleted from this repository once this
-workflow has published a release to R2 successfully.
+The `brew/` prefix is shared with other publishers, so this repo only ever
+writes and prunes its own `funnelbarn-darwin-*` keys. See
+`wiebe-xyz/rapid-root#2799` for how the shared package repository is set up.
 
 ## Infrastructure SSH
 

@@ -193,8 +193,7 @@ spec:
             # Litestream replicates to R2 (bucket barn-backups) using
             # funnelbarn's own R2 token, the same credential the recordings
             # store uses. One token, referenced twice, so a rotation touches a
-            # single pair of secret keys. The former LITESTREAM_* keys held
-            # MinIO credentials and were dropped when s3.wiebe.xyz was retired.
+            # single pair of secret keys.
             - name: LITESTREAM_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:

@@ -13,7 +13,6 @@ Namespaces:
 
 Litestream replicates the SQLite database continuously to Cloudflare R2, bucket `barn-backups`
 (endpoint `https://354b481466ca4280c50f2fb8cf9e3d45.eu.r2.cloudflarestorage.com`, region `auto`).
-This moved off the self-hosted MinIO at `s3.wiebe.xyz` when that was wound down.
 
 Replica paths per environment:
 - Production: `funnelbarn/litestream/production/funnelbarn.db`
