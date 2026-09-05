@@ -13,16 +13,27 @@ Used to decrypt Kubernetes secret manifests per environment.
 | `SOPS_AGE_KEY_STAGING` | build-and-test.yml (`deploy-staging` job) | Age private key for decrypting `deploy/k8s/staging/secret.yaml` |
 | `SOPS_AGE_KEY_PRODUCTION` | deploy-production.yml | Age private key for decrypting `deploy/k8s/production/secret.yaml` |
 
-## MinIO / S3 Storage
+## Cloudflare R2 (package repository)
 
-Used to publish Homebrew tarballs and APT packages to the shared MinIO bucket.
+Used by `binary-release.yml` to publish Homebrew tarballs into the shared
+package-repository bucket, under the `brew/` prefix.
 
 | Secret | Description |
 |--------|-------------|
-| `MINIO_ACCESS_KEY` | MinIO user access key (webwiebe-apt) |
-| `MINIO_SECRET_KEY` | MinIO user secret key |
-| `MINIO_ENDPOINT` | MinIO endpoint URL (e.g. https://s3.wiebe.xyz) |
-| `MINIO_BUCKET` | MinIO bucket name (e.g. webwiebe-apt-repository) |
+| `R2_ACCESS_KEY` | Cloudflare R2 S3 access key |
+| `R2_SECRET_KEY` | Cloudflare R2 S3 secret key |
+| `R2_ENDPOINT` | R2 account S3 endpoint URL |
+| `R2_BUCKET` | Bucket name (`webwiebe-apt-repository-production`) |
+
+These replace the former `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` /
+`MINIO_ENDPOINT` / `MINIO_BUCKET` secrets. The self-hosted MinIO on layer7
+(`s3.wiebe.xyz`) was wound down in favour of R2 — see
+`wiebe-xyz/rapid-root#2799` for the migration, and note that the `brew/` prefix
+is shared with other publishers, so this repo only ever writes and prunes its
+own `funnelbarn-darwin-*` keys.
+
+The old `MINIO_*` secrets can be deleted from this repository once this
+workflow has published a release to R2 successfully.
 
 ## Infrastructure SSH
 
