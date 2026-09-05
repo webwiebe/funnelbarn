@@ -321,17 +321,21 @@ func (s *Server) registerRoutes() {
 	// itself authenticates the request (public, rate-limited, no CSRF).
 	s.mux.Handle("POST /api/v1/oidc/backchannel-logout", s.limit(s.loginLimiter, http.HandlerFunc(s.handleBackchannelLogout)))
 
-	// Projects
-	s.mux.HandleFunc("GET /api/v1/projects", s.requireSession(s.handleListProjects))
+	// Projects. The list is also reachable with an analytics:read token, which
+	// narrows it to that token's own project — a scripted readout has to be
+	// able to resolve its project without a dashboard session.
+	s.mux.HandleFunc("GET /api/v1/projects", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleListProjects))
 	s.mux.HandleFunc("POST /api/v1/projects", s.requireSession(s.handleCreateProject))
 	s.mux.HandleFunc("PUT /api/v1/projects/{id}", s.requireSession(s.handleUpdateProject))
 	s.mux.HandleFunc("DELETE /api/v1/projects/{id}", s.requireSession(s.handleDeleteProject))
 
-	// Dashboard & analytics (session required)
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/dashboard", s.requireSession(s.handleDashboard))
+	// Dashboard & analytics. The read-only routes a scripted readout needs also
+	// accept a project-scoped analytics:read token — see internal/api/api_tokens.go.
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/dashboard", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleDashboard))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/flows", s.requireSession(s.handlePageFlows))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/events", s.requireSession(s.handleListEvents))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-names", s.requireSession(s.handleEventNames))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/events", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleListEvents))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-names", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleEventNames))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-counts", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleEventCounts))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-properties", s.requireSession(s.handleEventProperties))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-property-values", s.requireSession(s.handleEventPropertyValues))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/environments", s.requireSession(s.handleEnvironments))
@@ -359,12 +363,13 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("DELETE /api/v1/overview/funnels/{id}", s.requireSession(s.handleDeleteCanonicalFunnel))
 	s.mux.HandleFunc("GET /api/v1/overview/funnels/{id}/analysis", s.requireSession(s.handleCanonicalFunnelAnalysis))
 
-	// Funnels
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels", s.requireSession(s.handleListFunnels))
+	// Funnels. Listing and step conversion also accept an analytics:read token;
+	// creating, editing and deleting a funnel stay session-only.
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleListFunnels))
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/funnels", s.requireSession(s.handleCreateFunnel))
 	s.mux.HandleFunc("PUT /api/v1/projects/{id}/funnels/{fid}", s.requireSession(s.handleUpdateFunnel))
 	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/funnels/{fid}", s.requireSession(s.handleDeleteFunnel))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels/{fid}/analysis", s.requireSession(s.handleFunnelAnalysis))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels/{fid}/analysis", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleFunnelAnalysis))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels/{fid}/segments", s.requireSession(s.handleFunnelSegments))
 
 	// Feature Flags. Reads and updates also accept a project-scoped API token
@@ -373,12 +378,12 @@ func (s *Server) registerRoutes() {
 	// Creation and deletion stay session-only: auto-registration already covers
 	// creation, and a token that can turn an outbound-email gate off should not
 	// also be able to delete the gate.
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags", s.requireSessionOrFlagToken(repository.APIKeyScopeFlagsRead, s.handleListFlags))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags", s.requireSessionOrToken(repository.APIKeyScopeFlagsRead, s.handleListFlags))
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/flags", s.requireSession(s.handleCreateFlag))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/{fid}", s.requireSessionOrFlagToken(repository.APIKeyScopeFlagsRead, s.handleGetFlag))
-	s.mux.HandleFunc("PUT /api/v1/projects/{id}/flags/{fid}", s.requireSessionOrFlagToken(repository.APIKeyScopeFlagsWrite, s.handleUpdateFlag))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/{fid}", s.requireSessionOrToken(repository.APIKeyScopeFlagsRead, s.handleGetFlag))
+	s.mux.HandleFunc("PUT /api/v1/projects/{id}/flags/{fid}", s.requireSessionOrToken(repository.APIKeyScopeFlagsWrite, s.handleUpdateFlag))
 	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/flags/{fid}", s.requireSession(s.handleDeleteFlag))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/{fid}/analysis", s.requireSessionOrFlagToken(repository.APIKeyScopeFlagsRead, s.handleFlagAnalysis))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/{fid}/analysis", s.requireSessionOrToken(repository.APIKeyScopeFlagsRead, s.handleFlagAnalysis))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/context-keys", s.requireSession(s.handleFlagContextKeys))
 	// Dogfooding playground — same flag-eval logic as the customer endpoint
 	// but session-authed so the dashboard can call it without an API key in the browser.

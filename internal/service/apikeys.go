@@ -29,7 +29,7 @@ func (svc *APIKeyService) CreateAPIKey(ctx context.Context, name, projectID, key
 	if !validAPIKeyScope(scope) {
 		return repository.APIKey{}, &domain.ValidationError{
 			Field:   "scope",
-			Message: `must be one of "full", "ingest", "flags:read", "flags:write"`,
+			Message: `must be one of "full", "ingest", "analytics:read", "flags:read", "flags:write"`,
 		}
 	}
 	return svc.store.CreateAPIKey(ctx, name, projectID, keySHA256, scope)
@@ -41,6 +41,7 @@ func validAPIKeyScope(scope string) bool {
 	switch scope {
 	case repository.APIKeyScopeFull,
 		repository.APIKeyScopeIngest,
+		repository.APIKeyScopeAnalyticsRead,
 		repository.APIKeyScopeFlagsRead,
 		repository.APIKeyScopeFlagsWrite:
 		return true

@@ -6,7 +6,7 @@ order: 7
 
 # HTTP API Reference
 
-All API endpoints are prefixed with `/api/v1`. Dashboard endpoints require an active session cookie (obtained via `POST /api/v1/login`). The ingest endpoint requires an API key header.
+All API endpoints are prefixed with `/api/v1`. Dashboard endpoints require an active session cookie (obtained via `POST /api/v1/login`). The ingest endpoint requires an API key header. A subset of read-only endpoints also accepts a project-scoped API key, so a script or scheduled job can read a project's numbers without a browser session — see [Reading analytics with an API key](#reading-analytics-with-an-api-key).
 
 ## Authentication
 
@@ -29,6 +29,62 @@ All ingest requests require the `x-funnelbarn-api-key` header:
 
 ```
 x-funnelbarn-api-key: your-api-key
+```
+
+### API key scopes
+
+Keys are issued per project from **Settings → API Keys**. The scope decides what the key may do:
+
+| Scope | Grants |
+|---|---|
+| `ingest` | Send events. Cannot read or change anything. |
+| `analytics:read` | Read this project's events, event counts, funnels and funnel-step conversion. Read-only. |
+| `flags:read` | Read this project's feature flags. |
+| `flags:write` | Read and update (not create or delete) this project's feature flags. |
+| `full` | Everything, for this project. |
+
+Scopes do not imply each other across features. `flags:write` implies `flags:read`, but an `analytics:read` key gets `403` on the flag routes and a `flags:*` key gets `403` on the analytics routes — a token that toggles an outbound-email gate has no business reading the event stream.
+
+Two things are refused by design:
+
+- **The instance-wide `FUNNELBARN_API_KEY`** resolves to no project, which would make it a master key for every project on the instance. Scoped routes answer `401` for it; use a project key from the settings page.
+- **A key aimed at another project** answers `403`, even for a route the scope otherwise allows.
+
+### Reading analytics with an API key
+
+These endpoints accept either a session cookie or an `analytics:read` (or `full`) key in `x-funnelbarn-api-key`:
+
+| Method | Path | Returns |
+|---|---|---|
+| `GET` | `/api/v1/projects` | Just the project the key is scoped to |
+| `GET` | `/api/v1/projects/:id/dashboard` | Aggregate stats over a range |
+| `GET` | `/api/v1/projects/:id/events` | Paginated raw events |
+| `GET` | `/api/v1/projects/:id/event-names` | Distinct event names |
+| `GET` | `/api/v1/projects/:id/event-counts` | Per-event counts over a range |
+| `GET` | `/api/v1/projects/:id/funnels` | The project's funnels |
+| `GET` | `/api/v1/projects/:id/funnels/:fid/analysis` | Per-step conversion |
+
+A weekly readout, end to end:
+
+```bash
+KEY=your-analytics-read-key
+BASE=https://funnelbarn.example.com
+
+# Resolve the project the key belongs to — the list is narrowed to it.
+PROJECT=$(curl -s -H "x-funnelbarn-api-key: $KEY" "$BASE/api/v1/projects" \
+  | jq -r '.projects[0].id')
+
+# Per-event counts for the last 7 days.
+curl -s -H "x-funnelbarn-api-key: $KEY" \
+  "$BASE/api/v1/projects/$PROJECT/event-counts?range=7d" | jq '.events'
+
+# Step conversion for a funnel. Note this endpoint takes from/to only —
+# the `range` shorthand is an event-counts and dashboard convenience.
+FUNNEL=$(curl -s -H "x-funnelbarn-api-key: $KEY" \
+  "$BASE/api/v1/projects/$PROJECT/funnels" | jq -r '.funnels[0].id')
+FROM=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)   # BSD date: -v-7d
+curl -s -H "x-funnelbarn-api-key: $KEY" \
+  "$BASE/api/v1/projects/$PROJECT/funnels/$FUNNEL/analysis?from=$FROM"
 ```
 
 ---
@@ -107,7 +163,7 @@ curl -X POST http://localhost:8080/api/v1/events \
 
 ### `GET /api/v1/projects/:id/dashboard`
 
-Returns aggregate analytics for a project.
+Returns aggregate analytics for a project. Accepts a session or an `analytics:read` key.
 
 **Query parameters:**
 
@@ -145,13 +201,45 @@ Returns a paginated list of raw events.
 | `limit` | `50` | Max events to return (1–500) |
 | `offset` | `0` | Pagination offset |
 
+### `GET /api/v1/projects/:id/event-counts`
+
+Returns a count per event name over a date range — the whole catalog, not the dashboard's top ten, and without the dozen other aggregates wrapped around it. Accepts an `analytics:read` key.
+
+**Query parameters:**
+
+| Parameter | Default | Description |
+|---|---|---|
+| `range` | `30d` | Preset time range: `24h`, `7d`, `30d` |
+| `from` | 30 days ago | RFC3339 start time (overrides `range`) |
+| `to` | now | RFC3339 end time (overrides `range`) |
+| `limit` | `100` | Max distinct event names to return (1–500) |
+| `environment` | all | Restrict to one environment |
+
+Unlike the dashboard endpoint, unparseable input is rejected with `400` rather than silently answered with the default window — a readout that asked for last week and quietly got last month reports the wrong number with no way to notice.
+
+```json
+{
+  "project_id": "proj-123",
+  "from": "2026-08-29T09:00:00Z",
+  "to": "2026-09-05T09:00:00Z",
+  "environment": "",
+  "limit": 100,
+  "total_events": 1284,
+  "events": [
+    {"name": "page_view", "count": 941},
+    {"name": "first_run_started", "count": 287},
+    {"name": "first_run_completed", "count": 56}
+  ]
+}
+```
+
 ---
 
 ## Projects
 
 ### `GET /api/v1/projects`
 
-List all projects.
+List all projects. With an `analytics:read` key instead of a session, the list is narrowed to the one project that key is scoped to.
 
 ### `POST /api/v1/projects`
 
@@ -179,7 +267,7 @@ Approve a pending project (admin action after self-service setup).
 
 ### `GET /api/v1/projects/:id/funnels`
 
-List all funnels for a project.
+List all funnels for a project. Accepts a session or an `analytics:read` key.
 
 ### `POST /api/v1/projects/:id/funnels`
 
@@ -207,7 +295,7 @@ Delete a funnel.
 
 ### `GET /api/v1/projects/:id/funnels/:fid/analysis`
 
-Run funnel analysis. Returns conversion rates for each step.
+Run funnel analysis. Returns conversion rates for each step. Accepts a session or an `analytics:read` key.
 
 **Query parameters:**
 
@@ -282,7 +370,9 @@ Create an API key.
 {"name": "Browser SDK key", "scope": "ingest", "project_id": "proj-123"}
 ```
 
-Scopes: `ingest` (events only) or `full` (events + dashboard API).
+Scopes: `ingest`, `analytics:read`, `flags:read`, `flags:write` or `full` — see [API key scopes](#api-key-scopes). Anything else is refused rather than stored and silently treated as no access.
+
+The plaintext key is returned once, in the create response, and never again.
 
 ### `DELETE /api/v1/apikeys/:kid`
 

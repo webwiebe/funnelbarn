@@ -142,6 +142,18 @@ funnelbarn user create --username admin --password yourpassword
 
 Authentication: session cookie (obtained via `POST /api/v1/login`) or API key (`X-FunnelBarn-Api-Key` header). Ingest also reads the project slug from `X-FunnelBarn-Project`. All project-scoped routes are under `/api/v1/projects/{id}/`. `/api/v1/health` returns DB connectivity status and server version.
 
+API keys are issued per project from Settings → API Keys with one of these scopes:
+
+| Scope | Grants |
+|---|---|
+| `ingest` | Send events. Cannot read or change anything. |
+| `analytics:read` | Read this project's events, event counts, funnels and funnel-step conversion. Read-only. |
+| `flags:read` | Read this project's feature flags. |
+| `flags:write` | Read and update (not create or delete) this project's feature flags. |
+| `full` | Everything, for this project. |
+
+Scopes do not imply each other across features: `flags:write` implies `flags:read`, but an `analytics:read` key cannot touch flags and a `flags:*` key cannot read analytics. The instance-wide `FUNNELBARN_API_KEY` resolves to no project and is rejected on every scoped route — use a project key.
+
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/api/v1/health` | — | Health check + version |
@@ -149,14 +161,18 @@ Authentication: session cookie (obtained via `POST /api/v1/login`) or API key (`
 | `POST` | `/api/v1/login` | — | Dashboard login |
 | `POST` | `/api/v1/logout` | Session | Logout |
 | `GET` | `/api/v1/me` | Session | Current user |
-| `GET` | `/api/v1/projects` | Session | List projects |
+| `GET` | `/api/v1/projects` | Session or `analytics:read` | List projects (a token sees only its own) |
 | `POST` | `/api/v1/projects` | Session | Create project |
-| `GET` | `/api/v1/projects/{id}/dashboard` | Session | Dashboard stats |
-| `GET` | `/api/v1/projects/{id}/events` | Session | Paginated events |
+| `GET` | `/api/v1/projects/{id}/dashboard` | Session or `analytics:read` | Dashboard stats |
+| `GET` | `/api/v1/projects/{id}/events` | Session or `analytics:read` | Paginated events |
+| `GET` | `/api/v1/projects/{id}/event-names` | Session or `analytics:read` | Distinct event names |
+| `GET` | `/api/v1/projects/{id}/event-counts` | Session or `analytics:read` | Per-event counts over a date range |
 | `GET` | `/api/v1/projects/{id}/sessions` | Session | Paginated sessions |
-| `GET` | `/api/v1/projects/{id}/funnels` | Session | List funnels |
+| `GET` | `/api/v1/projects/{id}/funnels` | Session or `analytics:read` | List funnels |
 | `POST` | `/api/v1/projects/{id}/funnels` | Session | Create funnel |
-| `GET` | `/api/v1/projects/{id}/funnels/{fid}/analysis` | Session | Funnel analysis |
+| `GET` | `/api/v1/projects/{id}/funnels/{fid}/analysis` | Session or `analytics:read` | Funnel step conversion |
+| `GET` | `/api/v1/projects/{id}/flags` | Session or `flags:read` | List feature flags |
+| `PUT` | `/api/v1/projects/{id}/flags/{fid}` | Session or `flags:write` | Update a feature flag |
 | `GET` | `/api/v1/apikeys` | Session | List API keys |
 | `POST` | `/api/v1/apikeys` | Session | Create API key |
 
