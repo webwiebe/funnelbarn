@@ -1,6 +1,9 @@
 package geoip
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestOpen_NonexistentCityDBReturnsError(t *testing.T) {
 	l, err := Open("/no/such/geolite2-city.mmdb", "")
@@ -51,5 +54,35 @@ func TestClassifyASN(t *testing.T) {
 		if got := classifyASN(tc.org); got != tc.want {
 			t.Errorf("classifyASN(%q) = %q, want %q", tc.org, got, tc.want)
 		}
+	}
+}
+
+// LookupContext must reject an address it cannot parse before it dereferences
+// cityDB. Until this test existed the only Lookup calls were on a nil receiver,
+// so every statement past the nil check was untested and the ordering of the
+// two guards was load-bearing but unverified.
+func TestLookupContext_UnparseableAddressReturnsNilWithoutTouchingDB(t *testing.T) {
+	// No databases opened: reaching one would panic, which is the point.
+	l := &Lookup{}
+
+	for _, addr := range []string{
+		"",
+		"not-an-ip",
+		"example.com",
+		"example.com:443", // host:port splits, but the host is still not an IP
+		"1.2.3.4:80:90",   // SplitHostPort fails; the whole string is not an IP
+	} {
+		t.Run(addr, func(t *testing.T) {
+			if got := l.LookupContext(context.Background(), addr); got != nil {
+				t.Errorf("LookupContext(%q) = %v, want nil", addr, got)
+			}
+		})
+	}
+}
+
+func TestLookup_DelegatesToLookupContext(t *testing.T) {
+	l := &Lookup{}
+	if got := l.Lookup("not-an-ip"); got != nil {
+		t.Errorf("Lookup on an unparseable address = %v, want nil", got)
 	}
 }
