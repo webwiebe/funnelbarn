@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Globe, ShieldOff, Video } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api, ApiKey } from '../lib/api'
-import { useProjects } from '../lib/projects'
+import { useProjects, useEffectiveProjectId } from '../lib/projects'
 import { CopyButton } from '../components/ui/CopyButton'
 import { reportError } from '../lib/bugbarn'
 import { ProjectSettings } from '../components/settings/ProjectSettings'
@@ -20,7 +20,11 @@ const C = {
 }
 
 export default function Settings() {
-  const { projects, refetch: refetchProjects, defaultProjectId, setDefaultProjectId } = useProjects()
+  const { projects, isLoading: projectsLoading, refetch: refetchProjects, defaultProjectId, setDefaultProjectId } = useProjects()
+  // /settings carries no /:projectId, so resolve the same project the header
+  // picker displays — otherwise this page acts on a project the user never
+  // chose.
+  const activeProjectId = useEffectiveProjectId()
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -40,11 +44,24 @@ export default function Settings() {
   const [anonymizeError, setAnonymizeError] = useState<string | null>(null)
 
   useEffect(() => {
-    api.listApiKeys()
-      .then((d) => setApiKeys(d.api_keys || []))
-      .catch((e) => { reportError(e, { source: 'Settings.listApiKeys' }); setApiKeys([]) })
-      .finally(() => setLoading(false))
-  }, [])
+    if (!activeProjectId) {
+      // No project to scope to: stop waiting once we know why (none exist),
+      // rather than leaving the section on "Loading…" forever.
+      if (!projectsLoading) { setApiKeys([]); setLoading(false) }
+      return
+    }
+    let cancelled = false
+    setLoading(true)
+    api.listApiKeys(activeProjectId)
+      .then((d) => { if (!cancelled) setApiKeys(d.api_keys || []) })
+      .catch((e) => {
+        if (cancelled) return
+        reportError(e, { source: 'Settings.listApiKeys' })
+        setApiKeys([])
+      })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [activeProjectId, projectsLoading])
 
   useEffect(() => {
     api.getInstanceSettings()
@@ -116,7 +133,7 @@ export default function Settings() {
   const snippet = `<script src="${publicURL}/sdk.js"\n        data-api-key="${snippetKey}"></script>`
 
   return (
-    <Shell>
+    <Shell projectId={activeProjectId}>
       <style>{`
         @media (max-width: 640px) {
           .api-keys-table { display: none !important; }
@@ -208,6 +225,7 @@ export default function Settings() {
         setApiKeys={setApiKeys}
         loading={loading}
         projects={projects}
+        projectId={activeProjectId}
         onError={setError}
       />
 

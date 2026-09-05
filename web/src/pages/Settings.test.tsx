@@ -8,13 +8,30 @@ import type { ApiKey, Project } from '../lib/api'
 // Mocks
 // ---------------------------------------------------------------------------
 
+// Two projects, with the selected one deliberately NOT first: the create form
+// used to hand the server `projects[0]`, which on a multi-project instance
+// minted the key against a project the user never chose.
 const mockProjects: Project[] = [
   { id: 'p1', name: 'My Site', slug: 'my-site', status: 'active' },
+  { id: 'p2', name: 'Other Site', slug: 'other-site', status: 'active' },
 ]
+const SELECTED_PROJECT_ID = 'p2'
 const mockRefetch = vi.fn()
+const mockSetSelectedProjectId = vi.fn()
 
 vi.mock('../lib/projects', () => ({
-  useProjects: () => ({ projects: mockProjects, isLoading: false, refetch: mockRefetch }),
+  useProjects: () => ({
+    projects: mockProjects,
+    isLoading: false,
+    refetch: mockRefetch,
+    defaultProjectId: null,
+    setDefaultProjectId: vi.fn(),
+    selectedProjectId: SELECTED_PROJECT_ID,
+    setSelectedProjectId: mockSetSelectedProjectId,
+    selectedEnvironment: '',
+    setSelectedEnvironment: vi.fn(),
+  }),
+  useEffectiveProjectId: () => SELECTED_PROJECT_ID,
 }))
 
 vi.mock('../lib/auth', () => ({
@@ -27,7 +44,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
 })
 
 const mockApiKeys: ApiKey[] = [
-  { id: 'k1', name: 'prod-key', scope: 'ingest', created_at: '2024-01-01T00:00:00Z' },
+  { id: 'k1', project_id: SELECTED_PROJECT_ID, name: 'prod-key', scope: 'ingest', created_at: '2024-01-01T00:00:00Z' },
 ]
 
 const mockApi = vi.hoisted(() => ({
@@ -48,6 +65,7 @@ const mockApi = vi.hoisted(() => ({
     updated_at: '2024-01-01T00:00:00Z',
   }),
   resetProjectHealth: vi.fn().mockResolvedValue(undefined),
+  getEnvironments: vi.fn().mockResolvedValue({ environments: [] }),
   getClientConfig: vi.fn().mockResolvedValue({
     bugbarn_endpoint: '',
     bugbarn_ingest_key: '',
@@ -117,7 +135,7 @@ describe('Settings', () => {
 
   it('creates an API key and shows it revealed', async () => {
     mockApi.createApiKey.mockResolvedValue({
-      api_key: { id: 'k2', name: 'new-key', scope: 'ingest', created_at: '2024-06-01T00:00:00Z' },
+      api_key: { id: 'k2', project_id: SELECTED_PROJECT_ID, name: 'new-key', scope: 'ingest', created_at: '2024-06-01T00:00:00Z' },
       key: 'plaintext-value-here',
     })
     renderSettings()
@@ -130,7 +148,42 @@ describe('Settings', () => {
     await waitFor(() =>
       expect(screen.getByText('plaintext-value-here')).toBeInTheDocument(),
     )
-    expect(mockApi.createApiKey).toHaveBeenCalledWith('new-key', 'ingest', 'p1')
+    expect(mockApi.createApiKey).toHaveBeenCalledWith('new-key', 'ingest', SELECTED_PROJECT_ID)
+  })
+
+  it('lists only the selected project’s keys', async () => {
+    renderSettings()
+    await waitFor(() =>
+      expect(mockApi.listApiKeys).toHaveBeenCalledWith(SELECTED_PROJECT_ID),
+    )
+  })
+
+  it('names the selected project in the API Keys section', async () => {
+    renderSettings()
+    // The name appears in several places on this page; only the API Keys
+    // subtitle emphasises it, which is the one that has to say "Other Site".
+    await waitFor(() =>
+      expect(
+        screen.getAllByText('Other Site').some((el) => el.tagName === 'STRONG'),
+      ).toBe(true),
+    )
+  })
+
+  it('mints against the project chosen in the form, not the first one', async () => {
+    mockApi.createApiKey.mockResolvedValue({
+      api_key: { id: 'k3', project_id: 'p1', name: 'other-key', scope: 'ingest', created_at: '2024-06-01T00:00:00Z' },
+      key: 'plaintext-for-p1',
+    })
+    renderSettings()
+    await waitFor(() => screen.getByText('API Keys'))
+
+    fireEvent.change(screen.getByPlaceholderText(/key name/i), { target: { value: 'other-key' } })
+    fireEvent.change(screen.getByLabelText(/project for the new api key/i), { target: { value: 'p1' } })
+    fireEvent.click(screen.getByRole('button', { name: /create/i }))
+
+    await waitFor(() =>
+      expect(mockApi.createApiKey).toHaveBeenCalledWith('other-key', 'ingest', 'p1'),
+    )
   })
 
   it('first delete click sets confirm state; second click deletes', async () => {

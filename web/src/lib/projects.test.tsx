@@ -64,6 +64,7 @@ const projectB: Project = { id: 'proj-b', name: 'Beta', slug: 'beta', status: 'a
 describe('useEffectiveProjectId', () => {
   beforeEach(() => {
     delete store['funnelbarn_default_project']
+    delete store['funnelbarn:lastProjectId']
     vi.clearAllMocks()
   })
 
@@ -94,6 +95,28 @@ describe('useEffectiveProjectId', () => {
     renderWithProjects([])
     await waitFor(() => expect(screen.getByTestId('result').textContent).toBe('undefined'))
   })
+
+  // The header picker writes funnelbarn:lastProjectId. A page with no
+  // /:projectId in its URL (i.e. /settings) has to resolve to the same project
+  // the picker is displaying, or it acts on one the user never chose.
+  it('prefers the project last chosen in the header picker', async () => {
+    store['funnelbarn:lastProjectId'] = 'proj-b'
+    renderWithProjects([projectA, projectB])
+    await waitFor(() => expect(screen.getByTestId('result').textContent).toBe('proj-b'))
+  })
+
+  it('lets an explicit urlProjectId outrank the picker selection', async () => {
+    store['funnelbarn:lastProjectId'] = 'proj-b'
+    renderWithProjects([projectA, projectB], 'proj-a')
+    await waitFor(() => expect(screen.getByTestId('result').textContent).toBe('proj-a'))
+  })
+
+  it('falls through to the default project when the picker selection is gone', async () => {
+    store['funnelbarn:lastProjectId'] = 'proj-deleted'
+    store['funnelbarn_default_project'] = 'proj-b'
+    renderWithProjects([projectA, projectB])
+    await waitFor(() => expect(screen.getByTestId('result').textContent).toBe('proj-b'))
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -109,6 +132,7 @@ function DefaultIdConsumer({ onReady }: { onReady?: (fn: (id: string) => void) =
 describe('setDefaultProjectId', () => {
   beforeEach(() => {
     delete store['funnelbarn_default_project']
+    delete store['funnelbarn:lastProjectId']
     vi.clearAllMocks()
   })
 

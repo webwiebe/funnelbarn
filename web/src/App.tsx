@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { ReactNode, useEffect, useState } from 'react'
 import { AuthProvider, useAuth } from './lib/auth'
-import { ProjectProvider, useProjects } from './lib/projects'
+import { ProjectProvider, useProjects, useEffectiveProjectId } from './lib/projects'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -20,7 +20,6 @@ import OverviewFunnels from './pages/OverviewFunnels'
 import EventMapping from './pages/EventMapping'
 import FirstRunWizard from './components/wizards/FirstRunWizard'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
-import { LAST_PROJECT_ID_KEY } from './components/ui/ProjectPicker'
 import { trackPageView } from './lib/analytics'
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -128,7 +127,11 @@ function AuthedHome() {
 }
 
 function DefaultProjectRoute({ base }: { base: string }) {
-  const { projects, isLoading, defaultProjectId } = useProjects()
+  const { projects, isLoading } = useProjects()
+  // Priority: last-visited > explicit default > first project. Shared with
+  // every project-aware page so the landing redirect and those pages can never
+  // disagree about which project "current" means.
+  const target = useEffectiveProjectId()
 
   if (isLoading) {
     return (
@@ -156,19 +159,6 @@ function DefaultProjectRoute({ base }: { base: string }) {
     // No projects yet — render Dashboard which handles the empty/create-project state
     return <Dashboard />
   }
-
-  // Priority: last-visited > explicit default > first project.
-  // LAST_PROJECT_ID_KEY is written by Shell on every project-scoped page, so it
-  // always reflects where the user just was. defaultProjectId is the persistent
-  // preference from Settings — used as a fallback when there is no recent history
-  // (e.g. fresh session or first login).
-  let lastId: string | null = null
-  try { lastId = localStorage.getItem(LAST_PROJECT_ID_KEY) } catch { /* quota / private mode */ }
-
-  const target =
-    (lastId && projects.some((p) => p.id === lastId)) ? lastId :
-    (defaultProjectId && projects.some((p) => p.id === defaultProjectId)) ? defaultProjectId :
-    projects[0].id
 
   return <Navigate to={`${base}/${target}`} replace />
 }

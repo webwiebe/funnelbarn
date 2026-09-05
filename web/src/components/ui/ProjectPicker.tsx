@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronDown, Check, FolderOpen } from 'lucide-react'
 import type { Project } from '../../lib/api'
+import { readLastProjectId, writeLastProjectId } from '../../lib/selectedProject'
 
 const C = {
   bg: '#0f1117',
@@ -12,33 +13,19 @@ const C = {
   muted: '#94a3b8',
 }
 
-/** localStorage key used to remember the user's last-selected project across pages. */
-export const LAST_PROJECT_ID_KEY = 'funnelbarn:lastProjectId'
-
 /**
- * Routes that take a `/:projectId` segment. When the picker fires on any other
- * route (e.g. `/settings`), selecting a project lands the user on
- * `/dashboard/<id>` — the canonical project-landing page.
+ * Routes that take a `/:projectId` segment. Selecting a project there swaps the
+ * id inline.
  */
 const PROJECT_SCOPED_BASES = new Set(['dashboard', 'funnels', 'flags', 'insights', 'live', 'flows'])
 
-function readLastProjectId(): string | undefined {
-  if (typeof window === 'undefined') return undefined
-  try {
-    return window.localStorage.getItem(LAST_PROJECT_ID_KEY) ?? undefined
-  } catch {
-    return undefined
-  }
-}
-
-function writeLastProjectId(id: string) {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(LAST_PROJECT_ID_KEY, id)
-  } catch {
-    /* ignore — quota / disabled storage */
-  }
-}
+/**
+ * Routes that have no `/:projectId` segment but still act on the selected
+ * project. Switching project there must stay on the page — sending someone to
+ * the dashboard mid-task is how you end up changing project settings for a
+ * project you are no longer looking at.
+ */
+const PROJECT_AWARE_BASES = new Set(['settings'])
 
 interface ProjectPickerProps {
   projects: Project[]
@@ -84,9 +71,11 @@ export function ProjectPicker({ projects, base, projectId, onSelect, variant = '
     setOpen(false)
     onSelect?.()
     writeLastProjectId(project.id)
-    // On project-scoped routes, swap the id inline. Anywhere else (e.g.
-    // /settings) take the user to the project's dashboard, which is the
-    // canonical landing page for a project context.
+    // On project-scoped routes, swap the id inline. On a project-aware route
+    // with no id in the URL (/settings) the page re-reads the selection itself,
+    // so stay put. Anywhere else, take the user to the project's dashboard —
+    // the canonical landing page for a project context.
+    if (PROJECT_AWARE_BASES.has(base)) return
     const target = PROJECT_SCOPED_BASES.has(base) ? base : 'dashboard'
     navigate(`/${target}/${project.id}`)
   }

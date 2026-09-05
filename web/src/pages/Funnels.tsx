@@ -314,14 +314,17 @@ export default function Funnels() {
   const [deleting, setDeleting] = useState(false)
   const [pendingTemplate, setPendingTemplate] = useState<FunnelTemplate | undefined>(undefined)
 
+  // Scoped to this route's project: an unfiltered list would happily hand the
+  // snippet another project's ingest key.
   useEffect(() => {
-    api.listApiKeys()
+    if (!projectId) return
+    api.listApiKeys(projectId)
       .then((d) => {
         const key = (d.api_keys || []).find((k) => k.scope === 'ingest')
-        if (key) setIngestKey(key.id)
+        setIngestKey(key?.id)
       })
       .catch(() => {})
-  }, [])
+  }, [projectId])
 
   useEffect(() => {
     if (!projectId) return

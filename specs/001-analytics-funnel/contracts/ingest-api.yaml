@@ -516,15 +516,18 @@ paths:
 
   /api/v1/apikeys:
     get:
-      summary: List API keys for a project
-      description: Returns all API keys for a project (key hashes are not returned).
+      summary: List API keys
+      description: |
+        Returns API key metadata (key hashes and plaintext keys are never
+        returned). Pass `project_id` to list one project's keys; omit it to
+        list every project's keys across the instance.
       operationId: listAPIKeys
       tags: [APIKeys]
       parameters:
         - name: project_id
           in: query
-          required: true
-          description: Project ID to list keys for
+          required: false
+          description: Project ID to list keys for. Omit to list all projects' keys.
           schema:
             type: string
       responses:
@@ -549,6 +552,9 @@ paths:
       description: |
         Creates a new API key for a project. The plaintext key is returned **once** in
         this response and will never be shown again. Store it securely.
+
+        `project_id` is required — every key is scoped to exactly one project,
+        and the server will not guess which one.
       operationId: createAPIKey
       tags: [APIKeys]
       requestBody:
@@ -561,16 +567,17 @@ paths:
               properties:
                 project_id:
                   type: string
-                  description: Project ID the key belongs to
+                  description: |
+                    Project the key is scoped to. May also be given as a
+                    `?project_id=` query parameter. Required either way.
                 name:
                   type: string
                   description: Human label for this key
                   example: frontend-sdk
                 scope:
-                  type: string
-                  enum: [full, ingest]
-                  default: full
-                  description: Key scope (ingest = events only; full = all API access)
+                  allOf:
+                    - $ref: "#/components/schemas/APIKeyScope"
+                  default: ingest
       responses:
         "201":
           description: API key created — plaintext key shown once
@@ -579,19 +586,12 @@ paths:
               schema:
                 type: object
                 properties:
-                  id:
-                    type: string
-                  name:
-                    type: string
-                  scope:
-                    type: string
+                  api_key:
+                    $ref: "#/components/schemas/APIKeySafe"
                   key:
                     type: string
                     description: Plaintext key — shown once, store securely
                     example: "a1b2c3d4e5f6...64hexchars..."
-                  created_at:
-                    type: string
-                    format: date-time
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1200,14 +1200,31 @@ components:
       properties:
         id:
           type: string
+        project_id:
+          type: string
+          description: The one project this key can act on
         name:
           type: string
         scope:
-          type: string
-          enum: [full, ingest]
+          $ref: "#/components/schemas/APIKeyScope"
         created_at:
           type: string
           format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+          description: Omitted when the key has never authenticated a request
+
+    APIKeyScope:
+      type: string
+      description: |
+        What a key may do, always within its own project:
+          * `ingest` — send events; cannot read or change anything
+          * `analytics:read` — read events, funnels and conversion numbers
+          * `flags:read` — read feature flags
+          * `flags:write` — read and toggle feature flags
+          * `full` — all API access for the project
+      enum: [ingest, analytics:read, flags:read, flags:write, full]
 
     AttributionReport:
       type: object
