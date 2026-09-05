@@ -3,8 +3,23 @@ name: Binary Release
 # Builds and publishes funnelbarn binaries on every push to main.
 # Publishes to:
 #   - APT repository:      https://webwiebe.nl/apt/ (via rapid-root centralized workflow)
-#   - Homebrew tap (MinIO): https://webwiebe.nl/brew/funnelbarn-darwin-*.tar.gz
+#   - Homebrew tap (Cloudflare R2): https://webwiebe.nl/brew/funnelbarn-darwin-*.tar.gz
 #   - GitHub Releases:     attached .deb and .tar.gz files
+#
+# Brew tarballs are uploaded directly to R2 (bucket:
+# webwiebe-apt-repository-production, under the brew/ prefix). That prefix is
+# SHARED with every other publisher (bugbarn, bb, spanbarn, dynamic-dns...), so
+# uploads and prunes here are always scoped to funnelbarn's own name+arch
+# prefixes — never a bucket-wide sync or LIST, and never `--delete`. After
+# uploading, only the newest 2 versions of each tarball are kept, matching the
+# bucket's 5GB retention policy (rapid-root's infra/docs/apt-repository.md,
+# added in wiebe-xyz/rapid-root#2839).
+#
+# Required GitHub secrets for the brew publish:
+#   R2_ACCESS_KEY  — Cloudflare R2 S3 access key
+#   R2_SECRET_KEY  — Cloudflare R2 S3 secret key
+#   R2_ENDPOINT    — R2 account S3 endpoint
+#   R2_BUCKET      — webwiebe-apt-repository-production
 
 on:
   push:
@@ -324,7 +339,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   update-brew-repo:
-    name: Update Homebrew Tap (MinIO)
+    name: Update Homebrew Tap (R2)
     runs-on: ubuntu-latest
     needs: [tag, build-darwin-tarballs]
     steps:
@@ -372,21 +387,70 @@ jobs:
           end
           EOF
 
-      - name: Deploy to MinIO (brew/ prefix)
+      - name: Deploy to R2 (brew/ prefix — only adds funnelbarn files)
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_SECRET_KEY }}
-          AWS_ENDPOINT_URL: ${{ secrets.MINIO_ENDPOINT }}
-          MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
+          # Fail loudly rather than publishing nowhere. Before this job moved to
+          # R2 it uploaded to MinIO, which the read path had already stopped
+          # serving — so the tap advertised tarballs that 404'd and nobody
+          # noticed. A missing secret must break the build, not go quiet again.
+          for var in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_ENDPOINT_URL R2_BUCKET; do
+            if [ -z "${!var}" ]; then
+              echo "ERROR: ${var} is empty — the R2_* secrets must be configured on this repo."
+              exit 1
+            fi
+          done
+
           pip install awscli
-          for attempt in 1 2 3; do
-            aws --endpoint-url "$AWS_ENDPOINT_URL" s3 sync \
-              brew-repo/ \
-              s3://${MINIO_BUCKET}/brew/ \
-              --cache-control "public, max-age=3600, must-revalidate" && break
-            echo "Attempt ${attempt} failed, retrying in 10s..."
-            sleep 10
+
+          # Upload per-file with `cp` rather than `s3 sync brew-repo/`: sync
+          # LISTs the whole destination prefix to compute its delta, and brew/
+          # holds every other publisher's tarballs too. `cp` touches only our
+          # own keys.
+          find brew-repo -type f | while read -r f; do
+            key="${f#brew-repo/}"
+            aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp \
+              "$f" \
+              "s3://${R2_BUCKET}/brew/${key}" \
+              --cache-control "public, max-age=3600, must-revalidate"
+          done
+
+      - name: Prune old brew tarballs from R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          # Keep only the newest KEEP versions of each tarball this job
+          # publishes — the bucket's 5GB retention policy (rapid-root#2839 /
+          # infra/docs/apt-repository.md). Scoped to funnelbarn's own name+arch
+          # prefixes: a targeted list per prefix, never a bucket-wide LIST, so
+          # other publishers' tarballs are never considered, let alone removed.
+          KEEP=2
+          for GROUP in funnelbarn-darwin-amd64 funnelbarn-darwin-arm64; do
+            aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-objects-v2 \
+              --bucket "$R2_BUCKET" --prefix "brew/${GROUP}-" \
+              --query 'Contents[].Key' --output text 2>/dev/null \
+              | tr '\t' '\n' | grep -E '\.tar\.gz$' | sort -V > /tmp/${GROUP}-versions.txt || true
+
+            COUNT=$(wc -l < /tmp/${GROUP}-versions.txt)
+            DROP=$((COUNT - KEEP))
+            if [ "$DROP" -gt 0 ]; then
+              head -n "$DROP" /tmp/${GROUP}-versions.txt | while read -r key; do
+                echo "Pruning old brew tarball: $key"
+                aws --endpoint-url "$AWS_ENDPOINT_URL" s3 rm "s3://${R2_BUCKET}/${key}"
+                aws --endpoint-url "$AWS_ENDPOINT_URL" s3 rm "s3://${R2_BUCKET}/${key}.sha256" || true
+              done
+            else
+              echo "${GROUP}: ${COUNT} tarball(s) in R2, nothing to prune."
+            fi
           done
 
   update-homebrew-tap:
