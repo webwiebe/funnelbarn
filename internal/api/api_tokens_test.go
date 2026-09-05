@@ -338,6 +338,17 @@ func TestScopeAllows(t *testing.T) {
 		{repository.APIKeyScopeIngest, repository.APIKeyScopeFlagsRead, false},
 		{repository.APIKeyScopeIngest, repository.APIKeyScopeFlagsWrite, false},
 		{"something-new", repository.APIKeyScopeFlagsRead, false},
+
+		// analytics:read is its own axis: full covers it, flag scopes do not,
+		// and it grants nothing on the flag routes in return.
+		{repository.APIKeyScopeFull, repository.APIKeyScopeAnalyticsRead, true},
+		{repository.APIKeyScopeAnalyticsRead, repository.APIKeyScopeAnalyticsRead, true},
+		{repository.APIKeyScopeAnalyticsRead, repository.APIKeyScopeFlagsRead, false},
+		{repository.APIKeyScopeAnalyticsRead, repository.APIKeyScopeFlagsWrite, false},
+		{repository.APIKeyScopeFlagsRead, repository.APIKeyScopeAnalyticsRead, false},
+		{repository.APIKeyScopeFlagsWrite, repository.APIKeyScopeAnalyticsRead, false},
+		{repository.APIKeyScopeIngest, repository.APIKeyScopeAnalyticsRead, false},
+		{"something-new", repository.APIKeyScopeAnalyticsRead, false},
 	}
 	for _, c := range cases {
 		if got := scopeAllows(c.have, c.want); got != c.ok {

@@ -89,3 +89,48 @@ func TestParse_InvalidDateIgnored(t *testing.T) {
 		t.Errorf("invalid date not ignored: From = %v", r.From)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ParseStrict
+// ---------------------------------------------------------------------------
+
+func TestParseStrict_AcceptsWhatParseAccepts(t *testing.T) {
+	cases := []url.Values{
+		{},
+		{"range": []string{"24h"}},
+		{"range": []string{"7d"}},
+		{"range": []string{"30d"}},
+		{"from": []string{"2026-01-01T00:00:00Z"}, "to": []string{"2026-01-08T00:00:00Z"}},
+	}
+	for _, q := range cases {
+		r, err := timerange.ParseStrict(q)
+		if err != nil {
+			t.Fatalf("ParseStrict(%v): %v", q, err)
+		}
+		if !r.To.After(r.From) {
+			t.Errorf("ParseStrict(%v): To (%v) must be after From (%v)", q, r.To, r.From)
+		}
+	}
+}
+
+// The difference from Parse: garbage is refused rather than silently answered
+// with the default 30-day window.
+func TestParseStrict_RejectsGarbage(t *testing.T) {
+	cases := []url.Values{
+		{"range": []string{"90d"}},
+		{"from": []string{"last-tuesday"}},
+		{"to": []string{"nope"}},
+		{"from": []string{"2026-01-02T00:00:00Z"}, "to": []string{"2026-01-01T00:00:00Z"}},
+		{"from": []string{"2026-01-01T00:00:00Z"}, "to": []string{"2026-01-01T00:00:00Z"}},
+	}
+	for _, q := range cases {
+		if _, err := timerange.ParseStrict(q); err == nil {
+			t.Errorf("ParseStrict(%v): want an error, got none", q)
+		}
+	}
+
+	// Parse, by contrast, keeps its lenience for the dashboard.
+	if r := timerange.Parse(url.Values{"from": []string{"last-tuesday"}}); !r.To.After(r.From) {
+		t.Error("Parse should still fall back to a usable window")
+	}
+}

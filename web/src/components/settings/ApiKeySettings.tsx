@@ -27,6 +27,7 @@ export function scopeTone(scope: string): 'read' | 'write' {
 export function scopeHint(scope: string): string {
   switch (scope) {
     case 'ingest': return 'Send events. Cannot read or change anything.'
+    case 'analytics:read': return "Read this project's events, funnels and conversion numbers. Cannot change anything."
     case 'flags:read': return "Read this project's flags. Cannot change them."
     case 'flags:write': return "Read and update this project's flags. Cannot create or delete them."
     case 'full': return 'Full API access to this project.'
@@ -134,8 +135,8 @@ export function ApiKeySettings({
         <div>
           <div style={{ fontWeight: 700, fontSize: 15 }}>API Keys</div>
           <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
-            Keys for sending events, reading or toggling this project&apos;s
-            feature flags, or full management access.
+            Keys for sending events, reading this project&apos;s analytics,
+            reading or toggling its feature flags, or full management access.
           </div>
         </div>
       </div>
@@ -423,6 +424,7 @@ export function ApiKeySettings({
             }}
           >
             <option value="ingest">ingest — send events</option>
+            <option value="analytics:read">analytics:read — read events, funnels and conversion</option>
             <option value="flags:read">flags:read — read this project&apos;s flags</option>
             <option value="flags:write">flags:write — read and toggle flags</option>
             <option value="full">full — everything</option>

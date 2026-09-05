@@ -179,12 +179,26 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleListProjects lists all projects.
+// handleListProjects lists all projects for a dashboard session, or just the
+// one project an API token is scoped to.
+//
+// The path carries no {id}, so the token middleware cannot check the route
+// against the key's project for us — narrowing here is what keeps one
+// customer's analytics token from enumerating every project on the instance.
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	projects, err := s.projects.ListProjects(r.Context())
 	if err != nil {
 		mapServiceError(w, err, "handleListProjects")
 		return
+	}
+	if tokenProject := tokenProjectFromContext(r.Context()); tokenProject != "" {
+		mine := make([]repository.Project, 0, 1)
+		for _, p := range projects {
+			if p.ID == tokenProject {
+				mine = append(mine, p)
+			}
+		}
+		projects = mine
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"projects": projects})
 }

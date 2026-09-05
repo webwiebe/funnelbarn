@@ -10,6 +10,7 @@ describe('scopeTone', () => {
   it('marks send-only and read-only scopes', () => {
     expect(scopeTone('ingest')).toBe('read')
     expect(scopeTone('flags:read')).toBe('read')
+    expect(scopeTone('analytics:read')).toBe('read')
   })
 
   it('treats an unrecognised scope as read rather than implying power it lacks', () => {
@@ -20,6 +21,7 @@ describe('scopeTone', () => {
 describe('scopeHint', () => {
   it('says what each scope may do', () => {
     expect(scopeHint('ingest')).toMatch(/Send events/)
+    expect(scopeHint('analytics:read')).toMatch(/Cannot change anything/)
     expect(scopeHint('flags:read')).toMatch(/Cannot change/)
     expect(scopeHint('flags:write')).toMatch(/Cannot create or delete/)
     expect(scopeHint('full')).toMatch(/Full API access/)

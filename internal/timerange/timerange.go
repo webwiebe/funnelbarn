@@ -4,6 +4,7 @@
 package timerange
 
 import (
+	"errors"
 	"net/url"
 	"time"
 )
@@ -48,4 +49,47 @@ func Parse(q url.Values) Range {
 	}
 
 	return Range{From: from, To: to}
+}
+
+// ParseStrict resolves the same range as Parse but rejects input it cannot
+// understand instead of silently falling back to the default window.
+//
+// Parse's lenience is right for the dashboard, where the query string comes
+// from our own UI and a stale value should still render something. It is wrong
+// for a programmatic read API: a scheduled readout that asked for last week and
+// quietly got last month reports the wrong number with no way to notice.
+func ParseStrict(q url.Values) (Range, error) {
+	to := time.Now().UTC()
+	from := to.AddDate(0, 0, -30)
+
+	switch v := q.Get("range"); v {
+	case "":
+	case "24h":
+		from = to.Add(-24 * time.Hour)
+	case "7d":
+		from = to.AddDate(0, 0, -7)
+	case "30d":
+		from = to.AddDate(0, 0, -30)
+	default:
+		return Range{}, errors.New("range must be one of 24h, 7d, 30d")
+	}
+
+	if v := q.Get("from"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return Range{}, errors.New("from must be an RFC3339 timestamp")
+		}
+		from = t.UTC()
+	}
+	if v := q.Get("to"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return Range{}, errors.New("to must be an RFC3339 timestamp")
+		}
+		to = t.UTC()
+	}
+	if !to.After(from) {
+		return Range{}, errors.New("to must be after from")
+	}
+	return Range{From: from, To: to}, nil
 }

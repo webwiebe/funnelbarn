@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/timerange"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -41,6 +44,72 @@ func (s *Server) handleEventNames(w http.ResponseWriter, r *http.Request) {
 		names = []string{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"event_names": names})
+}
+
+// handleEventCounts returns per-event-name counts over a date range — the
+// smallest thing a scheduled readout needs to answer "how many signups last
+// week". The dashboard payload carries the same numbers, but only its top ten
+// and wrapped in a dozen other aggregates; this is the one query, on its own,
+// reachable with a read-only analytics:read token.
+func (s *Server) handleEventCounts(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		jsonError(w, "project id required", http.StatusBadRequest)
+		return
+	}
+
+	rng, err := timerange.ParseStrict(r.URL.Query())
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Unlike the dashboard's fixed top-10, a readout wants the whole catalog by
+	// default; the ceiling only exists to bound the response.
+	limit := 100
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 || n > 500 {
+			jsonError(w, "limit must be an integer between 1 and 500", http.StatusBadRequest)
+			return
+		}
+		limit = n
+	}
+
+	env := r.URL.Query().Get("environment")
+
+	ctx, span := tracing.StartSpan(r.Context(), "events.counts",
+		attribute.String("project.id", projectID),
+		attribute.Int("limit", limit),
+		attribute.String("environment", env),
+	)
+	defer span.End()
+
+	counts, err := s.events.TopEventNames(ctx, projectID, rng.From, rng.To, limit, env)
+	if err != nil {
+		tracing.RecordError(span, err)
+		mapServiceError(w, err, "handleEventCounts")
+		return
+	}
+	if counts == nil {
+		counts = []repository.EventNameStat{}
+	}
+
+	var total int64
+	for _, c := range counts {
+		total += c.Count
+	}
+	span.SetAttributes(attribute.Int("event.result_count", len(counts)))
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"project_id":   projectID,
+		"from":         rng.From.Format(time.RFC3339),
+		"to":           rng.To.Format(time.RFC3339),
+		"environment":  env,
+		"limit":        limit,
+		"events":       counts,
+		"total_events": total,
+	})
 }
 
 // handleEventProperties returns distinct JSON property keys for a given event name.

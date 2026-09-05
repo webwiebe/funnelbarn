@@ -30,6 +30,13 @@ const APIKeyScopeIngest = "ingest"
 // answers when the question is whether mail is about to go out.
 const APIKeyScopeFlagsRead = "flags:read"
 
+// APIKeyScopeAnalyticsRead allows reading a project's analytics — event
+// counts, the event catalog, funnels and funnel-step conversion — without a
+// dashboard session, so a scheduled job can publish a weekly readout instead
+// of asking someone to open the dashboard and copy numbers out of it. It is
+// read-only by construction: no route that mutates anything accepts it.
+const APIKeyScopeAnalyticsRead = "analytics:read"
+
 // APIKeyScopeFlagsWrite additionally allows updating an existing flag
 // (enable / disable / change its value). It deliberately does not allow
 // creating or deleting flags: auto-registration already covers creation, and a
