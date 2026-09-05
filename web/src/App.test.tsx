@@ -14,6 +14,12 @@ vi.mock('./lib/auth', () => ({
 const mockUseProjects = vi.fn()
 vi.mock('./lib/projects', () => ({
   useProjects: () => mockUseProjects(),
+  // Delegates to the real resolver so this file exercises the actual
+  // last-visited > default > first precedence rather than a copy of it.
+  useEffectiveProjectId: (urlProjectId?: string) => {
+    const { projects, defaultProjectId } = mockUseProjects()
+    return resolveProjectId(projects, urlProjectId, readLastProjectId(), defaultProjectId)
+  },
   ProjectProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }))
 
@@ -59,7 +65,7 @@ import React from 'react'
 // Pull DefaultProjectRoute out by re-rendering App at the /dashboard path.
 // Because all providers and pages are mocked, only the routing logic is exercised.
 import App from './App'
-import { LAST_PROJECT_ID_KEY } from './components/ui/ProjectPicker'
+import { LAST_PROJECT_ID_KEY, readLastProjectId, resolveProjectId } from './lib/selectedProject'
 
 function renderAt(path: string) {
   // Patch window.location to the desired path before rendering

@@ -4,12 +4,13 @@ package api
 // - 404 paths (nonexistent resource IDs)
 // - handleLogin via DB fallback (when env-var auth is disabled)
 // - handleCreateProject slug-from-domain
-// - handleCreateAPIKey without project_id (auto-picks first)
+// - handleCreateAPIKey project_id requirement and binding
 // - handleListAPIKeys with ?project_id= filter
 // - funnel analysis with all segment types (exercises segmentClause + escapeSQLLiteral)
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -152,10 +153,13 @@ func TestHandleCreateProject_SlugFromDomain(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// handleCreateAPIKey — auto-picks first available project when no project_id
+// handleCreateAPIKey — project_id is required
 // ---------------------------------------------------------------------------
 
-func TestHandleCreateAPIKey_AutoPicksFirstProject(t *testing.T) {
+// A key with no named project used to be bound to whichever project sorted
+// first, so a caller that forgot one walked away with a credential for the
+// wrong project that looked entirely healthy until it 403'd.
+func TestHandleCreateAPIKey_RequiresProject(t *testing.T) {
 	srv, store := newTestServer(t)
 	ctx := context.Background()
 	_, _ = store.CreateProject(ctx, "AutoPick", "autopick")
@@ -164,8 +168,43 @@ func TestHandleCreateAPIKey_AutoPicksFirstProject(t *testing.T) {
 		"name":  "auto-key",
 		"scope": "ingest",
 	}, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("missing project_id: want 400, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+// The project named in the request is the project the key is bound to — not
+// the first one on the instance. This is the regression the dashboard hit:
+// a key minted while a second project was selected came back scoped to the
+// first.
+func TestHandleCreateAPIKey_BindsToTheNamedProject(t *testing.T) {
+	srv, store := newTestServer(t)
+	ctx := context.Background()
+	_, _ = store.CreateProject(ctx, "First", "first")
+	second, err := store.CreateProject(ctx, "Second", "second")
+	if err != nil {
+		t.Fatalf("create second project: %v", err)
+	}
+
+	w := postJSON(t, srv, "/api/v1/apikeys", map[string]string{
+		"project_id": second.ID,
+		"name":       "second-key",
+		"scope":      "analytics:read",
+	}, nil)
 	if w.Code != http.StatusCreated {
-		t.Errorf("auto-pick project: want 201, got %d (body: %s)", w.Code, w.Body.String())
+		t.Fatalf("create: want 201, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		APIKey struct {
+			ProjectID string `json:"project_id"`
+		} `json:"api_key"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.APIKey.ProjectID != second.ID {
+		t.Errorf("bound project: want %s (Second), got %s", second.ID, resp.APIKey.ProjectID)
 	}
 }
 

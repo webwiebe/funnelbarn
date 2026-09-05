@@ -286,8 +286,11 @@ func (s *Server) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCreateAPIKey creates a new API key for a project.
-// project_id may be sent in the request body or as a query param.
-// When omitted, the first project is used (single-tenant convenience).
+// project_id may be sent in the request body or as a query param, and is
+// required: this used to fall back to the first project on the instance, which
+// meant a caller that forgot to name one got a key silently bound to whichever
+// project happened to sort first — indistinguishable from a working key until
+// it 403s on the project you meant.
 func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ProjectID string `json:"project_id"`
@@ -304,14 +307,9 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		body.ProjectID = r.URL.Query().Get("project_id")
 	}
 
-	// If still empty, pick the first available project.
 	if body.ProjectID == "" {
-		projects, err := s.projects.ListProjects(r.Context())
-		if err != nil || len(projects) == 0 {
-			jsonError(w, "no projects found — create a project first", http.StatusBadRequest)
-			return
-		}
-		body.ProjectID = projects[0].ID
+		jsonError(w, "project_id is required — an API key is always scoped to one project", http.StatusBadRequest)
+		return
 	}
 
 	if body.Scope == "" {

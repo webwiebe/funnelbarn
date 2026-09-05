@@ -240,10 +240,14 @@ export const api = {
   },
 
   // API Keys
-  listApiKeys: () =>
-    request<{ api_keys: ApiKey[] }>('/api/v1/apikeys'),
+  // Without a projectId this returns every project's keys, which is only ever
+  // what an instance-wide view wants — a project page must pass its own id.
+  listApiKeys: (projectId?: string) =>
+    request<{ api_keys: ApiKey[] }>(
+      projectId ? `/api/v1/apikeys?project_id=${encodeURIComponent(projectId)}` : '/api/v1/apikeys',
+    ),
 
-  createApiKey: (name: string, scope: string, projectId?: string) =>
+  createApiKey: (name: string, scope: string, projectId: string) =>
     request<{ api_key: ApiKey; key: string }>('/api/v1/apikeys', {
       method: 'POST',
       body: JSON.stringify({ name, scope, project_id: projectId }),
@@ -561,8 +565,10 @@ export interface Segment {
 
 export interface ApiKey {
   id: string
+  /** The one project this key can act on. Every key is bound to exactly one. */
+  project_id: string
   name: string
-  /** 'ingest' | 'flags:read' | 'flags:write' | 'full' */
+  /** 'ingest' | 'analytics:read' | 'flags:read' | 'flags:write' | 'full' */
   scope: string
   created_at: string
   /** Absent when the key has never authenticated a request. */

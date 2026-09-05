@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Trash2, Plus } from 'lucide-react'
 import { api, ApiKey, Project } from '../../lib/api'
 import { CopyButton } from '../ui/CopyButton'
 import { trackEvent } from '../../lib/analytics'
+import { writeLastProjectId } from '../../lib/selectedProject'
 
 const C = {
   bg: '#0f1117',
@@ -66,6 +67,8 @@ interface ApiKeySettingsProps {
   setApiKeys: React.Dispatch<React.SetStateAction<ApiKey[]>>
   loading: boolean
   projects: Project[]
+  /** The project this section is showing keys for — the one the header names. */
+  projectId?: string
   onError: (msg: string) => void
 }
 
@@ -74,26 +77,43 @@ export function ApiKeySettings({
   setApiKeys,
   loading,
   projects,
+  projectId,
   onError,
 }: ApiKeySettingsProps) {
   const [newKeyName, setNewKeyName] = useState('')
   const [newKeyScope, setNewKeyScope] = useState('ingest')
+  // Which project the key is minted for. Defaults to the project on screen, but
+  // is shown and changeable, because a key silently bound to a project you
+  // never chose is indistinguishable from a working one until it 403s.
+  const [newKeyProjectId, setNewKeyProjectId] = useState(projectId ?? '')
   const [creating, setCreating] = useState(false)
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
+  // Follow the header when the user switches project.
+  useEffect(() => { if (projectId) setNewKeyProjectId(projectId) }, [projectId])
+
+  const currentProject = projects.find((p) => p.id === projectId)
+
   const handleCreate = async () => {
     if (!newKeyName.trim()) { setError('Name is required'); return }
+    if (!newKeyProjectId) { setError('Select a project for this key'); return }
     setCreating(true)
     setError(null)
     try {
-      const projectId = projects[0]?.id
-      const res = await api.createApiKey(newKeyName, newKeyScope, projectId)
+      const res = await api.createApiKey(newKeyName, newKeyScope, newKeyProjectId)
       trackEvent('api_key_created', { scope: newKeyScope })
-      setApiKeys((prev) => [...prev, res.api_key])
       setNewKeyValue(res.key)
       setNewKeyName('')
+      if (newKeyProjectId === projectId) {
+        setApiKeys((prev) => [...prev, res.api_key])
+      } else {
+        // The list below only holds the project on screen. Rather than show a
+        // key it can never contain, follow the key: switching the selection
+        // re-fetches the list and updates the header picker with it.
+        writeLastProjectId(newKeyProjectId)
+      }
     } catch (e) {
       setError(String(e))
       onError(String(e))
@@ -135,8 +155,13 @@ export function ApiKeySettings({
         <div>
           <div style={{ fontWeight: 700, fontSize: 15 }}>API Keys</div>
           <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
-            Keys for sending events, reading this project&apos;s analytics,
-            reading or toggling its feature flags, or full management access.
+            Keys for{' '}
+            {currentProject
+              ? <strong style={{ color: C.text, fontWeight: 600 }}>{currentProject.name}</strong>
+              : 'this project'}
+            {' '}— sending events, reading its analytics, reading or toggling
+            its feature flags, or full management access. Every key works on one
+            project only.
           </div>
         </div>
       </div>
@@ -410,8 +435,29 @@ export function ApiKeySettings({
             onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
           />
           <select
+            value={newKeyProjectId}
+            onChange={(e) => setNewKeyProjectId(e.target.value)}
+            aria-label="Project for the new API key"
+            style={{
+              background: C.surface,
+              border: `1px solid ${C.border}`,
+              borderRadius: 7,
+              padding: '0.55rem 0.875rem',
+              color: C.text,
+              fontSize: 14,
+              cursor: 'pointer',
+              outline: 'none',
+            }}
+          >
+            {!newKeyProjectId && <option value="">Select a project…</option>}
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <select
             value={newKeyScope}
             onChange={(e) => setNewKeyScope(e.target.value)}
+            aria-label="Scope for the new API key"
             style={{
               background: C.surface,
               border: `1px solid ${C.border}`,

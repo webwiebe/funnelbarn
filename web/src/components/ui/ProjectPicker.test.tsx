@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { ProjectPicker, LAST_PROJECT_ID_KEY } from './ProjectPicker'
+import { ProjectPicker } from './ProjectPicker'
+import { LAST_PROJECT_ID_KEY } from '../../lib/selectedProject'
 import type { Project } from '../../lib/api'
 
 // ---------------------------------------------------------------------------
@@ -174,8 +175,19 @@ describe('ProjectPicker — non-project-scoped routes', () => {
     expect(screen.getByText('Gamma')).toBeInTheDocument()
   })
 
-  it('navigates to /dashboard/<id> when picker is on a non-project-scoped route', () => {
+  // /settings has no /:projectId but does act on the selected project, so it
+  // re-reads the selection itself. Bouncing the user to the dashboard here
+  // used to make switching project mid-task impossible without navigating back.
+  it('stays on /settings and only records the selection', () => {
     renderSettings()
+    fireEvent.click(screen.getByRole('button', { name: /switch project/i }))
+    fireEvent.click(screen.getByText('Beta'))
+    expect(mockNavigate).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem(LAST_PROJECT_ID_KEY)).toBe('p2')
+  })
+
+  it('navigates to /dashboard/<id> from a route that is neither scoped nor project-aware', () => {
+    renderSettings('overview')
     fireEvent.click(screen.getByRole('button', { name: /switch project/i }))
     fireEvent.click(screen.getByText('Beta'))
     expect(mockNavigate).toHaveBeenCalledWith('/dashboard/p2')

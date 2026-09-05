@@ -47,7 +47,7 @@ describe('FirstRunWizard', () => {
       status: 'active',
     })
     vi.mocked(api.createApiKey).mockResolvedValue({
-      api_key: { id: 'k1', name: 'My App ingest', scope: 'ingest', created_at: '' },
+      api_key: { id: 'k1', project_id: 'p1', name: 'My App ingest', scope: 'ingest', created_at: '' },
       key: 'fb_testkey',
     })
 
@@ -74,6 +74,9 @@ describe('FirstRunWizard', () => {
     fireEvent.click(screen.getByText('Go to dashboard →'))
 
     expect(onComplete).toHaveBeenCalledTimes(1)
+    // The ingest key must name the project the wizard just created — the
+    // server no longer guesses one when the caller omits it.
+    expect(api.createApiKey).toHaveBeenCalledWith('My App ingest', 'ingest', 'p1')
   })
 
   it('shows error message when API call fails with 422', async () => {

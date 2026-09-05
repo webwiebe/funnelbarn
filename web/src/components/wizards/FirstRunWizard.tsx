@@ -66,7 +66,7 @@ export default function FirstRunWizard({ onComplete }: FirstRunWizardProps) {
       setCreatedProject(p)
       // Also create an ingest key automatically
       try {
-        const keyRes = await api.createApiKey(`${projectName} ingest`, 'ingest')
+        const keyRes = await api.createApiKey(`${projectName} ingest`, 'ingest', p.id)
         setIngestKey(keyRes.key)
         setCreatedKey(keyRes.api_key)
       } catch {

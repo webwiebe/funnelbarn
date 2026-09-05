@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { BarChart2, Layers, Radio, Settings, Flag, Lightbulb, GitBranch, Video, PlugZap, Globe } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { useProjects } from '../../lib/projects'
-import { LAST_PROJECT_ID_KEY } from '../ui/ProjectPicker'
+import { writeLastProjectId } from '../../lib/selectedProject'
 import { api, type Project } from '../../lib/api'
 import { useIambarnWidget, type IambarnConfig } from '../../lib/iambarn-widget'
 import { C } from '../../lib/theme'
@@ -34,11 +34,7 @@ export default function Shell({ children, projectId, projectName, projects: proj
   // last choice instead of defaulting to the alphabetical first.
   useEffect(() => {
     if (!projectId) return
-    try {
-      window.localStorage.setItem(LAST_PROJECT_ID_KEY, projectId)
-    } catch {
-      /* ignore — quota / disabled storage */
-    }
+    writeLastProjectId(projectId)
   }, [projectId])
 
   useEffect(() => {
