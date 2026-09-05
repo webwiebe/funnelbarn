@@ -11,10 +11,12 @@ Namespaces:
 
 ## 1. Backup & Restore (Litestream)
 
-Litestream replicates the SQLite database continuously to S3-compatible storage at `https://s3.wiebe.xyz`, bucket `funnelbarn-sqlite`.
+Litestream replicates the SQLite database continuously to Cloudflare R2, bucket `barn-backups`
+(endpoint `https://354b481466ca4280c50f2fb8cf9e3d45.eu.r2.cloudflarestorage.com`, region `auto`).
+This moved off the self-hosted MinIO at `s3.wiebe.xyz` when that was wound down.
 
 Replica paths per environment:
-- Production: `production/funnelbarn.db`
+- Production: `funnelbarn/litestream/production/funnelbarn.db`
 - Staging: (not configured — no Litestream env vars in staging manifest)
 - Testing: (not configured — no Litestream env vars in testing manifest)
 
@@ -26,19 +28,23 @@ ssh deployer@layer7.wiebe.xyz
 
 litestream snapshots \
   -config /etc/litestream.yml \
-  s3://funnelbarn-sqlite/production/funnelbarn.db
+  s3://barn-backups/funnelbarn/litestream/production/funnelbarn.db
 
 # List WAL segments (for point-in-time inspection):
 litestream wal \
   -config /etc/litestream.yml \
-  s3://funnelbarn-sqlite/production/funnelbarn.db
+  s3://barn-backups/funnelbarn/litestream/production/funnelbarn.db
 ```
 
-You must supply the S3 credentials via environment variables (same values used in the Kubernetes secret):
+You must supply the R2 credentials via environment variables. Litestream reads
+`LITESTREAM_*`, but the values now live under the `FUNNELBARN_R2_*` keys of the
+Kubernetes secret (one token shared with the recordings store):
 
 ```sh
-export LITESTREAM_ACCESS_KEY_ID=<value>
-export LITESTREAM_SECRET_ACCESS_KEY=<value>
+export LITESTREAM_ACCESS_KEY_ID=$(sops -d deploy/k8s/production/secret.yaml \
+  | yq -r '.stringData.FUNNELBARN_R2_ACCESS_KEY_ID')
+export LITESTREAM_SECRET_ACCESS_KEY=$(sops -d deploy/k8s/production/secret.yaml \
+  | yq -r '.stringData.FUNNELBARN_R2_SECRET_ACCESS_KEY')
 ```
 
 ### Restore to latest (or point-in-time)
@@ -57,14 +63,14 @@ Run the restore (from the cluster host or any machine with network access to the
 litestream restore \
   -config /etc/litestream.yml \
   -o /tmp/funnelbarn-restored.db \
-  s3://funnelbarn-sqlite/production/funnelbarn.db
+  s3://barn-backups/funnelbarn/litestream/production/funnelbarn.db
 
 # Restore to a specific point in time (RFC3339):
 litestream restore \
   -config /etc/litestream.yml \
   -timestamp "2026-04-30T12:00:00Z" \
   -o /tmp/funnelbarn-restored.db \
-  s3://funnelbarn-sqlite/production/funnelbarn.db
+  s3://barn-backups/funnelbarn/litestream/production/funnelbarn.db
 ```
 
 ### Validate the restore

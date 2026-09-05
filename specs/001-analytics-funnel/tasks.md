@@ -247,7 +247,7 @@
 - [x] T-194: `deploy/docker/nginx.conf` — SPA routing, gzip
 - [x] T-195: `docker-compose.yml` — service + web with `funnelbarn-data` volume
 - [ ] T-196: Verify `docker compose up` starts cleanly and `GET /api/v1/health` returns 200
-- [ ] T-197: Verify Litestream replication with a real S3-compatible endpoint (MinIO)
+- [ ] T-197: Verify Litestream replication with a real S3-compatible endpoint (Cloudflare R2)
 - [ ] T-198: Publish multi-arch images (`linux/amd64,linux/arm64`) to `ghcr.io/webwiebe/funnelbarn`
 - [ ] T-199: Publish to Docker Hub `funnelbarn/service`
 
@@ -272,7 +272,7 @@
 - [x] T-211: `.github/workflows/binary-release.yml` — auto-tag, build .deb (amd64+arm64), build macOS tarballs (amd64+arm64), GitHub Release, APT dispatch, Homebrew tap update
 - [x] T-212: `.github/workflows/deploy-production.yml` — manual trigger with version + confirmation, deploy to production k8s, BugBarn release marker
 - [ ] T-213: Create GitHub repository `wiebe-xyz/funnelbarn` and push initial code
-- [ ] T-214: Configure GitHub repository secrets: `SOPS_AGE_KEY_TESTING`, `SOPS_AGE_KEY_PRODUCTION`, `RAPID_ROOT_DISPATCH_TOKEN`, `TAP_GITHUB_TOKEN`, `MINIO_*`
+- [ ] T-214: Configure GitHub repository secrets: `SOPS_AGE_KEY_TESTING`, `SOPS_AGE_KEY_PRODUCTION`, `RAPID_ROOT_DISPATCH_TOKEN`, `TAP_GITHUB_TOKEN`, `R2_*`
 - [ ] T-215: Create `webwiebe/homebrew-funnelbarn` GitHub tap repository
 - [ ] T-216: First binary release — verify .deb installs on Debian and Homebrew formula works on macOS
 - [ ] T-217: First deployment to testing environment
@@ -420,7 +420,7 @@
 ## Phase 6 — CI/CD + Infrastructure
 
 - [ ] T-700: Create GitHub repository `wiebe-xyz/funnelbarn` and push initial commit
-- [ ] T-701: Configure GitHub Actions secrets (SOPS age keys, RAPID_ROOT_DISPATCH_TOKEN, TAP_GITHUB_TOKEN, MINIO_*)
+- [ ] T-701: Configure GitHub Actions secrets (SOPS age keys, RAPID_ROOT_DISPATCH_TOKEN, TAP_GITHUB_TOKEN, R2_*)
 - [ ] T-702: Configure GitHub Actions variables (BUGBARN_ENDPOINT)
 - [ ] T-703: Create SOPS secret template files for each environment
 - [ ] T-704: Encrypt testing secret.yaml with age key and commit
@@ -430,7 +430,7 @@
 - [ ] T-708: First deployment to `funnelbarn-testing.wiebe.xyz`
 - [ ] T-709: First deployment to `funnelbarn-staging.wiebe.xyz`
 - [ ] T-710: First deployment to `funnelbarn.wiebe.xyz`
-- [ ] T-711: Verify Litestream replication to MinIO in production
+- [ ] T-711: Verify Litestream replication to R2 in production
 
 ---
 
