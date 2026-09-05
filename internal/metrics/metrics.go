@@ -38,6 +38,16 @@ var (
 		Help: "Total events rejected at the ingest edge, labeled by reason.",
 	}, []string{"reason"})
 
+	// SessionsFingerprinted counts events that arrived without a usable session
+	// ID and were assigned a server-derived fingerprint instead, labeled by
+	// "reason" ("missing" or "invalid"). A client that stops sending session IDs
+	// is otherwise invisible: the events keep landing and only the session
+	// counts go wrong, which took three months to notice once.
+	SessionsFingerprinted = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "funnelbarn_sessions_fingerprinted_total",
+		Help: "Events assigned a server-derived session fingerprint, labeled by reason.",
+	}, []string{"reason"})
+
 	// Worker pipeline
 	EventsProcessed = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "funnelbarn_events_processed_total",

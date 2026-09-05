@@ -13,6 +13,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
+	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/session"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
@@ -69,10 +70,30 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 		warnUnknownEnvironment(payload.Environment, env)
 	}
 
-	// Derive session ID.
+	// The address the visitor actually came from. record.RemoteAddr is the TCP
+	// peer, which behind an ingress or CDN is the proxy, identical for every
+	// visitor; ClientIP is resolved from the forwarding headers at the edge.
+	clientIP := record.ClientIP
+	if clientIP == "" {
+		clientIP = record.RemoteAddr
+	}
+
+	// Derive session ID. A client that sends none of its own — or sends
+	// something that is not one of ours — gets a fingerprint instead.
 	sessionID := payload.SessionID
 	if sessionID == "" || !session.IsValidSessionID(sessionID) {
-		sessionID = session.Fingerprint(record.RemoteAddr, payload.UserAgent, env)
+		reason := "missing"
+		if sessionID != "" {
+			reason = "invalid"
+		}
+		metrics.SessionsFingerprinted.WithLabelValues(reason).Inc()
+		sessionID = session.Fingerprint(session.FingerprintInput{
+			ClientIP:    clientIP,
+			UserAgent:   payload.UserAgent,
+			ProjectSlug: record.ProjectSlug,
+			Environment: env,
+			At:          occurredAt,
+		})
 	}
 
 	// Extract UTM from URL if not provided directly.
@@ -109,11 +130,6 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 	eventID, err := generateUUIDLocal()
 	if err != nil {
 		return repository.Event{}, fmt.Errorf("generate uuid: %w", err)
-	}
-
-	clientIP := record.ClientIP
-	if clientIP == "" {
-		clientIP = record.RemoteAddr
 	}
 
 	event := repository.Event{

@@ -30,6 +30,13 @@ export interface FunnelBarnOptions {
   flushInterval?: number;
   /** Session idle timeout in ms (default: 30 minutes) */
   sessionTimeout?: number;
+  /**
+   * Hard cap on how long one session ID may live, regardless of activity
+   * (default: 24 hours). The idle timeout alone never fires for a tab that
+   * stays busy — a kiosk, a dashboard left open, a page with a polling
+   * heartbeat — so without this a single session ID can run for months.
+   */
+  sessionMaxAge?: number;
   /** Enable session recording by default (default: false). Server config can override. */
   recording?: boolean;
   /** Recording chunk flush interval in ms (default: 10000) */
@@ -102,7 +109,9 @@ interface EventPayload {
 
 const SESSION_KEY = "funnelbarn_sid";
 const SESSION_EXPIRY_KEY = "funnelbarn_sid_exp";
+const SESSION_STARTED_KEY = "funnelbarn_sid_start";
 const SESSION_TIMEOUT_DEFAULT = 30 * 60 * 1000; // 30 min
+const SESSION_MAX_AGE_DEFAULT = 24 * 60 * 60 * 1000; // 24 h
 
 // Per-tab recording continuity. Persisted to sessionStorage on unload so a
 // full-page navigation resumes the same recording instead of starting a new
@@ -139,6 +148,7 @@ export class FunnelBarnClient {
   private readonly environment?: string;
   private readonly flushInterval: number;
   private readonly sessionTimeout: number;
+  private readonly sessionMaxAge: number;
 
   private queue: EventPayload[] = [];
   private flushTimer?: ReturnType<typeof setInterval>;
@@ -187,6 +197,7 @@ export class FunnelBarnClient {
     this.environment = options.environment;
     this.flushInterval = options.flushInterval ?? 5000;
     this.sessionTimeout = options.sessionTimeout ?? SESSION_TIMEOUT_DEFAULT;
+    this.sessionMaxAge = options.sessionMaxAge ?? SESSION_MAX_AGE_DEFAULT;
     this.recordingOptions = options;
 
     this.startFlushTimer();
@@ -430,20 +441,31 @@ export class FunnelBarnClient {
       localStorage.getItem(SESSION_EXPIRY_KEY) ?? "0",
       10
     );
+    const startedAt = parseInt(
+      localStorage.getItem(SESSION_STARTED_KEY) ?? "0",
+      10
+    );
 
-    if (now < expiry) {
+    // The idle window slides on every event, so on its own it never expires a
+    // session that keeps seeing activity. Age it out as well.
+    const idle = now >= expiry;
+    const tooOld = startedAt > 0 && now - startedAt >= this.sessionMaxAge;
+    const existing = localStorage.getItem(SESSION_KEY);
+
+    if (!idle && !tooOld && existing) {
       // Extend session expiry on activity.
       localStorage.setItem(
         SESSION_EXPIRY_KEY,
         String(now + this.sessionTimeout)
       );
-      return localStorage.getItem(SESSION_KEY) ?? this.generateSessionID();
+      return existing;
     }
 
     // New session.
     const id = this.generateSessionID();
     localStorage.setItem(SESSION_KEY, id);
     localStorage.setItem(SESSION_EXPIRY_KEY, String(now + this.sessionTimeout));
+    localStorage.setItem(SESSION_STARTED_KEY, String(now));
     return id;
   }
 

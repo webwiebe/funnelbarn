@@ -65,6 +65,7 @@ await analytics.flush();
 | `projectName` | `string` | — | Project identifier |
 | `flushInterval` | `number` | `5000` | Flush interval in ms |
 | `sessionTimeout` | `number` | `1800000` | Session idle timeout in ms |
+| `sessionMaxAge` | `number` | `86400000` | Hard cap on session lifetime in ms, regardless of activity |
 
 ### `analytics.page(properties?)`
 

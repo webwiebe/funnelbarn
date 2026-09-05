@@ -131,6 +131,48 @@ describe('FunnelBarnClient', () => {
     assert.ok(sid1.length > 0);
   });
 
+  it('session ID rotates once the idle window has passed', async () => {
+    const client = new FunnelBarnClient({
+      apiKey: 'k',
+      endpoint: 'http://localhost:8080',
+      sessionTimeout: 20,
+    });
+    client.track('event1');
+    await client.flush();
+    await new Promise((r) => setTimeout(r, 40));
+    client.track('event2');
+    await client.flush();
+
+    const sid1 = JSON.parse(requests[0].options.body).session_id;
+    const sid2 = JSON.parse(requests[1].options.body).session_id;
+    assert.notEqual(sid1, sid2, 'an idle gap should start a new session');
+  });
+
+  it('session ID rotates at the max age even while activity continues', async () => {
+    // The idle window slides on every event, so a tab that never goes quiet
+    // would otherwise hold one session ID forever (#226).
+    const client = new FunnelBarnClient({
+      apiKey: 'k',
+      endpoint: 'http://localhost:8080',
+      sessionTimeout: 60_000,
+      sessionMaxAge: 30,
+    });
+
+    const ids = new Set();
+    for (let i = 0; i < 6; i++) {
+      client.track(`event${i}`);
+      await client.flush();
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    for (const req of requests) {
+      ids.add(JSON.parse(req.options.body).session_id);
+    }
+    assert.ok(
+      ids.size > 1,
+      'continuous activity past the max age must start a new session'
+    );
+  });
+
   it('posts to the correct endpoint URL', async () => {
     const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'http://example.com' });
     client.track('test');

@@ -336,3 +336,74 @@ func TestProcessRecord_KnownEnvironmentAliasIsCanonicalised(t *testing.T) {
 		t.Errorf("environment: want %q, got %q", environment.Staging, event.Environment)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ProcessRecord — the fallback fingerprint must separate visitors (#226)
+// ---------------------------------------------------------------------------
+
+// fingerprintFor processes one clientless event and returns the session ID the
+// worker minted for it.
+func fingerprintFor(t *testing.T, mutate func(*spool.Record)) string {
+	t.Helper()
+	rec := makeRecord(EventPayload{Name: "pageview"})
+	// Behind an ingress every visitor shares the TCP peer address; the real
+	// client address arrives in a header and is carried on ClientIP.
+	rec.RemoteAddr = "10.42.0.9:38000"
+	rec.ClientIP = "203.0.113.5"
+	mutate(&rec)
+
+	event, err := ProcessRecord(rec)
+	if err != nil {
+		t.Fatalf("ProcessRecord: %v", err)
+	}
+	if len(event.SessionID) != 32 {
+		t.Fatalf("fingerprinted session ID should be 32 chars, got %d: %q", len(event.SessionID), event.SessionID)
+	}
+	return event.SessionID
+}
+
+func TestProcessRecord_FingerprintUsesClientIPNotProxyAddress(t *testing.T) {
+	// Two visitors, same ingress, different real addresses.
+	a := fingerprintFor(t, func(r *spool.Record) { r.ClientIP = "203.0.113.5" })
+	b := fingerprintFor(t, func(r *spool.Record) { r.ClientIP = "198.51.100.7" })
+
+	if a == b {
+		t.Fatal("two visitors behind one ingress share a session ID: the fingerprint is keyed on the proxy address, not the client's")
+	}
+}
+
+func TestProcessRecord_FingerprintFallsBackToRemoteAddr(t *testing.T) {
+	// Records spooled before ClientIP existed carry only RemoteAddr.
+	a := fingerprintFor(t, func(r *spool.Record) { r.ClientIP = ""; r.RemoteAddr = "203.0.113.5:1000" })
+	b := fingerprintFor(t, func(r *spool.Record) { r.ClientIP = ""; r.RemoteAddr = "198.51.100.7:1000" })
+
+	if a == b {
+		t.Error("with no ClientIP the fingerprint should still separate visitors by RemoteAddr")
+	}
+}
+
+func TestProcessRecord_FingerprintRotatesOverTime(t *testing.T) {
+	base := time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC)
+	at := func(ts time.Time) func(*spool.Record) {
+		return func(r *spool.Record) {
+			body, _ := json.Marshal(EventPayload{Name: "pageview", Timestamp: ts})
+			r.BodyBase64 = base64.StdEncoding.EncodeToString(body)
+		}
+	}
+
+	if a, b := fingerprintFor(t, at(base)), fingerprintFor(t, at(base.Add(time.Minute))); a != b {
+		t.Error("events a minute apart should stay in one session")
+	}
+	if a, b := fingerprintFor(t, at(base)), fingerprintFor(t, at(base.Add(90*24*time.Hour))); a == b {
+		t.Fatal("events three months apart share a session ID: the fingerprint never rotates, so one session grows without bound")
+	}
+}
+
+func TestProcessRecord_FingerprintIsScopedToProject(t *testing.T) {
+	a := fingerprintFor(t, func(r *spool.Record) { r.ProjectSlug = "site-one" })
+	b := fingerprintFor(t, func(r *spool.Record) { r.ProjectSlug = "site-two" })
+
+	if a == b {
+		t.Error("two projects sharing an ingress should not share a session ID (sessions.id is a global primary key)")
+	}
+}
