@@ -72,7 +72,7 @@ spec:
             - name: FUNNELBARN_SESSION_TTL_SECONDS
               value: "86400"
             - name: LITESTREAM_REPLICA_PATH
-              value: production/funnelbarn.db
+              value: funnelbarn/litestream/production/funnelbarn.db
             - name: FUNNELBARN_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -190,16 +190,21 @@ spec:
               value: /var/lib/funnelbarn/geoip/GeoLite2-City.mmdb
             - name: FUNNELBARN_GEOIP_ASN_DB
               value: /var/lib/funnelbarn/geoip/GeoLite2-ASN.mmdb
+            # Litestream replicates to R2 (bucket barn-backups) using
+            # funnelbarn's own R2 token, the same credential the recordings
+            # store uses. One token, referenced twice, so a rotation touches a
+            # single pair of secret keys. The former LITESTREAM_* keys held
+            # MinIO credentials and were dropped when s3.wiebe.xyz was retired.
             - name: LITESTREAM_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
                   name: funnelbarn-secrets
-                  key: LITESTREAM_ACCESS_KEY_ID
+                  key: FUNNELBARN_R2_ACCESS_KEY_ID
             - name: LITESTREAM_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
                   name: funnelbarn-secrets
-                  key: LITESTREAM_SECRET_ACCESS_KEY
+                  key: FUNNELBARN_R2_SECRET_ACCESS_KEY
           resources:
             requests:
               cpu: 100m
