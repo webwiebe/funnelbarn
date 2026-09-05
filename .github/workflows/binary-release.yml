@@ -395,10 +395,10 @@ jobs:
           AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
-          # Fail loudly rather than publishing nowhere. Before this job moved to
-          # R2 it uploaded to MinIO, which the read path had already stopped
-          # serving — so the tap advertised tarballs that 404'd and nobody
-          # noticed. A missing secret must break the build, not go quiet again.
+          # Fail loudly rather than publishing nowhere. This job once uploaded
+          # to storage the read path had already stopped serving, so the tap
+          # advertised tarballs that 404'd and nobody noticed for four
+          # releases. A missing secret must break the build, not go quiet.
           for var in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_ENDPOINT_URL R2_BUCKET; do
             if [ -z "${!var}" ]; then
               echo "ERROR: ${var} is empty — the R2_* secrets must be configured on this repo."
