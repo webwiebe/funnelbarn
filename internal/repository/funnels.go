@@ -328,7 +328,7 @@ func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time,
 			q = fmt.Sprintf(`
 				SELECT COUNT(DISTINCT %s)
 				FROM events e
-				JOIN sessions s ON s.id = e.session_id
+				JOIN sessions s ON s.id = e.session_id AND s.project_id = e.project_id
 				WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?%s`,
 				distinctCol, extraWhere)
 		} else {

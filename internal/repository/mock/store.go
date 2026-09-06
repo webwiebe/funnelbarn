@@ -30,7 +30,7 @@ func (s *Store) UpdateSegment(_ context.Context, seg repository.Segment) (reposi
 	return seg, nil
 }
 func (s *Store) DeleteSegment(_ context.Context, _ string) error { return nil }
-func (s *Store) UpsertSessionSignals(_ context.Context, _ string, _ repository.SessionSignals) error {
+func (s *Store) UpsertSessionSignals(_ context.Context, _, _ string, _ repository.SessionSignals) error {
 	return nil
 }
 

@@ -39,7 +39,7 @@ func (f *fakeEventStore) UpsertSession(_ context.Context, sess repository.Sessio
 	return nil
 }
 
-func (f *fakeEventStore) UpsertSessionSignals(_ context.Context, _ string, _ repository.SessionSignals) error {
+func (f *fakeEventStore) UpsertSessionSignals(_ context.Context, _, _ string, _ repository.SessionSignals) error {
 	return nil
 }
 

@@ -413,26 +413,32 @@ func (s *Store) AnalyzeABTest(ctx context.Context, t repository.ABTest, from, to
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
 
+// sessionKey mirrors the real table's primary key. Keyed on ID alone the fake
+// would collapse two projects' sessions into one row and hide exactly the bug
+// the composite key exists to prevent.
+func sessionKey(projectID, id string) string { return projectID + "\x00" + id }
+
 func (s *Store) UpsertSession(ctx context.Context, sess repository.Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	existing, ok := s.sessions[sess.ID]
+	key := sessionKey(sess.ProjectID, sess.ID)
+	existing, ok := s.sessions[key]
 	if ok {
 		existing.LastSeenAt = sess.LastSeenAt
 		existing.EventCount++
 		existing.ExitURL = sess.ExitURL
-		s.sessions[sess.ID] = existing
+		s.sessions[key] = existing
 	} else {
 		sess.EventCount = 1
-		s.sessions[sess.ID] = sess
+		s.sessions[key] = sess
 	}
 	return nil
 }
 
-func (s *Store) SessionByID(ctx context.Context, id string) (repository.Session, error) {
+func (s *Store) SessionByID(ctx context.Context, projectID, id string) (repository.Session, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	sess, ok := s.sessions[id]
+	sess, ok := s.sessions[sessionKey(projectID, id)]
 	if !ok {
 		return repository.Session{}, sql.ErrNoRows
 	}

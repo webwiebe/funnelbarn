@@ -133,7 +133,7 @@ type OverviewRepo interface {
 // SessionRepo is the persistence port for sessions.
 type SessionRepo interface {
 	UpsertSession(ctx context.Context, sess repository.Session) error
-	SessionByID(ctx context.Context, id string) (repository.Session, error)
+	SessionByID(ctx context.Context, projectID, id string) (repository.Session, error)
 	ListSessions(ctx context.Context, projectID string, limit, offset int) ([]repository.Session, error)
 	ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error)
 }
@@ -198,5 +198,5 @@ type EventPersister interface {
 	GetEventByIngestID(ctx context.Context, ingestID string) (*repository.Event, error)
 	InsertEvent(ctx context.Context, e repository.Event) error
 	UpsertSession(ctx context.Context, sess repository.Session) error
-	UpsertSessionSignals(ctx context.Context, sessionID string, signals repository.SessionSignals) error
+	UpsertSessionSignals(ctx context.Context, projectID, sessionID string, signals repository.SessionSignals) error
 }

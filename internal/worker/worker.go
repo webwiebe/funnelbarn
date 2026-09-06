@@ -180,7 +180,7 @@ type EventPersister interface {
 	GetEventByIngestID(ctx context.Context, ingestID string) (*repository.Event, error)
 	InsertEvent(ctx context.Context, e repository.Event) error
 	UpsertSession(ctx context.Context, sess repository.Session) error
-	UpsertSessionSignals(ctx context.Context, sessionID string, signals repository.SessionSignals) error
+	UpsertSessionSignals(ctx context.Context, projectID, sessionID string, signals repository.SessionSignals) error
 }
 
 // ErrNoProject means the event carries no project ID. events.project_id is
@@ -262,7 +262,7 @@ func PersistEvent(ctx context.Context, store EventPersister, event repository.Ev
 	// Persist device/browser signals if present (first event of session only).
 	if len(event.SessionSignalsRaw) > 0 {
 		signals := parseSessionSignals(event.SessionSignalsRaw)
-		if err := store.UpsertSessionSignals(ctx, event.SessionID, signals); err != nil {
+		if err := store.UpsertSessionSignals(ctx, event.ProjectID, event.SessionID, signals); err != nil {
 			slog.Warn("upsert session signals failed", "err", err, "session_id", event.SessionID)
 		}
 	}

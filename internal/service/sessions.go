@@ -21,8 +21,8 @@ func (svc *SessionService) UpsertSession(ctx context.Context, sess repository.Se
 	return svc.store.UpsertSession(ctx, sess)
 }
 
-func (svc *SessionService) SessionByID(ctx context.Context, id string) (repository.Session, error) {
-	return svc.store.SessionByID(ctx, id)
+func (svc *SessionService) SessionByID(ctx context.Context, projectID, id string) (repository.Session, error) {
+	return svc.store.SessionByID(ctx, projectID, id)
 }
 
 func (svc *SessionService) ListSessions(ctx context.Context, projectID string, limit, offset int) ([]repository.Session, error) {

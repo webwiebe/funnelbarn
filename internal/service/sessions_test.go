@@ -32,7 +32,7 @@ func TestSessionService_UpsertAndGet(t *testing.T) {
 	err = sessSvc.UpsertSession(ctx, sess)
 	require.NoError(t, err)
 
-	got, err := sessSvc.SessionByID(ctx, "sess-001")
+	got, err := sessSvc.SessionByID(ctx, p.ID, "sess-001")
 	require.NoError(t, err)
 	assert.Equal(t, "sess-001", got.ID)
 	assert.Equal(t, p.ID, got.ProjectID)

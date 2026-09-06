@@ -52,7 +52,7 @@ type Querier interface {
 	ListSegments(ctx context.Context, projectID string) ([]Segment, error)
 	UpdateSegment(ctx context.Context, seg Segment) (Segment, error)
 	DeleteSegment(ctx context.Context, id string) error
-	UpsertSessionSignals(ctx context.Context, sessionID string, signals SessionSignals) error
+	UpsertSessionSignals(ctx context.Context, projectID, sessionID string, signals SessionSignals) error
 
 	// A/B Tests
 	CreateABTest(ctx context.Context, t ABTest) (ABTest, error)
@@ -62,7 +62,7 @@ type Querier interface {
 
 	// Sessions
 	UpsertSession(ctx context.Context, s Session) error
-	SessionByID(ctx context.Context, id string) (Session, error)
+	SessionByID(ctx context.Context, projectID, id string) (Session, error)
 	ListSessions(ctx context.Context, projectID string, limit, offset int) ([]Session, error)
 	ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error)
 	AnonymizeSessionGeo(ctx context.Context, sessionID string) error

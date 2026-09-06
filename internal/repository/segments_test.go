@@ -105,10 +105,10 @@ func TestStore_UpsertSessionSignals(t *testing.T) {
 		BrowserTimezone: "Europe/Amsterdam",
 		CPUCores:        &cores,
 	}
-	require.NoError(t, s.UpsertSessionSignals(ctx, "sess-123", signals))
+	require.NoError(t, s.UpsertSessionSignals(ctx, p.ID, "sess-123", signals))
 
 	// Second upsert should be a no-op (signals_collected = 1 guard).
 	w2 := 800
 	signals2 := repository.SessionSignals{ScreenWidth: &w2}
-	require.NoError(t, s.UpsertSessionSignals(ctx, "sess-123", signals2))
+	require.NoError(t, s.UpsertSessionSignals(ctx, p.ID, "sess-123", signals2))
 }

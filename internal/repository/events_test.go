@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
@@ -337,7 +338,7 @@ func TestSessionByID(t *testing.T) {
 
 	insertSession(t, s, p.ID, "sess-lookup", time.Now().UTC())
 
-	sess, err := s.SessionByID(ctx, "sess-lookup")
+	sess, err := s.SessionByID(ctx, p.ID, "sess-lookup")
 	require.NoError(t, err)
 	require.Equal(t, "sess-lookup", sess.ID)
 }
@@ -802,4 +803,135 @@ func TestStore_DistinctEventNames(t *testing.T) {
 	names, err := s.DistinctEventNames(ctx, p.ID)
 	require.NoError(t, err)
 	require.Len(t, names, 2)
+}
+
+// The funnel engine joins events to sessions for the segment filters that read
+// session columns (session_returning, and stored rules on session fields).
+// Keyed on session_id alone, that join reached ANOTHER project's session row
+// and filtered this project's funnel on a visitor who was never in it. The join
+// now carries project_id.
+func TestAnalyzeFunnel_SegmentJoinIsProjectScoped(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	pa, err := s.CreateProject(ctx, "Funnel A", "funnel-scope-a")
+	require.NoError(t, err)
+	pb, err := s.CreateProject(ctx, "Funnel B", "funnel-scope-b")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	const shared = "shared-session-id"
+
+	// Project A's visitor is new: one event, so event_count = 1.
+	insertEvent(t, s, pa.ID, shared, "page_view", "https://a.example/")
+	require.NoError(t, s.UpsertSession(ctx, repository.Session{
+		ID: shared, ProjectID: pa.ID, FirstSeenAt: now, LastSeenAt: now,
+	}))
+
+	// Project B's visitor, under the SAME session ID, is returning: three
+	// events, so event_count > 1.
+	require.NoError(t, s.UpsertSession(ctx, repository.Session{
+		ID: shared, ProjectID: pb.ID, FirstSeenAt: now, LastSeenAt: now,
+	}))
+	for range 2 {
+		require.NoError(t, s.UpsertSession(ctx, repository.Session{
+			ID: shared, ProjectID: pb.ID, FirstSeenAt: now, LastSeenAt: now,
+		}))
+	}
+
+	f, err := s.CreateFunnel(ctx, repository.Funnel{
+		ProjectID: pa.ID,
+		Name:      "A's funnel",
+		Steps:     []repository.FunnelStep{{EventName: "page_view"}},
+	})
+	require.NoError(t, err)
+
+	from, to := now.Add(-time.Hour), now.Add(time.Hour)
+
+	// Segmenting A's funnel to new visitors must find A's own session.
+	newVisitors, err := s.AnalyzeFunnel(ctx, f, from, to,
+		&repository.SegmentFilter{Field: "session_returning", Value: "false"})
+	require.NoError(t, err)
+	require.Len(t, newVisitors, 1)
+	assert.Equal(t, int64(1), newVisitors[0].Count,
+		"project A's own new-visitor session was not counted")
+
+	// Segmenting to returning visitors must find nothing: A has none. A count
+	// of 1 here means the join read project B's session row.
+	returning, err := s.AnalyzeFunnel(ctx, f, from, to,
+		&repository.SegmentFilter{Field: "session_returning", Value: "true"})
+	require.NoError(t, err)
+	require.Len(t, returning, 1)
+	assert.Equal(t, int64(0), returning[0].Count,
+		"the segment join reached another project's session row")
+}
+
+// SessionByID resolves within a project. Two projects can hold the same session
+// ID, so an id-only lookup returned whichever row the scan reached first.
+func TestSessionByID_IsProjectScoped(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	pa, err := s.CreateProject(ctx, "Look A", "lookup-a")
+	require.NoError(t, err)
+	pb, err := s.CreateProject(ctx, "Look B", "lookup-b")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	require.NoError(t, s.UpsertSession(ctx, repository.Session{
+		ID: "dup", ProjectID: pa.ID, FirstSeenAt: now, LastSeenAt: now, EntryURL: "https://a.example/",
+	}))
+	require.NoError(t, s.UpsertSession(ctx, repository.Session{
+		ID: "dup", ProjectID: pb.ID, FirstSeenAt: now, LastSeenAt: now, EntryURL: "https://b.example/",
+	}))
+
+	gotA, err := s.SessionByID(ctx, pa.ID, "dup")
+	require.NoError(t, err)
+	assert.Equal(t, "https://a.example/", gotA.EntryURL)
+
+	gotB, err := s.SessionByID(ctx, pb.ID, "dup")
+	require.NoError(t, err)
+	assert.Equal(t, "https://b.example/", gotB.EntryURL)
+
+	// A project that does not hold the session gets nothing, not another
+	// project's row.
+	_, err = s.SessionByID(ctx, "no-such-project", "dup")
+	assert.Error(t, err)
+}
+
+// Device signals are per project too: one project's screen size is not another's.
+func TestUpsertSessionSignals_IsProjectScoped(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	pa, err := s.CreateProject(ctx, "Sig A", "signals-a")
+	require.NoError(t, err)
+	pb, err := s.CreateProject(ctx, "Sig B", "signals-b")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	for _, pid := range []string{pa.ID, pb.ID} {
+		require.NoError(t, s.UpsertSession(ctx, repository.Session{
+			ID: "dup-sig", ProjectID: pid, FirstSeenAt: now, LastSeenAt: now,
+		}))
+	}
+
+	w := 1920
+	require.NoError(t, s.UpsertSessionSignals(ctx, pa.ID, "dup-sig",
+		repository.SessionSignals{ScreenWidth: &w}))
+
+	// Project B's row must be untouched, so its own signals still land.
+	w2 := 390
+	require.NoError(t, s.UpsertSessionSignals(ctx, pb.ID, "dup-sig",
+		repository.SessionSignals{ScreenWidth: &w2}))
+
+	sessions, err := s.ListSessions(ctx, pb.ID, 10, 0)
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+
+	// Re-applying to A must now be a no-op (signals_collected guard), proving
+	// the first write landed on A and not on B.
+	w3 := 111
+	require.NoError(t, s.UpsertSessionSignals(ctx, pa.ID, "dup-sig",
+		repository.SessionSignals{ScreenWidth: &w3}))
 }
