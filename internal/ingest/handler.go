@@ -257,6 +257,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ContentLength: int64(len(body)),
 		BodyBase64:    base64.StdEncoding.EncodeToString(body),
 		ProjectSlug:   projectSlug,
+		UserAgent:     r.Header.Get("User-Agent"),
 	}
 
 	select {

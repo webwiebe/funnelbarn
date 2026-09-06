@@ -70,3 +70,28 @@ func TestCanonical(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeEvent(t *testing.T) {
+	// An event with no environment is filed as production. Deployment config
+	// keeps "" (see TestNormalize) because the API branches on the unset state;
+	// an event has no such state and a blank one is invisible to every filter.
+	if got := NormalizeEvent(""); got != Production {
+		t.Errorf("NormalizeEvent(%q) = %q, want %q", "", got, Production)
+	}
+	if got := NormalizeEvent("   "); got != Production {
+		t.Errorf("NormalizeEvent(%q) = %q, want %q", "   ", got, Production)
+	}
+	// Everything else behaves exactly as Normalize does.
+	for _, s := range []string{"prod", "STG", "qa", "local", "feat-branch", "staging"} {
+		if got, want := NormalizeEvent(s), Normalize(s); got != want {
+			t.Errorf("NormalizeEvent(%q) = %q, want %q", s, got, want)
+		}
+	}
+	// And it always lands on a canonical value.
+	for _, s := range []string{"", "prod", "acc", "uat", "develop", "nonsense"} {
+		got := NormalizeEvent(s)
+		if Normalize(got) != got {
+			t.Errorf("NormalizeEvent(%q) = %q, which is not canonical", s, got)
+		}
+	}
+}
