@@ -657,6 +657,51 @@ func TestStore_UpsertSession_Update(t *testing.T) {
 	assert.Equal(t, 2, got.EventCount)
 }
 
+// The whole point of the composite key: two projects emitting the same session
+// ID get two rows, and each project's counts move independently. Keyed on id
+// alone these upserts landed on one row whose project_id was decided by write
+// order, and 54% of the events table was affected.
+func TestStore_UpsertSession_SameIDInTwoProjects(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	pa, err := s.CreateProject(ctx, "A", "proj-collide-a")
+	require.NoError(t, err)
+	pc, err := s.CreateProject(ctx, "C", "proj-collide-c")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	base := repository.Session{ID: "shared-id", FirstSeenAt: now, LastSeenAt: now}
+
+	a := base
+	a.ProjectID = pa.ID
+	a.EntryURL = "https://a.example/landing"
+	require.NoError(t, s.UpsertSession(ctx, a))
+
+	c := base
+	c.ProjectID = pc.ID
+	c.EntryURL = "https://c.example/home"
+	require.NoError(t, s.UpsertSession(ctx, c))
+
+	// Two more events for A only.
+	a.LastSeenAt = now.Add(time.Minute)
+	require.NoError(t, s.UpsertSession(ctx, a))
+	require.NoError(t, s.UpsertSession(ctx, a))
+
+	forA, err := s.ListSessions(ctx, pa.ID, 10, 0)
+	require.NoError(t, err)
+	require.Len(t, forA, 1)
+	assert.Equal(t, 3, forA[0].EventCount, "project A should count its own three events")
+	assert.Equal(t, "https://a.example/landing", forA[0].EntryURL)
+
+	forC, err := s.ListSessions(ctx, pc.ID, 10, 0)
+	require.NoError(t, err)
+	require.Len(t, forC, 1, "project C must not have been overwritten by A")
+	assert.Equal(t, 1, forC[0].EventCount, "project C should count only its own event")
+	assert.Equal(t, "https://c.example/home", forC[0].EntryURL,
+		"project C's entry URL was overwritten by project A")
+}
+
 // --------------------------------------------------------------------------
 // Users
 // --------------------------------------------------------------------------
