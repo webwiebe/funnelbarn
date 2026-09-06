@@ -205,8 +205,39 @@ func (s *Store) ListBrokenRecordings(ctx context.Context) ([]Recording, error) {
 	return out, rows.Err()
 }
 
-// DeleteRecording deletes a recording row by ID.
+// ListBotRecordings returns recordings flagged as bot traffic.
+// last_chunk_index/chunk_count are returned so the caller can delete the
+// matching R2 chunk objects, which no SQL delete can reach.
+func (s *Store) ListBotRecordings(ctx context.Context) ([]Recording, error) {
+	const q = `
+		SELECT id, project_id, last_chunk_index, chunk_count
+		FROM recordings
+		WHERE is_bot = 1
+		LIMIT 500`
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Recording
+	for rows.Next() {
+		var r Recording
+		if err := rows.Scan(&r.ID, &r.ProjectID, &r.LastChunkIndex, &r.ChunkCount); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// DeleteRecording deletes a recording row by ID, along with its trace links.
+// recording_traces has no foreign key to recordings (it is written by the
+// ingest path before the recording row is guaranteed to exist), so nothing
+// cascades — every recording deleted before this left its trace rows behind.
 func (s *Store) DeleteRecording(ctx context.Context, id string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM recording_traces WHERE recording_id = ?`, id); err != nil {
+		return err
+	}
 	_, err := s.db.ExecContext(ctx, `DELETE FROM recordings WHERE id = ?`, id)
 	return err
 }

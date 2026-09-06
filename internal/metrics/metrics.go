@@ -103,6 +103,11 @@ var (
 		Help: "Total geo lookups that resolved a country.",
 	})
 
+	RecordingChunksDropped = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "funnelbarn_recording_chunks_dropped_total",
+		Help: "Recording chunks refused at ingest because the user agent is a bot.",
+	})
+
 	// External call instrumentation (R2 storage, IAMBarn, OIDC).
 	R2Requests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "funnelbarn_r2_requests_total",

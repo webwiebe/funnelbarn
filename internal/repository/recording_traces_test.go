@@ -154,3 +154,37 @@ func TestRecordingTraces_InsertEmptyNoop(t *testing.T) {
 
 	require.NoError(t, s.InsertTraceLinks(ctx, p.ID, "sess-x", "rec-x", nil))
 }
+
+// recording_traces has no foreign key to recordings, so nothing cascades when a
+// recording is deleted. DeleteRecording removes the links itself; without that,
+// every retention purge left its trace rows behind forever.
+func TestRecordingTraces_DeletedWithTheirRecording(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	p, err := s.CreateProject(ctx, "TraceCascade", "trace-cascade")
+	require.NoError(t, err)
+
+	start := time.Now().UTC().Truncate(time.Second)
+	for _, id := range []string{"rec-gone", "rec-stays"} {
+		rec := makeRecording(p.ID, "sess-"+id, start)
+		rec.ID = id
+		require.NoError(t, s.UpsertRecording(ctx, rec))
+		require.NoError(t, s.InsertTraceLinks(ctx, p.ID, "sess-"+id, id, []repository.TraceLink{
+			{TraceID: "trace-" + id, SpanID: "span1", URL: "https://example.com", OccurredAt: start},
+		}))
+	}
+
+	require.NoError(t, s.DeleteRecording(ctx, "rec-gone"))
+
+	gone, err := s.TracesForRecording(ctx, "rec-gone")
+	require.NoError(t, err)
+	assert.Empty(t, gone, "trace links outlived their recording")
+	_, found, err := s.LookupTrace(ctx, p.ID, "trace-rec-gone")
+	require.NoError(t, err)
+	assert.False(t, found, "a deleted recording is still reachable by trace_id")
+
+	stays, err := s.TracesForRecording(ctx, "rec-stays")
+	require.NoError(t, err)
+	assert.Len(t, stays, 1, "an unrelated recording's traces were deleted too")
+}
