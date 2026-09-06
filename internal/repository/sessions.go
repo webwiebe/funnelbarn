@@ -38,6 +38,10 @@ type Session struct {
 
 // UpsertSession inserts or updates a session record. Geo fields are written
 // on INSERT only; subsequent updates to the same session preserve them.
+//
+// The conflict target is (project_id, id), matching the primary key. Keyed on
+// id alone, two projects that emitted the same session ID upserted the same
+// row and its project_id was decided by whichever wrote last.
 func (s *Store) UpsertSession(ctx context.Context, sess Session) error {
 	const q = `
 		INSERT INTO sessions (
@@ -47,7 +51,7 @@ func (s *Store) UpsertSession(ctx context.Context, sess Session) error {
 			device_type, country_code, environment,
 			ip, city, region, latitude, longitude, timezone, asn_org, connection_class
 		) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
+		ON CONFLICT(project_id, id) DO UPDATE SET
 			last_seen_at = excluded.last_seen_at,
 			event_count  = event_count + 1,
 			exit_url     = excluded.exit_url`
