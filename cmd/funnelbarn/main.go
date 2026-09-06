@@ -596,6 +596,24 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 					slog.Info("purged stale auto flags", "count", nf, "before", cutoff.Format(time.DateOnly))
 				}
 			}
+			// Unreachable rows are invisible to the product by construction —
+			// every read is project-scoped — so nothing surfaces them except a
+			// count. The 344 events that prompted this check went unnoticed for
+			// two months. Error level so it reaches BugBarn as an issue: with
+			// foreign keys enforced and the project_id triggers in place, a
+			// non-zero count means a guard was bypassed.
+			if orphans, err := store.CountOrphanedRows(purgeCtx); err != nil {
+				tracing.RecordError(purgeSpan, err)
+				slog.Error("count orphaned rows", "err", err)
+			} else if orphans.Total() > 0 {
+				slog.Error("rows exist under a project_id that matches no project; they are unreachable by every query",
+					"err", errors.New("orphaned rows present"), "handled", false,
+					"events", orphans.Events,
+					"sessions", orphans.Sessions,
+					"funnels", orphans.Funnels,
+				)
+			}
+
 			if recordings != nil {
 				retentionDays := 90 // default
 				if v, ok, _ := store.GetInstanceSetting(purgeCtx, "recording_retention_days"); ok {

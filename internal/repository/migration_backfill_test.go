@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"testing"
@@ -100,5 +101,209 @@ func TestMigration00031_IsIdempotent(t *testing.T) {
 
 	if got := countRows(t, db, `SELECT COUNT(*) FROM events WHERE id = 'e-dev' AND environment = 'development'`); got != 1 {
 		t.Errorf("re-running the backfill changed an already-tagged row")
+	}
+}
+
+// 00033 deletes rows whose project_id matches no project. Those rows are
+// unreachable by every query (all reads are project-scoped) but still indexed
+// and backed up.
+func TestMigration00033_DeletesOrphanedRows(t *testing.T) {
+	db := openAtVersion(t, 32)
+
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('p1', 'P1', 'p1')`)
+	// Real rows, which must survive.
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at)
+		VALUES ('e-ok', 'p1', 's-ok', 'pageview', 'i-ok', CURRENT_TIMESTAMP)`)
+	mustExec(t, db, `INSERT INTO sessions (id, project_id, first_seen_at, last_seen_at)
+		VALUES ('s-ok', 'p1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	mustExec(t, db, `INSERT INTO funnels (id, project_id, name) VALUES ('f-ok', 'p1', 'Checkout')`)
+	mustExec(t, db, `INSERT INTO funnel_steps (id, funnel_id, step_order, event_name)
+		VALUES ('fs-ok', 'f-ok', 0, 'pageview')`)
+
+	// Orphans, written in the window before foreign keys were enforced. Foreign
+	// keys are on now, so they have to be inserted with enforcement off — which
+	// is exactly how they got there.
+	mustExec(t, db, `PRAGMA foreign_keys = OFF`)
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at)
+		VALUES ('e-orphan', '', 's-orphan', 'pageview', 'i-orphan', CURRENT_TIMESTAMP)`)
+	mustExec(t, db, `INSERT INTO sessions (id, project_id, first_seen_at, last_seen_at)
+		VALUES ('s-orphan', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	mustExec(t, db, `INSERT INTO funnels (id, project_id, name) VALUES ('f-orphan', '', 'Ghost')`)
+	mustExec(t, db, `INSERT INTO funnel_steps (id, funnel_id, step_order, event_name)
+		VALUES ('fs-orphan', 'f-orphan', 0, 'pageview')`)
+	mustExec(t, db, `PRAGMA foreign_keys = ON`)
+
+	if err := goose.UpTo(db, "migrations", 33); err != nil {
+		t.Fatalf("goose up to 33: %v", err)
+	}
+
+	for _, c := range []struct {
+		name  string
+		query string
+		want  int
+	}{
+		{"orphaned events", `SELECT COUNT(*) FROM events WHERE project_id = ''`, 0},
+		{"orphaned sessions", `SELECT COUNT(*) FROM sessions WHERE project_id = ''`, 0},
+		{"orphaned funnels", `SELECT COUNT(*) FROM funnels WHERE project_id = ''`, 0},
+		{"orphaned funnel steps", `SELECT COUNT(*) FROM funnel_steps WHERE funnel_id = 'f-orphan'`, 0},
+		{"real event", `SELECT COUNT(*) FROM events WHERE id = 'e-ok'`, 1},
+		{"real session", `SELECT COUNT(*) FROM sessions WHERE id = 's-ok'`, 1},
+		{"real funnel", `SELECT COUNT(*) FROM funnels WHERE id = 'f-ok'`, 1},
+		{"real funnel step", `SELECT COUNT(*) FROM funnel_steps WHERE id = 'fs-ok'`, 1},
+	} {
+		if got := countRows(t, db, c.query); got != c.want {
+			t.Errorf("%s: want %d, got %d", c.name, c.want, got)
+		}
+	}
+}
+
+// De-duplication is scoped to funnels that are identical in every respect. Two
+// funnels that merely share a name are different funnels and must survive —
+// production has exactly such a pair ("Funnel Analysis Engagement", 4 steps and
+// 3 steps).
+func TestMigration00033_DeduplicatesOnlyIdenticalFunnels(t *testing.T) {
+	db := openAtVersion(t, 32)
+
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('p1', 'P1', 'p1')`)
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('p2', 'P2', 'p2')`)
+
+	addFunnel := func(id, project, name, created string, steps ...string) {
+		t.Helper()
+		mustExec(t, db, `INSERT INTO funnels (id, project_id, name, created_at) VALUES (?, ?, ?, ?)`,
+			id, project, name, created)
+		for i, ev := range steps {
+			mustExec(t, db, `INSERT INTO funnel_steps (id, funnel_id, step_order, event_name) VALUES (?, ?, ?, ?)`,
+				id+"-s"+ev, id, i, ev)
+		}
+	}
+
+	// Identical pair — the older one survives.
+	addFunnel("f-dup-old", "p1", "Login to Dashboard", "2026-06-01 10:00:00", "login", "dashboard_view")
+	addFunnel("f-dup-new", "p1", "Login to Dashboard", "2026-07-01 10:00:00", "login", "dashboard_view")
+	// Same name, different steps — both survive.
+	addFunnel("f-diff-a", "p1", "Funnel Analysis Engagement", "2026-06-01 10:00:00", "a", "b", "c", "d")
+	addFunnel("f-diff-b", "p1", "Funnel Analysis Engagement", "2026-07-01 10:00:00", "a", "b", "c")
+	// Same name and steps but a different project — both survive.
+	addFunnel("f-p1", "p1", "Registration", "2026-06-01 10:00:00", "sign_up")
+	addFunnel("f-p2", "p2", "Registration", "2026-06-01 10:00:00", "sign_up")
+
+	if err := goose.UpTo(db, "migrations", 33); err != nil {
+		t.Fatalf("goose up to 33: %v", err)
+	}
+
+	for _, c := range []struct {
+		id   string
+		want int
+	}{
+		{"f-dup-old", 1}, {"f-dup-new", 0},
+		{"f-diff-a", 1}, {"f-diff-b", 1},
+		{"f-p1", 1}, {"f-p2", 1},
+	} {
+		if got := countRows(t, db, `SELECT COUNT(*) FROM funnels WHERE id = ?`, c.id); got != c.want {
+			t.Errorf("funnel %s: want %d row(s), got %d", c.id, c.want, got)
+		}
+	}
+	// The losing funnel's steps go with it.
+	if got := countRows(t, db, `SELECT COUNT(*) FROM funnel_steps WHERE funnel_id = 'f-dup-new'`); got != 0 {
+		t.Errorf("steps of the de-duplicated funnel survived: %d", got)
+	}
+}
+
+// The migration ships in the image and runs at every process start.
+func TestMigration00033_IsIdempotent(t *testing.T) {
+	db := openAtVersion(t, 33)
+
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('p1', 'P1', 'p1')`)
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at)
+		VALUES ('e-ok', 'p1', 's-ok', 'pageview', 'i-ok', CURRENT_TIMESTAMP)`)
+	mustExec(t, db, `INSERT INTO funnels (id, project_id, name) VALUES ('f-ok', 'p1', 'Checkout')`)
+
+	mustExec(t, db, `DELETE FROM events WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = events.project_id)`)
+	mustExec(t, db, `DELETE FROM funnels WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = funnels.project_id)`)
+
+	if got := countRows(t, db, `SELECT COUNT(*) FROM events WHERE id = 'e-ok'`); got != 1 {
+		t.Error("re-running the orphan delete removed a valid event")
+	}
+	if got := countRows(t, db, `SELECT COUNT(*) FROM funnels WHERE id = 'f-ok'`); got != 1 {
+		t.Error("re-running the orphan delete removed a valid funnel")
+	}
+}
+
+// The triggers are the storage-layer guard NOT NULL never provided: NOT NULL
+// accepts the empty string, and the foreign key was not enforced when these
+// rows were written.
+func TestMigration00033_RejectsEmptyProjectID(t *testing.T) {
+	db := openAtVersion(t, 33)
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('p1', 'P1', 'p1')`)
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at)
+		VALUES ('e-ok', 'p1', 's-ok', 'pageview', 'i-ok', CURRENT_TIMESTAMP)`)
+	mustExec(t, db, `INSERT INTO sessions (id, project_id, first_seen_at, last_seen_at)
+		VALUES ('s-ok', 'p1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+
+	// Even with foreign keys off — the state that let the 344 rows in — the
+	// empty string is refused.
+	mustExec(t, db, `PRAGMA foreign_keys = OFF`)
+	for _, c := range []struct {
+		name  string
+		query string
+	}{
+		{"insert event", `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at)
+			VALUES ('e-bad', '', 's', 'pageview', 'i-bad', CURRENT_TIMESTAMP)`},
+		{"update event", `UPDATE events SET project_id = '' WHERE id = 'e-ok'`},
+		{"insert session", `INSERT INTO sessions (id, project_id, first_seen_at, last_seen_at)
+			VALUES ('s-bad', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`},
+		{"update session", `UPDATE sessions SET project_id = '' WHERE id = 's-ok'`},
+	} {
+		if _, err := db.Exec(c.query); err == nil {
+			t.Errorf("%s with an empty project_id was accepted", c.name)
+		}
+	}
+	mustExec(t, db, `PRAGMA foreign_keys = ON`)
+
+	// A real project_id is unaffected.
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at)
+		VALUES ('e-good', 'p1', 's-ok', 'pageview', 'i-good', CURRENT_TIMESTAMP)`)
+	if got := countRows(t, db, `SELECT COUNT(*) FROM events WHERE id = 'e-good'`); got != 1 {
+		t.Error("the trigger rejected a valid insert")
+	}
+}
+
+// CountOrphanedRows is what would have surfaced the 344 unreachable events in
+// June rather than in an audit two months later. It runs on the maintenance
+// cycle and logs at error level, so a non-zero count reaches BugBarn.
+func TestStore_CountOrphanedRows(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "orphans.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	if _, err := s.CreateProject(ctx, "Orphans", "orphans"); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	counts, err := s.CountOrphanedRows(ctx)
+	if err != nil {
+		t.Fatalf("count orphaned rows: %v", err)
+	}
+	if counts.Total() != 0 {
+		t.Fatalf("fresh database reports %d orphans", counts.Total())
+	}
+
+	// Getting an orphan in takes both guards off — which is what the June 2026
+	// window effectively was: no foreign-key enforcement and no trigger.
+	mustExec(t, s.db, `PRAGMA foreign_keys = OFF`)
+	mustExec(t, s.db, `DROP TRIGGER IF EXISTS events_project_id_not_empty_insert`)
+	mustExec(t, s.db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at)
+		VALUES ('e-orphan', '', 's-orphan', 'pageview', 'i-orphan', CURRENT_TIMESTAMP)`)
+	mustExec(t, s.db, `INSERT INTO sessions (id, project_id, first_seen_at, last_seen_at)
+		VALUES ('s-orphan', 'no-such-project', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+
+	counts, err = s.CountOrphanedRows(ctx)
+	if err != nil {
+		t.Fatalf("count orphaned rows: %v", err)
+	}
+	if counts.Events != 1 || counts.Sessions != 1 || counts.Funnels != 0 || counts.Total() != 2 {
+		t.Errorf("counts = %+v (total %d), want 1 event, 1 session, 0 funnels", counts, counts.Total())
 	}
 }
