@@ -29,6 +29,10 @@ type Record struct {
 	ContentLength int64     `json:"contentLength,omitempty"`
 	BodyBase64    string    `json:"bodyBase64"`
 	ProjectSlug   string    `json:"projectSlug,omitempty"`
+	// UserAgent is the request's User-Agent header, kept so the worker can fall
+	// back to it when the JSON payload carries no user_agent of its own. Without
+	// it, browser/os/device_type stay empty for every SDK that omits the field.
+	UserAgent string `json:"userAgent,omitempty"`
 }
 
 // cursor tracks the byte offset of the last successfully processed record.

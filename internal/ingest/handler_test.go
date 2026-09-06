@@ -306,3 +306,63 @@ func TestLogUnattributed_ThrottlesEscalation(t *testing.T) {
 		t.Error("expected a fresh escalation after the re-alert window elapsed")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ServeHTTP — User-Agent capture
+// ---------------------------------------------------------------------------
+
+// A browser SDK posts over XHR and cannot put user_agent in the payload, so the
+// header is the only source of browser/os/device_type. Carry it on the spool
+// record for the worker to fall back to.
+func TestServeHTTP_RecordsUserAgentHeader(t *testing.T) {
+	sp := newTestSpool(t)
+	h := NewHandler(auth.New("mykey"), sp, 0)
+
+	const ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124.0"
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"name":"pageview"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(auth.HeaderAPIKey, "mykey")
+	req.Header.Set("x-funnelbarn-project", "my-site")
+	req.Header.Set("User-Agent", ua)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	select {
+	case rec := <-h.queue:
+		if rec.UserAgent != ua {
+			t.Errorf("record UserAgent: want %q, got %q", ua, rec.UserAgent)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no record enqueued")
+	}
+}
+
+// No User-Agent header leaves the field empty rather than inventing one.
+func TestServeHTTP_NoUserAgentHeaderLeavesFieldEmpty(t *testing.T) {
+	sp := newTestSpool(t)
+	h := NewHandler(auth.New("mykey"), sp, 0)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"name":"pageview"}`))
+	req.Header.Set(auth.HeaderAPIKey, "mykey")
+	req.Header.Set("x-funnelbarn-project", "my-site")
+	req.Header.Del("User-Agent")
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	select {
+	case rec := <-h.queue:
+		if rec.UserAgent != "" {
+			t.Errorf("record UserAgent: want empty, got %q", rec.UserAgent)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no record enqueued")
+	}
+}

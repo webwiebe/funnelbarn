@@ -407,3 +407,80 @@ func TestProcessRecord_FingerprintIsScopedToProject(t *testing.T) {
 		t.Error("two projects sharing an ingress should not share a session ID (sessions.id is a global primary key)")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// User-Agent fallback to the request header
+// ---------------------------------------------------------------------------
+
+// A browser SDK posts over XHR and cannot set User-Agent on the payload, so
+// enrichment has to come off the header the ingest handler captured. Without
+// the fallback, browser/os/device_type are empty on every one of those events.
+func TestProcessRecord_UserAgentFallsBackToRequestHeader(t *testing.T) {
+	record := makeRecord(EventPayload{
+		Name:      "pageview",
+		SessionID: "abcdef1234567890abcdef1234567890",
+	})
+	record.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0"
+
+	event, err := ProcessRecord(record)
+	if err != nil {
+		t.Fatalf("ProcessRecord: %v", err)
+	}
+	if event.UserAgent != record.UserAgent {
+		t.Errorf("UserAgent: want %q, got %q", record.UserAgent, event.UserAgent)
+	}
+	if event.Browser == "" || event.OS == "" || event.DeviceType == "" {
+		t.Errorf("enrichment empty: browser=%q os=%q device=%q", event.Browser, event.OS, event.DeviceType)
+	}
+}
+
+// An explicit payload user_agent still wins — a server-side SDK forwarding a
+// visitor's UA must not be overwritten by its own HTTP client's header.
+func TestProcessRecord_PayloadUserAgentBeatsHeader(t *testing.T) {
+	const payloadUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
+	record := makeRecord(EventPayload{
+		Name:      "pageview",
+		SessionID: "abcdef1234567890abcdef1234567890",
+		UserAgent: payloadUA,
+	})
+	record.UserAgent = "funnelbarn-go/1.2.3"
+
+	event, err := ProcessRecord(record)
+	if err != nil {
+		t.Fatalf("ProcessRecord: %v", err)
+	}
+	if event.UserAgent != payloadUA {
+		t.Errorf("UserAgent: want payload UA %q, got %q", payloadUA, event.UserAgent)
+	}
+}
+
+// No UA anywhere leaves the enrichment fields empty rather than guessing.
+func TestProcessRecord_NoUserAgentAnywhere(t *testing.T) {
+	event, err := ProcessRecord(makeRecord(EventPayload{
+		Name:      "pageview",
+		SessionID: "abcdef1234567890abcdef1234567890",
+	}))
+	if err != nil {
+		t.Fatalf("ProcessRecord: %v", err)
+	}
+	if event.UserAgent != "" || event.Browser != "" || event.OS != "" || event.DeviceType != "" {
+		t.Errorf("expected empty enrichment, got ua=%q browser=%q os=%q device=%q",
+			event.UserAgent, event.Browser, event.OS, event.DeviceType)
+	}
+}
+
+// An event that arrives with no environment is filed as production, not left
+// blank: every analytics query compares environment for equality, so a blank
+// one is invisible under the dashboard's default filter.
+func TestProcessRecord_AbsentEnvironmentIsFiledAsProduction(t *testing.T) {
+	event, err := ProcessRecord(makeRecord(EventPayload{
+		Name:      "pageview",
+		SessionID: "abcdef1234567890abcdef1234567890",
+	}))
+	if err != nil {
+		t.Fatalf("ProcessRecord: %v", err)
+	}
+	if event.Environment != environment.Production {
+		t.Errorf("Environment: want %q, got %q", environment.Production, event.Environment)
+	}
+}

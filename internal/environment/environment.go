@@ -43,6 +43,21 @@ func Normalize(s string) string {
 	return Production
 }
 
+// NormalizeEvent maps an ingested event's environment onto a canonical value,
+// filing an absent one as production. Deployment config (Normalize) keeps ""
+// as "unset" because the API and the fail-closed start-up check both branch on
+// it, but an event has no such third state: the analytics filters compare
+// environment for equality, so an untagged event is invisible under every
+// filter including the "production" one the dashboard defaults to. Tagging it
+// production matches where those events actually came from — SDKs that predate
+// the environment field only ever ran in production.
+func NormalizeEvent(s string) string {
+	if canonical := Normalize(s); canonical != "" {
+		return canonical
+	}
+	return Production
+}
+
 // IsKnown reports whether s is a recognised environment alias. An unrecognised
 // value still normalises to Production rather than being rejected — dropping an
 // event over a typo is worse than mis-filing it — but callers use this to say

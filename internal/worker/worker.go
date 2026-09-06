@@ -64,10 +64,22 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 	// Normalize environment to a canonical value. An unrecognised value is
 	// filed as production rather than rejected — dropping an event over a typo
 	// is worse than mis-filing it — but say so once per distinct value, or
-	// "prodution" silently pollutes production reporting forever.
-	env := environment.Normalize(payload.Environment)
+	// "prodution" silently pollutes production reporting forever. An absent
+	// value is filed as production too: the analytics filters compare
+	// environment for equality, so an untagged event is invisible under every
+	// filter including the one the dashboard defaults to.
+	env := environment.NormalizeEvent(payload.Environment)
 	if !environment.IsKnown(payload.Environment) {
 		warnUnknownEnvironment(payload.Environment, env)
+	}
+
+	// The user agent. SDKs that post from a browser leave user_agent out of the
+	// payload (XHR cannot set it), so fall back to the request header the ingest
+	// handler captured. Without this fallback browser/os/device_type are empty
+	// on every such event and the audience widgets have nothing to group by.
+	ua := payload.UserAgent
+	if ua == "" {
+		ua = record.UserAgent
 	}
 
 	// The address the visitor actually came from. record.RemoteAddr is the TCP
@@ -89,7 +101,7 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 		metrics.SessionsFingerprinted.WithLabelValues(reason).Inc()
 		sessionID = session.Fingerprint(session.FingerprintInput{
 			ClientIP:    clientIP,
-			UserAgent:   payload.UserAgent,
+			UserAgent:   ua,
 			ProjectSlug: record.ProjectSlug,
 			Environment: env,
 			At:          occurredAt,
@@ -118,7 +130,6 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 	referrerDomain := enrich.ExtractReferrerDomain(payload.Referrer)
 
 	// Parse user agent.
-	ua := payload.UserAgent
 	var browser, osName, deviceType string
 	if ua != "" {
 		uaInfo := enrich.ParseUA(ua)
@@ -183,6 +194,15 @@ var ErrNoProject = errors.New("event has no project ID")
 func PersistEvent(ctx context.Context, store EventPersister, event repository.Event, geo *geoip.GeoResult) error {
 	if event.ProjectID == "" {
 		return fmt.Errorf("%w (ingest_id %s, event %q)", ErrNoProject, event.IngestID, event.Name)
+	}
+
+	// Carry the resolved country onto the event itself. The geo lookup was
+	// only ever written to the session row, so events.country_code stayed empty
+	// and the country widgets — which group events, not sessions — returned
+	// nothing. Only overwrite when the lookup produced something, so a payload
+	// that already carried a country keeps it.
+	if geo != nil && geo.CountryCode != "" {
+		event.CountryCode = geo.CountryCode
 	}
 
 	// Check idempotency: skip if already stored.
