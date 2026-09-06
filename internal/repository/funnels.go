@@ -22,6 +22,13 @@ type Funnel struct {
 	Scope       string       `json:"scope"` // "session" (default) or "page_view"
 	Steps       []FunnelStep `json:"steps"`
 	CreatedAt   time.Time    `json:"created_at"`
+
+	// UnmatchedSteps lists the step event names this project has never emitted.
+	// A funnel whose steps reference names the project does not send can never
+	// report a conversion, and presents as a legitimate zero-conversion funnel
+	// rather than as misconfiguration — 20 of 37 funnels in production are in
+	// that state. Read-only: computed on load, never persisted, ignored on write.
+	UnmatchedSteps []string `json:"unmatched_steps,omitempty"`
 }
 
 // FunnelStep is one step in a funnel.
@@ -110,7 +117,69 @@ func (s *Store) FunnelByID(ctx context.Context, id string) (Funnel, error) {
 		return Funnel{}, err
 	}
 	f.Steps = steps
-	return f, nil
+
+	one := []Funnel{f}
+	if err := s.annotateUnmatchedSteps(ctx, f.ProjectID, one); err != nil {
+		return Funnel{}, err
+	}
+	return one[0], nil
+}
+
+// annotateUnmatchedSteps fills UnmatchedSteps on each funnel from the set of
+// event names the project has actually emitted. One query for the whole list,
+// not one per funnel.
+//
+// "Never emitted" means within the event retention window: a name the project
+// sent once a year ago and whose events have since been purged reads as
+// unmatched, which is the same thing the funnel itself experiences.
+func (s *Store) annotateUnmatchedSteps(ctx context.Context, projectID string, funnels []Funnel) error {
+	if len(funnels) == 0 {
+		return nil
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT name FROM events WHERE project_id = ?`, projectID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	seen := make(map[string]struct{})
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return err
+		}
+		seen[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	// A project that has sent nothing at all would have every step of every
+	// funnel flagged, which says nothing useful — there is no evidence either
+	// way yet, and the dashboard already shows the project as having no data.
+	// Flag only once there is something to compare against.
+	if len(seen) == 0 {
+		return nil
+	}
+
+	for i := range funnels {
+		var unmatched []string
+		reported := make(map[string]struct{}, len(funnels[i].Steps))
+		for _, step := range funnels[i].Steps {
+			if _, ok := seen[step.EventName]; ok {
+				continue
+			}
+			// A name repeated across steps is reported once.
+			if _, dup := reported[step.EventName]; dup {
+				continue
+			}
+			reported[step.EventName] = struct{}{}
+			unmatched = append(unmatched, step.EventName)
+		}
+		funnels[i].UnmatchedSteps = unmatched
+	}
+	return nil
 }
 
 // ListFunnels returns all funnels for a project.
@@ -140,6 +209,10 @@ func (s *Store) ListFunnels(ctx context.Context, projectID string) ([]Funnel, er
 			return nil, err
 		}
 		funnels[i].Steps = steps
+	}
+
+	if err := s.annotateUnmatchedSteps(ctx, projectID, funnels); err != nil {
+		return nil, err
 	}
 
 	return funnels, nil

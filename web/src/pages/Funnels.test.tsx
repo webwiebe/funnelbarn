@@ -145,6 +145,63 @@ describe('Funnels', () => {
     expect(screen.getByText(/2 steps/i)).toBeInTheDocument()
   })
 
+  // 20 of 37 funnels in production reference event names their project has
+  // never sent. They can never report a conversion, and without this they look
+  // identical to a funnel nobody has converted through yet.
+  it('flags a funnel whose steps reference events the project has never sent', async () => {
+    const broken: Funnel = {
+      ...funnelA,
+      id: 'f3',
+      name: 'Registration',
+      unmatched_steps: ['sign_up', 'your_goal'],
+    }
+    mockApi.listFunnels.mockResolvedValue({ funnels: [broken] })
+    renderFunnels()
+
+    await waitFor(() => expect(screen.getByText('Registration')).toBeInTheDocument())
+    expect(screen.getByText(/not configured/i)).toBeInTheDocument()
+  })
+
+  it('does not flag a funnel whose steps all match sent events', async () => {
+    renderFunnels()
+    await waitFor(() => expect(screen.getByText('Signup flow')).toBeInTheDocument())
+    expect(screen.queryByText(/not configured/i)).not.toBeInTheDocument()
+  })
+
+  it('explains which event names are missing in the analysis panel', async () => {
+    const broken: Funnel = { ...funnelA, unmatched_steps: ['signup_completed'] }
+    mockApi.listFunnels.mockResolvedValue({ funnels: [broken] })
+    mockApi.getFunnelAnalysis.mockResolvedValue({ ...analysisWithData, funnel: broken })
+    renderFunnels()
+
+    await waitFor(() => expect(screen.getByText('Signup flow')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Signup flow'))
+
+    await waitFor(() =>
+      expect(screen.getByText(/this funnel is not receiving events/i)).toBeInTheDocument(),
+    )
+    // Only some steps are unmatched, so the copy says it stalls rather than
+    // that it can never convert.
+    expect(screen.getByText(/stalls at those steps/i)).toBeInTheDocument()
+  })
+
+  it('says a funnel can never convert when every step is unmatched', async () => {
+    const broken: Funnel = {
+      ...funnelA,
+      unmatched_steps: ['page_view', 'signup_completed'],
+    }
+    mockApi.listFunnels.mockResolvedValue({ funnels: [broken] })
+    mockApi.getFunnelAnalysis.mockResolvedValue({ ...analysisWithData, funnel: broken })
+    renderFunnels()
+
+    await waitFor(() => expect(screen.getByText('Signup flow')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Signup flow'))
+
+    await waitFor(() =>
+      expect(screen.getByText(/can never report a conversion/i)).toBeInTheDocument(),
+    )
+  })
+
   it('shows the empty state when there are no funnels', async () => {
     mockApi.listFunnels.mockResolvedValue({ funnels: [] })
     renderFunnels()
