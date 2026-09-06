@@ -511,3 +511,89 @@ func dumpSessions(t *testing.T, db *sql.DB) string {
 	}
 	return out
 }
+
+// 00035 recovers events.country_code from the session row that did receive it.
+// The join is on (project_id, session_id) and was only safe to run once 00034
+// made that pair unambiguous.
+func TestMigration00035_BackfillsEventCountryFromSession(t *testing.T) {
+	db := openAtVersion(t, 34)
+
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('pa', 'A', 'a')`)
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('pb', 'B', 'b')`)
+	mustExec(t, db, `INSERT INTO sessions (id, project_id, first_seen_at, last_seen_at, country_code)
+		VALUES ('s-shared', 'pa', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'NL')`)
+	// The SAME session ID under another project, with a different country. This
+	// is the case that made the backfill unsafe before the composite key.
+	mustExec(t, db, `INSERT INTO sessions (id, project_id, first_seen_at, last_seen_at, country_code)
+		VALUES ('s-shared', 'pb', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'DE')`)
+	mustExec(t, db, `INSERT INTO sessions (id, project_id, first_seen_at, last_seen_at, country_code)
+		VALUES ('s-nogeo', 'pa', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '')`)
+
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at, country_code)
+		VALUES ('e-a', 'pa', 's-shared', 'pageview', 'i-a', CURRENT_TIMESTAMP, '')`)
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at, country_code)
+		VALUES ('e-b', 'pb', 's-shared', 'pageview', 'i-b', CURRENT_TIMESTAMP, '')`)
+	// Already has a country: must not be overwritten.
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at, country_code)
+		VALUES ('e-keep', 'pa', 's-shared', 'pageview', 'i-keep', CURRENT_TIMESTAMP, 'FR')`)
+	// Its session resolved no country: nothing to fill from.
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at, country_code)
+		VALUES ('e-none', 'pa', 's-nogeo', 'pageview', 'i-none', CURRENT_TIMESTAMP, '')`)
+	// No session row at all.
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at, country_code)
+		VALUES ('e-orphan-sess', 'pa', 's-missing', 'pageview', 'i-orphan', CURRENT_TIMESTAMP, '')`)
+
+	if err := goose.UpTo(db, "migrations", 35); err != nil {
+		t.Fatalf("goose up to 35: %v", err)
+	}
+
+	for _, c := range []struct {
+		id   string
+		want string
+	}{
+		// Each event takes the country of ITS OWN project's session row.
+		{"e-a", "NL"},
+		{"e-b", "DE"},
+		// Already had one — untouched.
+		{"e-keep", "FR"},
+		// Session resolved no country; nothing to fill from.
+		{"e-none", ""},
+		// No session row at all.
+		{"e-orphan-sess", ""},
+	} {
+		var got string
+		if err := db.QueryRow(`SELECT COALESCE(country_code,'') FROM events WHERE id = ?`, c.id).Scan(&got); err != nil {
+			t.Fatalf("read %s: %v", c.id, err)
+		}
+		if got != c.want {
+			t.Errorf("event %s country_code: want %q, got %q", c.id, c.want, got)
+		}
+	}
+}
+
+// Re-running must not move a country that is already set.
+func TestMigration00035_IsIdempotent(t *testing.T) {
+	db := openAtVersion(t, 35)
+
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('pa', 'A', 'a')`)
+	mustExec(t, db, `INSERT INTO sessions (id, project_id, first_seen_at, last_seen_at, country_code)
+		VALUES ('s1', 'pa', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'NL')`)
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at, country_code)
+		VALUES ('e1', 'pa', 's1', 'pageview', 'i1', CURRENT_TIMESTAMP, 'FR')`)
+
+	mustExec(t, db, `UPDATE events SET country_code = (
+			SELECT s.country_code FROM sessions s
+			WHERE s.project_id = events.project_id AND s.id = events.session_id)
+		WHERE COALESCE(country_code, '') = ''
+		  AND EXISTS (SELECT 1 FROM sessions s
+			WHERE s.project_id = events.project_id AND s.id = events.session_id
+			  AND COALESCE(s.country_code, '') <> '')`)
+
+	var got string
+	if err := db.QueryRow(`SELECT country_code FROM events WHERE id = 'e1'`).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != "FR" {
+		t.Errorf("re-running the backfill overwrote an existing country: got %q", got)
+	}
+}
