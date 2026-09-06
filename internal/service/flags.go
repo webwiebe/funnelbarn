@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -101,10 +102,18 @@ const DefaultConfigCacheTTL = 60 * time.Second
 type FlagService struct {
 	store          ports.FlagRepo
 	configCacheTTL time.Duration
+
+	// touchedMu guards the last_evaluated_at write throttle.
+	touchedMu sync.Mutex
+	touchedAt map[string]time.Time
 }
 
 func NewFlagService(store ports.FlagRepo) *FlagService {
-	return &FlagService{store: store, configCacheTTL: DefaultConfigCacheTTL}
+	return &FlagService{
+		store:          store,
+		configCacheTTL: DefaultConfigCacheTTL,
+		touchedAt:      make(map[string]time.Time),
+	}
 }
 
 // WithConfigCacheTTL overrides the cache hint returned for config flags.
@@ -358,12 +367,13 @@ func buildAutoFlag(projectID, flagKey string, defaultValue any, kind string) rep
 func (svc *FlagService) EvaluateOrRegisterFlag(ctx context.Context, projectID, flagKey string, evalContext map[string]any, defaultValue any, maxAuto int, kind string) (FlagEvalResult, error) {
 	res, err := svc.EvaluateFlag(ctx, projectID, flagKey, evalContext)
 	if err == nil {
-		// Keep auto, still-unconfigured flags alive in the retention sweep while
-		// they're actively evaluated. DISABLED covers inactive (auto) and paused
-		// (manual, never pruned) flags; touchIfAuto filters to origin='auto'.
-		if res.Reason == "DISABLED" {
-			svc.touchIfAuto(projectID, flagKey)
-		}
+		// Record that the flag was evaluated. This used to fire only for
+		// origin='auto' flags returning DISABLED, which is the intersection of
+		// two gates that between them excluded every flag actually in service:
+		// a live manual flag returns a real reason, not DISABLED, and would be
+		// filtered on origin anyway. last_evaluated_at therefore marked the
+		// flags nobody used and left the busy ones reading as never-evaluated.
+		svc.touchEvaluated(projectID, flagKey)
 		return res, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -381,17 +391,59 @@ func (svc *FlagService) EvaluateOrRegisterFlag(ctx context.Context, projectID, f
 		// Still hand the caller its default so the SDK is unaffected.
 		return FlagEvalResult{Value: defaultValue, Variant: "default", Reason: "DISABLED", FlagKey: flagKey}, nil
 	}
-	// Re-evaluate now that the inert flag exists (returns default, reason DISABLED).
-	return svc.EvaluateFlag(ctx, projectID, flagKey, evalContext)
+	// Re-evaluate now that the inert flag exists (returns default, reason
+	// DISABLED). Record this evaluation too: the flag is brand new, so the
+	// sweep's COALESCE would fall back to created_at either way, but leaving it
+	// null here means a flag auto-registered and then evaluated once a day
+	// keeps reading as never-evaluated.
+	res, err = svc.EvaluateFlag(ctx, projectID, flagKey, evalContext)
+	if err == nil {
+		svc.touchEvaluated(projectID, flagKey)
+	}
+	return res, err
 }
 
-// touchIfAuto best-effort bumps last_evaluated_at for an auto flag, off the
-// request path so it never adds latency or fails the evaluation.
-func (svc *FlagService) touchIfAuto(projectID, flagKey string) {
+// touchInterval throttles the last_evaluated_at write to at most one per flag
+// per minute. The gate it replaces was an origin filter, which limited write
+// amplification by excluding the flags that generate the most evaluations —
+// exactly the ones the column needs to be right about. A time throttle applies
+// the same concern uniformly: staleness is measured in days, so a minute's
+// resolution costs nothing and a flag served a thousand times a second still
+// produces one write per minute.
+const touchInterval = time.Minute
+
+// maxTrackedTouches bounds the throttle map. Flags per instance are few (tens),
+// but auto-registration can mint them, so the map is dropped rather than grown
+// without limit; the only cost of losing it is one extra write per flag.
+const maxTrackedTouches = 4096
+
+// shouldTouch reports whether this flag's last_evaluated_at is due for a write,
+// recording the decision so the next evaluation within touchInterval skips it.
+func (svc *FlagService) shouldTouch(projectID, flagKey string, now time.Time) bool {
+	key := projectID + "\x00" + flagKey
+	svc.touchedMu.Lock()
+	defer svc.touchedMu.Unlock()
+	if last, ok := svc.touchedAt[key]; ok && now.Sub(last) < touchInterval {
+		return false
+	}
+	if len(svc.touchedAt) >= maxTrackedTouches {
+		svc.touchedAt = make(map[string]time.Time, maxTrackedTouches)
+	}
+	svc.touchedAt[key] = now
+	return true
+}
+
+// touchEvaluated best-effort bumps last_evaluated_at for any flag, whatever its
+// origin or evaluation reason, off the request path so it never adds latency or
+// fails the evaluation.
+func (svc *FlagService) touchEvaluated(projectID, flagKey string) {
+	if !svc.shouldTouch(projectID, flagKey, time.Now()) {
+		return
+	}
 	go func() {
 		ctx := context.Background()
 		f, err := svc.store.FlagByKey(ctx, projectID, flagKey)
-		if err != nil || f.Origin != "auto" {
+		if err != nil {
 			return
 		}
 		if err := svc.store.TouchFlagEvaluated(ctx, f.ID); err != nil {

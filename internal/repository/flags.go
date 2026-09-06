@@ -159,8 +159,11 @@ func (s *Store) CountAutoFlags(ctx context.Context, projectID string) (int, erro
 	return n, nil
 }
 
-// TouchFlagEvaluated records that an auto flag was just evaluated, so the
-// retention sweep can tell live unconfigured flags from abandoned ones.
+// TouchFlagEvaluated records that a flag was just evaluated, so the retention
+// sweep can tell live flags from abandoned ones and the dashboard can show when
+// a flag was last in service. Called for every origin: it used to be reached
+// only for origin='auto', which left the busiest flags reading as
+// never-evaluated.
 func (s *Store) TouchFlagEvaluated(ctx context.Context, flagID string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE feature_flags SET last_evaluated_at = CURRENT_TIMESTAMP WHERE id = ?`, flagID)
 	return err

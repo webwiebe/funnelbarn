@@ -640,3 +640,89 @@ func TestEvaluateOrRegisterFlag_HonoursDeclaredKind(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, repository.FlagKindExperiment, other.Kind)
 }
+
+// The two flags responsible for every evaluation in production are manual and
+// active, so they returned a real reason (not DISABLED) from an origin the
+// touch filtered out — and read as never-evaluated forever.
+func TestEvaluateOrRegisterFlag_TouchesLiveManualFlag(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+	ctx := context.Background()
+
+	f := createTestFlag(t, svc, "proj-1", "iambarn-enabled",
+		map[string]any{"on": true, "off": false},
+		map[string]int{"on": 100}, "off")
+	require.Equal(t, "manual", f.Origin)
+	require.Nil(t, f.LastEvaluatedAt)
+
+	res, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "iambarn-enabled",
+		map[string]any{"targeting_key": "device-1"}, false, 100, "")
+	require.NoError(t, err)
+	require.NotEqual(t, "DISABLED", res.Reason, "an active flag returns a real reason")
+
+	// The touch is deliberately off the request path, so wait for it.
+	require.Eventually(t, func() bool {
+		got, err := store.FlagByID(ctx, f.ID)
+		return err == nil && got.LastEvaluatedAt != nil
+	}, 2*time.Second, 5*time.Millisecond, "last_evaluated_at was never set for a live manual flag")
+}
+
+// Auto flags still get their touch — the retention sweep depends on it.
+func TestEvaluateOrRegisterFlag_StillTouchesAutoFlag(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+	ctx := context.Background()
+
+	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "anon_qr_limit",
+		map[string]any{"targeting_key": "device-1"}, float64(3), 100, "")
+	require.NoError(t, err)
+
+	flags, err := svc.ListFlags(ctx, "proj-1")
+	require.NoError(t, err)
+	require.Len(t, flags, 1)
+	require.Equal(t, "auto", flags[0].Origin)
+
+	require.Eventually(t, func() bool {
+		got, err := store.FlagByID(ctx, flags[0].ID)
+		return err == nil && got.LastEvaluatedAt != nil
+	}, 2*time.Second, 5*time.Millisecond, "last_evaluated_at was never set for an auto flag")
+}
+
+// A flag evaluated repeatedly inside the throttle window produces one write,
+// not one per evaluation.
+func TestEvaluateOrRegisterFlag_TouchIsThrottled(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+	ctx := context.Background()
+
+	f := createTestFlag(t, svc, "proj-1", "busy-flag",
+		map[string]any{"on": true, "off": false},
+		map[string]int{"on": 100}, "off")
+
+	_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "busy-flag",
+		map[string]any{"targeting_key": "device-1"}, false, 100, "")
+	require.NoError(t, err)
+
+	var first time.Time
+	require.Eventually(t, func() bool {
+		got, err := store.FlagByID(ctx, f.ID)
+		if err != nil || got.LastEvaluatedAt == nil {
+			return false
+		}
+		first = *got.LastEvaluatedAt
+		return true
+	}, 2*time.Second, 5*time.Millisecond)
+
+	// Every further evaluation in this window must be skipped before the
+	// goroutine is even started, so the stored timestamp cannot move.
+	for range 50 {
+		_, err := svc.EvaluateOrRegisterFlag(ctx, "proj-1", "busy-flag",
+			map[string]any{"targeting_key": "device-1"}, false, 100, "")
+		require.NoError(t, err)
+	}
+	got, err := store.FlagByID(ctx, f.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.LastEvaluatedAt)
+	require.True(t, got.LastEvaluatedAt.Equal(first),
+		"throttled evaluations still wrote: %v != %v", *got.LastEvaluatedAt, first)
+}
