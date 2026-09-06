@@ -144,7 +144,7 @@ type Widgets interface {
 // Sessions is the interface for session-related operations.
 type Sessions interface {
 	UpsertSession(ctx context.Context, sess repository.Session) error
-	SessionByID(ctx context.Context, id string) (repository.Session, error)
+	SessionByID(ctx context.Context, projectID, id string) (repository.Session, error)
 	ListSessions(ctx context.Context, projectID string, limit, offset int) ([]repository.Session, error)
 	ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error)
 }

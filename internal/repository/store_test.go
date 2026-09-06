@@ -622,7 +622,7 @@ func TestStore_UpsertSession_Create(t *testing.T) {
 	err = s.UpsertSession(ctx, sess)
 	require.NoError(t, err)
 
-	got, err := s.SessionByID(ctx, "session-001")
+	got, err := s.SessionByID(ctx, p.ID, "session-001")
 	require.NoError(t, err)
 	assert.Equal(t, "session-001", got.ID)
 	assert.Equal(t, p.ID, got.ProjectID)
@@ -652,7 +652,7 @@ func TestStore_UpsertSession_Update(t *testing.T) {
 	err = s.UpsertSession(ctx, sess)
 	require.NoError(t, err)
 
-	got, err := s.SessionByID(ctx, "session-update")
+	got, err := s.SessionByID(ctx, p.ID, "session-update")
 	require.NoError(t, err)
 	assert.Equal(t, 2, got.EventCount)
 }

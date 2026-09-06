@@ -67,8 +67,10 @@ func (s *Store) UpsertSession(ctx context.Context, sess Session) error {
 	return err
 }
 
-// SessionByID fetches a session by its ID.
-func (s *Store) SessionByID(ctx context.Context, id string) (Session, error) {
+// SessionByID fetches one project's session. The project is part of the key:
+// a session ID can legitimately exist under several projects, so an id-only
+// lookup would return an arbitrary one of them.
+func (s *Store) SessionByID(ctx context.Context, projectID, id string) (Session, error) {
 	const q = `
 		SELECT id, project_id, first_seen_at, last_seen_at, event_count,
 			COALESCE(entry_url,''), COALESCE(exit_url,''), COALESCE(referrer,''),
@@ -78,8 +80,8 @@ func (s *Store) SessionByID(ctx context.Context, id string) (Session, error) {
 			COALESCE(latitude,0), COALESCE(longitude,0),
 			COALESCE(timezone,''), COALESCE(asn_org,''), COALESCE(connection_class,''),
 			geo_anonymized
-		FROM sessions WHERE id = ?`
-	return scanSession(s.db.QueryRowContext(ctx, q, id))
+		FROM sessions WHERE project_id = ? AND id = ?`
+	return scanSession(s.db.QueryRowContext(ctx, q, projectID, id))
 }
 
 // ListSessions returns paginated sessions for a project.
@@ -128,7 +130,11 @@ func (s *Store) ActiveSessionCount(ctx context.Context, projectID string, within
 	return count, err
 }
 
-// AnonymizeSessionGeo zeroes out all geo fields for a specific session.
+// AnonymizeSessionGeo zeroes out the geo fields of every session row carrying
+// this ID, across all projects. That is deliberate and not a leftover from the
+// id-only key: this backs the instance-wide admin erasure endpoint, where
+// over-erasing is the safe direction and a caller asking to forget a visitor
+// should not have to know which projects that visitor's ID appears under.
 func (s *Store) AnonymizeSessionGeo(ctx context.Context, sessionID string) error {
 	const q = `
 		UPDATE sessions SET
