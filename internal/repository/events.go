@@ -41,6 +41,35 @@ type Event struct {
 	SessionSignalsRaw map[string]any `json:"-"`
 }
 
+// OrphanCounts reports rows whose project_id matches no project. Every read
+// path is project-scoped, so such rows are unreachable: stored, indexed and
+// backed up, but invisible to the product. 372 of them accumulated over three
+// weeks in June 2026 and went unnoticed until an audit two months later.
+type OrphanCounts struct {
+	Events   int64
+	Sessions int64
+	Funnels  int64
+}
+
+// Total returns the number of orphaned rows across all tables.
+func (o OrphanCounts) Total() int64 { return o.Events + o.Sessions + o.Funnels }
+
+// CountOrphanedRows counts rows whose project_id matches no row in projects.
+// Foreign keys and a BEFORE-INSERT trigger both refuse these now, so a non-zero
+// result means a guard has been bypassed and is worth an alert, not a metric.
+func (s *Store) CountOrphanedRows(ctx context.Context) (OrphanCounts, error) {
+	const q = `
+		SELECT
+			(SELECT COUNT(*) FROM events   e WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = e.project_id)),
+			(SELECT COUNT(*) FROM sessions s WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = s.project_id)),
+			(SELECT COUNT(*) FROM funnels  f WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = f.project_id))`
+	var out OrphanCounts
+	if err := s.db.QueryRowContext(ctx, q).Scan(&out.Events, &out.Sessions, &out.Funnels); err != nil {
+		return OrphanCounts{}, err
+	}
+	return out, nil
+}
+
 // InsertEvent writes a new event to the database.
 func (s *Store) InsertEvent(ctx context.Context, e Event) error {
 	const q = `
