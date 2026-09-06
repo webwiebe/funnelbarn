@@ -190,6 +190,37 @@ function FunnelDetail({ analysis, activeSegment, apiKey, onWatchRecordings }: { 
         )}
       </div>
 
+      {(analysis.funnel?.unmatched_steps?.length ?? 0) > 0 && (
+        <div
+          style={{
+            background: 'rgba(239,68,68,0.08)',
+            border: '1px solid rgba(239,68,68,0.35)',
+            borderRadius: 10,
+            padding: '0.75rem 1rem',
+            marginBottom: '1.25rem',
+            fontSize: 13,
+            color: C.text,
+          }}
+        >
+          <div style={{ fontWeight: 700, color: C.error, marginBottom: 4 }}>
+            This funnel is not receiving events
+          </div>
+          <div style={{ color: C.muted, lineHeight: 1.5 }}>
+            {analysis.funnel.unmatched_steps?.length === analysis.funnel.steps?.length
+              ? 'None of its steps match an event this project has sent, so it can never report a conversion. '
+              : 'Some of its steps match no event this project has sent, so it stalls at those steps. '}
+            Never received:{' '}
+            {analysis.funnel.unmatched_steps?.map((name, i) => (
+              <span key={name}>
+                {i > 0 && ', '}
+                <code style={{ color: C.error, fontFamily: 'ui-monospace, monospace' }}>{name}</code>
+              </span>
+            ))}
+            . Check the event names your site sends, then edit the funnel to match them.
+          </div>
+        </div>
+      )}
+
       {analysis.results?.map((step, i) => (
         <div key={step.step_order} style={{ marginBottom: '1.25rem' }}>
           {/* Drop-off indicator between steps */}
@@ -555,6 +586,22 @@ export default function Funnels() {
                 <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{f.name}</div>
                 <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
                   {f.steps?.length ?? 0} steps
+                  {(f.unmatched_steps?.length ?? 0) > 0 && (
+                    <span
+                      title={`Never received: ${f.unmatched_steps?.join(', ')}`}
+                      style={{
+                        marginLeft: 6,
+                        background: 'rgba(239,68,68,0.12)',
+                        color: C.error,
+                        borderRadius: 4,
+                        padding: '0.05rem 0.35rem',
+                        fontSize: 10,
+                        fontWeight: 600,
+                      }}
+                    >
+                      not configured
+                    </span>
+                  )}
                   {f.scope && f.scope !== 'session' && (
                     <span style={{
                       marginLeft: 6,

@@ -520,6 +520,12 @@ export interface Funnel {
   description?: string
   scope: 'session' | 'page_view'
   steps: FunnelStep[]
+  /**
+   * Step event names this project has never emitted. A funnel that references
+   * them can never report a conversion, and otherwise looks identical to a
+   * legitimate funnel that nobody has converted through yet. Read-only.
+   */
+  unmatched_steps?: string[]
 }
 
 export interface StepResult {

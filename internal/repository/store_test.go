@@ -1419,3 +1419,120 @@ func TestEnsureProject_UnresolvableSlugsAreMarked(t *testing.T) {
 		})
 	}
 }
+
+// 20 of 37 funnels in production reference event names their project has never
+// sent. They can never report a conversion and present as legitimate
+// zero-conversion funnels rather than as misconfiguration, so the read path
+// names the steps that will never match.
+func TestListFunnels_FlagsUnmatchedSteps(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	p, err := s.CreateProject(ctx, "Unmatched", "unmatched")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	for _, name := range []string{"page_view", "purchase"} {
+		require.NoError(t, s.InsertEvent(ctx, repository.Event{
+			ID: randomHex(t), ProjectID: p.ID, SessionID: "s1", Name: name,
+			IngestID: randomHex(t), OccurredAt: now,
+		}))
+	}
+
+	// Fully wired.
+	good, err := s.CreateFunnel(ctx, repository.Funnel{
+		ProjectID: p.ID, Name: "Purchase",
+		Steps: []repository.FunnelStep{{EventName: "page_view"}, {EventName: "purchase"}},
+	})
+	require.NoError(t, err)
+	// A template funnel nobody wired up: neither name was ever sent, and
+	// "your_goal" appears twice to check it is reported once.
+	bad, err := s.CreateFunnel(ctx, repository.Funnel{
+		ProjectID: p.ID, Name: "Registration",
+		Steps: []repository.FunnelStep{
+			{EventName: "sign_up"}, {EventName: "your_goal"}, {EventName: "your_goal"},
+		},
+	})
+	require.NoError(t, err)
+	// Half wired: stalls at the second step.
+	partial, err := s.CreateFunnel(ctx, repository.Funnel{
+		ProjectID: p.ID, Name: "Half",
+		Steps: []repository.FunnelStep{{EventName: "page_view"}, {EventName: "form_submit"}},
+	})
+	require.NoError(t, err)
+
+	funnels, err := s.ListFunnels(ctx, p.ID)
+	require.NoError(t, err)
+	require.Len(t, funnels, 3)
+
+	byID := map[string][]string{}
+	for _, f := range funnels {
+		byID[f.ID] = f.UnmatchedSteps
+	}
+	assert.Empty(t, byID[good.ID], "a fully wired funnel must not be flagged")
+	assert.Equal(t, []string{"sign_up", "your_goal"}, byID[bad.ID],
+		"a repeated unmatched name should be reported once")
+	assert.Equal(t, []string{"form_submit"}, byID[partial.ID])
+
+	// FunnelByID reports the same thing, so the detail view agrees with the list.
+	one, err := s.FunnelByID(ctx, bad.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"sign_up", "your_goal"}, one.UnmatchedSteps)
+}
+
+// Another project's events must not make a step look matched.
+func TestListFunnels_UnmatchedStepsAreProjectScoped(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	pa, err := s.CreateProject(ctx, "Scope A", "unmatched-scope-a")
+	require.NoError(t, err)
+	pb, err := s.CreateProject(ctx, "Scope B", "unmatched-scope-b")
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	// Project A is live, but only ever sends "page_view".
+	require.NoError(t, s.InsertEvent(ctx, repository.Event{
+		ID: randomHex(t), ProjectID: pa.ID, SessionID: "s1", Name: "page_view",
+		IngestID: randomHex(t), OccurredAt: now,
+	}))
+	// Only project B ever sends "purchase".
+	require.NoError(t, s.InsertEvent(ctx, repository.Event{
+		ID: randomHex(t), ProjectID: pb.ID, SessionID: "s1", Name: "purchase",
+		IngestID: randomHex(t), OccurredAt: now,
+	}))
+
+	_, err = s.CreateFunnel(ctx, repository.Funnel{
+		ProjectID: pa.ID, Name: "A's purchase funnel",
+		Steps: []repository.FunnelStep{{EventName: "purchase"}},
+	})
+	require.NoError(t, err)
+
+	funnels, err := s.ListFunnels(ctx, pa.ID)
+	require.NoError(t, err)
+	require.Len(t, funnels, 1)
+	assert.Equal(t, []string{"purchase"}, funnels[0].UnmatchedSteps,
+		"another project's events made the step look matched")
+}
+
+// A project that has sent nothing has no evidence either way, and flagging
+// every step of every funnel on day one is noise, not a warning.
+func TestListFunnels_NoEventsFlagsNothing(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	p, err := s.CreateProject(ctx, "Brand New", "brand-new")
+	require.NoError(t, err)
+
+	_, err = s.CreateFunnel(ctx, repository.Funnel{
+		ProjectID: p.ID, Name: "Registration",
+		Steps: []repository.FunnelStep{{EventName: "sign_up"}},
+	})
+	require.NoError(t, err)
+
+	funnels, err := s.ListFunnels(ctx, p.ID)
+	require.NoError(t, err)
+	require.Len(t, funnels, 1)
+	assert.Empty(t, funnels[0].UnmatchedSteps,
+		"a project with no events yet should not have every funnel flagged")
+}
