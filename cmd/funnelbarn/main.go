@@ -615,6 +615,15 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				} else if n > 0 {
 					slog.Info("purged unplayable recordings", "count", n)
 				}
+				// Bot recordings written before ingest started refusing them.
+				// The rows could be dropped by a migration, but their R2 chunk
+				// objects could not — deriving those keys needs the row.
+				if n, err := recordings.PurgeBotRecordings(purgeCtx); err != nil {
+					tracing.RecordError(purgeSpan, err)
+					slog.Error("purge bot recordings", "err", err)
+				} else if n > 0 {
+					slog.Info("purged bot recordings", "count", n)
+				}
 			}
 			purgeSpan.End()
 		case <-ticker.C:

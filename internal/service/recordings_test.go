@@ -118,7 +118,9 @@ func TestRecordingService_IngestChunk(t *testing.T) {
 	assert.Equal(t, int64(10000), rec.DurationMs)
 }
 
-func TestRecordingService_IngestChunk_BotDetection(t *testing.T) {
+// A bot chunk is dropped outright: no R2 object, no metadata row. The caller
+// still gets a nil error so the SDK sees its 202 and does not retry.
+func TestRecordingService_IngestChunk_BotChunksAreDropped(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	storage := newMemStorage()
@@ -129,24 +131,59 @@ func TestRecordingService_IngestChunk_BotDetection(t *testing.T) {
 
 	svc := service.NewRecordingService(store, store, store, storage)
 
-	chunk := service.RecordingChunk{
-		RecordingID: "rec-bot-001",
-		SessionID:   "sess-bot-001",
-		ChunkIndex:  0,
-		Events:      json.RawMessage(`[]`),
-		StartedAt:   time.Now().UTC().Truncate(time.Second),
-		DurationMs:  1000,
-		ProjectSlug: "bot-test",
-		ProjectID:   p.ID,
-		UserAgent:   "Googlebot/2.1",
+	for _, ua := range []string{
+		"Googlebot/2.1",
+		"BrandtraceBot/1.0 (+https://brandtrace.net/bot)",
+		"Mozilla/5.0 (X11; Linux x86_64) HeadlessChrome/124.0.0.0",
+	} {
+		chunk := service.RecordingChunk{
+			RecordingID: "rec-bot-" + ua,
+			SessionID:   "sess-bot-001",
+			ChunkIndex:  0,
+			Events:      json.RawMessage(`[{"type":2,"data":{}}]`),
+			StartedAt:   time.Now().UTC().Truncate(time.Second),
+			DurationMs:  1000,
+			ProjectSlug: "bot-test",
+			ProjectID:   p.ID,
+			UserAgent:   ua,
+		}
+		require.NoError(t, svc.IngestChunk(ctx, chunk), "ua %q", ua)
+
+		_, err := store.GetRecording(ctx, chunk.RecordingID)
+		assert.Error(t, err, "bot recording %q was stored", ua)
 	}
 
-	require.NoError(t, svc.IngestChunk(ctx, chunk))
+	assert.Empty(t, storage.keys(), "bot chunks were uploaded to object storage")
+}
 
-	rec, err := store.GetRecording(ctx, "rec-bot-001")
+// A human chunk with the same shape still lands, so the gate is not swallowing
+// everything.
+func TestRecordingService_IngestChunk_HumanChunkStillStored(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	storage := newMemStorage()
+
+	projSvc := service.NewProjectService(store)
+	p, err := projSvc.CreateProject(ctx, "Human Test", "human-test")
 	require.NoError(t, err)
-	assert.True(t, rec.IsBot)
-	assert.Equal(t, "desktop", rec.DeviceType)
+
+	svc := service.NewRecordingService(store, store, store, storage)
+	require.NoError(t, svc.IngestChunk(ctx, service.RecordingChunk{
+		RecordingID: "rec-human-001",
+		SessionID:   "sess-human-001",
+		ChunkIndex:  0,
+		Events:      json.RawMessage(`[{"type":2,"data":{}}]`),
+		StartedAt:   time.Now().UTC().Truncate(time.Second),
+		DurationMs:  1000,
+		ProjectSlug: "human-test",
+		ProjectID:   p.ID,
+		UserAgent:   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124.0",
+	}))
+
+	rec, err := store.GetRecording(ctx, "rec-human-001")
+	require.NoError(t, err)
+	assert.False(t, rec.IsBot)
+	assert.Len(t, storage.keys(), 1)
 }
 
 func TestRecordingService_IngestChunk_SnapshotDetection(t *testing.T) {
@@ -478,4 +515,75 @@ func TestDetectBot(t *testing.T) {
 			assert.Equal(t, tc.isBot, service.DetectBot(tc.ua))
 		})
 	}
+}
+
+// The 56% of the production recordings table that predates the ingest gate has
+// to be swept, and the sweep is the only thing that can reach the R2 chunk
+// objects — a SQL delete would strand them.
+func TestRecordingService_PurgeBotRecordings(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	storage := newMemStorage()
+
+	projSvc := service.NewProjectService(store)
+	p, err := projSvc.CreateProject(ctx, "PurgeBot", "purgebot")
+	require.NoError(t, err)
+
+	svc := service.NewRecordingService(store, store, store, storage)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	// A human recording, ingested normally — it must survive.
+	require.NoError(t, svc.IngestChunk(ctx, service.RecordingChunk{
+		RecordingID: "rec-human", SessionID: "sess-human", ChunkIndex: 0,
+		Events:    json.RawMessage(`[{"type":2,"data":{}}]`),
+		StartedAt: now, DurationMs: 1000, ProjectSlug: "purgebot", ProjectID: p.ID, UserAgent: "Mozilla/5.0",
+	}))
+
+	// Bot recordings as they exist today: written before the ingest gate, with
+	// their chunks already in object storage. Ingest refuses these now, so they
+	// have to be seeded directly.
+	ended := now.Add(time.Second)
+	for _, id := range []string{"rec-bot-a", "rec-bot-b"} {
+		require.NoError(t, store.UpsertRecording(ctx, repository.Recording{
+			ID: id, ProjectID: p.ID, SessionID: "sess-" + id,
+			FirstChunkIndex: 0, LastChunkIndex: 1, ChunkCount: 2,
+			HasSnapshot: true, DurationMs: 1000,
+			StartedAt: now, EndedAt: &ended,
+			UserAgent: "BrandtraceBot/1.0 (+https://brandtrace.net/bot)",
+			IsBot:     true,
+		}))
+		require.NoError(t, storage.Put(ctx, "recordings/"+p.ID+"/"+id+"/00000.json.gz", []byte("chunk-0")))
+		require.NoError(t, storage.Put(ctx, "recordings/"+p.ID+"/"+id+"/00001.json.gz", []byte("chunk-1")))
+	}
+	require.NoError(t, store.InsertTraceLinks(ctx, p.ID, "sess-rec-bot-a", "rec-bot-a", []repository.TraceLink{
+		{TraceID: "trace-bot-a", SpanID: "span-1", URL: "https://example.com", OccurredAt: now},
+	}))
+
+	n, err := svc.PurgeBotRecordings(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+
+	for _, id := range []string{"rec-bot-a", "rec-bot-b"} {
+		_, err := store.GetRecording(ctx, id)
+		assert.Error(t, err, "bot recording %s should be deleted", id)
+	}
+	_, err = store.GetRecording(ctx, "rec-human")
+	assert.NoError(t, err, "human recording must be preserved")
+
+	// Chunk objects go with the rows, and the human recording's stay.
+	for _, k := range storage.keys() {
+		assert.NotContains(t, k, "rec-bot-", "bot chunks should be purged from object storage")
+	}
+	assert.Len(t, storage.keys(), 1)
+
+	// Trace links follow the recording — recording_traces has no FK, so nothing
+	// cascades and they would otherwise be stranded.
+	links, err := store.TracesForRecording(ctx, "rec-bot-a")
+	require.NoError(t, err)
+	assert.Empty(t, links, "trace links should be deleted with the recording")
+
+	// Idempotent: a second cycle finds nothing.
+	n2, err := svc.PurgeBotRecordings(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, n2)
 }

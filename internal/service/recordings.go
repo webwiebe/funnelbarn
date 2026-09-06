@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
@@ -56,6 +57,20 @@ func NewRecordingService(store ports.RecordingRepo, funnels ports.FunnelRepo, ev
 // IngestChunk compresses the rrweb event chunk, uploads it to R2, and
 // upserts the recording metadata row in SQLite.
 func (svc *RecordingService) IngestChunk(ctx context.Context, chunk RecordingChunk) error {
+	// Bot traffic is dropped here rather than stored and filtered out of the
+	// list query later. DetectBot already has the answer at the first chunk, and
+	// a crawler's replay has no value at any age — so there is no retention
+	// window: a window would still pay the R2 write and N days of storage for a
+	// recording nobody will ever open. Returning nil (not an error) keeps the
+	// SDK's 202 and stops it retrying a chunk we will never accept.
+	if DetectBot(chunk.UserAgent) {
+		metrics.RecordingChunksDropped.Inc()
+		slog.DebugContext(ctx, "recordings: dropping bot chunk",
+			"recording_id", chunk.RecordingID, "project_id", chunk.ProjectID,
+			"user_agent", chunk.UserAgent)
+		return nil
+	}
+
 	// Compress events.
 	compressed, err := gzipJSON(chunk.Events)
 	if err != nil {
@@ -148,6 +163,38 @@ func (svc *RecordingService) PurgeOldRecordings(ctx context.Context, retentionDa
 		}
 	}
 	return nil
+}
+
+// PurgeBotRecordings deletes recordings flagged as bot traffic from both R2 and
+// SQLite. Ingest refuses new ones, but 56% of the table predates that gate and
+// no SQL migration can reach the chunk objects in R2 — only this sweep knows how
+// to derive their keys, and it must do so before the rows that hold them are
+// gone. Idempotent and safe on every retention cycle; returns rows removed.
+//
+// maxBotPurgeBatches bounds one cycle so a large backlog is drained over
+// several passes rather than blocking the maintenance goroutine on 10k+ R2
+// deletes. 20 batches of 500 clears the known production backlog in one cycle.
+const maxBotPurgeBatches = 20
+
+func (svc *RecordingService) PurgeBotRecordings(ctx context.Context) (int, error) {
+	total := 0
+	for range maxBotPurgeBatches {
+		recs, err := svc.store.ListBotRecordings(ctx)
+		if err != nil {
+			return total, fmt.Errorf("recordings: list bot: %w", err)
+		}
+		if len(recs) == 0 {
+			return total, nil
+		}
+		for _, rec := range recs {
+			svc.deleteChunks(ctx, rec.ProjectID, rec.ID, rec.LastChunkIndex, rec.ChunkCount)
+			if err := svc.store.DeleteRecording(ctx, rec.ID); err != nil {
+				return total, fmt.Errorf("recordings: delete bot row %s: %w", rec.ID, err)
+			}
+			total++
+		}
+	}
+	return total, nil
 }
 
 // PurgeBrokenRecordings deletes recordings that can never play back (no full
