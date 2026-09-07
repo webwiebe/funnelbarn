@@ -388,23 +388,66 @@ func TruncateDeadLetter(dir string) error {
 	return err
 }
 
-// AppendDeadLetter writes a record to the dead-letter file in dir.
+// MaxDeadLetterBytes caps the dead-letter file. It had no limit at all, and a
+// single misconfigured client (an API key whose project had been deleted, #257)
+// wrote 108,343 records into it over two months — 68 MB on the same volume as
+// the database and the spool, growing unattended.
+//
+// The cap is a stop, not a rotation: dead-letter records exist to be replayed,
+// so discarding the oldest to make room for the newest would quietly destroy
+// the evidence of the first failure, which is the one worth having. Once full
+// the file stops accepting writes and says so, and ErrDeadLetterFull tells the
+// caller to alert rather than retry.
+const MaxDeadLetterBytes int64 = 64 << 20 // 64 MiB
+
+// ErrDeadLetterFull means the dead-letter file has reached MaxDeadLetterBytes.
+// Something is failing in bulk and nothing has drained it; replay the file with
+// `funnelbarn replay-dead-letter` and investigate before it accepts more.
+var ErrDeadLetterFull = errors.New("dead-letter file is full")
+
+// DeadLetterSize returns the size of the dead-letter file in bytes. A missing
+// file is 0, not an error.
+func DeadLetterSize(dir string) (int64, error) {
+	info, err := os.Stat(DeadLetterPath(dir))
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
+}
+
+// AppendDeadLetter writes a record to the dead-letter file in dir, up to
+// MaxDeadLetterBytes. Beyond that it returns ErrDeadLetterFull and writes
+// nothing.
 func AppendDeadLetter(dir string, record Record) error {
 	if dir == "" {
 		dir = ".data/spool"
 	}
 	path := DeadLetterPath(dir)
+
+	payload, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	payload = append(payload, '\n')
+
+	// Check before opening for append so a full file is never grown by even one
+	// record. A missing file is size 0 and always has room.
+	if size, err := DeadLetterSize(dir); err != nil {
+		return err
+	} else if size+int64(len(payload)) > MaxDeadLetterBytes {
+		return ErrDeadLetterFull
+	}
+
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
-	payload, err := json.Marshal(record)
-	if err != nil {
-		return err
-	}
-	_, err = file.Write(append(payload, '\n'))
+	_, err = file.Write(payload)
 	return err
 }
 
