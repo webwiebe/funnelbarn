@@ -514,7 +514,17 @@ const (
 // for one that could never have been persisted at all. Returns the new offset.
 func deadLetterRecord(spoolDir string, record spool.Record, endOffset int64, reason string) int64 {
 	if err := spool.AppendDeadLetter(spoolDir, record); err != nil {
-		slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", err)
+		// A full dead-letter file is its own alert: something has been failing
+		// in bulk and nothing has drained it. handled=false so it reaches
+		// BugBarn as an issue rather than scrolling past in the log.
+		if errors.Is(err, spool.ErrDeadLetterFull) {
+			slog.Error("dead-letter file is full; records are being discarded — replay it with 'funnelbarn replay-dead-letter' and find what is failing",
+				"err", err, "handled", false,
+				"ingest_id", record.IngestID,
+				"limit_bytes", spool.MaxDeadLetterBytes)
+		} else {
+			slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", err)
+		}
 	}
 	metrics.EventErrors.WithLabelValues(reason).Inc()
 	if err := spool.WriteCursor(spoolDir, endOffset); err != nil {

@@ -10,6 +10,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -96,6 +97,18 @@ func runMaintenance(ctx context.Context, cfg config.Config, store *repository.St
 			"funnels", orphans.Funnels,
 			"api_keys", orphans.APIKeys,
 		)
+	}
+
+	// Surface the dead-letter backlog. It is invisible otherwise — a file on a
+	// volume nobody looks at — and 108,343 records accumulated in it over two
+	// months before an audit found them.
+	if size, err := spool.DeadLetterSize(cfg.SpoolDir); err != nil {
+		slog.Warn("stat dead-letter file", "err", err, "handled", true)
+	} else {
+		metrics.DeadLetterBytes.Set(float64(size))
+		if size > 0 {
+			slog.Info("dead-letter backlog", "bytes", size, "limit_bytes", spool.MaxDeadLetterBytes)
+		}
 	}
 
 	if recordings != nil {

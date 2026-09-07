@@ -2,8 +2,12 @@ package spool_test
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -506,5 +510,97 @@ func TestDeadLetterRoundTripAndTruncate(t *testing.T) {
 func TestTruncateDeadLetter_MissingFile(t *testing.T) {
 	if err := spool.TruncateDeadLetter(t.TempDir()); err != nil {
 		t.Fatalf("expected no error for a missing dead-letter file, got %v", err)
+	}
+}
+
+// The dead-letter file had no cap at all: one misconfigured client wrote
+// 108,343 records and 68 MB into it over two months, on the same volume as the
+// database and the spool.
+func TestAppendDeadLetter_StopsAtTheCap(t *testing.T) {
+	dir := t.TempDir()
+
+	rec := spool.Record{IngestID: "i1", BodyBase64: strings.Repeat("A", 1024)}
+	// Fill to just under the cap by writing directly, so the test does not have
+	// to append 64 MiB one record at a time.
+	payload, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Leave the file 10 bytes short of having room for one more record, so the
+	// next append overflows the cap rather than fitting exactly.
+	filler := spool.MaxDeadLetterBytes - int64(len(payload)+1) + 10
+	if err := os.WriteFile(spool.DeadLetterPath(dir), make([]byte, filler), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// One more record does not fit within the remaining 10 bytes.
+	if err := spool.AppendDeadLetter(dir, rec); !errors.Is(err, spool.ErrDeadLetterFull) {
+		t.Errorf("want spool.ErrDeadLetterFull, got %v", err)
+	}
+
+	// And nothing was written — a full file must not grow by even one record.
+	size, err := spool.DeadLetterSize(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if size != filler {
+		t.Errorf("file grew past the cap: %d -> %d", filler, size)
+	}
+}
+
+// Under the cap it behaves exactly as before.
+func TestAppendDeadLetter_WritesWhenThereIsRoom(t *testing.T) {
+	dir := t.TempDir()
+
+	for i := range 3 {
+		if err := spool.AppendDeadLetter(dir, spool.Record{IngestID: fmt.Sprintf("i%d", i)}); err != nil {
+			t.Fatalf("append %d: %v", i, err)
+		}
+	}
+
+	size, err := spool.DeadLetterSize(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if size == 0 {
+		t.Fatal("nothing was written")
+	}
+
+	data, err := os.ReadFile(spool.DeadLetterPath(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(data), "\n"); got != 3 {
+		t.Errorf("want 3 records, got %d", got)
+	}
+}
+
+// A missing file is size 0, not an error — the common case on a healthy
+// instance, and the maintenance pass reads this every cycle.
+func TestDeadLetterSize_MissingFileIsZero(t *testing.T) {
+	size, err := spool.DeadLetterSize(t.TempDir())
+	if err != nil {
+		t.Fatalf("want no error for a missing file, got %v", err)
+	}
+	if size != 0 {
+		t.Errorf("want 0, got %d", size)
+	}
+}
+
+// Truncating after a replay frees the file to accept records again, so a full
+// file is a recoverable state rather than a permanent one.
+func TestTruncateDeadLetter_RestoresCapacity(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(spool.DeadLetterPath(dir), make([]byte, spool.MaxDeadLetterBytes), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := spool.AppendDeadLetter(dir, spool.Record{IngestID: "i1"}); !errors.Is(err, spool.ErrDeadLetterFull) {
+		t.Fatalf("want spool.ErrDeadLetterFull, got %v", err)
+	}
+	if err := spool.TruncateDeadLetter(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := spool.AppendDeadLetter(dir, spool.Record{IngestID: "i1"}); err != nil {
+		t.Errorf("append after truncate: %v", err)
 	}
 }

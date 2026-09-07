@@ -119,6 +119,11 @@ var (
 		Help: "Requests that did not match a route, by canonical target path and outcome (redirected/unmatched).",
 	}, []string{"path", "outcome"})
 
+	DeadLetterBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "funnelbarn_dead_letter_bytes",
+		Help: "Size of the dead-letter file in bytes. Non-zero means events were dropped and never replayed.",
+	})
+
 	// External call instrumentation (R2 storage, IAMBarn, OIDC).
 	R2Requests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "funnelbarn_r2_requests_total",
