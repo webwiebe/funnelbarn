@@ -38,6 +38,20 @@ jobs:
       - name: staticcheck
         run: go install honnef.co/go/tools/cmd/staticcheck@latest && staticcheck ./...
 
+      - name: sqlc generate is up to date
+        # sqlc reads every file in internal/repository/migrations as its schema,
+        # so one unparseable migration silently breaks generation for the whole
+        # repo. That went unnoticed from 00027 (July) until 00034 made it fail
+        # loudly, by which point sqlcgen/models.go was missing three tables.
+        # Regenerate and fail on any drift.
+        run: |
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
+          (cd internal/repository && sqlc generate)
+          if ! git diff --exit-code -- internal/repository/sqlcgen; then
+            echo "sqlcgen/ is out of date — run 'cd internal/repository && sqlc generate' and commit the result"
+            exit 1
+          fi
+
       - name: Go quality ratchets (complexity / file length / duplication)
         # Cyclomatic complexity, file length, and code duplication — each pinned
         # at today's worst value. They may only ratchet DOWN. See the script.

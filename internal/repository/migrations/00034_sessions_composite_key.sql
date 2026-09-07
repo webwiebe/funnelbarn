@@ -87,23 +87,24 @@ INSERT INTO sessions_rebuild (
     screen_width, screen_height, pixel_ratio, touch, dark_mode, reduced_motion,
     browser_timezone, cpu_cores, signals_collected
 )
+-- NOTE: the window specifications are written inline rather than with a named
+-- WINDOW clause. They are equivalent SQL, but sqlc's SQLite grammar cannot
+-- parse `WINDOW w AS (...)`, and sqlc reads every file in migrations/ as its
+-- schema — so a named window here breaks `sqlc generate` for the whole
+-- repository. Keep them inline.
 WITH ranked AS (
     SELECT
         e.project_id, e.session_id, e.url, e.referrer,
         e.utm_source, e.utm_medium, e.utm_campaign,
         e.device_type, e.country_code, e.environment,
-        ROW_NUMBER() OVER w_first AS rn_first,
-        ROW_NUMBER() OVER w_last  AS rn_last,
-        COUNT(*)           OVER w_part AS event_count,
-        MIN(e.occurred_at) OVER w_part AS first_seen_at,
-        MAX(e.occurred_at) OVER w_part AS last_seen_at
-    FROM events e
-    WINDOW
-        w_part  AS (PARTITION BY e.project_id, e.session_id),
         -- id breaks ties so the choice is deterministic rather than dependent
         -- on scan order when two events share a timestamp.
-        w_first AS (PARTITION BY e.project_id, e.session_id ORDER BY e.occurred_at ASC,  e.id ASC),
-        w_last  AS (PARTITION BY e.project_id, e.session_id ORDER BY e.occurred_at DESC, e.id DESC)
+        ROW_NUMBER() OVER (PARTITION BY e.project_id, e.session_id ORDER BY e.occurred_at ASC,  e.id ASC)  AS rn_first,
+        ROW_NUMBER() OVER (PARTITION BY e.project_id, e.session_id ORDER BY e.occurred_at DESC, e.id DESC) AS rn_last,
+        COUNT(*)           OVER (PARTITION BY e.project_id, e.session_id) AS event_count,
+        MIN(e.occurred_at) OVER (PARTITION BY e.project_id, e.session_id) AS first_seen_at,
+        MAX(e.occurred_at) OVER (PARTITION BY e.project_id, e.session_id) AS last_seen_at
+    FROM events e
 )
 SELECT
     f.session_id, f.project_id, f.first_seen_at, f.last_seen_at, f.event_count,
