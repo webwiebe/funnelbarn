@@ -55,6 +55,7 @@ func Init(o Options) {
 	}
 	opts = o
 	tp = newTransport(o.APIKey, o.Endpoint, o.ProjectSlug, o.QueueSize)
+	go tp.selfTest()
 }
 
 // CaptureError captures an error and enqueues it for delivery.

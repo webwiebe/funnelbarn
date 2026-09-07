@@ -11,6 +11,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -64,11 +65,11 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 
 	if s.projectHealth != nil {
 		pid := projectID
-		go func() {
+		bblog.Go("recordings-health", func() {
 			if err := s.projectHealth.MarkRecordingsReceived(context.Background(), pid); err != nil {
 				slog.Warn("recording chunk: mark health", "project_id", pid, "err", err)
 			}
-		}()
+		})
 	}
 
 	proj, err := s.projects.GetProject(ctx, projectID)

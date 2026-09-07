@@ -13,6 +13,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -82,11 +83,11 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 
 	if s.projectHealth != nil {
 		pid := project.ID
-		go func() {
+		bblog.Go("setup-health", func() {
 			if err := s.projectHealth.MarkSetupCalled(context.Background(), pid); err != nil {
 				slog.Warn("setup: mark health", "project_id", pid, "err", err)
 			}
-		}()
+		})
 	}
 
 	publicURL := s.publicURL

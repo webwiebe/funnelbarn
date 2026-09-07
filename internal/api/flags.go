@@ -11,6 +11,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -328,11 +329,11 @@ func (s *Server) handleEvaluateFlag(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.projectHealth != nil {
 		pid := projectID
-		go func() {
+		bblog.Go("flags-health", func() {
 			if err := s.projectHealth.MarkFlagsEvaluated(context.Background(), pid); err != nil {
 				slog.Warn("evaluate flag: mark health", "project_id", pid, "err", err)
 			}
-		}()
+		})
 	}
 	// SDK callers auto-register unknown flags so they surface in the dashboard.
 	s.evaluateFlagInProject(w, r, projectID, true)
