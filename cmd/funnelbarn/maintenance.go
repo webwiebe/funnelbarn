@@ -94,6 +94,7 @@ func runMaintenance(ctx context.Context, cfg config.Config, store *repository.St
 			"events", orphans.Events,
 			"sessions", orphans.Sessions,
 			"funnels", orphans.Funnels,
+			"api_keys", orphans.APIKeys,
 		)
 	}
 
