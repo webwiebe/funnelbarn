@@ -18,6 +18,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
+	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
@@ -483,6 +484,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// A client that concatenated its base URL with the ingest path posts to
+	// /api/v1/events/api/v1/events and gets a silent 404. Production sees ~189
+	// of those a week against ~110 correct posts, so the misconfigured client
+	// alone loses more events than every working client sends. Send it to the
+	// right place instead of dropping it, and say so in the log — a 308
+	// preserves the method and body, so the event survives the round trip.
+	if canonical, ok := canonicalAPIPath(r.URL.Path); ok {
+		logMisroutedRequest(r, canonical)
+		metrics.MisroutedRequests.WithLabelValues(canonical, "redirected").Inc()
+		target := canonical
+		if r.URL.RawQuery != "" {
+			target += "?" + r.URL.RawQuery
+		}
+		http.Redirect(w, r, target, http.StatusPermanentRedirect)
+		return
+	}
+
 	// Apply a reasonable body limit to all routes. Ingest and recording-chunk
 	// endpoints have their own per-handler limits because their payloads can
 	// legitimately exceed the default cap (rrweb full snapshots are routinely
@@ -492,6 +510,78 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// Apply middleware: requestLogger (innermost) → securityHeaders → tracing → dispatch.
 	tracing.Middleware(requestLogger(s.securityMW(s.mux))).ServeHTTP(w, r)
+}
+
+// canonicalAPIPath detects a path whose client doubled the API prefix — the
+// shape produced by joining a base URL that already ends in the ingest path
+// with the path again — and returns the path it meant.
+//
+//	/api/v1/events/api/v1/events          -> /api/v1/events
+//	/api/api/v1/evaluate                  -> /api/v1/evaluate
+//	/api/v1/events/api/v1/recording-config -> /api/v1/recording-config
+//
+// It keys on the LAST occurrence of the prefix, so the result always contains
+// exactly one and a redirect can never loop. A path with a single prefix (the
+// normal case, and genuinely-wrong paths like /api/v1/recordings/chunk) is not
+// rewritten — those still 404, and logMisroutedRequest reports them.
+func canonicalAPIPath(path string) (string, bool) {
+	const prefix = "/api/v1/"
+	i := strings.LastIndex(path, prefix)
+	if i <= 0 {
+		return "", false
+	}
+	return path[i:], true
+}
+
+// canonicalMetricPath bounds the cardinality of the misrouted-request counter.
+// An unmatched path is caller-controlled, so only paths we actually serve are
+// used as label values; anything else is bucketed as "other" rather than
+// minting a new series per scanner probe.
+func canonicalMetricPath(path string) string {
+	if _, ok := knownAPIPaths[path]; ok {
+		return path
+	}
+	if canonical, ok := canonicalAPIPath(path); ok {
+		if _, known := knownAPIPaths[canonical]; known {
+			return canonical
+		}
+	}
+	return "other"
+}
+
+// knownAPIPaths is the set of fixed ingest-facing routes worth distinguishing
+// in the misroute counter. Parameterised dashboard routes are deliberately
+// absent — they are not what misconfigured clients post to, and they would
+// need templating to stay bounded.
+var knownAPIPaths = map[string]struct{}{
+	"/api/v1/events":           {},
+	"/api/v1/evaluate":         {},
+	"/api/v1/recordings/chunk": {},
+	"/api/v1/recording-config": {},
+	"/api/v1/setup":            {},
+	"/api/v1/health":           {},
+}
+
+// logMisroutedRequest reports a request that did not reach a real route, with
+// the identifying headers needed to trace it back to a repository. The audit
+// that found this could not attribute 189 lost events a week to any client
+// because nothing recorded the origin or the project they claimed.
+func logMisroutedRequest(r *http.Request, canonical string) {
+	attrs := []any{
+		"handled", canonical != "",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"origin", r.Header.Get("Origin"),
+		"referer", r.Header.Get("Referer"),
+		"user_agent", r.Header.Get("User-Agent"),
+		"project", r.Header.Get("x-funnelbarn-project"),
+	}
+	if canonical != "" {
+		attrs = append(attrs, "redirected_to", canonical)
+		slog.WarnContext(r.Context(), "request used a doubled API path; redirecting to the canonical one", attrs...)
+		return
+	}
+	slog.WarnContext(r.Context(), "request did not match any route", attrs...)
 }
 
 // SetMetricsToken configures a bearer token required to access /metrics.

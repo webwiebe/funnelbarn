@@ -366,6 +366,13 @@ func requestLogger(next http.Handler) http.Handler {
 			// the root cause; this is the request envelope.
 			attrs = append(attrs, "handled", false)
 			slog.ErrorContext(ctx, "request failed", attrs...)
+		case status == http.StatusNotFound && strings.HasPrefix(r.URL.Path, "/api/"):
+			// A 404 under /api/ is a client that cannot reach us at all, and
+			// until this it was logged at Info and lost in the noise — an audit
+			// found ~220 a week and could not attribute a single one. Warn, with
+			// the headers that identify the caller.
+			logMisroutedRequest(r, "")
+			metrics.MisroutedRequests.WithLabelValues(canonicalMetricPath(r.URL.Path), "unmatched").Inc()
 		case status == http.StatusRequestEntityTooLarge,
 			status == http.StatusTooManyRequests:
 			// 413/429 used to silently swallow real failures (the

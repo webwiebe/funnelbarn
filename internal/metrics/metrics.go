@@ -108,6 +108,17 @@ var (
 		Help: "Recording chunks refused at ingest because the user agent is a bot.",
 	})
 
+	// MisroutedRequests counts requests that did not match a route, labelled by
+	// the canonical path they were meant for and whether they could be
+	// recovered. Deliberately NOT labelled by origin or user agent: those are
+	// attacker-controllable and unbounded, and one scanner would blow up the
+	// series count. The identifying detail goes to the log line instead, which
+	// is where you look once the counter tells you it is happening.
+	MisroutedRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "funnelbarn_misrouted_requests_total",
+		Help: "Requests that did not match a route, by canonical target path and outcome (redirected/unmatched).",
+	}, []string{"path", "outcome"})
+
 	// External call instrumentation (R2 storage, IAMBarn, OIDC).
 	R2Requests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "funnelbarn_r2_requests_total",
