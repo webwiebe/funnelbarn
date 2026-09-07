@@ -30,6 +30,30 @@ type ApiKey struct {
 	CreatedAt  time.Time    `json:"created_at"`
 }
 
+type CanonicalEvent struct {
+	Key       string    `json:"key"`
+	Label     string    `json:"label"`
+	SortOrder int64     `json:"sort_order"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type CanonicalFunnel struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	Scope       string         `json:"scope"`
+	ProjectIds  string         `json:"project_ids"`
+	Segment     sql.NullString `json:"segment"`
+	CreatedAt   time.Time      `json:"created_at"`
+}
+
+type CanonicalFunnelStep struct {
+	ID           string `json:"id"`
+	FunnelID     string `json:"funnel_id"`
+	StepOrder    int64  `json:"step_order"`
+	CanonicalKey string `json:"canonical_key"`
+}
+
 type DashboardWidget struct {
 	ID        string    `json:"id"`
 	ProjectID string    `json:"project_id"`
@@ -68,19 +92,29 @@ type Event struct {
 	Environment    string         `json:"environment"`
 }
 
+type EventNameMapping struct {
+	ProjectID    string    `json:"project_id"`
+	RawName      string    `json:"raw_name"`
+	CanonicalKey string    `json:"canonical_key"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
 type FeatureFlag struct {
-	ID              string    `json:"id"`
-	ProjectID       string    `json:"project_id"`
-	FlagKey         string    `json:"flag_key"`
-	Name            string    `json:"name"`
-	FlagType        string    `json:"flag_type"`
-	Variants        string    `json:"variants"`
-	DefaultVariant  string    `json:"default_variant"`
-	Split           string    `json:"split"`
-	ConversionEvent string    `json:"conversion_event"`
-	Status          string    `json:"status"`
-	CreatedAt       time.Time `json:"created_at"`
-	TargetingRules  string    `json:"targeting_rules"`
+	ID              string       `json:"id"`
+	ProjectID       string       `json:"project_id"`
+	FlagKey         string       `json:"flag_key"`
+	Name            string       `json:"name"`
+	FlagType        string       `json:"flag_type"`
+	Variants        string       `json:"variants"`
+	DefaultVariant  string       `json:"default_variant"`
+	Split           string       `json:"split"`
+	ConversionEvent string       `json:"conversion_event"`
+	Status          string       `json:"status"`
+	CreatedAt       time.Time    `json:"created_at"`
+	TargetingRules  string       `json:"targeting_rules"`
+	Origin          string       `json:"origin"`
+	LastEvaluatedAt sql.NullTime `json:"last_evaluated_at"`
+	FlagKind        string       `json:"flag_kind"`
 }
 
 type FlagEvaluation struct {
@@ -162,6 +196,17 @@ type Recording struct {
 	HasSnapshot     int64        `json:"has_snapshot"`
 }
 
+type RecordingTrace struct {
+	ProjectID   string    `json:"project_id"`
+	SessionID   string    `json:"session_id"`
+	RecordingID string    `json:"recording_id"`
+	TraceID     string    `json:"trace_id"`
+	SpanID      string    `json:"span_id"`
+	Url         string    `json:"url"`
+	OccurredAt  time.Time `json:"occurred_at"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 type SchemaMigration struct {
 	Version   int64  `json:"version"`
 	AppliedAt string `json:"applied_at"`
@@ -222,4 +267,21 @@ type User struct {
 	PasswordHash string         `json:"password_hash"`
 	CreatedAt    time.Time      `json:"created_at"`
 	IambarnSub   sql.NullString `json:"iambarn_sub"`
+}
+
+type WebSession struct {
+	IDHash              string         `json:"id_hash"`
+	Username            string         `json:"username"`
+	AuthMethod          string         `json:"auth_method"`
+	IdpSub              sql.NullString `json:"idp_sub"`
+	IdpSid              sql.NullString `json:"idp_sid"`
+	IDToken             sql.NullString `json:"id_token"`
+	AccessToken         sql.NullString `json:"access_token"`
+	RefreshToken        sql.NullString `json:"refresh_token"`
+	AccessExpiresAt     sql.NullInt64  `json:"access_expires_at"`
+	ClaimsJson          sql.NullString `json:"claims_json"`
+	CreatedAt           int64          `json:"created_at"`
+	AbsoluteExpiresAt   int64          `json:"absolute_expires_at"`
+	LastRefreshAt       sql.NullInt64  `json:"last_refresh_at"`
+	RefreshFailingSince sql.NullInt64  `json:"refresh_failing_since"`
 }
