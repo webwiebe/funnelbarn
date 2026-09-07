@@ -90,6 +90,19 @@ func buildEnvelope(err error, opts captureOpts) envelope {
 	return env
 }
 
+// buildSelfTestEnvelope builds the one info-level event Init sends at startup
+// to verify self-reporting actually reaches BugBarn. See transport.selfTest.
+func buildSelfTestEnvelope() envelope {
+	msg := "bugbarn self-reporting initialised"
+	return envelope{
+		Timestamp:    time.Now().UTC().Format(time.RFC3339Nano),
+		SeverityText: "INFO",
+		Body:         msg,
+		Exception:    exceptionBlock{Type: "Info", Message: msg},
+		Sender:       senderBlock{SDK: sdkBlock{Name: sdkName, Version: sdkVersion}},
+	}
+}
+
 func buildMessageEnvelope(msg string, opts captureOpts) envelope {
 	fakeErr := fmt.Errorf("%s", msg)
 	env := buildEnvelope(fakeErr, opts)

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 )
 
@@ -157,7 +158,7 @@ func (rl *rateLimiter) cleanup() {
 
 // startCleanup runs periodic cleanup in a background goroutine until ctx is cancelled.
 func (rl *rateLimiter) startCleanup(ctx context.Context) {
-	go func() {
+	bblog.Go("ratelimiter-cleanup", func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
 		for {
@@ -168,7 +169,7 @@ func (rl *rateLimiter) startCleanup(ctx context.Context) {
 				rl.cleanup()
 			}
 		}
-	}()
+	})
 }
 
 // clientIP extracts the real client IP address from the request.

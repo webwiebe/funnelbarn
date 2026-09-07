@@ -190,6 +190,9 @@ func run() error {
 	slog.SetDefault(buildLogger(cfg, spanbarnLogHandler))
 	if selfReporting {
 		slog.Info("self-reporting enabled", "endpoint", cfg.SelfEndpoint)
+	} else {
+		slog.Warn("self-reporting disabled; errors will not be reported to BugBarn — set FUNNELBARN_SELF_ENDPOINT and FUNNELBARN_SELF_API_KEY to enable it",
+			"handled", true)
 	}
 	if cfg.DogfoodAPIKey != "" {
 		slog.Info("dogfood analytics enabled", "project", cfg.DogfoodProject)
@@ -295,7 +298,9 @@ func run() error {
 		}
 	}
 
-	go runBackgroundWorker(ctx, cfg, store, eventSpool, geoLookup, recordingsSvc)
+	bblog.Go("background-worker", func() {
+		runBackgroundWorker(ctx, cfg, store, eventSpool, geoLookup, recordingsSvc)
+	})
 
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
 	if err != nil {
@@ -430,9 +435,9 @@ func run() error {
 	slog.Info("funnelbarn starting", "addr", cfg.Addr, "version", version)
 
 	errCh := make(chan error, 1)
-	go func() {
+	bblog.Go("http-server", func() {
 		errCh <- server.ListenAndServe()
-	}()
+	})
 
 	select {
 	case <-ctx.Done():

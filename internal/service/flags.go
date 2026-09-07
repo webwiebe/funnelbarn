@@ -17,6 +17,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -440,7 +441,7 @@ func (svc *FlagService) touchEvaluated(projectID, flagKey string) {
 	if !svc.shouldTouch(projectID, flagKey, time.Now()) {
 		return
 	}
-	go func() {
+	bblog.Go("flags-touch-evaluated", func() {
 		ctx := context.Background()
 		f, err := svc.store.FlagByKey(ctx, projectID, flagKey)
 		if err != nil {
@@ -450,7 +451,7 @@ func (svc *FlagService) touchEvaluated(projectID, flagKey string) {
 			slog.WarnContext(ctx, "flag: touch last_evaluated_at", "err", err, "handled", true,
 				"flag_id", f.ID, "project_id", projectID)
 		}
-	}()
+	})
 }
 
 func (svc *FlagService) AnalyzeFlag(ctx context.Context, flag repository.FeatureFlag, from, to time.Time) ([]repository.FlagAnalysisResult, error) {
