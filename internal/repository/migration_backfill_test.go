@@ -687,3 +687,135 @@ func TestMigration00036_IsIdempotentAndPreservesHumanMappings(t *testing.T) {
 		t.Errorf("re-running the seed added rows: %d -> %d", before, after)
 	}
 }
+
+// Regression for the bug that reached production: 00034 took country_code from
+// the event CTE instead of the session, so the rebuild overwrote every
+// session's country with the event's empty string and destroyed the only copy.
+// country_code is a geo field — resolved from the visitor's IP and written to
+// the session, never to the event (that is #227) — so it must be carried across
+// with the other geo fields.
+func TestMigration00034_PreservesSessionCountry(t *testing.T) {
+	db := openAtVersion(t, 33)
+
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('pa', 'A', 'a')`)
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('pb', 'B', 'b')`)
+
+	// The production shape exactly: the session carries the geo, the event
+	// carries none.
+	mustExec(t, db, `INSERT INTO sessions
+		(id, project_id, first_seen_at, last_seen_at, country_code, city, asn_org)
+		VALUES ('s1', 'pa', '2026-08-01 10:00:00', '2026-08-01 10:00:00', 'NL', 'Nijmegen', 'Example ISP')`)
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at, country_code)
+		VALUES ('e1', 'pa', 's1', 'pageview', 'i1', '2026-08-01 10:00:00', '')`)
+
+	if err := goose.UpTo(db, "migrations", 34); err != nil {
+		t.Fatalf("goose up to 34: %v", err)
+	}
+
+	var country, city, asn string
+	err := db.QueryRow(`SELECT COALESCE(country_code,''), COALESCE(city,''), COALESCE(asn_org,'')
+		FROM sessions WHERE id = 's1' AND project_id = 'pa'`).Scan(&country, &city, &asn)
+	if err != nil {
+		t.Fatalf("read rebuilt session: %v", err)
+	}
+	if country != "NL" {
+		t.Errorf("session country_code: want NL, got %q — the rebuild overwrote it from the event", country)
+	}
+	// The fields that were already correct must stay correct.
+	if city != "Nijmegen" || asn != "Example ISP" {
+		t.Errorf("other geo fields lost: city=%q asn=%q", city, asn)
+	}
+}
+
+// An event that does carry a country still supplies one for a session that has
+// none, so the fallback is not dropped along with the bug.
+func TestMigration00034_FallsBackToEventCountry(t *testing.T) {
+	db := openAtVersion(t, 33)
+
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('pa', 'A', 'a')`)
+	mustExec(t, db, `INSERT INTO sessions (id, project_id, first_seen_at, last_seen_at, country_code)
+		VALUES ('s1', 'pa', '2026-08-01 10:00:00', '2026-08-01 10:00:00', '')`)
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at, country_code)
+		VALUES ('e1', 'pa', 's1', 'pageview', 'i1', '2026-08-01 10:00:00', 'DE')`)
+
+	if err := goose.UpTo(db, "migrations", 34); err != nil {
+		t.Fatalf("goose up to 34: %v", err)
+	}
+
+	var country string
+	if err := db.QueryRow(`SELECT COALESCE(country_code,'') FROM sessions
+		WHERE id = 's1' AND project_id = 'pa'`).Scan(&country); err != nil {
+		t.Fatal(err)
+	}
+	if country != "DE" {
+		t.Errorf("session country_code: want DE from the event, got %q", country)
+	}
+}
+
+// A split row must not inherit another project's country, the same rule the
+// other geo fields follow.
+func TestMigration00034_CountryDoesNotLeakAcrossSplitRows(t *testing.T) {
+	db := openAtVersion(t, 33)
+
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('pa', 'A', 'a')`)
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('pb', 'B', 'b')`)
+	// One row, owned by B, carrying B's country.
+	mustExec(t, db, `INSERT INTO sessions (id, project_id, first_seen_at, last_seen_at, country_code)
+		VALUES ('shared', 'pb', '2026-08-01 10:00:00', '2026-08-01 10:00:00', 'DE')`)
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at)
+		VALUES ('e-a', 'pa', 'shared', 'pageview', 'i-a', '2026-08-01 10:00:00')`)
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at)
+		VALUES ('e-b', 'pb', 'shared', 'pageview', 'i-b', '2026-08-01 10:00:00')`)
+
+	if err := goose.UpTo(db, "migrations", 34); err != nil {
+		t.Fatalf("goose up to 34: %v", err)
+	}
+
+	var b, a string
+	if err := db.QueryRow(`SELECT COALESCE(country_code,'') FROM sessions WHERE id='shared' AND project_id='pb'`).Scan(&b); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COALESCE(country_code,'') FROM sessions WHERE id='shared' AND project_id='pa'`).Scan(&a); err != nil {
+		t.Fatal(err)
+	}
+	if b != "DE" {
+		t.Errorf("the owning project lost its country: got %q", b)
+	}
+	if a != "" {
+		t.Errorf("project A inherited another project's country: got %q", a)
+	}
+}
+
+// 00037 re-runs the events backfill, which 00035 could not do again once goose
+// had recorded it. On a database where 00035 worked it is a no-op.
+func TestMigration00037_FillsEventsFromRecoveredSessions(t *testing.T) {
+	db := openAtVersion(t, 36)
+
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('pa', 'A', 'a')`)
+	mustExec(t, db, `INSERT INTO sessions (id, project_id, first_seen_at, last_seen_at, country_code)
+		VALUES ('s1', 'pa', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'NL')`)
+	// The post-recovery production state: sessions have their country back,
+	// events are still empty because 00035 ran while sessions were blank.
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at, country_code)
+		VALUES ('e1', 'pa', 's1', 'pageview', 'i1', CURRENT_TIMESTAMP, '')`)
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at, country_code)
+		VALUES ('e2', 'pa', 's1', 'pageview', 'i2', CURRENT_TIMESTAMP, 'FR')`)
+
+	if err := goose.UpTo(db, "migrations", 37); err != nil {
+		t.Fatalf("goose up to 37: %v", err)
+	}
+
+	var filled, kept string
+	if err := db.QueryRow(`SELECT COALESCE(country_code,'') FROM events WHERE id='e1'`).Scan(&filled); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COALESCE(country_code,'') FROM events WHERE id='e2'`).Scan(&kept); err != nil {
+		t.Fatal(err)
+	}
+	if filled != "NL" {
+		t.Errorf("event country_code: want NL, got %q", filled)
+	}
+	if kept != "FR" {
+		t.Errorf("an event that already had a country was overwritten: got %q", kept)
+	}
+}

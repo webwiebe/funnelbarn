@@ -108,7 +108,17 @@ WITH ranked AS (
 SELECT
     f.session_id, f.project_id, f.first_seen_at, f.last_seen_at, f.event_count,
     f.url, l.url, f.referrer, f.utm_source, f.utm_medium, f.utm_campaign,
-    f.device_type, f.country_code, COALESCE(f.environment, ''),
+    f.device_type,
+    -- country_code is a GEO field: it is resolved from the visitor's IP and
+    -- written to the session, never to the event (that is issue #227, which
+    -- 00035 fixes in the other direction). Taking it from the event here would
+    -- overwrite every session's country with the event's empty string and
+    -- destroy the only copy — which is exactly what happened on production
+    -- before this line was corrected. It belongs with the other geo fields
+    -- below, sourced from s, with the event as a fallback for any event that
+    -- does already carry one.
+    COALESCE(NULLIF(s.country_code, ''), f.country_code),
+    COALESCE(f.environment, ''),
     -- The join below matches only the project that already owned the old row,
     -- so every other split row gets NULL geo and NULL signals. That IS the
     -- rule; no CASE is needed to express it.
