@@ -3,6 +3,8 @@ package ingest
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -361,6 +363,81 @@ func TestServeHTTP_NoUserAgentHeaderLeavesFieldEmpty(t *testing.T) {
 	case rec := <-h.queue:
 		if rec.UserAgent != "" {
 			t.Errorf("record UserAgent: want empty, got %q", rec.UserAgent)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no record enqueued")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ServeHTTP — keys whose project no longer exists
+// ---------------------------------------------------------------------------
+
+// hashKey mirrors how the Authorizer hashes a presented key before lookup.
+func hashKey(k string) string {
+	sum := sha256.Sum256([]byte(k))
+	return hex.EncodeToString(sum[:])
+}
+
+// projectAwareAuth is the DB-backed lookup shape the real Authorizer uses: a
+// key resolves only while its project still exists.
+type projectAwareAuth struct {
+	liveKeyHash string
+	liveProject string
+}
+
+func (p *projectAwareAuth) lookup(_ context.Context, keySHA256 string) (string, string, bool, error) {
+	if keySHA256 == p.liveKeyHash {
+		return p.liveProject, "ingest", true, nil
+	}
+	// Any other key — including one whose project was deleted — is not found,
+	// because the lookup query inner-joins projects.
+	return "", "", false, nil
+}
+
+// An event admitted by a key whose project is gone used to be answered 202,
+// spooled, and then dead-lettered by the worker minutes later. The caller had
+// already moved on. It must be refused at the door instead.
+func TestServeHTTP_KeyOfDeletedProjectIsRejected(t *testing.T) {
+	sp := newTestSpool(t)
+	live := hashKey("live-key")
+	a := auth.New("").WithDBLookup((&projectAwareAuth{liveKeyHash: live, liveProject: "proj-live"}).lookup, nil)
+	h := NewHandler(a, sp, 0)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"name":"pageview"}`))
+	req.Header.Set(auth.HeaderAPIKey, "orphaned-key")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for a key whose project is gone, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	select {
+	case rec := <-h.queue:
+		t.Errorf("event was still enqueued: %+v", rec)
+	default:
+	}
+}
+
+// The same handler must still accept a key whose project exists.
+func TestServeHTTP_LiveKeyStillAccepted(t *testing.T) {
+	sp := newTestSpool(t)
+	live := hashKey("live-key")
+	a := auth.New("").WithDBLookup((&projectAwareAuth{liveKeyHash: live, liveProject: "proj-live"}).lookup, nil)
+	h := NewHandler(a, sp, 0)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"name":"pageview"}`))
+	req.Header.Set(auth.HeaderAPIKey, "live-key")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for a live key, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	select {
+	case rec := <-h.queue:
+		if rec.ProjectSlug != "proj-live" {
+			t.Errorf("ProjectSlug: want proj-live, got %q", rec.ProjectSlug)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("no record enqueued")

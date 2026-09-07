@@ -49,10 +49,16 @@ type OrphanCounts struct {
 	Events   int64
 	Sessions int64
 	Funnels  int64
+	// APIKeys counts keys whose project is gone. Unlike the others these are
+	// not merely unreachable — until #257 they still authenticated, so every
+	// event they admitted was accepted with a 202 and then dead-lettered.
+	APIKeys int64
 }
 
 // Total returns the number of orphaned rows across all tables.
-func (o OrphanCounts) Total() int64 { return o.Events + o.Sessions + o.Funnels }
+func (o OrphanCounts) Total() int64 {
+	return o.Events + o.Sessions + o.Funnels + o.APIKeys
+}
 
 // CountOrphanedRows counts rows whose project_id matches no row in projects.
 // Foreign keys and a BEFORE-INSERT trigger both refuse these now, so a non-zero
@@ -62,9 +68,10 @@ func (s *Store) CountOrphanedRows(ctx context.Context) (OrphanCounts, error) {
 		SELECT
 			(SELECT COUNT(*) FROM events   e WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = e.project_id)),
 			(SELECT COUNT(*) FROM sessions s WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = s.project_id)),
-			(SELECT COUNT(*) FROM funnels  f WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = f.project_id))`
+			(SELECT COUNT(*) FROM funnels  f WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = f.project_id)),
+			(SELECT COUNT(*) FROM api_keys k WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = k.project_id))`
 	var out OrphanCounts
-	if err := s.db.QueryRowContext(ctx, q).Scan(&out.Events, &out.Sessions, &out.Funnels); err != nil {
+	if err := s.db.QueryRowContext(ctx, q).Scan(&out.Events, &out.Sessions, &out.Funnels, &out.APIKeys); err != nil {
 		return OrphanCounts{}, err
 	}
 	return out, nil

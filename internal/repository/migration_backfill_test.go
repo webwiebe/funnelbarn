@@ -819,3 +819,109 @@ func TestMigration00037_FillsEventsFromRecoveredSessions(t *testing.T) {
 		t.Errorf("an event that already had a country was overwritten: got %q", kept)
 	}
 }
+
+// A key whose project has been deleted must not authenticate. Rows written
+// before foreign keys were enforced outlived their project, and until this was
+// fixed they still resolved: the event was accepted with a 202, spooled,
+// refused by EnsureProject as an unresolvable UUID slug, and dead-lettered.
+// 108,343 production events were lost that way over two months.
+func TestValidAPIKeySHA256_RejectsKeyOfDeletedProject(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "keys.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	live, err := s.CreateProject(ctx, "Live", "live")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if err := s.EnsureSetupAPIKey(ctx, live.ID, "hash-live"); err != nil {
+		t.Fatalf("ensure key: %v", err)
+	}
+
+	// A key left behind by a project delete that did not cascade. Foreign keys
+	// are enforced now, so reproducing the state needs them off — which is
+	// exactly how the 17 production rows came to exist.
+	mustExec(t, s.db, `PRAGMA foreign_keys = OFF`)
+	mustExec(t, s.db, `INSERT INTO api_keys (id, project_id, name, key_hash, scope)
+		VALUES ('k-orphan', 'deleted-project-id', 'setup', 'hash-orphan', 'ingest')`)
+	mustExec(t, s.db, `PRAGMA foreign_keys = ON`)
+
+	pid, scope, found, err := s.ValidAPIKeySHA256(ctx, "hash-live")
+	if err != nil {
+		t.Fatalf("lookup live key: %v", err)
+	}
+	if !found || pid != live.ID || scope != "ingest" {
+		t.Errorf("live key: found=%v project=%q scope=%q", found, pid, scope)
+	}
+
+	_, _, found, err = s.ValidAPIKeySHA256(ctx, "hash-orphan")
+	if err != nil {
+		t.Fatalf("lookup orphaned key: %v", err)
+	}
+	if found {
+		t.Error("a key whose project no longer exists still authenticated")
+	}
+}
+
+// Deleting a project must take its keys with it, so the orphaned state cannot
+// be recreated now that foreign keys are enforced.
+func TestDeleteProject_CascadesToAPIKeys(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "cascade.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	p, err := s.CreateProject(ctx, "Doomed", "doomed")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if err := s.EnsureSetupAPIKey(ctx, p.ID, "hash-doomed"); err != nil {
+		t.Fatalf("ensure key: %v", err)
+	}
+	if err := s.DeleteProject(ctx, p.ID); err != nil {
+		t.Fatalf("delete project: %v", err)
+	}
+
+	if got := countRows(t, s.db, `SELECT COUNT(*) FROM api_keys WHERE key_hash = 'hash-doomed'`); got != 0 {
+		t.Errorf("api_keys rows left after the project was deleted: %d", got)
+	}
+	counts, err := s.CountOrphanedRows(ctx)
+	if err != nil {
+		t.Fatalf("count orphaned rows: %v", err)
+	}
+	if counts.APIKeys != 0 {
+		t.Errorf("orphaned api_keys after a cascading delete: %d", counts.APIKeys)
+	}
+}
+
+// The integrity check counts orphaned keys so the 17 production rows surface in
+// the maintenance pass rather than only in an audit.
+func TestCountOrphanedRows_CountsOrphanedAPIKeys(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "orphankeys.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	mustExec(t, s.db, `PRAGMA foreign_keys = OFF`)
+	mustExec(t, s.db, `INSERT INTO api_keys (id, project_id, name, key_hash, scope)
+		VALUES ('k1', 'gone', 'setup', 'h1', 'ingest')`)
+	mustExec(t, s.db, `PRAGMA foreign_keys = ON`)
+
+	counts, err := s.CountOrphanedRows(ctx)
+	if err != nil {
+		t.Fatalf("count orphaned rows: %v", err)
+	}
+	if counts.APIKeys != 1 {
+		t.Errorf("orphaned api_keys: want 1, got %d", counts.APIKeys)
+	}
+	if counts.Total() != 1 {
+		t.Errorf("total: want 1, got %d", counts.Total())
+	}
+}
