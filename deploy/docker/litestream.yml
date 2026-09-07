@@ -9,5 +9,11 @@ dbs:
         force-path-style: true
         access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
         secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
-        retention: 24h
+        # 7 days, not 24h. This replica is the only thing that can recover a
+        # bad migration — `kubectl rollout undo` puts the old image back but
+        # cannot move the schema, so it is not a rollback for a release that
+        # carries one. At 24h a migration problem found on Monday morning after
+        # a Friday deploy was already outside the window. The database is ~50 MB
+        # and R2 storage is ~$0.015/GB/month, so the extra six days cost cents.
+        retention: 168h
         sync-interval: 1s
