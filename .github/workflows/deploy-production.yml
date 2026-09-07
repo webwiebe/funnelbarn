@@ -116,6 +116,57 @@ jobs:
               --dry-run=client -o yaml | kubectl apply -f -
           "
 
+      # A rollback can only put the previous IMAGE back; it cannot undo a
+      # migration, because goose.Up runs inside repository.Open before the
+      # server listens. Work out up front whether this release carries one, so
+      # the failure path knows whether rolling back is safe or actively
+      # harmful — and record the litestream restore point while the old
+      # database is still the live one.
+      - name: Record restore point and detect migrations
+        id: pre
+        run: |
+          set -uo pipefail
+          SHA="${{ needs.preflight.outputs.sha }}"
+          CURRENT=$(ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl -n ${NAMESPACE} get deployment funnelbarn -o jsonpath='{.spec.template.spec.containers[0].image}'" \
+            | sed 's/.*://')
+          echo "currently deployed: ${CURRENT:-<none>}"
+
+          # Default to "assume migrations" — refusing a safe rollback costs a
+          # manual command, allowing an unsafe one costs an outage.
+          CARRIES=true
+          if [ -z "${CURRENT}" ]; then
+            echo "WARNING: could not read the deployed image; assuming this release carries migrations"
+          elif ! git cat-file -e "${CURRENT}^{commit}" 2>/dev/null; then
+            echo "WARNING: deployed SHA ${CURRENT} is not in this checkout; assuming this release carries migrations"
+          else
+            CHANGED=$(git diff --name-only "${CURRENT}" "${SHA}" -- internal/repository/migrations/)
+            if [ -z "${CHANGED}" ]; then
+              CARRIES=false
+              echo "No migration changes between ${CURRENT} and ${SHA} — rollback is safe."
+            else
+              echo "This release changes migrations:"
+              echo "${CHANGED}"
+            fi
+          fi
+          echo "carries_migrations=${CARRIES}" >> "$GITHUB_OUTPUT"
+
+          RESTORE=$(ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl -n ${NAMESPACE} exec deploy/funnelbarn -c funnelbarn -- \
+             litestream generations -config /etc/litestream.yml /var/lib/funnelbarn/funnelbarn.db" 2>/dev/null | tail -2)
+          {
+            echo "### Pre-deploy state"
+            echo ""
+            echo "- Deployed image: \`${CURRENT:-unknown}\`"
+            echo "- Carries migrations: \`${CARRIES}\`"
+            echo ""
+            echo "Litestream restore point (retention is 24h):"
+            echo ""
+            echo '```'
+            echo "${RESTORE:-unavailable}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Apply manifests and roll out
         run: |
           set -euo pipefail
@@ -133,14 +184,37 @@ jobs:
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=180s
           "
 
+      # NOTE: no blanket `|| true`. A rollback that silently fails is worse
+      # than one that reports, because it leaves the impression the deploy was
+      # recovered when it was not.
       - name: Rollback on failure
         if: failure()
         run: |
+          set -uo pipefail
+          if [ "${{ steps.pre.outputs.carries_migrations }}" != "false" ]; then
+            echo "::error::NOT rolling back: this release carried a schema migration."
+            echo "Migrations run at process start, so the schema has already moved forward."
+            echo "Putting the previous image back would run OLD code against the NEW schema —"
+            echo "e.g. after 00034 the previous UpsertSession's ON CONFLICT(id) matches no"
+            echo "unique index and every event insert fails. That is an outage, not a recovery."
+            echo ""
+            echo "The new image is left running. To recover the DATA, restore from litestream"
+            echo "(restore point is in this run's summary; retention is 24h):"
+            echo ""
+            echo "  POD=\$(kubectl -n ${NAMESPACE} get pods -l app.kubernetes.io/name=funnelbarn -o jsonpath='{.items[0].metadata.name}')"
+            echo "  kubectl -n ${NAMESPACE} exec \$POD -c funnelbarn -- \\"
+            echo "    litestream restore -config /etc/litestream.yml -timestamp <RFC3339> \\"
+            echo "      -o /tmp/pre.db /var/lib/funnelbarn/funnelbarn.db"
+            echo ""
+            echo "Then repair from /tmp/pre.db, or roll forward with a corrective migration."
+            exit 1
+          fi
+          echo "Release carries no migrations; rolling the image back."
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
-            kubectl -n ${NAMESPACE} rollout undo deployment/funnelbarn || true
-            kubectl -n ${NAMESPACE} rollout undo deployment/funnelbarn-web || true
-            echo 'Rollback triggered'
-          " || true
+            set -eu
+            kubectl -n ${NAMESPACE} rollout undo deployment/funnelbarn
+            kubectl -n ${NAMESPACE} rollout undo deployment/funnelbarn-web
+          "
 
       - name: Post release marker to BugBarn
         if: vars.BUGBARN_ENDPOINT != ''
