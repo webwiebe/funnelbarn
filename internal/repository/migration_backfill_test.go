@@ -597,3 +597,93 @@ func TestMigration00035_IsIdempotent(t *testing.T) {
 		t.Errorf("re-running the backfill overwrote an existing country: got %q", got)
 	}
 }
+
+// 00036 seeds the mappings that are true by spelling alone, so the canonical
+// funnel read path — which joins through event_name_mappings — is useful on
+// first load instead of excluding every project.
+func TestMigration00036_SeedsSyntacticMappings(t *testing.T) {
+	db := openAtVersion(t, 35)
+
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('pa', 'A', 'a')`)
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('pb', 'B', 'b')`)
+
+	addEvent := func(id, project, name string) {
+		t.Helper()
+		mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at)
+			VALUES (?, ?, 's1', ?, ?, CURRENT_TIMESTAMP)`, id, project, name, "i-"+id)
+	}
+	addEvent("e1", "pa", "page.view")     // separator variant
+	addEvent("e2", "pa", "seo.page_view") // namespaced
+	addEvent("e3", "pb", "PageView")      // casing variant
+	addEvent("e4", "pa", "login_started") // a login attempt is not a login
+	addEvent("e5", "pa", "qr.created")    // "created" means nothing on its own
+	addEvent("e6", "pa", "page_engaged")  // unrelated
+
+	if err := goose.UpTo(db, "migrations", 36); err != nil {
+		t.Fatalf("goose up to 36: %v", err)
+	}
+
+	for _, c := range []struct {
+		project, raw, want string
+	}{
+		{"pa", "page.view", "page_view"},
+		{"pa", "seo.page_view", "page_view"},
+		{"pb", "PageView", "page_view"},
+		{"pa", "login_started", ""},
+		{"pa", "qr.created", ""},
+		{"pa", "page_engaged", ""},
+	} {
+		var got string
+		err := db.QueryRow(`SELECT COALESCE(MAX(canonical_key), '') FROM event_name_mappings
+			WHERE project_id = ? AND raw_name = ?`, c.project, c.raw).Scan(&got)
+		if err != nil {
+			t.Fatalf("read mapping %s/%s: %v", c.project, c.raw, err)
+		}
+		if got != c.want {
+			t.Errorf("mapping %s/%s: want %q, got %q", c.project, c.raw, c.want, got)
+		}
+	}
+
+	// The mapping is per project: pb never sent page.view, so it gets no row
+	// for it.
+	if got := countRows(t, db, `SELECT COUNT(*) FROM event_name_mappings WHERE project_id = 'pb'`); got != 1 {
+		t.Errorf("project B mappings: want 1, got %d", got)
+	}
+}
+
+// A mapping a human has already made must survive, and a re-run must add
+// nothing new.
+func TestMigration00036_IsIdempotentAndPreservesHumanMappings(t *testing.T) {
+	db := openAtVersion(t, 35)
+
+	mustExec(t, db, `INSERT INTO projects (id, name, slug) VALUES ('pa', 'A', 'a')`)
+	mustExec(t, db, `INSERT INTO events (id, project_id, session_id, name, ingest_id, occurred_at)
+		VALUES ('e1', 'pa', 's1', 'page.view', 'i1', CURRENT_TIMESTAMP)`)
+	// Someone has already decided page.view means something else here.
+	mustExec(t, db, `INSERT INTO event_name_mappings (project_id, raw_name, canonical_key)
+		VALUES ('pa', 'page.view', 'login')`)
+
+	if err := goose.UpTo(db, "migrations", 36); err != nil {
+		t.Fatalf("goose up to 36: %v", err)
+	}
+
+	var got string
+	if err := db.QueryRow(`SELECT canonical_key FROM event_name_mappings
+		WHERE project_id = 'pa' AND raw_name = 'page.view'`).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != "login" {
+		t.Errorf("the seed overwrote a human's mapping: got %q, want login", got)
+	}
+
+	before := countRows(t, db, `SELECT COUNT(*) FROM event_name_mappings`)
+	if _, err := db.Exec(`DELETE FROM goose_db_version WHERE version_id = 36`); err != nil {
+		t.Fatalf("reset goose version: %v", err)
+	}
+	if err := goose.UpTo(db, "migrations", 36); err != nil {
+		t.Fatalf("second goose up to 36: %v", err)
+	}
+	if after := countRows(t, db, `SELECT COUNT(*) FROM event_name_mappings`); after != before {
+		t.Errorf("re-running the seed added rows: %d -> %d", before, after)
+	}
+}

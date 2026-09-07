@@ -99,6 +99,35 @@ funnelbarn user create --username admin --password yourpassword
 </script>
 ```
 
+## Naming events
+
+FunnelBarn accepts any event name, and nothing enforces a house style. Pick one
+and hold to it, because a funnel step matches an event name **exactly** — a
+funnel built on `page_view` reports a flat 0% for a project that sends
+`page.view`, and nothing about that looks like a misconfiguration.
+
+The convention across this platform:
+
+- **`lower_snake_case`**, no namespace prefix: `page_view`, `sign_up`,
+  `checkout_started`, `purchase`.
+- **Name the thing that happened**, past tense where it reads naturally
+  (`purchase`, `invite_created`), and keep a start distinct from a completion
+  (`signup_started` and `signup_completed` are two events, not one).
+- **Properties, not names, carry the variation.** Send
+  `track('purchase', { plan: 'pro' })`, not `purchase_pro`.
+
+If names have already drifted, the **Event Mapping** page reconciles them
+without rewriting history: each project maps its raw names onto a shared
+canonical key, and cross-project funnels resolve through that mapping at read
+time. Names that are the same word in a different style (`page.view`,
+`PageView`, `seo.page_view` -> `page_view`) are mapped automatically; anything
+that differs in meaning is left for you to decide, because `login_started` is
+not `login`.
+
+The dashboard also flags a funnel whose steps reference an event name the
+project has never sent, so a mismatch shows up as a warning rather than as a
+flat line.
+
 ## Configuration
 
 | Variable | Default | Description |

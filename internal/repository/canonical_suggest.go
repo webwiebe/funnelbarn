@@ -62,11 +62,52 @@ var builtinAliases = map[string]string{
 	"paymentsuccess":   "purchase",
 }
 
+// stripNamespace removes a leading dotted namespace segment ("seo.page_view" ->
+// "page_view"). Returns "" when there is nothing to strip.
+//
+// Dotted names in production are namespaced, not differently-spelled: the
+// platform emits page_view, page.view and seo.page_view for one concept. The
+// first two already normalise to the same thing, but a namespace survives
+// separator stripping and turns "seo.page_view" into "seopageview", which
+// matches nothing — so the names most in need of a suggestion were the ones
+// least likely to get one.
+//
+// Only the FIRST segment is dropped, and only when something follows it. The
+// remainder is then matched exactly as any other raw name would be, so a
+// namespace cannot manufacture a match that the bare name would not have.
+func stripNamespace(raw string) string {
+	i := strings.Index(raw, ".")
+	if i <= 0 || i == len(raw)-1 {
+		return ""
+	}
+	return raw[i+1:]
+}
+
 // guessCanonicalKey returns a best-guess canonical key for a raw event name, or
 // "" when there is no confident match. A raw name that already equals a catalog
-// key maps to itself; otherwise the built-in alias table is consulted and the
+// key maps to itself; otherwise the built-in alias table is consulted, then the
+// same two checks are retried against the name with its namespace stripped. The
 // result is only returned when that key exists in the catalog.
+//
+// Every rule here is syntactic — a different spelling of the same word. Names
+// that differ in MEANING are deliberately left unsuggested even when they look
+// related: "login_started" is not "login" and "signup_started" is not
+// "signup_completed", and collapsing a start into a completion would silently
+// inflate every funnel built on it. Those are for a human to map on the event
+// mapping page.
 func guessCanonicalKey(raw string, catalogKeys map[string]bool) string {
+	if key := matchCanonicalKey(raw, catalogKeys); key != "" {
+		return key
+	}
+	if bare := stripNamespace(raw); bare != "" {
+		return matchCanonicalKey(bare, catalogKeys)
+	}
+	return ""
+}
+
+// matchCanonicalKey resolves one raw name against the catalog and the built-in
+// alias table, comparing on the separator-stripped form.
+func matchCanonicalKey(raw string, catalogKeys map[string]bool) string {
 	n := normalizeRawName(raw)
 	if n == "" {
 		return ""
