@@ -265,8 +265,15 @@ go test ./...
 # Frontend tests only (60 Vitest tests)
 cd web && npm test
 
-# Lint (golangci-lint + go vet + frontend lint)
+# Lint (gofmt + go vet + frontend lint)
 make lint
+
+# Report-only quality soaks (golangci-lint, complexity, file length)
+# against the committed baselines in scripts/soak-baselines/
+make soak
+
+# Tests for the gate scripts themselves
+make gate-test
 
 # Build binary
 make build

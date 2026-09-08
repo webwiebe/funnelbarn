@@ -57,6 +57,44 @@ jobs:
         # at today's worst value. They may only ratchet DOWN. See the script.
         run: bash scripts/go-quality-gates.sh
 
+      - name: Gate script tests
+        # The gate scripts are themselves tested, which nothing in this repo was
+        # before: violation present fails, violation baselined passes, baseline
+        # beatable fails, clean tree passes, and a tool that did not run fails
+        # instead of reporting zero findings. test_deploy_graph.py additionally
+        # asserts the shape of build-and-test.yml, so the CI dependency cannot be
+        # removed again without turning this job red.
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check pyyaml
+          python3 -m unittest discover -s scripts -p 'test_*.py' -v
+
+      - name: Install pinned lint tooling
+        # Pinned, not @latest: a gate whose tool version can change without a
+        # commit is a gate whose green run stops meaning anything.
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Soak, golangci-lint
+        # REPORT-ONLY against scripts/soak-baselines/golangci.txt. .golangci.yml
+        # sat in this repo unread for months while README.md and the engineering
+        # standards spec both listed `golangci-lint run ./...` as required; it
+        # did not even load. 120 findings across 57 files are baselined and do
+        # not block. A new finding, a worsened file, or a baseline that has
+        # become beatable does block. Exit criterion in scripts/quality-soak.py.
+        run: python3 scripts/quality-soak.py golangci
+
+      - name: Soak, Go cyclomatic complexity at the estate target
+        # REPORT-ONLY at complexity 12, while the blocking limit in
+        # go-quality-gates.sh stays at 49. Makes the walk-down visible.
+        run: python3 scripts/quality-soak.py go-complexity
+
+      - name: Soak, file length at the estate target
+        # REPORT-ONLY at 500 lines across internal/, cmd/, web/src/ AND sdks/.
+        # sdks/ was covered by neither the Go scan nor the eslint scan, which is
+        # where the repo's largest file (sdks/js/src/index.ts, 1076 lines) lives.
+        run: python3 scripts/quality-soak.py file-length
+
   go-test:
     runs-on: ubuntu-latest
     steps:
@@ -138,6 +176,11 @@ jobs:
       - name: ESLint
         working-directory: web
         run: npm run lint:eslint
+
+      - name: Soak, web cyclomatic complexity at the estate target
+        # REPORT-ONLY at complexity 12 via web/eslint.soak.config.js, while the
+        # blocking limit in web/eslint.config.js stays at 55.
+        run: python3 scripts/quality-soak.py web-complexity
 
   frontend-test:
     runs-on: ubuntu-latest

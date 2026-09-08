@@ -8,7 +8,7 @@ export XDG_CACHE_HOME := $(CURDIR)/.cache
 export GOCACHE := $(CURDIR)/.cache/go-build
 export GOMODCACHE := $(CURDIR)/.cache/go-mod
 
-.PHONY: help setup build test lint dev docker-build clean
+.PHONY: help setup build test lint soak gate-test dev docker-build clean
 
 help:
 	@printf '%s\n' \
@@ -17,6 +17,8 @@ help:
 		'  build        build Go binary and frontend' \
 		'  test         run all tests' \
 		'  lint         run linters' \
+		'  soak         run the report-only quality soaks against their baselines' \
+		'  gate-test    run the tests for the gate scripts themselves' \
 		'  dev          start docker compose stack' \
 		'  docker-build build Docker images locally' \
 		'  clean        remove build artifacts'
@@ -63,6 +65,16 @@ lint:
 	gofmt -l . | { read f; [ -z "$$f" ] || { echo "Unformatted files: $$f"; exit 1; }; }
 	go vet ./...
 	cd web && npm run lint && npm run lint:eslint
+
+# Report-only soaks. Each compares the current measurement against a committed
+# baseline in scripts/soak-baselines/ and fails on a new violation, a worsened
+# file, or a baseline that has become beatable. Exit criteria are written into
+# scripts/quality-soak.py. Needs golangci-lint on PATH and web/node_modules.
+soak:
+	python3 scripts/quality-soak.py all
+
+gate-test:
+	python3 -m unittest discover -s scripts -p 'test_*.py'
 
 dev:
 	@set -eu; \

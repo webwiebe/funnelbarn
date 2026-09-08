@@ -1,9 +1,29 @@
 name: Build and Deploy Testing
 
+# Gated on CI, not on the push itself.
+#
+# This workflow used to trigger on `push: branches: [main]` with no dependency
+# on anything. CI ran alongside it on the same commit and nothing consumed the
+# result, so a red CI run did not stop a testing or staging deploy. The sibling
+# repo iambarn shipped exactly that failure on 2026-09-07: CI run 34091298203
+# FAILED on e25d82c3 at 06:32:28 while the deploy run 34091298267 SUCCEEDED at
+# 06:32:29 on the same SHA and shipped it.
+#
+# Both halves of the fix are load-bearing:
+#   1. `conclusion == 'success'` means a red CI run never starts a build.
+#   2. Checking out `workflow_run.head_sha` means the build is the commit CI
+#      actually passed. Without it, `github.sha` on a workflow_run event
+#      resolves to the branch head at trigger time, so a rapid second push
+#      would have this run build a commit CI never saw.
+#
+# The same head_sha is threaded through every downstream job as
+# needs.build.outputs.sha and used as the image tag, so the images, the
+# rollout, the E2E run and the BugBarn release marker all refer to one commit.
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -23,13 +43,38 @@ env:
 
 jobs:
   build:
+    # workflow_dispatch is a deliberate manual re-deploy of the current main and
+    # carries no workflow_run context; every automatic run must have passed CI.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: [self-hosted, build]
     timeout-minutes: 30
     env:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - id: commit
+        name: Resolve the commit CI passed
+        run: |
+          set -euo pipefail
+          SHA='${{ github.event.workflow_run.head_sha || github.sha }}'
+          # Guard against an empty expression silently becoming an empty tag.
+          case "$SHA" in
+            ????????????????????????????????????????) ;;
+            *) echo "refusing to build: unexpected commit ref '$SHA'" >&2; exit 1 ;;
+          esac
+          # And against building anything other than what is checked out.
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SHA" ]; then
+            echo "checkout is $ACTUAL but CI passed $SHA" >&2
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker buildx
         uses: docker/setup-buildx-action@v4
@@ -37,6 +82,8 @@ jobs:
           driver: docker
 
       - name: Build and push images
+        env:
+          IMAGE_TAG: ${{ steps.commit.outputs.sha }}
         run: |
           set -euo pipefail
           DOCKER_CONFIG_DIR="${RUNNER_TEMP}/docker-config-${GITHUB_RUN_ID}"
@@ -49,13 +96,13 @@ jobs:
             --platform linux/amd64 \
             --push \
             -f deploy/docker/service.Dockerfile \
-            -t "${SERVICE_IMAGE}:${{ github.sha }}" \
+            -t "${SERVICE_IMAGE}:${IMAGE_TAG}" \
             .
           docker buildx build \
             --platform linux/amd64 \
             --push \
             -f deploy/docker/web.Dockerfile \
-            -t "${WEB_IMAGE}:${{ github.sha }}" \
+            -t "${WEB_IMAGE}:${IMAGE_TAG}" \
             .
 
   deploy:
@@ -65,8 +112,11 @@ jobs:
     env:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      IMAGE_TAG: ${{ needs.build.outputs.sha }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build.outputs.sha }}
 
       - name: Transfer manifests
         run: |
@@ -110,11 +160,11 @@ jobs:
             set -euo pipefail
             kubectl apply -k /tmp/funnelbarn-deploy/deploy/k8s/testing
             kubectl -n ${NAMESPACE} set image deployment/funnelbarn \
-              funnelbarn=${SERVICE_IMAGE}:${{ github.sha }}
+              funnelbarn=${SERVICE_IMAGE}:${IMAGE_TAG}
             kubectl -n ${NAMESPACE} set env deployment/funnelbarn \
-              FUNNELBARN_VERSION=${{ github.sha }}
+              FUNNELBARN_VERSION=${IMAGE_TAG}
             kubectl -n ${NAMESPACE} set image deployment/funnelbarn-web \
-              funnelbarn-web=${WEB_IMAGE}:${{ github.sha }}
+              funnelbarn-web=${WEB_IMAGE}:${IMAGE_TAG}
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=360s
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=360s
           "
@@ -130,15 +180,54 @@ jobs:
             -H "X-BugBarn-Api-Key: ${BUGBARN_API_KEY}" \
             -H "X-BugBarn-Project: funnelbarn" \
             -d "{
-              \"name\": \"${GITHUB_SHA:0:7}\",
+              \"name\": \"${IMAGE_TAG:0:7}\",
               \"environment\": \"testing\",
-              \"version\": \"${GITHUB_SHA}\",
-              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}\",
+              \"version\": \"${IMAGE_TAG}\",
+              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${IMAGE_TAG}\",
               \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
             }" || echo "BugBarn release marker skipped"
 
+  e2e:
+    needs: [build, deploy]
+    runs-on: [self-hosted, build]
+    timeout-minutes: 10
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium
+
+      - name: Run E2E tests
+        env:
+          E2E_BASE_URL: https://funnelbarn.test.wiebe.xyz
+          # k3s cluster private IP — reachable from the Mac Mini runner
+          E2E_CLUSTER_IP: 192.168.4.108
+        run: npx playwright test --reporter=list,html
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: playwright-report/
+          if-no-files-found: ignore
+
   deploy-staging:
-    needs: deploy
+    # `needs: e2e`, not `needs: deploy`. These two used to be siblings, so
+    # Playwright ran in PARALLEL with the staging rollout and an E2E failure
+    # could not stop it — while specs/003-engineering-standards/spec.md states
+    # "E2E failures block promotion to staging" and draws the pipeline as
+    # build -> deploy-testing -> e2e -> deploy-staging. The spec was right about
+    # the intent and the workflow did not implement it. Now it does.
+    needs: [build, deploy, e2e]
     runs-on: [self-hosted, build]
     timeout-minutes: 15
     env:
@@ -149,8 +238,11 @@ jobs:
       K3S_HOST: k3s1.nijmegen.wiebe.xyz
       K3S_USER: root
       NAMESPACE: funnelbarn-staging
+      IMAGE_TAG: ${{ needs.build.outputs.sha }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build.outputs.sha }}
 
       - name: Transfer manifests
         run: |
@@ -194,11 +286,11 @@ jobs:
             set -euo pipefail
             kubectl apply -k /tmp/funnelbarn-deploy-staging/deploy/k8s/staging
             kubectl -n ${NAMESPACE} set image deployment/funnelbarn \
-              funnelbarn=${SERVICE_IMAGE}:${{ github.sha }}
+              funnelbarn=${SERVICE_IMAGE}:${IMAGE_TAG}
             kubectl -n ${NAMESPACE} set env deployment/funnelbarn \
-              FUNNELBARN_VERSION=${{ github.sha }}
+              FUNNELBARN_VERSION=${IMAGE_TAG}
             kubectl -n ${NAMESPACE} set image deployment/funnelbarn-web \
-              funnelbarn-web=${WEB_IMAGE}:${{ github.sha }}
+              funnelbarn-web=${WEB_IMAGE}:${IMAGE_TAG}
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=360s
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=360s
           "
@@ -214,40 +306,9 @@ jobs:
             -H "X-BugBarn-Api-Key: ${BUGBARN_API_KEY}" \
             -H "X-BugBarn-Project: funnelbarn" \
             -d "{
-              \"name\": \"${GITHUB_SHA:0:7}\",
+              \"name\": \"${IMAGE_TAG:0:7}\",
               \"environment\": \"staging\",
-              \"version\": \"${GITHUB_SHA}\",
-              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}\",
+              \"version\": \"${IMAGE_TAG}\",
+              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${IMAGE_TAG}\",
               \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
             }" || echo "BugBarn release marker skipped"
-
-  e2e:
-    needs: deploy
-    runs-on: [self-hosted, build]
-    timeout-minutes: 10
-    env:
-      HOME: /Users/wiebe
-      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Node deps
-        run: npm ci
-
-      - name: Install Playwright browsers
-        run: npx playwright install chromium
-
-      - name: Run E2E tests
-        env:
-          E2E_BASE_URL: https://funnelbarn.test.wiebe.xyz
-          # k3s cluster private IP — reachable from the Mac Mini runner
-          E2E_CLUSTER_IP: 192.168.4.108
-        run: npx playwright test --reporter=list,html
-
-      - name: Upload test results on failure
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-report
-          path: playwright-report/
-          if-no-files-found: ignore
