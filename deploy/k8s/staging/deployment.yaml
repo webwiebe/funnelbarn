@@ -197,6 +197,10 @@ spec:
               port: 8080
             initialDelaySeconds: 20
             periodSeconds: 20
+            # Above the handler's own 2s ping budget (healthPingTimeout in
+            # internal/api/health.go). The default of 1s cancelled the ping
+            # before the handler could reach a verdict.
+            timeoutSeconds: 3
             failureThreshold: 3
           readinessProbe:
             httpGet:
@@ -204,6 +208,7 @@ spec:
               port: 8080
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 3
             failureThreshold: 3
           volumeMounts:
             - name: funnelbarn-data
