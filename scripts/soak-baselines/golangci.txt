@@ -1,0 +1,66 @@
+# SOAK BASELINE: golangci-lint findings per file, using the repo's .golangci.yml
+# (errcheck, govet, staticcheck, unused, ineffassign, misspell, goimports).
+# This config existed for months and was invoked by nothing, while README.md and
+# specs/003-engineering-standards/spec.md both listed it as a required check.
+# ENFORCE AT 0 entries: replace this dimension with a blocking
+# `golangci-lint run ./...` step in ci.yml's go-quality job.
+# Refresh with: python3 scripts/quality-soak.py golangci --update-baseline
+# entries: 57  total: 120
+#
+5 cmd/funnelbarn/cli.go
+6 cmd/funnelbarn/main.go
+1 internal/api/recordings.go
+1 internal/api/setup_cors_test.go
+1 internal/api/telemetry.go
+1 internal/auth/oidc.go
+1 internal/config/config.go
+3 internal/geoip/geoip.go
+1 internal/ingest/handler.go
+1 internal/repository/abtests.go
+3 internal/repository/canonical.go
+2 internal/repository/canonical_funnels.go
+7 internal/repository/db.go
+1 internal/repository/distributions.go
+1 internal/repository/distributions_test.go
+19 internal/repository/events.go
+1 internal/repository/events_test.go
+4 internal/repository/flags.go
+1 internal/repository/flags_autoregister_test.go
+2 internal/repository/flows.go
+1 internal/repository/flows_test.go
+7 internal/repository/funnels.go
+1 internal/repository/instance_settings.go
+7 internal/repository/overview.go
+1 internal/repository/overview_test.go
+1 internal/repository/project_recording_settings_test.go
+2 internal/repository/projects.go
+1 internal/repository/purge_evaluations_test.go
+2 internal/repository/recording_traces.go
+1 internal/repository/recording_traces_test.go
+5 internal/repository/recordings.go
+1 internal/repository/recordings_test.go
+1 internal/repository/segments.go
+1 internal/repository/segments_test.go
+1 internal/repository/sessions.go
+1 internal/repository/store_test.go
+2 internal/repository/widgets.go
+1 internal/repository/widgets_test.go
+1 internal/service/abtests_test.go
+1 internal/service/apikeys_test.go
+1 internal/service/events_sessions_test.go
+1 internal/service/events_test.go
+1 internal/service/flags_test.go
+1 internal/service/funnels_mock_test.go
+1 internal/service/funnels_test.go
+1 internal/service/health_test.go
+1 internal/service/projects_mock_test.go
+1 internal/service/projects_test.go
+1 internal/service/recordings.go
+1 internal/service/recordings_test.go
+1 internal/service/segments_test.go
+1 internal/service/sessions_test.go
+1 internal/service/validation_test.go
+1 internal/session/fingerprint.go
+3 internal/spool/spool.go
+1 internal/storage/r2.go
+1 internal/tracing/relay.go

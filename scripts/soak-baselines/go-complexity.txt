@@ -1,0 +1,29 @@
+# SOAK BASELINE: Go functions over cyclomatic complexity 12.
+# Scope: internal/, cmd/, sdks/go. Value is the count of offending functions
+# in that file, which stays stable when code moves inside the file.
+# The BLOCKING limit in scripts/go-quality-gates.sh is still 49.
+# ENFORCE AT 0 entries: set MAX_CYCLO=12 there and drop this dimension.
+# Refresh with: python3 scripts/quality-soak.py go-complexity --update-baseline
+# entries: 21  total: 27
+#
+1 cmd/funnelbarn/cli.go
+2 cmd/funnelbarn/main.go
+1 cmd/funnelbarn/maintenance.go
+1 internal/api/abtests.go
+1 internal/api/dashboard.go
+1 internal/api/flags.go
+1 internal/api/flows.go
+1 internal/api/funnels.go
+1 internal/api/oidc_confidential.go
+1 internal/api/recording_settings.go
+3 internal/api/recordings.go
+1 internal/api/session_mw.go
+1 internal/api/widgets.go
+2 internal/config/config.go
+1 internal/enrich/enrich.go
+1 internal/ingest/handler.go
+1 internal/repository/canonical_funnels.go
+2 internal/repository/funnels.go
+2 internal/service/flags.go
+1 internal/worker/worker.go
+1 sdks/go/flags.go

@@ -1,0 +1,26 @@
+# SOAK BASELINE: web/src functions over cyclomatic complexity 12.
+# Measured with web/eslint.soak.config.js, which is the real eslint config with
+# complexity tightened to the estate target. The BLOCKING limit in
+# web/eslint.config.js is still 55.
+# ENFORCE AT 0 entries: set complexity: ['error', 12] in web/eslint.config.js,
+# delete web/eslint.soak.config.js, drop this dimension.
+# Refresh with: python3 scripts/quality-soak.py web-complexity --update-baseline
+# entries: 17  total: 22
+#
+1 web/src/components/flags/FlagFormModal.tsx
+1 web/src/components/funnels/SegmentManager.tsx
+1 web/src/components/insights/AddWidgetModal.tsx
+2 web/src/components/sessions/SessionReplay.tsx
+1 web/src/components/settings/ProjectHealthCard.tsx
+1 web/src/components/settings/ProjectRecordingSettings.tsx
+1 web/src/components/shell/MoreSheet.tsx
+1 web/src/components/shell/Shell.tsx
+1 web/src/components/shell/TopNav.tsx
+1 web/src/components/ui/ProjectPicker.tsx
+1 web/src/lib/api.ts
+1 web/src/pages/Dashboard.tsx
+2 web/src/pages/Flags.tsx
+3 web/src/pages/Funnels.tsx
+1 web/src/pages/Overview.tsx
+2 web/src/pages/Sessions.tsx
+1 web/src/pages/Settings.tsx

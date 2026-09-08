@@ -188,7 +188,7 @@ Every push to any branch must pass all of the following before merging:
 | Check | Tool | Command |
 |-------|------|---------|
 | Formatting | `gofmt` | `gofmt -l .` (fail if output non-empty) |
-| Linting | `golangci-lint` | `golangci-lint run ./...` |
+| Linting | `golangci-lint` | `python3 scripts/quality-soak.py golangci`, report-only against `scripts/soak-baselines/golangci.txt`. Blocks on a new finding, a worsened file, or a beatable baseline; does not block on the 120 findings already recorded. Becomes a plain `golangci-lint run ./...` when that baseline reaches zero. |
 | Vet | `go vet` | `go vet ./...` |
 | Unit tests | `go test` | `go test ./... -race -count=1` |
 | Test coverage | `go test` | Fail if coverage < 70% on `service/` and `repository/` packages |
