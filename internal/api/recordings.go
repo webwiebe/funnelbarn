@@ -34,8 +34,12 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 
 	projectID, _, ok := s.ingest.APIKeyProjectScope(r)
 	if !ok {
-		// Warn rather than Error: invalid API keys happen routinely (rotated
-		// keys, misconfigured clients) but a sudden surge points at trouble.
+		// Warn, not Error: a caller presenting a key we do not accept is not a
+		// fault in this service. It happens routinely — rotated keys,
+		// misconfigured clients, and crawlers poking the endpoint. bblog
+		// forwards Error and above to BugBarn, so this stays out of the issue
+		// list; a surge shows up as the 401 rate on this path in
+		// funnelbarn_http_requests_total, which is where a rate belongs.
 		slog.WarnContext(r.Context(), "recording chunk: unauthorized",
 			"user_agent", r.Header.Get("User-Agent"),
 			"request_id", RequestIDFromContext(r.Context()),
