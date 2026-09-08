@@ -174,8 +174,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	projectID, _, ok := h.APIKeyProjectScope(r)
 	if !ok {
-		// Routine condition (rotated keys, misconfigured clients) — Warn so
-		// a sudden spike is visible in BugBarn without flooding it.
+		// Routine condition — rotated keys, misconfigured clients, and
+		// crawlers with no key at all. Warn, not Error: bblog forwards Error
+		// and above to BugBarn, and none of these is a defect here. A spike is
+		// visible as the 401 rate on this path in
+		// funnelbarn_http_requests_total.
 		slog.WarnContext(r.Context(), "ingest: unauthorized",
 			"user_agent", r.Header.Get("User-Agent"),
 		)

@@ -345,10 +345,9 @@ func requestLogger(next http.Handler) http.Handler {
 		}
 
 		elapsed := time.Since(start)
-		// Level the access log by status so 5xx (and unexpected 4xx like 413/
-		// 429 on hot ingest paths) surface through the slog -> BugBarn pipe.
-		// Without this, the per-handler bug from the recording-chunk 413
-		// incident stays invisible at the middleware layer.
+		// Level the access log by status so a 5xx reaches BugBarn through the
+		// slog pipe with the request envelope attached. 4xx stays below that
+		// bar: it describes what a caller did, not a fault here.
 		attrs := []any{
 			"request_id", requestID,
 			"method", r.Method,
@@ -376,8 +375,10 @@ func requestLogger(next http.Handler) http.Handler {
 		case status == http.StatusRequestEntityTooLarge,
 			status == http.StatusTooManyRequests:
 			// 413/429 used to silently swallow real failures (the
-			// recording-chunk MaxBytesReader bug). Warn surfaces them
-			// to BugBarn without flooding it on every 4xx.
+			// recording-chunk MaxBytesReader bug), so they stay above Info in
+			// the log. This envelope is not what carries a 413 to BugBarn:
+			// both 413 paths (recordings.go, ingest/handler.go) already log
+			// the truncation itself at Error with the sizes attached.
 			attrs = append(attrs, "handled", true)
 			slog.WarnContext(ctx, "request rejected", attrs...)
 		default:

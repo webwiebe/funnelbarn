@@ -11,13 +11,28 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
+// healthPingTimeout bounds the liveness/readiness database ping. It must stay
+// below the probes' timeoutSeconds in deploy/k8s/*/deployment.yaml, so that the
+// prober waits for this handler's verdict instead of pre-empting it.
+const healthPingTimeout = 2 * time.Second
+
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	// Ping on a context detached from the caller's cancellation. kube-probe
+	// defaults to timeoutSeconds: 1 and the probes did not set it, so any ping
+	// slower than a second was cancelled by the prober before this handler's
+	// own budget expired. Ping then returned context.Canceled, which was logged
+	// at Error and filed as a BugBarn issue whose entire message was "context
+	// canceled" — the prober's clock, reported as a database fault, with no
+	// trace of what the database was actually doing. Detached, a slow ping is
+	// measured against our own budget: it either fails for a real reason worth
+	// reporting, or it succeeds.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), healthPingTimeout)
 	defer cancel()
 
 	if s.db != nil {
 		if err := s.db.Ping(ctx); err != nil {
-			slog.ErrorContext(ctx, "health check db ping failed", "err", err)
+			slog.ErrorContext(ctx, "health check db ping failed",
+				"err", err, "handled", false, "timeout", healthPingTimeout.String())
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"status": "unhealthy",
 				"error":  "database unavailable",

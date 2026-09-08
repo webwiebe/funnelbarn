@@ -79,8 +79,11 @@ func TestHandler_CaptureError_Branch(t *testing.T) {
 	}
 }
 
-func TestHandler_WarnNoError_CaptureMessage_Branch(t *testing.T) {
-	// Warn-level record with no "err" attribute hits the CaptureMessage branch.
+func TestHandler_WarnReachesBaseHandlerOnly(t *testing.T) {
+	// A Warn record still reaches the wrapped handler; what it must not do is
+	// reach BugBarn. That half is asserted against a real endpoint in
+	// TestHandler_DoesNotForwardWarnOrBelow — this test cannot see it, because
+	// it never initialises the SDK.
 	rec := &recordingHandler{level: slog.LevelDebug}
 	h := bblog.NewHandler(rec)
 	logger := slog.New(h)
@@ -107,7 +110,8 @@ func TestHandler_ErrorWithNonErrorAttr_CaptureMessage_Branch(t *testing.T) {
 
 func TestHandler_InfoNotCaptured(t *testing.T) {
 	// Info-level records go to base but must NOT trigger BugBarn capture.
-	// We verify no panic occurs and the record still reaches the base handler.
+	// This checks only that the record still reaches the base handler and that
+	// nothing panics; the delivery assertion lives in delivery_test.go.
 	rec := &recordingHandler{level: slog.LevelDebug}
 	h := bblog.NewHandler(rec)
 	slog.New(h).Info("routine info", "key", "value")
