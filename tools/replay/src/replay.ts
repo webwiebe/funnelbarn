@@ -26,7 +26,7 @@ export function loadPlayerAssets(): PlayerAssets {
     pkgJsonPath = require.resolve("rrweb-player/package.json");
   } catch {
     throw new Error(
-      "rrweb-player is not installed. Run `npm install` in tools/replay before replaying."
+      "rrweb-player is not installed. Run `pnpm install` in tools/replay before replaying."
     );
   }
   const root = dirname(pkgJsonPath);
@@ -70,7 +70,7 @@ export async function renderReplay(opts: RenderOptions): Promise<void> {
     ({ chromium } = await import("playwright"));
   } catch {
     throw new Error(
-      "playwright is not installed. Run `npm install && npx playwright install chromium` in tools/replay."
+      "playwright is not installed. Run `pnpm install && pnpm exec playwright install chromium` in tools/replay."
     );
   }
 

@@ -21,12 +21,12 @@ rrweb-player in Playwright Chromium, auto-seeked to offset_ms
 
 ```bash
 cd tools/replay
-npm install
-npx playwright install chromium   # one-time browser download (needed for live replay)
-npm run build
+pnpm install
+pnpm exec playwright install chromium   # one-time browser download (needed for live replay)
+pnpm build
 ```
 
-`npm install` alone (with `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`) is enough for
+`pnpm install` alone (with `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`) is enough for
 `--dry-run`, which never launches a browser.
 
 ## Usage

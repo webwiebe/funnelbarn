@@ -200,17 +200,17 @@ jobs:
           ref: ${{ needs.build.outputs.sha }}
 
       - name: Install Node deps
-        run: npm ci
+        run: pnpm install --frozen-lockfile --filter funnelbarn
 
       - name: Install Playwright browsers
-        run: npx playwright install chromium
+        run: pnpm exec playwright install chromium
 
       - name: Run E2E tests
         env:
           E2E_BASE_URL: https://funnelbarn.test.wiebe.xyz
           # k3s cluster private IP — reachable from the Mac Mini runner
           E2E_CLUSTER_IP: 192.168.4.108
-        run: npx playwright test --reporter=list,html
+        run: pnpm exec playwright test --reporter=list,html
 
       - name: Upload test results on failure
         if: failure()
