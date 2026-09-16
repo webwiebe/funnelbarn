@@ -32,6 +32,17 @@ func TestThemeManifest(t *testing.T) {
 		BodyTextColor   string `json:"body_text_color"`
 		SupportURL      string `json:"support_url"`
 		Locale          string `json:"locale"`
+
+		DefaultLocale    string   `json:"default_locale"`
+		SupportedLocales []string `json:"supported_locales"`
+		FromAddress      string   `json:"from_address"`
+		FromName         string   `json:"from_name"`
+		Dark             *struct {
+			PrimaryColor    string `json:"primary_color"`
+			BackgroundColor string `json:"background_color"`
+			CardColor       string `json:"card_color"`
+			BodyTextColor   string `json:"body_text_color"`
+		} `json:"dark"`
 	}
 	var m manifest
 	if err := json.NewDecoder(w.Body).Decode(&m); err != nil {
@@ -39,5 +50,14 @@ func TestThemeManifest(t *testing.T) {
 	}
 	if m.Name == "" {
 		t.Errorf("name should be populated, got empty")
+	}
+	if m.FromAddress == "" || m.FromName == "" {
+		t.Errorf("from_address/from_name must be set so auth mail is not sent from a derived sender, got %q/%q", m.FromAddress, m.FromName)
+	}
+	if m.DefaultLocale == "" || len(m.SupportedLocales) == 0 {
+		t.Errorf("default_locale/supported_locales must be set, got %q/%v", m.DefaultLocale, m.SupportedLocales)
+	}
+	if m.Dark == nil || m.Dark.BackgroundColor == "" {
+		t.Errorf("dark palette must be set, got %+v", m.Dark)
 	}
 }

@@ -164,7 +164,17 @@ legacy `/sdk/funnelbarn.js`) to the web/nginx service and `/api/*` to the Go ser
 issues a Let's Encrypt certificate per incoming SNI on-demand (`certResolver: letsencrypt`). This is
 the same pattern the sibling barn tools use (`bt.*` for BrandTrace, `sb.*` for SpanBarn). Projects are
 still resolved by API key + the `x-funnelbarn-project` header, so the custom host needs no app-side
-mapping.
+mapping. There is no host→project resolution anywhere: the project's `domain` field is a display label
+on the dashboard and routes nothing.
+
+**Setup guide on the alias.** `GET https://f.<brand>/api/v1/setup/<slug>` hands back `https://f.<brand>`
+in every endpoint and snippet; any other host gets `FUNNELBARN_PUBLIC_URL`. The alias is recognised from
+`X-Forwarded-Host` (when the peer is trusted, see `FUNNELBARN_TRUSTED_PROXIES`) or `Host`, and must be
+`f.` followed by a valid DNS name (`internal/api/setup.go`, `setupBaseURL`).
+
+**Theme manifest.** `/.well-known/iambarn-theme.json` is exempt from the bare-host redirect, because
+iambarn treats a 3xx as a failed fetch. A concrete per-host Ingress that serves the dashboard
+(`f.bananasketch.nl`) must route that path to the Go service, as the canonical host does.
 
 **Bare-host redirect.** Every other path on `f.<domain>` (the root `/`, or any stray browser
 navigation) is routed to the Go service, which `301`-redirects it to `https://<domain>` — it strips

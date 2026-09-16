@@ -206,6 +206,21 @@ func (s *Server) isTrustedProxy(ip string) bool {
 	return false
 }
 
+// trustsForwardedHeaders reports whether X-Forwarded-* headers on r may be
+// believed: unconditionally when no trusted proxies are configured (backwards
+// compatible, mirrors clientIP), otherwise only when the direct peer is a
+// configured trusted proxy.
+func (s *Server) trustsForwardedHeaders(r *http.Request) bool {
+	if len(s.trustedProxies) == 0 {
+		return true
+	}
+	remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		remoteIP = r.RemoteAddr
+	}
+	return s.isTrustedProxy(remoteIP)
+}
+
 // isSecureRequest decides whether cookies set on this response get the Secure
 // flag. Direct TLS always counts. X-Forwarded-Proto is honoured only when it
 // can be trusted: unconditionally when no trusted proxies are configured
@@ -221,17 +236,8 @@ func (s *Server) isSecureRequest(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
 	}
-	if r.Header.Get("X-Forwarded-Proto") == "https" {
-		if len(s.trustedProxies) == 0 {
-			return true
-		}
-		remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			remoteIP = r.RemoteAddr
-		}
-		if s.isTrustedProxy(remoteIP) {
-			return true
-		}
+	if r.Header.Get("X-Forwarded-Proto") == "https" && s.trustsForwardedHeaders(r) {
+		return true
 	}
 	switch s.environment {
 	case "", "development":

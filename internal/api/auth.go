@@ -227,6 +227,16 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		mapServiceError(w, err, "handleCreateProject")
 		return
 	}
+	// The domain is a display label for the site the project measures. It
+	// drives no routing: ingest resolves the project by API key and
+	// x-funnelbarn-project, which is what lets any f.<domain> alias work.
+	if domain := strings.TrimSpace(body.Domain); domain != "" {
+		project, err = s.projects.UpdateProject(r.Context(), project.ID, project.Name, domain)
+		if err != nil {
+			mapServiceError(w, err, "handleCreateProject")
+			return
+		}
+	}
 	slog.InfoContext(r.Context(), "project created", "project_id", project.ID, "name", body.Name, "request_id", RequestIDFromContext(r.Context()))
 	writeJSON(w, http.StatusCreated, project)
 }
