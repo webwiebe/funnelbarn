@@ -42,9 +42,8 @@ type themeDarkPalette struct {
 // amber, text) and web/public/icons. The dashboard is dark-only, so the dark
 // palette repeats the top-level colours.
 //
-// FromAddress is noreply@iam.wiebe.xyz because that is the sender the
-// mailserver is configured to sign for; a new funnelbarn.wiebe.xyz mailbox
-// would need its own DKIM/SPF setup before mail from it is delivered.
+// FromAddress is on wiebe.xyz, the registrable domain of the canonical
+// origin, so iambarn accepts it for logins started on funnelbarn.wiebe.xyz.
 var funnelbarnThemeManifest = themeManifest{
 	Name:             "FunnelBarn",
 	LogoURL:          "https://funnelbarn.wiebe.xyz/icons/icon-512.png",
@@ -56,7 +55,7 @@ var funnelbarnThemeManifest = themeManifest{
 	Locale:           "en",
 	DefaultLocale:    "en",
 	SupportedLocales: []string{"en"},
-	FromAddress:      "noreply@iam.wiebe.xyz",
+	FromAddress:      "wiebe@wiebe.xyz",
 	FromName:         "FunnelBarn",
 	Dark: &themeDarkPalette{
 		PrimaryColor:    "#f59e0b",
