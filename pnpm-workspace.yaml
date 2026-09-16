@@ -1,0 +1,15 @@
+packages:
+  - '.'
+  - 'web'
+  - 'site'
+  - 'tools/replay'
+  - 'sdks/js'
+
+# Dependencies whose install scripts may run. npm ran these unconditionally.
+allowBuilds:
+  esbuild: true
+  sharp: true
+
+# Shared dev tooling, one version across the workspace.
+catalog:
+  typescript: ^5.8.3

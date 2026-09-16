@@ -17,7 +17,7 @@ let summary
 try {
   summary = JSON.parse(readFileSync(summaryPath, 'utf8'))
 } catch {
-  console.error(`ERROR: ${summaryPath} not found. Run "npm run test:coverage" first.`)
+  console.error(`ERROR: ${summaryPath} not found. Run "pnpm test:coverage" first.`)
   process.exit(1)
 }
 

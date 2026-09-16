@@ -263,7 +263,7 @@ make test
 go test ./...
 
 # Frontend tests only (60 Vitest tests)
-cd web && npm test
+cd web && pnpm test
 
 # Lint (gofmt + go vet + frontend lint)
 make lint

@@ -23,6 +23,7 @@
     "url": "https://github.com/webwiebe/funnelbarn/issues"
   },
   "homepage": "https://github.com/webwiebe/funnelbarn#readme",
+  "packageManager": "pnpm@12.4.2",
   "devDependencies": {
     "@playwright/test": "^1.59.1"
   }

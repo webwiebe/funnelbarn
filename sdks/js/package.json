@@ -18,12 +18,12 @@
     "README.md"
   ],
   "scripts": {
-    "build": "npm run clean && npm run build:esm && npm run build:cjs && npm run build:iife",
+    "build": "pnpm run clean && pnpm run build:esm && pnpm run build:cjs && pnpm run build:iife",
     "build:cjs": "tsc -p tsconfig.cjs.json",
     "build:esm": "tsc -p tsconfig.esm.json",
     "build:iife": "rollup -c rollup.iife.config.mjs",
     "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
-    "test": "npm run build && node --test test/sdk.test.mjs"
+    "test": "pnpm run build && node --test test/sdk.test.mjs"
   },
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^16.0.3",
@@ -31,7 +31,7 @@
     "@types/node": "^22.0.0",
     "rollup": "^4.0.0",
     "tslib": "^2.8.0",
-    "typescript": "^5.8.3"
+    "typescript": "catalog:"
   },
   "engines": {
     "node": ">=18.0.0"
