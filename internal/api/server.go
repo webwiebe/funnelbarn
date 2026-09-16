@@ -293,7 +293,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.Handle("GET /api/v1/setup/{slug}", s.limit(s.setupLimiter, http.HandlerFunc(s.handleSetup)))
 	s.mux.Handle("GET /api/v1/client-config", s.limit(s.eventsLimiter, http.HandlerFunc(s.handleClientConfig)))
-	s.mux.HandleFunc("GET /.well-known/iambarn-theme.json", s.handleThemeManifest)
+	s.mux.HandleFunc("GET "+themeManifestPath, s.handleThemeManifest)
 
 	// Ingest (API key required)
 	s.mux.Handle("POST /api/v1/events", s.limit(s.eventsLimiter, s.ingest))
@@ -611,17 +611,6 @@ func (s *Server) metricsHandler() http.Handler {
 		}
 		promH.ServeHTTP(w, r)
 	})
-}
-
-// isIngestPassthroughPath reports whether a request on an f.<domain> vanity
-// host should pass through to its handler instead of being 301-redirected to
-// the app root. These mirror the paths the edge IngressRoute allows on wildcard
-// f.* hosts: the ingest/config API (/api/*) and the browser SDK bundle. Every
-// other path is a stray browser hit that belongs on the real app domain.
-func isIngestPassthroughPath(path string) bool {
-	return strings.HasPrefix(path, "/api") ||
-		path == "/sdk.js" ||
-		path == "/sdk/funnelbarn.js"
 }
 
 // publicIngestCORSPaths are the endpoints a browser SDK on an arbitrary

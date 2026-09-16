@@ -58,6 +58,15 @@ spec:
                 name: funnelbarn
                 port:
                   name: http
+          # Same as the canonical host: without this the theme manifest falls
+          # through to nginx and iambarn gets index.html instead of JSON.
+          - path: /.well-known/iambarn-theme.json
+            pathType: Exact
+            backend:
+              service:
+                name: funnelbarn
+                port:
+                  name: http
           - path: /
             pathType: Prefix
             backend:

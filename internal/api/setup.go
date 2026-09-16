@@ -90,10 +90,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	publicURL := s.publicURL
-	if publicURL == "" {
-		publicURL = "https://funnelbarn.wiebe.xyz"
-	}
+	publicURL := s.setupBaseURL(r)
 
 	// Two different things, and conflating them is what made funnelbarn#237
 	// expensive: every SDK takes the BASE url and appends the path itself, while

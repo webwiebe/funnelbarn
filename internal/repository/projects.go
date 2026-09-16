@@ -45,6 +45,11 @@ const APIKeyScopeAnalyticsRead = "analytics:read"
 const APIKeyScopeFlagsWrite = "flags:write"
 
 // Project represents a tracked website or application.
+//
+// Domain is a display label for the site the project measures (shown on the
+// dashboard and in settings). Nothing resolves a project from it: ingest uses
+// the API key plus x-funnelbarn-project, which is what lets any f.<domain>
+// alias work without per-project wiring.
 type Project struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
