@@ -1,0 +1,8 @@
+**/node_modules
+**/dist
+.pnpm-store
+.git
+.cache
+.claude
+site/.astro
+web/coverage

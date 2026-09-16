@@ -31,15 +31,8 @@ setup:
 		echo "[setup] go $$dir"; \
 		(cd "$$dir" && go mod download); \
 	done; \
-	for pkg in $$(find . $(FIND_PRUNE) -name package.json -print 2>/dev/null); do \
-		dir=$$(dirname "$$pkg"); \
-		echo "[setup] node $$dir"; \
-		if [ -f "$$dir/package-lock.json" ]; then \
-			(cd "$$dir" && npm ci); \
-		else \
-			(cd "$$dir" && npm install); \
-		fi; \
-	done
+	echo "[setup] node workspace"; \
+	pnpm install --frozen-lockfile
 
 build:
 	@set -eu; \
@@ -51,20 +44,17 @@ build:
 			(cd "$$dir" && go build ./...); \
 		fi; \
 	done; \
-	for pkg in $$(find . $(FIND_PRUNE) -name package.json -print 2>/dev/null); do \
-		dir=$$(dirname "$$pkg"); \
-		echo "[build] node $$dir"; \
-		(cd "$$dir" && npm run build --if-present); \
-	done
+	echo "[build] node workspace"; \
+	pnpm -r build
 
 test:
 	go test -race -count=1 ./...
-	cd web && npm test
+	pnpm --filter @funnelbarn/web test
 
 lint:
-	gofmt -l . | { read f; [ -z "$$f" ] || { echo "Unformatted files: $$f"; exit 1; }; }
+	gofmt -l $$(find . $(FIND_PRUNE) -name '*.go' -print) | { read f; [ -z "$$f" ] || { echo "Unformatted files: $$f"; exit 1; }; }
 	go vet ./...
-	cd web && npm run lint && npm run lint:eslint
+	pnpm --filter @funnelbarn/web lint && pnpm --filter @funnelbarn/web lint:eslint
 
 # Report-only soaks. Each compares the current measurement against a committed
 # baseline in scripts/soak-baselines/ and fails on a new violation, a worsened

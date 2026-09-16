@@ -295,14 +295,15 @@ def measure_web_complexity(root: Path = REPO_ROOT) -> dict[str, int]:
     web = root / "web"
     if not (web / "node_modules").is_dir():
         raise MeasurementError(
-            "web/node_modules is missing; run `npm ci` in web/ first. "
+            "web/node_modules is missing; run `pnpm install` at the repo root first. "
             "An uninstalled tree must fail this soak, never read as zero findings."
         )
     with tempfile.TemporaryDirectory() as tmp:
         report = Path(tmp) / "eslint.json"
         _run(
             [
-                "npx",
+                "pnpm",
+                "exec",
                 "eslint",
                 "src/",
                 "--config",

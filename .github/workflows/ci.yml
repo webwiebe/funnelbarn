@@ -155,27 +155,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
 
       - name: Build SDK
-        working-directory: sdks/js
-        run: npm ci && npm run build
-
-      - name: Install web deps
-        working-directory: web
-        run: npm ci
+        # tsc needs the SDK's dist types to typecheck web against it.
+        run: pnpm --filter @funnelbarn/js build
 
       - name: TypeScript typecheck
         working-directory: web
-        run: npm run lint
+        run: pnpm lint
 
       - name: ESLint
         working-directory: web
-        run: npm run lint:eslint
+        run: pnpm lint:eslint
 
       - name: Soak, web cyclomatic complexity at the estate target
         # REPORT-ONLY at complexity 12 via web/eslint.soak.config.js, while the
@@ -186,33 +186,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
 
-      # `npm test` builds first, so this covers the SDK's own suite as well as
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+
+      # `pnpm test` builds first, so this covers the SDK's own suite as well as
       # producing the bundle the web app links against. It was previously only
       # built, never tested, in CI.
       - name: Build and test SDK
-        working-directory: sdks/js
-        run: npm ci && npm test
-
-      - name: Install web deps
-        working-directory: web
-        run: npm ci
+        run: pnpm --filter @funnelbarn/js test
 
       - name: Run Vitest with coverage ratchet
         # vitest enforces the per-metric coverage floors (all:true) from
         # vite.config.ts; pinned at current, raise-only.
         working-directory: web
-        run: npm run test:coverage
+        run: pnpm test:coverage
 
       - name: Per-file coverage ratchet (no new uncovered files)
         working-directory: web
-        run: npm run gate:coverage-perfile
+        run: pnpm gate:coverage-perfile
 
       - name: Duplication ratchet (jscpd)
         working-directory: web
-        run: npm run gate:duplication
+        run: pnpm gate:duplication

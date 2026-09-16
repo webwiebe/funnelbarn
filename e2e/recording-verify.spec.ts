@@ -3,7 +3,7 @@
  *
  * Run locally against the test env:
  *   FUNNELBARN_API_URL=https://funnelbarn-test.nijmegen.wiebe.xyz \
- *   npx playwright test e2e/recording-verify.spec.ts --project=chromium --headed
+ *   pnpm exec playwright test e2e/recording-verify.spec.ts --project=chromium --headed
  */
 import { test, expect } from '@playwright/test'
 

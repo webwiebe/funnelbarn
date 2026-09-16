@@ -69,7 +69,7 @@ export default defineConfig({
   // Only start web server for local dev (not in CI against live env)
   ...(isCIEnv ? {} : {
     webServer: {
-      command: 'cd web && npm run dev',
+      command: 'pnpm --filter @funnelbarn/web dev',
       url: 'http://localhost:5173',
       reuseExistingServer: true,
     },

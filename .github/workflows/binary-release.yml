@@ -91,6 +91,7 @@ jobs:
         working-directory: sdks/js
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -100,11 +101,14 @@ jobs:
         # `npm publish` doesn't 409 with "version already exists" on the second
         # run. --no-git-tag-version because the tag step already handles tagging.
         run: npm version "${{ needs.tag.outputs.version_num }}" --no-git-tag-version --allow-same-version
-      - run: npm ci
-      - run: npm run build
+      - run: pnpm install --frozen-lockfile --filter @funnelbarn/js
+      - run: pnpm build
       - name: Publish to npm
+        # The version step above edits package.json in place and leaves the
+        # workspace tree dirty; pnpm publish refuses a dirty tree by default,
+        # so --no-git-checks is required here.
         if: env.NPM_TOKEN != ''
-        run: npm publish --access public
+        run: pnpm publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -148,26 +152,28 @@ jobs:
     needs: tag
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install SDK dependencies and build
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build SDK
+        run: pnpm --filter @funnelbarn/js build
+
+      - name: Copy SDK bundle into web
         run: |
-          npm ci --prefix sdks/js
-          npm run build --prefix sdks/js
           mkdir -p web/public/sdk
           cp sdks/js/dist/iife/funnelbarn.js web/public/sdk/funnelbarn.js
 
-      - name: Install web dependencies
-        run: npm ci --prefix web
-
       - name: Build web UI
-        run: npm run build --prefix web
+        run: pnpm --filter @funnelbarn/web build
 
       - name: Upload source maps to BugBarn
         if: vars.BUGBARN_ENDPOINT != ''
