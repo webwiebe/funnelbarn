@@ -36,20 +36,6 @@ func (s *Server) handleListFlags(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"flags": flags})
 }
 
-// normalizeFlagKind defaults an unset kind to "experiment" (what every flag was
-// before the column existed) and rejects anything else, so a typo can't create
-// a flag whose evaluation semantics nobody can predict.
-func normalizeFlagKind(kind string) (string, error) {
-	switch kind {
-	case "":
-		return repository.FlagKindExperiment, nil
-	case repository.FlagKindExperiment, repository.FlagKindConfig:
-		return kind, nil
-	default:
-		return "", fmt.Errorf("flag_kind must be %q or %q", repository.FlagKindExperiment, repository.FlagKindConfig)
-	}
-}
-
 func (s *Server) handleCreateFlag(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
@@ -72,26 +58,12 @@ func (s *Server) handleCreateFlag(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	if body.FlagKey == "" || body.Name == "" {
-		jsonError(w, "flag_key and name are required", http.StatusUnprocessableEntity)
-		return
-	}
-	if body.FlagType == "" {
-		body.FlagType = "boolean"
-	}
-	if body.TargetingRules == "" {
-		body.TargetingRules = "[]"
-	}
-	if err := service.ValidateTargetingRules(body.TargetingRules); err != nil {
-		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
-		return
-	}
-	kind, err := normalizeFlagKind(body.Kind)
-	if err != nil {
-		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
-		return
-	}
 
+	// Required fields, flag_type/targeting_rules defaults, targeting rule
+	// syntax and flag_kind validation all live in FlagService.CreateFlag, so
+	// every creation path (dashboard, API token, MCP) enforces them the same
+	// way. A validation failure comes back as a *domain.ValidationError, which
+	// mapServiceError turns into a 422 with the message as given.
 	flag, err := s.flags.CreateFlag(r.Context(), repository.FeatureFlag{
 		ProjectID:       projectID,
 		FlagKey:         body.FlagKey,
@@ -102,8 +74,7 @@ func (s *Server) handleCreateFlag(w http.ResponseWriter, r *http.Request) {
 		Split:           body.Split,
 		ConversionEvent: body.ConversionEvent,
 		TargetingRules:  body.TargetingRules,
-		Status:          "active",
-		Kind:            kind,
+		Kind:            body.Kind,
 	})
 	if err != nil {
 		mapServiceError(w, err, "handleCreateFlag")
@@ -168,12 +139,6 @@ func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	if body.TargetingRules != "" {
-		if err := service.ValidateTargetingRules(body.TargetingRules); err != nil {
-			jsonError(w, err.Error(), http.StatusUnprocessableEntity)
-			return
-		}
-	}
 
 	// Preserve fields the caller omits, so a partial update can't silently turn
 	// a config flag back into an experiment (and start writing evaluation rows
@@ -203,12 +168,10 @@ func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
 	if body.Status == "" {
 		body.Status = existing.Status
 	}
-	kind, err := normalizeFlagKind(body.Kind)
-	if err != nil {
-		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
-		return
-	}
 
+	// Targeting rule syntax and flag_kind validation live in
+	// FlagService.UpdateFlag now, same as create; a bad merged value comes
+	// back as a *domain.ValidationError, which mapServiceError turns into 422.
 	flag, err := s.flags.UpdateFlag(r.Context(), repository.FeatureFlag{
 		ID:              flagID,
 		Name:            body.Name,
@@ -219,7 +182,7 @@ func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
 		ConversionEvent: body.ConversionEvent,
 		TargetingRules:  body.TargetingRules,
 		Status:          body.Status,
-		Kind:            kind,
+		Kind:            body.Kind,
 	})
 	if err != nil {
 		mapServiceError(w, err, "handleUpdateFlag")
@@ -300,7 +263,7 @@ func (s *Server) handleFlagAnalysis(w http.ResponseWriter, r *http.Request) {
 	var zScore float64
 	var significant bool
 	if len(results) == 2 {
-		zScore, significant = zTestTwoProportions(
+		zScore, significant = service.ZTestTwoProportions(
 			results[0].Sample, results[0].Conversions,
 			results[1].Sample, results[1].Conversions,
 		)
