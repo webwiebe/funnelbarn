@@ -74,11 +74,24 @@ func (s *Server) handleCreateSegment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateSegment(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
 	segID := r.PathValue("sid")
-	if segID == "" {
-		jsonError(w, "segment id required", http.StatusBadRequest)
+	if projectID == "" || segID == "" {
+		jsonError(w, "project id and segment id required", http.StatusBadRequest)
 		return
 	}
+
+	// Verify the segment belongs to this project.
+	existing, err := s.segments.GetSegment(r.Context(), segID)
+	if err != nil {
+		mapServiceError(w, err, "handleUpdateSegment.getSegment")
+		return
+	}
+	if existing.ProjectID != projectID {
+		jsonError(w, "segment not found", http.StatusNotFound)
+		return
+	}
+
 	var body struct {
 		Name  string                   `json:"name"`
 		Rules []repository.SegmentRule `json:"rules"`
@@ -92,6 +105,7 @@ func (s *Server) handleUpdateSegment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx, span := tracing.StartSpan(r.Context(), "segments.update",
+		attribute.String("project.id", projectID),
 		attribute.String("segment.id", segID),
 		attribute.Int("segment.rules.count", len(body.Rules)),
 	)
@@ -107,13 +121,26 @@ func (s *Server) handleUpdateSegment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteSegment(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
 	segID := r.PathValue("sid")
-	if segID == "" {
-		jsonError(w, "segment id required", http.StatusBadRequest)
+	if projectID == "" || segID == "" {
+		jsonError(w, "project id and segment id required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify the segment belongs to this project.
+	existing, err := s.segments.GetSegment(r.Context(), segID)
+	if err != nil {
+		mapServiceError(w, err, "handleDeleteSegment.getSegment")
+		return
+	}
+	if existing.ProjectID != projectID {
+		jsonError(w, "segment not found", http.StatusNotFound)
 		return
 	}
 
 	ctx, span := tracing.StartSpan(r.Context(), "segments.delete",
+		attribute.String("project.id", projectID),
 		attribute.String("segment.id", segID),
 	)
 	defer span.End()

@@ -23,20 +23,29 @@ func NewFunnelService(store ports.FunnelRepo) *FunnelService {
 	return &FunnelService{store: store}
 }
 
-func (svc *FunnelService) CreateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error) {
+// validateFunnel checks the fields CreateFunnel and UpdateFunnel both
+// require, so REST and MCP report the same validation messages either way.
+func validateFunnel(f repository.Funnel) error {
 	if strings.TrimSpace(f.ProjectID) == "" {
-		return repository.Funnel{}, &domain.ValidationError{Field: "project_id", Message: "required"}
+		return &domain.ValidationError{Field: "project_id", Message: "required"}
 	}
 	if strings.TrimSpace(f.Name) == "" {
-		return repository.Funnel{}, &domain.ValidationError{Field: "name", Message: "required"}
+		return &domain.ValidationError{Field: "name", Message: "required"}
 	}
 	if len(f.Steps) == 0 {
-		return repository.Funnel{}, &domain.ValidationError{Field: "steps", Message: "at least one step required"}
+		return &domain.ValidationError{Field: "steps", Message: "at least one step required"}
 	}
 	for i, step := range f.Steps {
 		if strings.TrimSpace(step.EventName) == "" {
-			return repository.Funnel{}, &domain.ValidationError{Field: fmt.Sprintf("steps[%d].event_name", i), Message: "required"}
+			return &domain.ValidationError{Field: fmt.Sprintf("steps[%d].event_name", i), Message: "required"}
 		}
+	}
+	return nil
+}
+
+func (svc *FunnelService) CreateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error) {
+	if err := validateFunnel(f); err != nil {
+		return repository.Funnel{}, err
 	}
 	return svc.store.CreateFunnel(ctx, f)
 }
@@ -56,7 +65,20 @@ func (svc *FunnelService) GetFunnel(ctx context.Context, id string) (repository.
 	return f, nil
 }
 
+// UpdateFunnel validates like CreateFunnel and, when Scope is left empty,
+// keeps the funnel's existing scope, because the caller may be updating name
+// or steps without meaning to touch scope.
 func (svc *FunnelService) UpdateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error) {
+	if f.Scope == "" {
+		existing, err := svc.GetFunnel(ctx, f.ID)
+		if err != nil {
+			return repository.Funnel{}, err
+		}
+		f.Scope = existing.Scope
+	}
+	if err := validateFunnel(f); err != nil {
+		return repository.Funnel{}, err
+	}
 	return svc.store.UpdateFunnel(ctx, f)
 }
 

@@ -42,18 +42,10 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if body.Name == "" {
-		jsonError(w, "name is required", http.StatusBadRequest)
-		return
-	}
-	if len(body.Steps) == 0 {
-		jsonError(w, "at least one step is required", http.StatusBadRequest)
-		return
-	}
-	if body.Scope == "" {
-		body.Scope = existing.Scope
-	}
 
+	// Name, steps and scope-default validation live in FunnelService.UpdateFunnel
+	// (shared with CreateFunnel and with the MCP update_funnel tool), so a bad
+	// request here surfaces as a 422 via mapServiceError below.
 	funnel := repository.Funnel{
 		ID:          funnelID,
 		ProjectID:   projectID,
