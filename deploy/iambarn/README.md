@@ -15,7 +15,7 @@ has no OIDC configured, so it does not run there.
 ## Usage
 
 ```sh
-IAMBARN_ADMIN_TOKEN=<PAT or M2M token, scope admin:clients:write> \
+IAMBARN_ADMIN_TOKEN=$(sops -d --extract '["stringData"]["IAMBARN_ADMIN_TOKEN"]' deploy/iambarn/secrets/staging.yaml) \
 IAMBARN_URL=https://iam.staging.wiebe.xyz \
 CLIENT_ID=<FUNNELBARN_OIDC_CLIENT_ID for the environment> \
 RESOURCE_URL=https://funnelbarn.staging.wiebe.xyz/api/v1/mcp \
@@ -29,5 +29,8 @@ after the update. It never prints the admin token or a client secret.
 
 ## Required token
 
-`IAMBARN_ADMIN_TOKEN` needs the `admin:clients:write` scope on the IAMBarn
-organization that owns the FunnelBarn OAuth clients. See `deploy/SECRETS.md`.
+`IAMBARN_ADMIN_TOKEN` needs the `admin:clients:read` scope (the script lists
+clients to read the current fields) and `admin:clients:write` (the update), on
+the IAMBarn organization that owns the FunnelBarn OAuth clients. IAMBarn checks
+scopes by exact match, so write does not imply read. The pipeline reads it from
+SOPS at `deploy/iambarn/secrets/<env>.yaml`. See `deploy/SECRETS.md`.

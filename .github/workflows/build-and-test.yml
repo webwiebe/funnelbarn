@@ -283,14 +283,15 @@ jobs:
       - name: Register MCP resource with IAMBarn
         env:
           SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY_STAGING }}
-          IAMBARN_ADMIN_TOKEN: ${{ secrets.IAMBARN_ADMIN_TOKEN }}
         run: |
           set -euo pipefail
           IAMBARN_URL="$(sops -d --extract '["stringData"]["FUNNELBARN_OIDC_ISSUER"]' deploy/k8s/staging/secret.yaml)"
           CLIENT_ID="$(sops -d --extract '["stringData"]["FUNNELBARN_OIDC_CLIENT_ID"]' deploy/k8s/staging/secret.yaml)"
           echo "::add-mask::${IAMBARN_URL}"
+          IAMBARN_ADMIN_TOKEN="$(sops -d --extract '["stringData"]["IAMBARN_ADMIN_TOKEN"]' deploy/iambarn/secrets/staging.yaml)"
           echo "::add-mask::${CLIENT_ID}"
-          export IAMBARN_URL CLIENT_ID
+          echo "::add-mask::${IAMBARN_ADMIN_TOKEN}"
+          export IAMBARN_URL CLIENT_ID IAMBARN_ADMIN_TOKEN
           export RESOURCE_URL="https://funnelbarn.staging.wiebe.xyz/api/v1/mcp"
           deploy/iambarn/register-mcp-resource.sh staging
 

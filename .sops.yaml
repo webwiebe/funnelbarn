@@ -1,3 +1,7 @@
 creation_rules:
   - path_regex: deploy/k8s/.*secret.*\.yaml$
     age: age1r7mrwf30q8g6glmngn2cnlzm9vrj6a9arz0t4mwxp6upc0m6tqwskvh295
+  # IAMBarn admin PATs for the MCP resource registration step. Kept out of
+  # deploy/k8s so they never reach a pod Secret; only the pipeline reads them.
+  - path_regex: deploy/iambarn/secrets/.*\.yaml$
+    age: age1r7mrwf30q8g6glmngn2cnlzm9vrj6a9arz0t4mwxp6upc0m6tqwskvh295

@@ -52,9 +52,15 @@ production deploy jobs, to register FunnelBarn's MCP endpoint as an RFC 8707
 resource server on the IAMBarn OAuth client FunnelBarn uses for dashboard
 OIDC login. Not used in testing, which has no OIDC configured.
 
-| Secret | Used by | Description |
+To replace a token without writing it to disk:
+
+```sh
+sops set deploy/iambarn/secrets/staging.yaml '["stringData"]["IAMBARN_ADMIN_TOKEN"]' '"iampat_..."'
+```
+
+| Value | Used by | Description |
 |--------|---------|-------------|
-| `IAMBARN_ADMIN_TOKEN` | build-and-test.yml (`deploy-staging` job), deploy-production.yml | PAT or M2M token with scope `admin:clients:write`, for the IAMBarn organization that owns the FunnelBarn OAuth clients |
+| `IAMBARN_ADMIN_TOKEN` | build-and-test.yml (`deploy-staging` job), deploy-production.yml | IAMBarn PAT with scopes `admin:clients:read` and `admin:clients:write`, for the organization that owns the FunnelBarn OAuth clients. Stored in SOPS at `deploy/iambarn/secrets/<env>.yaml` (key `stringData.IAMBARN_ADMIN_TOKEN`), outside `deploy/k8s` so it never reaches a pod Secret. Staging and production are separate IAMBarn instances, so each file holds its own PAT. |
 
 ## APT Repository Dispatch
 

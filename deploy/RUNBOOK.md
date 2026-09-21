@@ -238,7 +238,7 @@ and safe to re-run. Testing has no OIDC configured, so it is skipped there.
 To register or verify by hand:
 
 ```sh
-IAMBARN_ADMIN_TOKEN=<PAT or M2M token, scope admin:clients:write> \
+IAMBARN_ADMIN_TOKEN=$(sops -d --extract '["stringData"]["IAMBARN_ADMIN_TOKEN"]' deploy/iambarn/secrets/staging.yaml) \
 IAMBARN_URL=https://iam.staging.wiebe.xyz \
 CLIENT_ID=$(sops -d --extract '["stringData"]["FUNNELBARN_OIDC_CLIENT_ID"]' deploy/k8s/staging/secret.yaml) \
 RESOURCE_URL=https://funnelbarn.staging.wiebe.xyz/api/v1/mcp \

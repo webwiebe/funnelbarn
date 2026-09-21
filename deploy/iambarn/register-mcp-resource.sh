@@ -16,7 +16,8 @@
 # request a rotation.
 #
 # Required environment variables:
-#   IAMBARN_ADMIN_TOKEN  PAT or M2M token with scope admin:clients:write, for
+#   IAMBARN_ADMIN_TOKEN  PAT or M2M token with scopes admin:clients:read and
+#                         admin:clients:write, for
 #                         the IAMBarn organization that owns the FunnelBarn
 #                         OAuth clients.
 #   IAMBARN_URL           IAMBarn issuer base URL, e.g. https://iam.staging.wiebe.xyz
@@ -37,7 +38,7 @@ if [[ -z "$ENV" ]]; then
   exit 2
 fi
 
-: "${IAMBARN_ADMIN_TOKEN:?IAMBARN_ADMIN_TOKEN is required (PAT or M2M token with admin:clients:write)}"
+: "${IAMBARN_ADMIN_TOKEN:?IAMBARN_ADMIN_TOKEN is required (PAT or M2M token with admin:clients:read and admin:clients:write)}"
 : "${IAMBARN_URL:?IAMBARN_URL is required (the IAMBarn issuer base URL)}"
 : "${CLIENT_ID:?CLIENT_ID is required (the FunnelBarn OIDC client_id for this environment)}"
 : "${RESOURCE_URL:?RESOURCE_URL is required (the MCP resource URL to register)}"
