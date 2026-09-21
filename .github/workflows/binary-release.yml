@@ -240,7 +240,7 @@ jobs:
         with:
           name: debs-${{ matrix.arch }}
           path: debs/*.deb
-          retention-days: 30
+          retention-days: 1
 
   build-darwin-tarballs:
     name: Build macOS Tarballs (${{ matrix.arch }})
@@ -282,7 +282,7 @@ jobs:
         with:
           name: darwin-${{ matrix.arch }}
           path: dist/*.tar.gz*
-          retention-days: 30
+          retention-days: 1
 
   attach-debs-to-release:
     name: Attach .deb to Release

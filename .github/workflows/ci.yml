@@ -119,6 +119,7 @@ jobs:
         with:
           name: go-coverage
           path: coverage.out
+          retention-days: 1
 
   # sdks/go is its own module, so the root `go test ./...` never reached it and
   # the SDK shipped untested. Give it its own job.
