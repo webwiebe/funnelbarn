@@ -112,6 +112,17 @@ type ServerConfig struct {
 	// FlagAutoRegisterMax caps auto-created flags per project on the SDK evaluate
 	// endpoint (0 disables auto-registration).
 	FlagAutoRegisterMax int
+
+	// MCPResourceURL is the OAuth resource identifier of the MCP endpoint and
+	// the audience its IAMBarn access tokens must carry. The MCP endpoint and
+	// its protected-resource metadata are served only when this and OIDC are
+	// both set.
+	MCPResourceURL string
+
+	// MCPRatePerMinute / MCPRateBurst bound MCP tool calls per user (token
+	// subject). Zero means 120/min with a burst of 30.
+	MCPRatePerMinute float64
+	MCPRateBurst     float64
 }
 
 // DistributionRepo provides session field distribution data.
@@ -175,11 +186,13 @@ type Server struct {
 	projectHealth       service.ProjectHealth
 	flagAutoRegisterMax int
 	spanRelay           *tracing.SpanRelay
+	mcpResourceURL      string
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
 	apiLimiter    *rateLimiter
 	setupLimiter  *rateLimiter
+	mcpLimiter    *rateLimiter // per MCP token subject
 
 	// securityMW is the precomputed security-headers middleware; its CSP
 	// whitelists the IAMBarn origin (if configured) for the hosted components.
@@ -195,6 +208,14 @@ func NewServer(cfg ServerConfig) *Server {
 	setupBurst := cfg.SetupRateBurst
 	if setupBurst == 0 {
 		setupBurst = 5
+	}
+	mcpRate := cfg.MCPRatePerMinute
+	if mcpRate == 0 {
+		mcpRate = mcpRatePerMinute
+	}
+	mcpBurst := cfg.MCPRateBurst
+	if mcpBurst == 0 {
+		mcpBurst = mcpRateBurst
 	}
 
 	s := &Server{
@@ -226,6 +247,8 @@ func NewServer(cfg ServerConfig) *Server {
 		eventsLimiter:       newRateLimiter(cfg.IngestRatePerMinute, cfg.IngestRateBurst),
 		apiLimiter:          newRateLimiter(cfg.APIRatePerMinute, cfg.APIRateBurst),
 		setupLimiter:        newRateLimiter(setupRate, setupBurst),
+		mcpLimiter:          newRateLimiter(mcpRate, mcpBurst),
+		mcpResourceURL:      cfg.MCPResourceURL,
 		iambarnUsers:        cfg.IAMBarnUsers,
 		postLogoutRedirect:  cfg.PostLogoutRedirectURI,
 		oidc:                cfg.OIDC,
@@ -283,6 +306,7 @@ func (s *Server) StartCleanup(ctx context.Context) {
 	s.eventsLimiter.startCleanup(ctx)
 	s.apiLimiter.startCleanup(ctx)
 	s.setupLimiter.startCleanup(ctx)
+	s.mcpLimiter.startCleanup(ctx)
 }
 
 func (s *Server) registerRoutes() {
@@ -454,10 +478,22 @@ func (s *Server) registerRoutes() {
 
 	// Geo anonymization
 	s.mux.HandleFunc("POST /api/v1/admin/anonymize-geo", s.requireSession(s.handleAnonymizeGeo))
+
+	// MCP endpoint + protected-resource metadata (only with OIDC configured).
+	s.registerMCPRoutes()
 }
 
 // ServeHTTP adds CORS headers and dispatches to the router.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// The MCP protected-resource metadata is public discovery data with its own
+	// open CORS handling (preflight included). It must skip the credentialed
+	// dashboard CORS below and the doubled-prefix redirect, which would read
+	// its "/api/v1/" suffix as a misroute and 308 it to /api/v1/mcp. Without
+	// MCP configured the mux has no route for it and answers 404.
+	if r.URL.Path == mcpResourceMetaPath {
+		tracing.Middleware(requestLogger(s.securityMW(s.mux))).ServeHTTP(w, r)
+		return
+	}
 	s.setCORSHeaders(w, r)
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)

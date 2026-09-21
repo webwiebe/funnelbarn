@@ -353,6 +353,8 @@ func run() error {
 		"env_admin", userAuth.Enabled(),
 		"oidc_confidential", oidcClient != nil,
 		"local_users", localUserCount,
+		"mcp", oidcClient != nil && cfg.MCPResourceURL != "",
+		"mcp_resource_url", cfg.MCPResourceURL,
 	)
 	authConfigured := userAuth.Enabled() || oidcClient != nil || localUserCount > 0
 	if err := validateFailClosed(environment.Normalize(cfg.SelfEnvironment), apiAuthorizer.Enabled(), authConfigured); err != nil {
@@ -411,6 +413,7 @@ func run() error {
 		ProjectHealth:         healthSvc,
 		FlagAutoRegisterMax:   cfg.AutoRegisterMaxFlags,
 		SpanRelay:             spanRelay,
+		MCPResourceURL:        cfg.MCPResourceURL,
 	})
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)

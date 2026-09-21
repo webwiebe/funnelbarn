@@ -18,7 +18,7 @@
 //     ID) and resolves it with Call.Project, which falls back to the
 //     x-funnelbarn-project header the repository's .mcp.json sets.
 //   - A tool that takes an object ID (funnel, segment, flag) loads the object
-//     and returns errNotFound unless obj.ProjectID equals the resolved
+//     and returns domain.ErrNotFound unless obj.ProjectID equals the resolved
 //     project. Service Get* methods take a bare ID, so skipping this check
 //     lets a call scoped to project A change an object in project B.
 //   - Time ranges are `from` / `to` in RFC 3339 or YYYY-MM-DD, parsed with

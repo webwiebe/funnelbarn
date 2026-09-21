@@ -280,6 +280,20 @@ jobs:
               --dry-run=client -o yaml | kubectl apply -f -
           "
 
+      - name: Register MCP resource with IAMBarn
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY_STAGING }}
+          IAMBARN_ADMIN_TOKEN: ${{ secrets.IAMBARN_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          IAMBARN_URL="$(sops -d --extract '["stringData"]["FUNNELBARN_OIDC_ISSUER"]' deploy/k8s/staging/secret.yaml)"
+          CLIENT_ID="$(sops -d --extract '["stringData"]["FUNNELBARN_OIDC_CLIENT_ID"]' deploy/k8s/staging/secret.yaml)"
+          echo "::add-mask::${IAMBARN_URL}"
+          echo "::add-mask::${CLIENT_ID}"
+          export IAMBARN_URL CLIENT_ID
+          export RESOURCE_URL="https://funnelbarn.staging.wiebe.xyz/api/v1/mcp"
+          deploy/iambarn/register-mcp-resource.sh staging
+
       - name: Apply manifests and roll out
         run: |
           set -euo pipefail

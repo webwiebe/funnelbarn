@@ -45,6 +45,17 @@ Used to post release markers and upload source maps to BugBarn for error trackin
 |--------|---------|-------------|
 | `FUNNELBARN_BUGBARN_API_KEY` | deploy-production.yml, binary-release.yml | BugBarn API key for the `funnelbarn` project |
 
+## IAMBarn MCP Resource Registration
+
+Used by `deploy/iambarn/register-mcp-resource.sh`, run from the staging and
+production deploy jobs, to register FunnelBarn's MCP endpoint as an RFC 8707
+resource server on the IAMBarn OAuth client FunnelBarn uses for dashboard
+OIDC login. Not used in testing, which has no OIDC configured.
+
+| Secret | Used by | Description |
+|--------|---------|-------------|
+| `IAMBARN_ADMIN_TOKEN` | build-and-test.yml (`deploy-staging` job), deploy-production.yml | PAT or M2M token with scope `admin:clients:write`, for the IAMBarn organization that owns the FunnelBarn OAuth clients |
+
 ## APT Repository Dispatch
 
 | Secret | Description |

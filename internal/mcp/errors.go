@@ -9,10 +9,6 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
-// errNotFound is returned for objects that do not exist or belong to another
-// project than the resolved one. The two cases read the same on purpose.
-var errNotFound = domain.ErrNotFound
-
 // inputError is a problem with the tool's arguments. Its message is shown to
 // the assistant as is.
 type inputError struct{ msg string }
