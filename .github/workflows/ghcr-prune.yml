@@ -55,16 +55,18 @@ jobs:
           set -euo pipefail
           tags=""
 
-          deployed() { # host namespace
-            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 "root@$1" \
+          deployed() { # user@host namespace
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 "$1" \
               "kubectl -n $2 get deployments,replicasets -o jsonpath='{..image}'" \
               | tr ' ' '\n' \
               | sed -En 's#^ghcr\.io/webwiebe/funnelbarn/(service|web):##p' \
               | sort -u
           }
-          for target in k3s1.nijmegen.wiebe.xyz/funnelbarn-testing \
-                        k3s1.nijmegen.wiebe.xyz/funnelbarn-staging \
-                        layer7.wiebe.xyz/funnelbarn-production; do
+          # Same SSH users as the deploy workflows: production logs in as
+          # deployer, root is not authorised there for the runners.
+          for target in root@k3s1.nijmegen.wiebe.xyz/funnelbarn-testing \
+                        root@k3s1.nijmegen.wiebe.xyz/funnelbarn-staging \
+                        deployer@layer7.wiebe.xyz/funnelbarn-production; do
             found=$(deployed "${target%%/*}" "${target##*/}")
             if [ -z "$found" ]; then
               echo "::error::no funnelbarn image found in ${target}; refusing to prune"
