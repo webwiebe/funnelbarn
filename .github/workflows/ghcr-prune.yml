@@ -1,0 +1,106 @@
+name: Prune GHCR Images
+
+# Every GHCR package and Actions artifact on the webwiebe account shares one
+# storage quota. When it fills up, every repo's upload steps fail (#287).
+# build-and-test.yml pushes a service and a web image for every commit on main
+# and nothing ever deleted them, so this prunes images older than a week.
+#
+# Kept regardless of age:
+#   - the newest tagged image of each package, so the latest build can always
+#     be redeployed;
+#   - every image a Deployment or ReplicaSet in the testing, staging or
+#     production namespace still references. That covers what is running and
+#     the previous ReplicaSet `rollout undo` goes back to. Production is
+#     deployed by hand and can run an image far older than a week.
+#
+# The protected list is read from the clusters on every run. If a cluster
+# cannot be reached, or a namespace reports no funnelbarn image, the job
+# fails and nothing is deleted.
+#
+# Deleting an index also deletes its platform and attestation manifests, and
+# untagged manifests that still belong to a kept image are never touched:
+# ghcr-cleanup-action resolves those children before applying any rule.
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only log what would be deleted'
+        type: boolean
+        default: true
+
+concurrency:
+  group: ghcr-prune
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  protected-tags:
+    runs-on: [self-hosted, build]
+    timeout-minutes: 10
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      GH_TOKEN: ${{ github.token }}
+    outputs:
+      tags: ${{ steps.collect.outputs.tags }}
+    steps:
+      - name: Collect deployed and newest image tags
+        id: collect
+        run: |
+          set -euo pipefail
+          tags=""
+
+          deployed() { # host namespace
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 "root@$1" \
+              "kubectl -n $2 get deployments,replicasets -o jsonpath='{..image}'" \
+              | tr ' ' '\n' \
+              | sed -En 's#^ghcr\.io/webwiebe/funnelbarn/(service|web):##p' \
+              | sort -u
+          }
+          for target in k3s1.nijmegen.wiebe.xyz/funnelbarn-testing \
+                        k3s1.nijmegen.wiebe.xyz/funnelbarn-staging \
+                        layer7.wiebe.xyz/funnelbarn-production; do
+            found=$(deployed "${target%%/*}" "${target##*/}")
+            if [ -z "$found" ]; then
+              echo "::error::no funnelbarn image found in ${target}; refusing to prune"
+              exit 1
+            fi
+            echo "${target}: $(echo "$found" | tr '\n' ' ')"
+            tags="${tags} ${found}"
+          done
+
+          for pkg in service web; do
+            newest=$(gh api "/users/webwiebe/packages/container/funnelbarn%2F${pkg}/versions?per_page=100" \
+              --jq '[.[] | select(.metadata.container.tags | length > 0)] | max_by(.created_at) | .metadata.container.tags | join(" ")')
+            if [ -z "$newest" ]; then
+              echo "::error::could not find the newest tagged ${pkg} image; refusing to prune"
+              exit 1
+            fi
+            echo "newest ${pkg}: ${newest}"
+            tags="${tags} ${newest}"
+          done
+
+          list=$(echo "$tags" | tr ' ' '\n' | grep -v '^$' | sort -u | paste -sd, -)
+          echo "protected: ${list}"
+          echo "tags=${list}" >> "$GITHUB_OUTPUT"
+
+  prune:
+    needs: protected-tags
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      packages: write
+    steps:
+      - uses: dataaxiom/ghcr-cleanup-action@v1.2.2
+        with:
+          packages: funnelbarn/service,funnelbarn/web
+          older-than: 7 days
+          delete-tags: '*'
+          delete-untagged: true
+          exclude-tags: ${{ needs.protected-tags.outputs.tags }},latest
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
