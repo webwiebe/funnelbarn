@@ -499,26 +499,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	// Bare-host redirect for the f.<domain> vanity ingest hosts: a browser
-	// navigating to https://f.example.com/ (root, or any non-ingest path) gets
-	// 301'd to https://example.com — strip the "f." label and send it to the
-	// app the host fronts. e.g. f.profotograaf.nl → profotograaf.nl.
-	//
-	// This is the app half of the wildcard vanity-host feature. The edge
-	// (deploy/k8s/.../ingressroute-f-wildcard.yaml) routes the ingest API and
-	// SDK bundle on any f.<domain> to their services and sends every other path
-	// here, so this redirect works for any customer domain with no per-project
-	// ingress wiring. Only GET/HEAD navigations redirect (curl -sI sends HEAD);
-	// the ingest/SDK paths pass through to their handlers untouched.
-	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		host := r.Host
-		if i := strings.IndexByte(host, ':'); i >= 0 {
-			host = host[:i]
-		}
-		if strings.HasPrefix(host, "f.") && !isIngestPassthroughPath(r.URL.Path) {
-			http.Redirect(w, r, "https://"+strings.TrimPrefix(host, "f."), http.StatusMovedPermanently)
-			return
-		}
+	if redirectVanityHost(w, r) {
+		return
 	}
 	// A client that concatenated its base URL with the ingest path posts to
 	// /api/v1/events/api/v1/events and gets a silent 404. Production sees ~189
@@ -546,6 +528,33 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// Apply middleware: requestLogger (innermost) → securityHeaders → tracing → dispatch.
 	tracing.Middleware(requestLogger(s.securityMW(s.mux))).ServeHTTP(w, r)
+}
+
+// redirectVanityHost handles the bare-host redirect for the f.<domain> vanity
+// ingest hosts: a browser navigating to https://f.example.com/ (root, or any
+// non-ingest path) gets 301'd to https://example.com — strip the "f." label and
+// send it to the app the host fronts. e.g. f.profotograaf.nl → profotograaf.nl.
+//
+// This is the app half of the wildcard vanity-host feature. The edge
+// (deploy/k8s/.../ingressroute-f-wildcard.yaml) routes the ingest API and
+// SDK bundle on any f.<domain> to their services and sends every other path
+// here, so this redirect works for any customer domain with no per-project
+// ingress wiring. Only GET/HEAD navigations redirect (curl -sI sends HEAD);
+// the ingest/SDK paths pass through to their handlers untouched. It reports
+// whether it wrote the redirect.
+func redirectVanityHost(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	host := r.Host
+	if i := strings.IndexByte(host, ':'); i >= 0 {
+		host = host[:i]
+	}
+	if !strings.HasPrefix(host, "f.") || isIngestPassthroughPath(r.URL.Path) {
+		return false
+	}
+	http.Redirect(w, r, "https://"+strings.TrimPrefix(host, "f."), http.StatusMovedPermanently)
+	return true
 }
 
 // canonicalAPIPath detects a path whose client doubled the API prefix — the
