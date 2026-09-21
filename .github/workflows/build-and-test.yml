@@ -219,6 +219,7 @@ jobs:
           name: playwright-report
           path: playwright-report/
           if-no-files-found: ignore
+          retention-days: 7
 
   deploy-staging:
     # `needs: e2e`, not `needs: deploy`. These two used to be siblings, so
