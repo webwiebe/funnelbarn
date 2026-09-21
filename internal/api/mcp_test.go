@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -319,6 +320,76 @@ func TestMCP_NotServedWithoutOIDC(t *testing.T) {
 		srv, _ := oidcFlowServer(t, newFakeIdP(t), nil)
 		check(t, srv)
 	})
+}
+
+// get_setup_guide must return exactly what a visitor gets from
+// GET /api/v1/setup/{slug} for the same project: same derived ingest key,
+// same public URL, same MCP section (since this server has MCP enabled).
+func TestMCP_GetSetupGuideMatchesHTTPEndpoint(t *testing.T) {
+	f := newFakeIdP(t)
+	srv, store := mcpServer(t, f, nil)
+	p, err := store.CreateProject(context.Background(), "Demo", "demo")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/setup/"+p.Slug, nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/v1/setup/%s = %d, want 200 (body: %s)", p.Slug, w.Code, w.Body.String())
+	}
+	httpBody, err := io.ReadAll(w.Result().Body)
+	if err != nil {
+		t.Fatalf("read HTTP body: %v", err)
+	}
+
+	cs := mcpClient(t, srv, f.mcpAccessToken(t, nil))
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "get_setup_guide",
+		Arguments: map[string]any{"project": p.Slug},
+	})
+	if err != nil {
+		t.Fatalf("CallTool(get_setup_guide): %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("get_setup_guide returned a tool error: %s", mcpResultText(res))
+	}
+	var out struct {
+		Markdown string `json:"markdown"`
+	}
+	raw, err := json.Marshal(res.StructuredContent)
+	if err != nil {
+		t.Fatalf("marshal structured content: %v", err)
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("decode structured content %s: %v", raw, err)
+	}
+
+	if out.Markdown != string(httpBody) {
+		t.Errorf("get_setup_guide output does not match GET /api/v1/setup/%s\n--- MCP ---\n%s\n--- HTTP ---\n%s", p.Slug, out.Markdown, httpBody)
+	}
+	if !strings.Contains(out.Markdown, "## Connect an AI assistant (MCP)") {
+		t.Error("setup guide missing the MCP section even though MCP is enabled")
+	}
+}
+
+// The setup guide only advertises MCP when the instance actually serves it.
+func TestMCP_SetupGuideOmitsMCPSectionWhenDisabled(t *testing.T) {
+	srv, store := newTestServer(t)
+	p, err := store.CreateProject(context.Background(), "Demo", "demo")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/setup/"+p.Slug, nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/v1/setup/%s = %d, want 200 (body: %s)", p.Slug, w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "Connect an AI assistant") {
+		t.Error("setup doc advertises MCP on a server with no OIDC/MCP configured")
+	}
 }
 
 func TestMCP_LimiterCleanedUp(t *testing.T) {
