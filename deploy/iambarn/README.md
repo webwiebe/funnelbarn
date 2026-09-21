@@ -22,15 +22,16 @@ RESOURCE_URL=https://funnelbarn.staging.wiebe.xyz/api/v1/mcp \
   deploy/iambarn/register-mcp-resource.sh staging
 ```
 
-It is idempotent: it exits 0 without writing when the client's
-`resource_identifier` already equals `RESOURCE_URL`, and fails loudly (exit
-non-zero) on a missing input, a client that cannot be found, or a mismatch
-after the update. It never prints the admin token or a client secret.
+It sends a PUT with only `resource_identifier`; IAMBarn keeps every field the
+body omits and returns the updated client. Setting the same value again is
+harmless, so it runs on every deploy (IAMBarn records an `oauth.client.updated`
+audit event each time). It fails loudly (exit non-zero) on a missing input, a
+non-200 response, or a mismatch in the returned client. It never prints the
+admin token or a client secret.
 
 ## Required token
 
-`IAMBARN_ADMIN_TOKEN` needs the `admin:clients:read` scope (the script lists
-clients to read the current fields) and `admin:clients:write` (the update), on
-the IAMBarn organization that owns the FunnelBarn OAuth clients. IAMBarn checks
-scopes by exact match, so write does not imply read. The pipeline reads it from
-SOPS at `deploy/iambarn/secrets/<env>.yaml`. See `deploy/SECRETS.md`.
+`IAMBARN_ADMIN_TOKEN` needs the `admin:clients:write` scope on the IAMBarn
+organization that owns the FunnelBarn OAuth clients, and its user must be an
+admin of that organization. The pipeline reads it from SOPS at
+`deploy/iambarn/secrets/<env>.yaml`. See `deploy/SECRETS.md`.
