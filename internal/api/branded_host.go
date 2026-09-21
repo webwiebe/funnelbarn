@@ -18,6 +18,15 @@ func (s *Server) setupBaseURL(r *http.Request) string {
 	if host := s.requestHost(r); isBrandedAliasHost(host) {
 		return "https://" + host
 	}
+	return s.defaultPublicURL()
+}
+
+// defaultPublicURL is the base URL used when there is no branded-alias host
+// to prefer: the configured FUNNELBARN_PUBLIC_URL, or the canonical
+// funnelbarn.wiebe.xyz. setupBaseURL uses it for a non-branded request; an
+// MCP tool call has no *http.Request to read a Host from at all, so it uses
+// this directly (see Server.SetupDoc).
+func (s *Server) defaultPublicURL() string {
 	if s.publicURL != "" {
 		return s.publicURL
 	}
