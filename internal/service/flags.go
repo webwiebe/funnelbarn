@@ -2,16 +2,13 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -38,60 +35,6 @@ type FlagEvalResult struct {
 	// resolves per targeting key and each read is a data point, so caching one
 	// would both mis-bucket and silently drop the analytics.
 	CacheMaxAgeSeconds int `json:"cache_max_age_seconds"`
-}
-
-type TargetingCondition struct {
-	ContextKey string `json:"context_key"`
-	Operator   string `json:"operator"`
-	Value      string `json:"value"`
-}
-
-type TargetingRule struct {
-	Name       string               `json:"name"`
-	Variant    string               `json:"variant"`
-	Match      string               `json:"match"`
-	Conditions []TargetingCondition `json:"conditions"`
-}
-
-var validOperators = map[string]bool{
-	"eq": true, "neq": true,
-	"contains": true, "not_contains": true,
-	"starts_with": true, "ends_with": true,
-	"in": true, "not_in": true,
-	"present": true, "not_present": true,
-}
-
-func ValidateTargetingRules(rulesJSON string) error {
-	if rulesJSON == "" || rulesJSON == "[]" {
-		return nil
-	}
-	var rules []TargetingRule
-	if err := json.Unmarshal([]byte(rulesJSON), &rules); err != nil {
-		return fmt.Errorf("invalid targeting rules JSON: %w", err)
-	}
-	for i, r := range rules {
-		if r.Name == "" {
-			return fmt.Errorf("rule %d: name is required", i)
-		}
-		if r.Variant == "" {
-			return fmt.Errorf("rule %d: variant is required", i)
-		}
-		if r.Match != "all" && r.Match != "any" {
-			return fmt.Errorf("rule %d: match must be \"all\" or \"any\"", i)
-		}
-		if len(r.Conditions) == 0 {
-			return fmt.Errorf("rule %d: at least one condition is required", i)
-		}
-		for j, c := range r.Conditions {
-			if c.ContextKey == "" {
-				return fmt.Errorf("rule %d, condition %d: context_key is required", i, j)
-			}
-			if !validOperators[c.Operator] {
-				return fmt.Errorf("rule %d, condition %d: unknown operator %q", i, j, c.Operator)
-			}
-		}
-	}
-	return nil
 }
 
 // DefaultConfigCacheTTL is how long a config flag's value may be cached by
@@ -139,7 +82,51 @@ func (svc *FlagService) cacheHintSeconds(flag repository.FeatureFlag) int {
 	return int(ttl.Seconds())
 }
 
+// NormalizeFlagKind defaults an unset kind to "experiment" (what every flag
+// was before the column existed) and rejects anything else, so a typo can't
+// create a flag whose evaluation semantics nobody can predict.
+func NormalizeFlagKind(kind string) (string, error) {
+	switch kind {
+	case "":
+		return repository.FlagKindExperiment, nil
+	case repository.FlagKindExperiment, repository.FlagKindConfig:
+		return kind, nil
+	default:
+		return "", fmt.Errorf("flag_kind must be %q or %q", repository.FlagKindExperiment, repository.FlagKindConfig)
+	}
+}
+
+// CreateFlag validates and creates a manually-authored flag: flag_key and
+// name are required, flag_type defaults to "boolean", targeting_rules to
+// "[]", and the kind is normalized (see NormalizeFlagKind). Origin is always
+// "manual": this is the dashboard, API and MCP creation path. Auto-registered flags
+// go through EnsureAutoFlag (via EvaluateOrRegisterFlag) instead and never
+// reach here, so they keep working unchanged.
 func (svc *FlagService) CreateFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error) {
+	if f.FlagKey == "" {
+		return repository.FeatureFlag{}, &domain.ValidationError{Field: "flag_key", Message: "is required"}
+	}
+	if f.Name == "" {
+		return repository.FeatureFlag{}, &domain.ValidationError{Field: "name", Message: "is required"}
+	}
+	if f.FlagType == "" {
+		f.FlagType = "boolean"
+	}
+	if f.TargetingRules == "" {
+		f.TargetingRules = "[]"
+	}
+	if err := ValidateTargetingRules(f.TargetingRules); err != nil {
+		return repository.FeatureFlag{}, &domain.ValidationError{Message: err.Error()}
+	}
+	kind, err := NormalizeFlagKind(f.Kind)
+	if err != nil {
+		return repository.FeatureFlag{}, &domain.ValidationError{Field: "flag_kind", Message: err.Error()}
+	}
+	f.Kind = kind
+	if f.Status == "" {
+		f.Status = "active"
+	}
+	f.Origin = "manual"
 	return svc.store.CreateFlag(ctx, f)
 }
 
@@ -169,7 +156,26 @@ func (svc *FlagService) ListFlags(ctx context.Context, projectID string) ([]repo
 	return svc.store.ListFlags(ctx, projectID)
 }
 
+// UpdateFlag validates and saves an update to an existing flag: targeting
+// rules must be well-formed and the kind is normalized (see
+// NormalizeFlagKind). The caller merges a partial update (see internal/api's
+// handleUpdateFlag), because only the caller knows which fields the request
+// actually included.
 func (svc *FlagService) UpdateFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error) {
+	if f.Name == "" {
+		return repository.FeatureFlag{}, &domain.ValidationError{Field: "name", Message: "is required"}
+	}
+	if f.TargetingRules == "" {
+		f.TargetingRules = "[]"
+	}
+	if err := ValidateTargetingRules(f.TargetingRules); err != nil {
+		return repository.FeatureFlag{}, &domain.ValidationError{Message: err.Error()}
+	}
+	kind, err := NormalizeFlagKind(f.Kind)
+	if err != nil {
+		return repository.FeatureFlag{}, &domain.ValidationError{Field: "flag_kind", Message: err.Error()}
+	}
+	f.Kind = kind
 	return svc.store.UpdateFlag(ctx, f)
 }
 
@@ -178,6 +184,17 @@ func (svc *FlagService) DeleteFlag(ctx context.Context, id string) error {
 }
 
 func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey string, evalContext map[string]any) (FlagEvalResult, error) {
+	return svc.evaluateFlag(ctx, projectID, flagKey, evalContext, true)
+}
+
+// PreviewFlag evaluates a flag exactly like EvaluateFlag but writes no
+// evaluation row, so a dry run from an assistant never shows up in the flag's
+// exposure counts or A/B analysis.
+func (svc *FlagService) PreviewFlag(ctx context.Context, projectID, flagKey string, evalContext map[string]any) (FlagEvalResult, error) {
+	return svc.evaluateFlag(ctx, projectID, flagKey, evalContext, false)
+}
+
+func (svc *FlagService) evaluateFlag(ctx context.Context, projectID, flagKey string, evalContext map[string]any, record bool) (FlagEvalResult, error) {
 	ctx, span := tracing.StartSpan(ctx, "flags.evaluate",
 		attribute.String("flag.key", flagKey),
 		attribute.String("project.id", projectID),
@@ -214,8 +231,9 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 	// no conversion. Recording a row per read would write thousands a day for a
 	// value that changes twice, and would drown the flag's own analytics in
 	// machine reads.
-	records := flag.Kind != repository.FlagKindConfig
-	span.SetAttributes(attribute.String("flag.kind", flag.Kind))
+	static := flag.Kind == repository.FlagKindConfig
+	records := record && !static
+	span.SetAttributes(attribute.String("flag.kind", flag.Kind), attribute.Bool("flag.preview", !record))
 
 	targetingKey := contextString(evalContext, "targetingKey")
 	if targetingKey == "" {
@@ -236,20 +254,7 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 			attribute.String("flag.rule_name", ruleName),
 		)
 		if records {
-			if recErr := svc.store.RecordEvaluation(ctx, repository.FlagEvaluation{
-				FlagID:      flag.ID,
-				ProjectID:   flag.ProjectID,
-				Variant:     variant,
-				ContextHash: hashContext(targetingKey),
-				SessionID:   sessionID,
-				ContextKeys: ctxKeys,
-			}); recErr != nil {
-				// Best-effort: an evaluation already happened, we just lost the
-				// analytics row. Warn so silent storage failures surface.
-				slog.WarnContext(ctx, "flag: record evaluation (targeting)",
-					"err", recErr, "handled", true,
-					"flag_id", flag.ID, "project_id", flag.ProjectID)
-			}
+			svc.recordEvaluation(ctx, flag, variant, targetingKey, sessionID, ctxKeys, "targeting")
 		}
 		return FlagEvalResult{
 			Value:              val,
@@ -264,7 +269,7 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 	// A config flag holds one value for everyone. Bucketing it by targeting key
 	// would let separate pods read different values for the same setting, which
 	// is exactly the failure the kind exists to prevent.
-	if !records {
+	if static {
 		val, _ := variantValue(flag.Variants, flag.DefaultVariant)
 		span.SetAttributes(
 			attribute.String("flag.variant", flag.DefaultVariant),
@@ -287,17 +292,8 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 		attribute.String("flag.reason", "SPLIT"),
 	)
 
-	if recErr := svc.store.RecordEvaluation(ctx, repository.FlagEvaluation{
-		FlagID:      flag.ID,
-		ProjectID:   flag.ProjectID,
-		Variant:     variant,
-		ContextHash: hashContext(targetingKey),
-		SessionID:   sessionID,
-		ContextKeys: ctxKeys,
-	}); recErr != nil {
-		slog.WarnContext(ctx, "flag: record evaluation (split)",
-			"err", recErr, "handled", true,
-			"flag_id", flag.ID, "project_id", flag.ProjectID)
+	if records {
+		svc.recordEvaluation(ctx, flag, variant, targetingKey, sessionID, ctxKeys, "split")
 	}
 
 	return FlagEvalResult{
@@ -308,14 +304,35 @@ func (svc *FlagService) EvaluateFlag(ctx context.Context, projectID, flagKey str
 	}, nil
 }
 
+// recordEvaluation writes the analytics row for one evaluation. It is
+// best-effort: the evaluation already happened and only the row is lost, so a
+// storage failure is logged at Warn and the caller still gets its value.
+func (svc *FlagService) recordEvaluation(ctx context.Context, flag repository.FeatureFlag, variant, targetingKey, sessionID string, ctxKeys []string, path string) {
+	if err := svc.store.RecordEvaluation(ctx, repository.FlagEvaluation{
+		FlagID:      flag.ID,
+		ProjectID:   flag.ProjectID,
+		Variant:     variant,
+		ContextHash: hashContext(targetingKey),
+		SessionID:   sessionID,
+		ContextKeys: ctxKeys,
+	}); err != nil {
+		slog.WarnContext(ctx, "flag: record evaluation ("+path+")",
+			"err", err, "handled", true,
+			"flag_id", flag.ID, "project_id", flag.ProjectID)
+	}
+}
+
 // flagKeyRe bounds auto-registration to sane keys so a spam caller can't create
 // rows with arbitrary/oversized garbage keys.
 var flagKeyRe = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,64}$`)
 
 func validFlagKey(key string) bool { return flagKeyRe.MatchString(key) }
 
-// inferFlagType maps a JSON-decoded default value to a flag_type for the dashboard.
-func inferFlagType(v any) string {
+// InferFlagType maps a JSON-decoded default value to a flag_type for the
+// dashboard. Exported so callers outside the service (e.g. the MCP tools'
+// create_flag) can build a repository.FeatureFlag from a bare default value
+// the same way EvaluateOrRegisterFlag's auto-registration does.
+func InferFlagType(v any) string {
 	switch v.(type) {
 	case bool:
 		return "boolean"
@@ -344,7 +361,7 @@ func buildAutoFlag(projectID, flagKey string, defaultValue any, kind string) rep
 		ProjectID:      projectID,
 		FlagKey:        flagKey,
 		Name:           flagKey,
-		FlagType:       inferFlagType(defaultValue),
+		FlagType:       InferFlagType(defaultValue),
 		Variants:       string(vb),
 		DefaultVariant: "default",
 		Split:          "{}",
@@ -494,161 +511,6 @@ func (svc *FlagService) AnalyzeFlag(ctx context.Context, flag repository.Feature
 	return results, nil
 }
 
-// resolveVariant deterministically assigns a variant based on split percentages.
-func resolveVariant(splitJSON, flagKey, targetingKey, defaultVariant string) string {
-	var split map[string]int
-	if err := json.Unmarshal([]byte(splitJSON), &split); err != nil || len(split) == 0 {
-		return defaultVariant
-	}
-
-	h := sha256.Sum256([]byte(targetingKey + ":" + flagKey))
-	bucket := binary.BigEndian.Uint64(h[:8]) % 10000
-
-	keys := make([]string, 0, len(split))
-	for k := range split {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	var cumulative uint64
-	for _, k := range keys {
-		cumulative += uint64(split[k]) * 100 // percent → basis points
-		if bucket < cumulative {
-			return k
-		}
-	}
-	return defaultVariant
-}
-
-func variantValue(variantsJSON, variant string) (any, error) {
-	var variants map[string]any
-	if err := json.Unmarshal([]byte(variantsJSON), &variants); err != nil {
-		return nil, err
-	}
-	v, ok := variants[variant]
-	if !ok {
-		return nil, fmt.Errorf("variant %q not found", variant)
-	}
-	return v, nil
-}
-
-func hashContext(targetingKey string) string {
-	h := sha256.Sum256([]byte(targetingKey))
-	return fmt.Sprintf("%x", h[:16])
-}
-
-func contextString(ctx map[string]any, key string) string {
-	v, ok := ctx[key]
-	if !ok {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprintf("%v", v)
-}
-
-// contextKeyNames returns a sorted slice of key names from the eval context.
-func contextKeyNames(ctx map[string]any) []string {
-	if len(ctx) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(ctx))
-	for k := range ctx {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
 func (svc *FlagService) ContextKeySuggestions(ctx context.Context, projectID string) ([]repository.ContextKeySuggestion, error) {
 	return svc.store.FlagContextKeySuggestions(ctx, projectID)
-}
-
-func evaluateTargetingRules(rulesJSON string, ctx map[string]any) (variant, ruleName string, matched bool) {
-	if rulesJSON == "" || rulesJSON == "[]" {
-		return "", "", false
-	}
-	var rules []TargetingRule
-	if err := json.Unmarshal([]byte(rulesJSON), &rules); err != nil {
-		return "", "", false
-	}
-	for _, rule := range rules {
-		if len(rule.Conditions) == 0 {
-			continue
-		}
-		if matchesRule(rule, ctx) {
-			return rule.Variant, rule.Name, true
-		}
-	}
-	return "", "", false
-}
-
-func matchesRule(rule TargetingRule, ctx map[string]any) bool {
-	if rule.Match == "any" {
-		for _, c := range rule.Conditions {
-			if evaluateCondition(c, ctx) {
-				return true
-			}
-		}
-		return false
-	}
-	for _, c := range rule.Conditions {
-		if !evaluateCondition(c, ctx) {
-			return false
-		}
-	}
-	return true
-}
-
-func evaluateCondition(c TargetingCondition, ctx map[string]any) bool {
-	raw, exists := ctx[c.ContextKey]
-
-	if c.Operator == "present" {
-		return exists
-	}
-	if c.Operator == "not_present" {
-		return !exists
-	}
-
-	if !exists {
-		return false
-	}
-
-	var actual string
-	if s, ok := raw.(string); ok {
-		actual = s
-	} else {
-		actual = fmt.Sprintf("%v", raw)
-	}
-
-	switch c.Operator {
-	case "eq":
-		return actual == c.Value
-	case "neq":
-		return actual != c.Value
-	case "contains":
-		return strings.Contains(actual, c.Value)
-	case "not_contains":
-		return !strings.Contains(actual, c.Value)
-	case "starts_with":
-		return strings.HasPrefix(actual, c.Value)
-	case "ends_with":
-		return strings.HasSuffix(actual, c.Value)
-	case "in":
-		for _, v := range strings.Split(c.Value, ",") {
-			if actual == strings.TrimSpace(v) {
-				return true
-			}
-		}
-		return false
-	case "not_in":
-		for _, v := range strings.Split(c.Value, ",") {
-			if actual == strings.TrimSpace(v) {
-				return false
-			}
-		}
-		return true
-	default:
-		return false
-	}
 }
