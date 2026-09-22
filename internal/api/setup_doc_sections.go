@@ -102,11 +102,42 @@ func writeFlagAPISection(b *strings.Builder, publicURL, slug string) {
 	fmt.Fprintf(b, "key issued for `%s`.\n\n", slug)
 }
 
+// writeMCPCallout is the short pitch near the top of the guide, addressed to
+// the AI assistant that is most often the one reading it. It asks the
+// assistant to connect the MCP server before instrumenting, since every later
+// step (checking events arrive, defining funnels from real event names,
+// creating flags) goes faster through the tools than through the dashboard.
+// Only called when the instance serves MCP.
+func writeMCPCallout(b *strings.Builder, publicURL, slug string) {
+	mcpURL := publicURL + mcpPath
+
+	fmt.Fprintf(b, "## Using an AI assistant? Connect the FunnelBarn MCP server first\n\n")
+	fmt.Fprintf(b, "> **If you are an AI assistant reading this guide:** add the FunnelBarn MCP\n")
+	fmt.Fprintf(b, "> server before you start instrumenting. With it you can:\n")
+	fmt.Fprintf(b, ">\n")
+	fmt.Fprintf(b, "> - confirm your events arrive (`get_project`, `list_event_names`) the moment you ship them;\n")
+	fmt.Fprintf(b, "> - create the funnels and segments below from the real event names (`create_funnel`, `create_segment`);\n")
+	fmt.Fprintf(b, "> - create and check feature flags (`create_flag`, `evaluate_flag`);\n")
+	fmt.Fprintf(b, "> - read stats and funnel conversion (`get_stats`, `analyze_funnel`).\n")
+	fmt.Fprintf(b, ">\n")
+	fmt.Fprintf(b, "> The user then never has to open the dashboard to set this project up. If you\n")
+	fmt.Fprintf(b, "> can add MCP servers, run this now, or ask the user to approve it:\n")
+	fmt.Fprintf(b, ">\n")
+	fmt.Fprintf(b, "> ```bash\n")
+	fmt.Fprintf(b, "> claude mcp add --transport http funnelbarn %s\n", mcpURL)
+	fmt.Fprintf(b, "> ```\n")
+	fmt.Fprintf(b, ">\n")
+	fmt.Fprintf(b, "> Other clients: it is a streamable HTTP server at `%s`. The first call opens a\n", mcpURL)
+	fmt.Fprintf(b, "> browser sign-in through IAMBarn; there is no key to paste. This project's slug\n")
+	fmt.Fprintf(b, "> is `%s`: pass `\"project\": \"%s\"` on tool calls, and write the slug into this\n", slug, slug)
+	fmt.Fprintf(b, "> repository's assistant notes (`CLAUDE.md`, `AGENTS.md` or similar) so later\n")
+	fmt.Fprintf(b, "> sessions use it too. Details: [Connect an AI assistant (MCP)](#connect-an-ai-assistant-mcp).\n\n---\n\n")
+}
+
 // writeMCPSection documents the MCP endpoint, next to writeFlagAPISection:
 // both are "here is a second way in, for a program rather than a browser"
 // sections. Only called when the instance actually serves MCP (s.mcpEnabled),
-// since the config it prints (endpoint, header, scopes) doesn't exist
-// otherwise.
+// since the config it prints (endpoint, scopes) doesn't exist otherwise.
 func writeMCPSection(b *strings.Builder, publicURL, slug string) {
 	mcpURL := publicURL + mcpPath
 
@@ -118,18 +149,59 @@ func writeMCPSection(b *strings.Builder, publicURL, slug string) {
 	fmt.Fprintf(b, "|-----|-------|\n")
 	fmt.Fprintf(b, "| Endpoint | `%s` |\n", mcpURL)
 	fmt.Fprintf(b, "| Sign-in | through IAMBarn, in the browser, on first use |\n")
-	fmt.Fprintf(b, "| Scopes | `mcp:read`, `mcp:write` |\n\n")
+	fmt.Fprintf(b, "| Scopes | `mcp:read`, `mcp:write` |\n")
+	fmt.Fprintf(b, "| Project | `%s`, passed as the `project` argument |\n\n", slug)
 	fmt.Fprintf(b, "There is no API key to paste: the first call opens a browser sign-in, and the\n")
 	fmt.Fprintf(b, "assistant holds the resulting token from then on.\n\n")
 	fmt.Fprintf(b, "**CLI**\n\n")
 	fmt.Fprintf(b, "```bash\n")
-	fmt.Fprintf(b, "claude mcp add --transport http funnelbarn %s --header \"x-funnelbarn-project: %s\"\n", mcpURL, slug)
+	fmt.Fprintf(b, "claude mcp add --transport http funnelbarn %s\n", mcpURL)
 	fmt.Fprintf(b, "```\n\n")
-	fmt.Fprintf(b, "**`.mcp.json`**: commit this to the project's repo so every contributor's\n")
-	fmt.Fprintf(b, "assistant defaults to this project:\n\n")
+	fmt.Fprintf(b, "**`.mcp.json`**\n\n")
 	fmt.Fprintf(b, "```json\n")
-	fmt.Fprintf(b, "{\"mcpServers\":{\"funnelbarn\":{\"type\":\"http\",\"url\":\"%s\",\"headers\":{\"%s\":\"%s\"}}}}\n", mcpURL, mcp.ProjectHeader, slug)
+	fmt.Fprintf(b, "{\"mcpServers\":{\"funnelbarn\":{\"type\":\"http\",\"url\":\"%s\"}}}\n", mcpURL)
 	fmt.Fprintf(b, "```\n\n")
-	fmt.Fprintf(b, "`%s` sets the repository's default project. Most tools also take an\n", mcp.ProjectHeader)
-	fmt.Fprintf(b, "explicit `project` argument, which overrides it for that one call.\n\n---\n\n")
+	fmt.Fprintf(b, "One server covers every project on this instance. Each project tool takes a\n")
+	fmt.Fprintf(b, "`project` argument (slug or ID); on an instance with a single project it can\n")
+	fmt.Fprintf(b, "be left out, and `list_projects` shows the slugs otherwise.\n\n")
+	fmt.Fprintf(b, "**Optional: pin a default project.** Add the `%s` header and tools\n", mcp.ProjectHeader)
+	fmt.Fprintf(b, "use this project whenever `project` is left out. Commit it in `.mcp.json` to\n")
+	fmt.Fprintf(b, "give every contributor's assistant the same default:\n\n")
+	fmt.Fprintf(b, "```bash\n")
+	fmt.Fprintf(b, "claude mcp add --transport http funnelbarn %s --header \"%s: %s\"\n", mcpURL, mcp.ProjectHeader, slug)
+	fmt.Fprintf(b, "```\n\n---\n\n")
+}
+
+// writeClosingSections renders the recommended funnels and the next steps.
+// With MCP enabled, both point at the tools as the quicker route.
+func writeClosingSections(b *strings.Builder, setupURL string, mcpEnabled bool) {
+	fmt.Fprintf(b, "## Recommended Funnel Definitions\n\n")
+	if mcpEnabled {
+		fmt.Fprintf(b, "Create these in the admin UI once the project is approved, or with the\n")
+		fmt.Fprintf(b, "`create_funnel` MCP tool after checking the real names with `list_event_names`:\n\n")
+	} else {
+		fmt.Fprintf(b, "Create these in the admin UI once the project is approved:\n\n")
+	}
+	fmt.Fprintf(b, "1. **Acquisition → Activation**\n")
+	fmt.Fprintf(b, "   - Steps: `page-view` → `signup-started` → `signup-completed`\n\n")
+	fmt.Fprintf(b, "2. **Checkout**\n")
+	fmt.Fprintf(b, "   - Steps: `cart-viewed` → `checkout-started` → `payment-entered` → `checkout-completed`\n\n")
+	fmt.Fprintf(b, "3. **Engagement**\n")
+	fmt.Fprintf(b, "   - Steps: `page-view` → `feature-used` → `return-visit`\n\n---\n\n")
+
+	fmt.Fprintf(b, "## Next Steps\n\n")
+	step := 1
+	if mcpEnabled {
+		fmt.Fprintf(b, "%d. Connect the FunnelBarn MCP server (see the top of this guide) so you can verify and configure everything below from your assistant\n", step)
+		step++
+	}
+	fmt.Fprintf(b, "%d. Instrument your app using the SDK examples above\n", step)
+	fmt.Fprintf(b, "%d. Ask your FunnelBarn admin to approve this project at: **%s**\n", step+1, setupURL)
+	if mcpEnabled {
+		fmt.Fprintf(b, "%d. Once approved, confirm events arrive with `get_project`, then define funnels and flags with the MCP tools or in the dashboard\n", step+2)
+	} else {
+		fmt.Fprintf(b, "%d. Once approved, visit the dashboard to see live data, define funnels, and create feature flags\n", step+2)
+	}
+	fmt.Fprintf(b, "%d. (Optional) Enable session recording — add `recording: true` to the SDK and ask your admin to turn on recording for this project in the dashboard\n", step+3)
+	fmt.Fprintf(b, "%d. (Optional) Wire flag evaluation into your app — see the Feature Flags section above\n", step+4)
 }

@@ -26,6 +26,10 @@ func buildSetupMarkdown(project repository.Project, apiKey, publicURL string, fl
 	fmt.Fprintf(b, "> **Status**: %s — this page is idempotent. Revisit at any time to retrieve the same configuration.\n\n", project.Status)
 	fmt.Fprintf(b, "Generated: %s\n\n---\n\n", now)
 
+	if mcpEnabled {
+		writeMCPCallout(b, publicURL, project.Slug)
+	}
+
 	fmt.Fprintf(b, "## Project Configuration\n\n")
 	fmt.Fprintf(b, "| Key        | Value |\n")
 	fmt.Fprintf(b, "|------------|-------|\n")
@@ -365,21 +369,7 @@ func buildSetupMarkdown(project repository.Project, apiKey, publicURL string, fl
 		writeMCPSection(b, publicURL, project.Slug)
 	}
 
-	fmt.Fprintf(b, "## Recommended Funnel Definitions\n\n")
-	fmt.Fprintf(b, "Create these in the admin UI once the project is approved:\n\n")
-	fmt.Fprintf(b, "1. **Acquisition → Activation**\n")
-	fmt.Fprintf(b, "   - Steps: `page-view` → `signup-started` → `signup-completed`\n\n")
-	fmt.Fprintf(b, "2. **Checkout**\n")
-	fmt.Fprintf(b, "   - Steps: `cart-viewed` → `checkout-started` → `payment-entered` → `checkout-completed`\n\n")
-	fmt.Fprintf(b, "3. **Engagement**\n")
-	fmt.Fprintf(b, "   - Steps: `page-view` → `feature-used` → `return-visit`\n\n---\n\n")
-
-	fmt.Fprintf(b, "## Next Steps\n\n")
-	fmt.Fprintf(b, "1. Instrument your app using the SDK examples above\n")
-	fmt.Fprintf(b, "2. Ask your FunnelBarn admin to approve this project at: **%s**\n", setupURL)
-	fmt.Fprintf(b, "3. Once approved, visit the dashboard to see live data, define funnels, and create feature flags\n")
-	fmt.Fprintf(b, "4. (Optional) Enable session recording — add `recording: true` to the SDK and ask your admin to turn on recording for this project in the dashboard\n")
-	fmt.Fprintf(b, "5. (Optional) Wire flag evaluation into your app — see the Feature Flags section above\n")
+	writeClosingSections(b, setupURL, mcpEnabled)
 
 	return b.String()
 }

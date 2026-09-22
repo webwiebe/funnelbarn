@@ -57,6 +57,7 @@ func TestGetSetupGuideTool_NoProjectSelected(t *testing.T) {
 		}
 	})
 	env.createProject(t, "Alpha", "alpha")
+	env.createProject(t, "Beta", "beta")
 	cs := env.connect(t, tokenRead, "")
 
 	msg := callErr(t, cs, "get_setup_guide", nil)

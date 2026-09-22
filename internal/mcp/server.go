@@ -100,6 +100,6 @@ func NewHandler(deps Deps) http.Handler {
 
 const serverInstructions = `FunnelBarn is a self-hosted product analytics service: events, funnels, segments and feature flags per project.
 
-Every project tool works on the repository's default project (the x-funnelbarn-project header in .mcp.json) unless you pass a "project" argument (slug or ID). Call list_projects to see the projects you can reach and get_project to check which one is the default.
+Every project tool takes a "project" argument (slug or ID). Without it, a tool uses the default project: the x-funnelbarn-project header when the server was added with one, or the only project when the instance has just one. With no default and several projects, call list_projects, pick the project that matches the repository you are working in (its name, domain, or the slug in the repository's FunnelBarn SDK config), and pass it as "project" on every call.
 
 Before defining a funnel step or a segment rule, call list_event_names and list_event_properties so names match real events. Write tools need the mcp:write scope; if a call says the scope is missing, the user has to remove and re-add this server granting mcp:write.`

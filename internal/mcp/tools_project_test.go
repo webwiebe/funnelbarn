@@ -36,6 +36,7 @@ func TestListProjectsTool(t *testing.T) {
 func TestListProjectsTool_NoHeaderNoDefault(t *testing.T) {
 	env := newTestEnv(t, nil)
 	env.createProject(t, "Alpha", "alpha")
+	env.createProject(t, "Beta", "beta")
 
 	cs := env.connect(t, tokenRead, "")
 
@@ -107,11 +108,30 @@ func TestGetProjectTool_UnknownProject(t *testing.T) {
 func TestGetProjectTool_NoProjectSelected(t *testing.T) {
 	env := newTestEnv(t, nil)
 	env.createProject(t, "Alpha", "alpha")
+	env.createProject(t, "Beta", "beta")
 	cs := env.connect(t, tokenRead, "")
 
 	msg := callErr(t, cs, "get_project", nil)
 	if msg == "" {
 		t.Fatal("want a non-empty error message")
+	}
+}
+
+func TestProjectTools_SingleProjectNeedsNoHeader(t *testing.T) {
+	env := newTestEnv(t, nil)
+	a := env.createProject(t, "Alpha", "alpha")
+	cs := env.connect(t, tokenRead, "")
+
+	var list listProjectsOut
+	callOK(t, cs, "list_projects", nil, &list)
+	if list.Default != a.Slug {
+		t.Errorf("list_projects default = %q, want %q", list.Default, a.Slug)
+	}
+
+	var got getProjectOut
+	callOK(t, cs, "get_project", nil, &got)
+	if got.Slug != a.Slug {
+		t.Errorf("get_project slug = %q, want %q", got.Slug, a.Slug)
 	}
 }
 
