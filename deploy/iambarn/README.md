@@ -15,7 +15,7 @@ has no OIDC configured, so it does not run there.
 ## Usage
 
 ```sh
-IAMBARN_ADMIN_TOKEN=$(sops -d --extract '["stringData"]["IAMBARN_ADMIN_TOKEN"]' deploy/iambarn/secrets/staging.yaml) \
+IAMBARN_ADMIN_TOKEN=$(sops -d --extract '["stringData"]["IAMBARN_ADMIN_TOKEN"]' deploy/k8s/staging/secret.yaml) \
 IAMBARN_URL=https://iam.staging.wiebe.xyz \
 CLIENT_ID=<FUNNELBARN_OIDC_CLIENT_ID for the environment> \
 RESOURCE_URL=https://funnelbarn.staging.wiebe.xyz/api/v1/mcp \
@@ -34,4 +34,4 @@ admin token or a client secret.
 `IAMBARN_ADMIN_TOKEN` needs the `admin:clients:write` scope on the IAMBarn
 organization that owns the FunnelBarn OAuth clients, and its user must be an
 admin of that organization. The pipeline reads it from SOPS at
-`deploy/iambarn/secrets/<env>.yaml`. See `deploy/SECRETS.md`.
+`deploy/k8s/<env>/secret.yaml`. See `deploy/SECRETS.md`.

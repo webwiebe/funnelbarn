@@ -288,7 +288,7 @@ jobs:
           IAMBARN_URL="$(sops -d --extract '["stringData"]["FUNNELBARN_OIDC_ISSUER"]' deploy/k8s/staging/secret.yaml)"
           CLIENT_ID="$(sops -d --extract '["stringData"]["FUNNELBARN_OIDC_CLIENT_ID"]' deploy/k8s/staging/secret.yaml)"
           echo "::add-mask::${IAMBARN_URL}"
-          IAMBARN_ADMIN_TOKEN="$(sops -d --extract '["stringData"]["IAMBARN_ADMIN_TOKEN"]' deploy/iambarn/secrets/staging.yaml)"
+          IAMBARN_ADMIN_TOKEN="$(sops -d --extract '["stringData"]["IAMBARN_ADMIN_TOKEN"]' deploy/k8s/staging/secret.yaml)"
           echo "::add-mask::${CLIENT_ID}"
           echo "::add-mask::${IAMBARN_ADMIN_TOKEN}"
           export IAMBARN_URL CLIENT_ID IAMBARN_ADMIN_TOKEN

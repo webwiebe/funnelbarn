@@ -69,12 +69,12 @@ console.log(await res.json())
 To replace a token without writing it to disk:
 
 ```sh
-sops set deploy/iambarn/secrets/staging.yaml '["stringData"]["IAMBARN_ADMIN_TOKEN"]' '"iampat_..."'
+sops set deploy/k8s/staging/secret.yaml '["stringData"]["IAMBARN_ADMIN_TOKEN"]' '"iampat_..."'
 ```
 
 | Value | Used by | Description |
 |--------|---------|-------------|
-| `IAMBARN_ADMIN_TOKEN` | build-and-test.yml (`deploy-staging` job), deploy-production.yml | IAMBarn PAT with scope `admin:clients:write`, for the organization that owns the FunnelBarn OAuth clients. Stored in SOPS at `deploy/iambarn/secrets/<env>.yaml` (key `stringData.IAMBARN_ADMIN_TOKEN`), outside `deploy/k8s` so it never reaches a pod Secret. Staging and production are separate IAMBarn instances, so each file holds its own PAT. |
+| `IAMBARN_ADMIN_TOKEN` | build-and-test.yml (`deploy-staging` job), deploy-production.yml | IAMBarn PAT with scope `admin:clients:write`, for the organization that owns the FunnelBarn OAuth clients. Stored in SOPS at `deploy/k8s/<env>/secret.yaml` (key `stringData.IAMBARN_ADMIN_TOKEN`). It lands in the app Secret, but no container references it, so it never reaches a pod's environment. Staging and production are separate IAMBarn instances, so each file holds its own PAT. |
 
 ## APT Repository Dispatch
 
