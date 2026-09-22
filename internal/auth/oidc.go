@@ -60,6 +60,16 @@ type OIDCClient struct {
 	// when the discovery document omits them.
 	revocationEndpoint string
 	endSessionEndpoint string
+
+	// accessVerifiers caches one access-token verifier per audience (the MCP
+	// resource URL). Guarded by mu.
+	accessVerifiers map[string]*oidcv3.IDTokenVerifier
+
+	// userinfoMu guards userinfoCache: groups/roles fetched from the userinfo
+	// endpoint for access tokens that carry no groups claim, keyed by the
+	// SHA-256 of the token and kept until the token expires.
+	userinfoMu    sync.Mutex
+	userinfoCache map[[32]byte]userinfoEntry
 }
 
 // NewOIDCClient returns a client. Discovery is deferred to the first call so
@@ -472,25 +482,4 @@ func (c *OIDCClient) ensureReady(ctx context.Context) error {
 		Scopes: []string{oidcv3.ScopeOpenID, "profile", "email", "offline_access"},
 	}
 	return nil
-}
-
-// OIDCClaims is the subset of ID-token claims this barn cares about.
-type OIDCClaims struct {
-	Subject           string   `json:"sub"`
-	SessionID         string   `json:"sid"` // IdP session id; keys back-channel logout
-	Email             string   `json:"email"`
-	PreferredUsername string   `json:"preferred_username"`
-	Name              string   `json:"name"`
-	Groups            []string `json:"groups"`
-	Roles             []string `json:"roles"`
-}
-
-// PreferredName returns the best human-readable identifier from the claims.
-func (c OIDCClaims) PreferredName() string {
-	for _, v := range []string{c.PreferredUsername, c.Email, c.Name, c.Subject} {
-		if v = strings.TrimSpace(v); v != "" {
-			return v
-		}
-	}
-	return ""
 }

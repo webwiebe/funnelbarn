@@ -231,3 +231,20 @@ func TestLoad_VersionEmptyByDefault(t *testing.T) {
 		t.Errorf("Version default: got %q, want empty (main falls back to build var)", got)
 	}
 }
+
+func TestLoad_MCPResourceURL(t *testing.T) {
+	t.Setenv("FUNNELBARN_MCP_RESOURCE_URL", "")
+	t.Setenv("FUNNELBARN_PUBLIC_URL", "https://funnelbarn.example.com/")
+	if got := Load().MCPResourceURL; got != "https://funnelbarn.example.com/api/v1/mcp" {
+		t.Errorf("derived MCPResourceURL: got %q", got)
+	}
+	t.Setenv("FUNNELBARN_MCP_RESOURCE_URL", "https://mcp.example.com/api/v1/mcp")
+	if got := Load().MCPResourceURL; got != "https://mcp.example.com/api/v1/mcp" {
+		t.Errorf("explicit MCPResourceURL: got %q", got)
+	}
+	t.Setenv("FUNNELBARN_MCP_RESOURCE_URL", "")
+	t.Setenv("FUNNELBARN_PUBLIC_URL", "")
+	if got := Load().MCPResourceURL; got != "" {
+		t.Errorf("MCPResourceURL without public URL: got %q, want empty", got)
+	}
+}

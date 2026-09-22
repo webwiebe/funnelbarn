@@ -45,6 +45,37 @@ Used to post release markers and upload source maps to BugBarn for error trackin
 |--------|---------|-------------|
 | `FUNNELBARN_BUGBARN_API_KEY` | deploy-production.yml, binary-release.yml | BugBarn API key for the `funnelbarn` project |
 
+## IAMBarn MCP Resource Registration
+
+Used by `deploy/iambarn/register-mcp-resource.sh`, run from the staging and
+production deploy jobs, to register FunnelBarn's MCP endpoint as an RFC 8707
+resource server on the IAMBarn OAuth client FunnelBarn uses for dashboard
+OIDC login. Not used in testing, which has no OIDC configured.
+
+The IAMBarn "Create API token" form always creates a PAT with no scopes, and a
+PAT without `admin:clients:write` gets `403 insufficient_scope`. Create it from
+the browser console while signed in to the right IAMBarn instance:
+
+```js
+const { csrf_token } = await (await fetch('/api/v1/csrf')).json()
+const res = await fetch('/api/v1/me/tokens', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf_token },
+  body: JSON.stringify({ name: 'funnelbarn mcp registration', scopes: ['admin:clients:write'] }),
+})
+console.log(await res.json())
+```
+
+To replace a token without writing it to disk:
+
+```sh
+sops set deploy/k8s/staging/secret.yaml '["stringData"]["IAMBARN_ADMIN_TOKEN"]' '"iampat_..."'
+```
+
+| Value | Used by | Description |
+|--------|---------|-------------|
+| `IAMBARN_ADMIN_TOKEN` | build-and-test.yml (`deploy-staging` job), deploy-production.yml | IAMBarn PAT with scope `admin:clients:write`, for the organization that owns the FunnelBarn OAuth clients. Stored in SOPS at `deploy/k8s/<env>/secret.yaml` (key `stringData.IAMBARN_ADMIN_TOKEN`). It lands in the app Secret, but no container references it, so it never reaches a pod's environment. Staging and production are separate IAMBarn instances, so each file holds its own PAT. |
+
 ## APT Repository Dispatch
 
 | Secret | Description |

@@ -112,6 +112,17 @@ type ServerConfig struct {
 	// FlagAutoRegisterMax caps auto-created flags per project on the SDK evaluate
 	// endpoint (0 disables auto-registration).
 	FlagAutoRegisterMax int
+
+	// MCPResourceURL is the OAuth resource identifier of the MCP endpoint and
+	// the audience its IAMBarn access tokens must carry. The MCP endpoint and
+	// its protected-resource metadata are served only when this and OIDC are
+	// both set.
+	MCPResourceURL string
+
+	// MCPRatePerMinute / MCPRateBurst bound MCP tool calls per user (token
+	// subject). Zero means 120/min with a burst of 30.
+	MCPRatePerMinute float64
+	MCPRateBurst     float64
 }
 
 // DistributionRepo provides session field distribution data.
@@ -175,11 +186,13 @@ type Server struct {
 	projectHealth       service.ProjectHealth
 	flagAutoRegisterMax int
 	spanRelay           *tracing.SpanRelay
+	mcpResourceURL      string
 
 	loginLimiter  *rateLimiter
 	eventsLimiter *rateLimiter
 	apiLimiter    *rateLimiter
 	setupLimiter  *rateLimiter
+	mcpLimiter    *rateLimiter // per MCP token subject
 
 	// securityMW is the precomputed security-headers middleware; its CSP
 	// whitelists the IAMBarn origin (if configured) for the hosted components.
@@ -195,6 +208,14 @@ func NewServer(cfg ServerConfig) *Server {
 	setupBurst := cfg.SetupRateBurst
 	if setupBurst == 0 {
 		setupBurst = 5
+	}
+	mcpRate := cfg.MCPRatePerMinute
+	if mcpRate == 0 {
+		mcpRate = mcpRatePerMinute
+	}
+	mcpBurst := cfg.MCPRateBurst
+	if mcpBurst == 0 {
+		mcpBurst = mcpRateBurst
 	}
 
 	s := &Server{
@@ -226,6 +247,8 @@ func NewServer(cfg ServerConfig) *Server {
 		eventsLimiter:       newRateLimiter(cfg.IngestRatePerMinute, cfg.IngestRateBurst),
 		apiLimiter:          newRateLimiter(cfg.APIRatePerMinute, cfg.APIRateBurst),
 		setupLimiter:        newRateLimiter(setupRate, setupBurst),
+		mcpLimiter:          newRateLimiter(mcpRate, mcpBurst),
+		mcpResourceURL:      cfg.MCPResourceURL,
 		iambarnUsers:        cfg.IAMBarnUsers,
 		postLogoutRedirect:  cfg.PostLogoutRedirectURI,
 		oidc:                cfg.OIDC,
@@ -283,6 +306,7 @@ func (s *Server) StartCleanup(ctx context.Context) {
 	s.eventsLimiter.startCleanup(ctx)
 	s.apiLimiter.startCleanup(ctx)
 	s.setupLimiter.startCleanup(ctx)
+	s.mcpLimiter.startCleanup(ctx)
 }
 
 func (s *Server) registerRoutes() {
@@ -454,35 +478,29 @@ func (s *Server) registerRoutes() {
 
 	// Geo anonymization
 	s.mux.HandleFunc("POST /api/v1/admin/anonymize-geo", s.requireSession(s.handleAnonymizeGeo))
+
+	// MCP endpoint + protected-resource metadata (only with OIDC configured).
+	s.registerMCPRoutes()
 }
 
 // ServeHTTP adds CORS headers and dispatches to the router.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// The MCP protected-resource metadata is public discovery data with its own
+	// open CORS handling (preflight included). It must skip the credentialed
+	// dashboard CORS below and the doubled-prefix redirect, which would read
+	// its "/api/v1/" suffix as a misroute and 308 it to /api/v1/mcp. Without
+	// MCP configured the mux has no route for it and answers 404.
+	if r.URL.Path == mcpResourceMetaPath {
+		tracing.Middleware(requestLogger(s.securityMW(s.mux))).ServeHTTP(w, r)
+		return
+	}
 	s.setCORSHeaders(w, r)
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	// Bare-host redirect for the f.<domain> vanity ingest hosts: a browser
-	// navigating to https://f.example.com/ (root, or any non-ingest path) gets
-	// 301'd to https://example.com — strip the "f." label and send it to the
-	// app the host fronts. e.g. f.profotograaf.nl → profotograaf.nl.
-	//
-	// This is the app half of the wildcard vanity-host feature. The edge
-	// (deploy/k8s/.../ingressroute-f-wildcard.yaml) routes the ingest API and
-	// SDK bundle on any f.<domain> to their services and sends every other path
-	// here, so this redirect works for any customer domain with no per-project
-	// ingress wiring. Only GET/HEAD navigations redirect (curl -sI sends HEAD);
-	// the ingest/SDK paths pass through to their handlers untouched.
-	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		host := r.Host
-		if i := strings.IndexByte(host, ':'); i >= 0 {
-			host = host[:i]
-		}
-		if strings.HasPrefix(host, "f.") && !isIngestPassthroughPath(r.URL.Path) {
-			http.Redirect(w, r, "https://"+strings.TrimPrefix(host, "f."), http.StatusMovedPermanently)
-			return
-		}
+	if redirectVanityHost(w, r) {
+		return
 	}
 	// A client that concatenated its base URL with the ingest path posts to
 	// /api/v1/events/api/v1/events and gets a silent 404. Production sees ~189
@@ -510,78 +528,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// Apply middleware: requestLogger (innermost) → securityHeaders → tracing → dispatch.
 	tracing.Middleware(requestLogger(s.securityMW(s.mux))).ServeHTTP(w, r)
-}
-
-// canonicalAPIPath detects a path whose client doubled the API prefix — the
-// shape produced by joining a base URL that already ends in the ingest path
-// with the path again — and returns the path it meant.
-//
-//	/api/v1/events/api/v1/events          -> /api/v1/events
-//	/api/api/v1/evaluate                  -> /api/v1/evaluate
-//	/api/v1/events/api/v1/recording-config -> /api/v1/recording-config
-//
-// It keys on the LAST occurrence of the prefix, so the result always contains
-// exactly one and a redirect can never loop. A path with a single prefix (the
-// normal case, and genuinely-wrong paths like /api/v1/recordings/chunk) is not
-// rewritten — those still 404, and logMisroutedRequest reports them.
-func canonicalAPIPath(path string) (string, bool) {
-	const prefix = "/api/v1/"
-	i := strings.LastIndex(path, prefix)
-	if i <= 0 {
-		return "", false
-	}
-	return path[i:], true
-}
-
-// canonicalMetricPath bounds the cardinality of the misrouted-request counter.
-// An unmatched path is caller-controlled, so only paths we actually serve are
-// used as label values; anything else is bucketed as "other" rather than
-// minting a new series per scanner probe.
-func canonicalMetricPath(path string) string {
-	if _, ok := knownAPIPaths[path]; ok {
-		return path
-	}
-	if canonical, ok := canonicalAPIPath(path); ok {
-		if _, known := knownAPIPaths[canonical]; known {
-			return canonical
-		}
-	}
-	return "other"
-}
-
-// knownAPIPaths is the set of fixed ingest-facing routes worth distinguishing
-// in the misroute counter. Parameterised dashboard routes are deliberately
-// absent — they are not what misconfigured clients post to, and they would
-// need templating to stay bounded.
-var knownAPIPaths = map[string]struct{}{
-	"/api/v1/events":           {},
-	"/api/v1/evaluate":         {},
-	"/api/v1/recordings/chunk": {},
-	"/api/v1/recording-config": {},
-	"/api/v1/setup":            {},
-	"/api/v1/health":           {},
-}
-
-// logMisroutedRequest reports a request that did not reach a real route, with
-// the identifying headers needed to trace it back to a repository. The audit
-// that found this could not attribute 189 lost events a week to any client
-// because nothing recorded the origin or the project they claimed.
-func logMisroutedRequest(r *http.Request, canonical string) {
-	attrs := []any{
-		"handled", canonical != "",
-		"method", r.Method,
-		"path", r.URL.Path,
-		"origin", r.Header.Get("Origin"),
-		"referer", r.Header.Get("Referer"),
-		"user_agent", r.Header.Get("User-Agent"),
-		"project", r.Header.Get("x-funnelbarn-project"),
-	}
-	if canonical != "" {
-		attrs = append(attrs, "redirected_to", canonical)
-		slog.WarnContext(r.Context(), "request used a doubled API path; redirecting to the canonical one", attrs...)
-		return
-	}
-	slog.WarnContext(r.Context(), "request did not match any route", attrs...)
 }
 
 // SetMetricsToken configures a bearer token required to access /metrics.

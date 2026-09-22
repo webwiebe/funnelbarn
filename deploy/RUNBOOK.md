@@ -227,6 +227,30 @@ the project should appear on the dashboard within a minute.
 
 ---
 
+## 2d. MCP resource registration (IAMBarn)
+
+The MCP endpoint (`/api/v1/mcp`) is an OAuth resource server: IAMBarn only issues an access token
+scoped to it when a client's `resource_identifier` exactly equals `FUNNELBARN_MCP_RESOURCE_URL`.
+The staging and production deploy jobs run `deploy/iambarn/register-mcp-resource.sh <env>` before
+the rollout to keep that registration in sync (see `deploy/iambarn/README.md`). It is idempotent
+and safe to re-run. Testing has no OIDC configured, so it is skipped there.
+
+To register or verify by hand:
+
+```sh
+IAMBARN_ADMIN_TOKEN=$(sops -d --extract '["stringData"]["IAMBARN_ADMIN_TOKEN"]' deploy/k8s/staging/secret.yaml) \
+IAMBARN_URL=https://iam.staging.wiebe.xyz \
+CLIENT_ID=$(sops -d --extract '["stringData"]["FUNNELBARN_OIDC_CLIENT_ID"]' deploy/k8s/staging/secret.yaml) \
+RESOURCE_URL=https://funnelbarn.staging.wiebe.xyz/api/v1/mcp \
+  deploy/iambarn/register-mcp-resource.sh staging
+```
+
+If it fails after a deploy, MCP clients get a working OAuth discovery/authorize flow but the token
+exchange fails because the token's `resource` does not match any client. Re-run the script by
+hand with the same inputs the workflow uses (see `deploy/SECRETS.md` for `IAMBARN_ADMIN_TOKEN`).
+
+---
+
 ## 3. Rollback
 
 ### Automatic rollback

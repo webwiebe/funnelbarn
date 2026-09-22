@@ -83,6 +83,12 @@ type Config struct {
 	// before it is cut off. invalid_grant never gets grace. Default 3600.
 	OIDCRefreshGraceSeconds int // FUNNELBARN_OIDC_REFRESH_GRACE_SECONDS
 
+	// MCPResourceURL is the OAuth resource identifier (RFC 8707) of the MCP
+	// endpoint: IAMBarn access tokens for MCP carry it as their audience. It
+	// must equal the URL clients connect to and the resource_identifier
+	// registered in IAMBarn. Defaults to {PublicURL}/api/v1/mcp.
+	MCPResourceURL string // FUNNELBARN_MCP_RESOURCE_URL
+
 	GeoIPCityDB string // path to GeoLite2-City.mmdb; empty = geo disabled
 	GeoIPASNDB  string // path to GeoLite2-ASN.mmdb; empty = skip ASN enrichment
 
@@ -216,6 +222,7 @@ func Load() Config {
 	cfg.OIDCRedirectURL = os.Getenv("FUNNELBARN_OIDC_REDIRECT_URL")
 	cfg.OIDCRequiredGroup = getenv("FUNNELBARN_OIDC_REQUIRED_GROUP", "funnelbarn-users")
 	cfg.OIDCRefreshGraceSeconds = envPositiveInt("FUNNELBARN_OIDC_REFRESH_GRACE_SECONDS", 3600)
+	cfg.MCPResourceURL = defaultMCPResourceURL(os.Getenv("FUNNELBARN_MCP_RESOURCE_URL"), cfg.PublicURL)
 
 	cfg.GeoIPCityDB = os.Getenv("FUNNELBARN_GEOIP_CITY_DB")
 	cfg.GeoIPASNDB = os.Getenv("FUNNELBARN_GEOIP_ASN_DB")
@@ -299,6 +306,18 @@ func defaultPostLogoutRedirectURI(configured, publicURL string) string {
 	}
 	if publicURL != "" {
 		return strings.TrimRight(publicURL, "/") + "/api/v1/auth/oidc/logged-out"
+	}
+	return ""
+}
+
+// defaultMCPResourceURL resolves the MCP resource identifier: an explicit value
+// wins, otherwise it is {publicURL}/api/v1/mcp (empty when neither is set).
+func defaultMCPResourceURL(configured, publicURL string) string {
+	if configured != "" {
+		return configured
+	}
+	if publicURL != "" {
+		return strings.TrimRight(publicURL, "/") + "/api/v1/mcp"
 	}
 	return ""
 }
