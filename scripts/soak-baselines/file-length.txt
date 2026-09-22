@@ -5,13 +5,12 @@
 # ENFORCE AT 0 entries: set MAX_FILE_LINES=500 in scripts/go-quality-gates.sh,
 # extend that scan to sdks/, set eslint max-lines to 500, drop this dimension.
 # Refresh with: python3 scripts/quality-soak.py file-length --update-baseline
-# entries: 16  total: 10592
+# entries: 14  total: 9517
 #
 689 cmd/funnelbarn/main.go
 503 internal/api/overview.go
 624 internal/api/recordings.go
 701 internal/api/server.go
-560 internal/api/setup.go
 807 internal/repository/events.go
 626 internal/repository/funnels.go
 516 internal/service/flags.go
@@ -22,4 +21,3 @@
 708 web/src/pages/Flags.tsx
 809 web/src/pages/Funnels.tsx
 597 web/src/pages/Sessions.tsx
-515 web/src/pages/Settings.tsx

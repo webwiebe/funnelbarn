@@ -12,8 +12,8 @@ func registerProjectTools(s *mcp.Server, d *Deps) {
 	addTool(s, d, &mcp.Tool{
 		Name: "list_projects",
 		Description: "List every FunnelBarn project the caller can reach, with each project's " +
-			"slug and ID. Use this to find the slug to pass as a project argument, or to see " +
-			"which project this repository defaults to.",
+			"slug, ID and domain. Use this to find the slug to pass as a project argument " +
+			"when no default project is set.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: ptr(false)},
 	}, scopeRead, listProjects)
 
@@ -21,7 +21,8 @@ func registerProjectTools(s *mcp.Server, d *Deps) {
 		Name: "get_project",
 		Description: "Get a project's details plus its integration health: whether the SDK's " +
 			"setup call, events, flag evaluations and session recordings have actually been " +
-			"seen. Defaults to the repository's project (the x-funnelbarn-project header).",
+			"seen. Defaults to the x-funnelbarn-project header's project, or the only project " +
+			"when there is just one.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: ptr(false)},
 	}, scopeRead, getProject)
 }
@@ -39,7 +40,7 @@ type listProjectsIn struct{}
 
 type listProjectsOut struct {
 	Projects []projectSummary `json:"projects" jsonschema:"Every project the caller can reach."`
-	Default  string           `json:"default" jsonschema:"Slug of the project the x-funnelbarn-project header resolves to; empty if the header is unset or does not resolve to a project."`
+	Default  string           `json:"default" jsonschema:"Slug of the project a call without a project argument uses (the x-funnelbarn-project header's project, or the only project); empty when there is no default."`
 }
 
 func listProjects(ctx context.Context, c *Call, _ listProjectsIn) (listProjectsOut, error) {
@@ -51,10 +52,8 @@ func listProjects(ctx context.Context, c *Call, _ listProjectsIn) (listProjectsO
 	for i, p := range list {
 		out.Projects[i] = projectSummary{ID: p.ID, Name: p.Name, Slug: p.Slug, Domain: p.Domain, Status: p.Status}
 	}
-	if header := c.Header.Get(ProjectHeader); header != "" {
-		if p, err := ResolveProject(ctx, c.Deps.Projects, "", header); err == nil {
-			out.Default = p.Slug
-		}
+	if p, err := ResolveProject(ctx, c.Deps.Projects, "", c.Header.Get(ProjectHeader)); err == nil {
+		out.Default = p.Slug
 	}
 	return out, nil
 }

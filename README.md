@@ -205,6 +205,27 @@ Scopes do not imply each other across features: `flags:write` implies `flags:rea
 | `GET` | `/api/v1/apikeys` | Session | List API keys |
 | `POST` | `/api/v1/apikeys` | Session | Create API key |
 
+## MCP Server
+
+FunnelBarn also exposes its projects over the [Model Context Protocol](https://modelcontextprotocol.io) at `/api/v1/mcp`, so an AI assistant working in your repository can read a project's analytics and manage its funnels, segments and feature flags directly.
+
+- **Auth**: OAuth via IAMBarn, with dynamic client registration and a browser sign-in on first connection. No API key to paste or store; the endpoint is only served when the instance has IAMBarn (OIDC) configured.
+- **Scopes**: `mcp:read` (list and read) and `mcp:write` (also create and modify funnels, segments and flags).
+- **Project selection**: one server covers every project. Each project-level tool takes a `project` argument (slug or ID). Left out, it uses the `x-funnelbarn-project` header when the server was added with one, or the only project on a single-project instance; otherwise the error lists the slugs to choose from.
+- **Tool groups**: projects, analytics/events, funnels, segments, feature flags, and the setup guide (`get_setup_guide`, the same document as `GET /api/v1/setup/{slug}`).
+
+```bash
+claude mcp add --transport http funnelbarn <PUBLIC_URL>/api/v1/mcp
+```
+
+```json
+{"mcpServers":{"funnelbarn":{"type":"http","url":"<PUBLIC_URL>/api/v1/mcp"}}}
+```
+
+To pin a default project for a repository, add `--header "x-funnelbarn-project: <slug>"` (or a `headers` entry in `.mcp.json`).
+
+Each project's `GET /api/v1/setup/{slug}` guide opens with these commands filled in with the instance's public URL, addressed to the assistant reading it, and names the slug to pass as `project`.
+
 ## Architecture
 
 FunnelBarn uses a layered structure with clear separation of concerns:

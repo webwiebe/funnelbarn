@@ -150,6 +150,40 @@ analytics.identify("user_123")
 analytics.shutdown()  # flush + stop background worker
 ```
 
+## MCP Server (for AI assistants)
+
+FunnelBarn exposes an [MCP](https://modelcontextprotocol.io) endpoint at `/api/v1/mcp`, so an AI assistant working in your repository can read a project's analytics and manage its funnels, segments and feature flags directly, with no scripted SDK integration.
+
+- **Endpoint**: `<PUBLIC_URL>/api/v1/mcp`
+- **Auth**: OAuth via IAMBarn, with dynamic client registration. There is no API key to configure: the client registers itself and the user signs in through a browser the first time it connects.
+- **Scopes**: `mcp:read` (list and read) and `mcp:write` (also create and modify funnels, segments and flags).
+- **Project selection**: one server covers every project. Each project-level tool takes a `project` argument (slug or ID). Left out, it uses the `x-funnelbarn-project` request header when the server was added with one, or the only project on a single-project instance; otherwise the error lists the slugs, and `list_projects` shows them with names and domains.
+
+Connect with the CLI:
+
+```bash
+claude mcp add --transport http funnelbarn <PUBLIC_URL>/api/v1/mcp
+```
+
+Or commit a `.mcp.json` to the repository:
+
+```json
+{"mcpServers":{"funnelbarn":{"type":"http","url":"<PUBLIC_URL>/api/v1/mcp"}}}
+```
+
+Optional: add `--header "x-funnelbarn-project: <slug>"` (or `"headers":{"x-funnelbarn-project":"<slug>"}` in `.mcp.json`) to give the repository a default project, so tools can leave out `project`.
+
+Tools (write tools need `mcp:write`):
+
+- **Projects**: `list_projects`, `get_project`
+- **Analytics**: `get_stats`, `list_event_names`, `get_event_counts`, `list_events`, `list_event_properties`, `list_event_property_values`, `list_environments`
+- **Funnels**: `list_funnels`, `analyze_funnel`; write: `create_funnel`, `update_funnel`, `delete_funnel`
+- **Segments**: `list_segments`; write: `create_segment`, `update_segment`, `delete_segment`
+- **Feature flags**: `list_flags`, `get_flag`, `analyze_flag`, `list_flag_context_keys`, `evaluate_flag` (a dry run: never creates a flag or records an evaluation); write: `create_flag`, `update_flag`, `delete_flag`
+- **Setup**: `get_setup_guide` returns the same document as `GET /api/v1/setup/{slug}`
+
+Call `list_event_names` before building a funnel, so each step matches an event the project actually sends. Dates are RFC 3339 or `YYYY-MM-DD`; ranges default to the last 7 days.
+
 ## HTTP API Reference
 
 All endpoints are under `/api/v1`. Events ingest uses an API key header; dashboard endpoints use a session cookie set by `/api/v1/login`.
