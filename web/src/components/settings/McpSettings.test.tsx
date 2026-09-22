@@ -44,17 +44,29 @@ describe('McpSettings', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('shows the claude mcp add command with the origin and the selected project slug', async () => {
+  it('shows a claude mcp add command that needs no project header', async () => {
     mockGetClientConfig.mockResolvedValue({ oidc: { enabled: true } })
     render(<McpSettings projects={projects} projectId="p2" />)
 
     await waitFor(() => screen.getByText('Connect an assistant'))
 
-    const command = `claude mcp add --transport http funnelbarn ${window.location.origin}/api/v1/mcp --header "x-funnelbarn-project: other-site"`
+    const command = `claude mcp add --transport http funnelbarn ${window.location.origin}/api/v1/mcp`
     expect(screen.getByText(command)).toBeInTheDocument()
   })
 
-  it('shows a pretty-printed .mcp.json snippet with the origin and slug', async () => {
+  it('offers pinning the selected project as an optional default', async () => {
+    mockGetClientConfig.mockResolvedValue({ oidc: { enabled: true } })
+    render(<McpSettings projects={projects} projectId="p2" />)
+
+    await waitFor(() => screen.getByText('Connect an assistant'))
+
+    expect(screen.getByTestId('mcp-pinned-command').textContent).toBe(
+      `claude mcp add --transport http funnelbarn ${window.location.origin}/api/v1/mcp --header "x-funnelbarn-project: other-site"`,
+    )
+    expect(screen.getByText(/Optional: pin this project/)).toBeInTheDocument()
+  })
+
+  it('shows a pretty-printed .mcp.json snippet with the origin and no headers', async () => {
     mockGetClientConfig.mockResolvedValue({ oidc: { enabled: true } })
     render(<McpSettings projects={projects} projectId="p1" />)
 
@@ -66,7 +78,6 @@ describe('McpSettings', () => {
           funnelbarn: {
             type: 'http',
             url: `${window.location.origin}/api/v1/mcp`,
-            headers: { 'x-funnelbarn-project': 'my-site' },
           },
         },
       },
@@ -87,6 +98,7 @@ describe('McpSettings', () => {
     expect(screen.getByText(/IAMBarn/)).toBeInTheDocument()
     expect(screen.getByText(/reads stats, events, funnels, segments and flags/i)).toBeInTheDocument()
     expect(screen.getByText(/creates, updates and deletes/i)).toBeInTheDocument()
-    expect(screen.getByText(/overrides the default project/i)).toBeInTheDocument()
+    expect(screen.getByText(/One server covers every project/i)).toBeInTheDocument()
+    expect(screen.getByText('my-site')).toBeInTheDocument()
   })
 })

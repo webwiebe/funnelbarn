@@ -83,3 +83,31 @@ func TestResolveProject(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveProject_SingleProjectIsTheDefault(t *testing.T) {
+	env := newTestEnv(t, nil)
+	ctx := context.Background()
+	only := env.createProject(t, "Only", "only")
+
+	p, err := ResolveProject(ctx, env.Deps.Projects, "", "")
+	if err != nil {
+		t.Fatalf("ResolveProject: %v", err)
+	}
+	if p.ID != only.ID {
+		t.Errorf("got project %q, want the only project %q", p.Slug, only.Slug)
+	}
+
+	if _, err := ResolveProject(ctx, env.Deps.Projects, "nope", ""); err == nil {
+		t.Error("an unknown project argument must still fail on a single-project instance")
+	}
+}
+
+func TestResolveProject_NoProjectsAtAll(t *testing.T) {
+	env := newTestEnv(t, nil)
+
+	_, err := ResolveProject(context.Background(), env.Deps.Projects, "", "")
+	var in *inputError
+	if !errors.As(err, &in) {
+		t.Fatalf("want inputError, got %T: %v", err, err)
+	}
+}

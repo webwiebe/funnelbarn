@@ -17,16 +17,16 @@ interface McpSettingsProps {
   projectId?: string
 }
 
-// buildMcpJSON returns the pretty-printed .mcp.json snippet for a project, so
-// the tests can check its shape without re-parsing the rendered DOM.
-export function buildMcpJSON(mcpURL: string, slug: string): string {
+// buildMcpJSON returns the pretty-printed .mcp.json snippet, so the tests can
+// check its shape without re-parsing the rendered DOM. It carries no project
+// header: one server covers every project, and tools take a project argument.
+export function buildMcpJSON(mcpURL: string): string {
   return JSON.stringify(
     {
       mcpServers: {
         funnelbarn: {
           type: 'http',
           url: mcpURL,
-          headers: { 'x-funnelbarn-project': slug },
         },
       },
     },
@@ -56,8 +56,9 @@ export function McpSettings({ projects, projectId }: McpSettingsProps) {
   const slug = project?.slug ?? 'your-project'
   const publicURL = window.location.origin
   const mcpURL = `${publicURL}/api/v1/mcp`
-  const command = `claude mcp add --transport http funnelbarn ${mcpURL} --header "x-funnelbarn-project: ${slug}"`
-  const mcpJSON = buildMcpJSON(mcpURL, slug)
+  const command = `claude mcp add --transport http funnelbarn ${mcpURL}`
+  const pinnedCommand = `${command} --header "x-funnelbarn-project: ${slug}"`
+  const mcpJSON = buildMcpJSON(mcpURL)
 
   const codeBoxStyle: React.CSSProperties = {
     background: C.bg,
@@ -119,8 +120,18 @@ export function McpSettings({ projects, projectId }: McpSettingsProps) {
             also creates, updates and deletes them.
           </div>
           <div style={{ marginTop: 6 }}>
-            The assistant's <code style={{ fontFamily: '"SF Mono", "Fira Code", monospace', color: C.amber }}>project</code>{' '}
-            argument overrides the default project set by the header above.
+            One server covers every project. The assistant picks one with the{' '}
+            <code style={{ fontFamily: '"SF Mono", "Fira Code", monospace', color: C.amber }}>project</code>{' '}
+            argument; this project's slug is{' '}
+            <code style={{ fontFamily: '"SF Mono", "Fira Code", monospace', color: C.amber }}>{slug}</code>.
+          </div>
+          <div style={{ marginTop: 6 }}>
+            Optional: pin this project as the default for a repository, so the assistant can leave{' '}
+            <code style={{ fontFamily: '"SF Mono", "Fira Code", monospace', color: C.amber }}>project</code> out:
+          </div>
+          <div style={{ ...codeBoxStyle, marginTop: 6, fontSize: 12 }} data-testid="mcp-pinned-command">{pinnedCommand}</div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <CopyButton value={pinnedCommand} />
           </div>
         </div>
       </div>
