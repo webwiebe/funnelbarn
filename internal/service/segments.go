@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
@@ -19,7 +22,7 @@ func NewSegmentService(store repository.Querier) *SegmentService {
 
 func (svc *SegmentService) CreateSegment(ctx context.Context, projectID, name string, rules []repository.SegmentRule) (repository.Segment, error) {
 	if name == "" {
-		return repository.Segment{}, fmt.Errorf("name is required")
+		return repository.Segment{}, &domain.ValidationError{Field: "name", Message: "required"}
 	}
 	if err := validateRules(rules); err != nil {
 		return repository.Segment{}, err
@@ -36,12 +39,19 @@ func (svc *SegmentService) ListSegments(ctx context.Context, projectID string) (
 }
 
 func (svc *SegmentService) GetSegment(ctx context.Context, id string) (repository.Segment, error) {
-	return svc.store.SegmentByID(ctx, id)
+	seg, err := svc.store.SegmentByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return repository.Segment{}, fmt.Errorf("%w: segment %s", domain.ErrNotFound, id)
+		}
+		return repository.Segment{}, err
+	}
+	return seg, nil
 }
 
 func (svc *SegmentService) UpdateSegment(ctx context.Context, id, name string, rules []repository.SegmentRule) (repository.Segment, error) {
 	if name == "" {
-		return repository.Segment{}, fmt.Errorf("name is required")
+		return repository.Segment{}, &domain.ValidationError{Field: "name", Message: "required"}
 	}
 	if err := validateRules(rules); err != nil {
 		return repository.Segment{}, err
@@ -54,14 +64,20 @@ func (svc *SegmentService) DeleteSegment(ctx context.Context, id string) error {
 }
 
 func validateRules(rules []repository.SegmentRule) error {
-	for _, r := range rules {
+	for i, r := range rules {
 		if _, ok := repository.AllowedSegmentFields[r.Field]; !ok {
-			return fmt.Errorf("unsupported segment field %q", r.Field)
+			return &domain.ValidationError{
+				Field:   fmt.Sprintf("rules[%d].field", i),
+				Message: fmt.Sprintf("unsupported segment field %q", r.Field),
+			}
 		}
 		switch r.Operator {
 		case "eq", "neq", "contains", "not_contains", "is_null", "is_not_null":
 		default:
-			return fmt.Errorf("unsupported operator %q", r.Operator)
+			return &domain.ValidationError{
+				Field:   fmt.Sprintf("rules[%d].operator", i),
+				Message: fmt.Sprintf("unsupported operator %q", r.Operator),
+			}
 		}
 	}
 	return nil

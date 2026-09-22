@@ -4,7 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
@@ -82,6 +84,83 @@ func TestFunnelService_UpdateFunnel(t *testing.T) {
 	require.Equal(t, "step-a", updated.Steps[0].EventName)
 	require.Equal(t, 1, updated.Steps[0].StepOrder)
 	require.Equal(t, 2, updated.Steps[1].StepOrder)
+}
+
+func TestFunnelService_UpdateFunnel_PreservesScopeWhenOmitted(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	projSvc := service.NewProjectService(store)
+	funnelSvc := service.NewFunnelService(store)
+
+	p, err := projSvc.CreateProject(ctx, "Scope Project", "scope-project")
+	require.NoError(t, err)
+
+	f, err := funnelSvc.CreateFunnel(ctx, repository.Funnel{
+		ProjectID: p.ID,
+		Name:      "Page View Funnel",
+		Scope:     "page_view",
+		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "page_view", f.Scope)
+
+	// Update without setting Scope must not reset it to the "session" default.
+	updated, err := funnelSvc.UpdateFunnel(ctx, repository.Funnel{
+		ID:        f.ID,
+		ProjectID: p.ID,
+		Name:      "Page View Funnel Renamed",
+		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "page_view", updated.Scope)
+}
+
+func TestFunnelService_UpdateFunnel_ValidatesLikeCreate(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	projSvc := service.NewProjectService(store)
+	funnelSvc := service.NewFunnelService(store)
+
+	p, err := projSvc.CreateProject(ctx, "Validate Project", "validate-project")
+	require.NoError(t, err)
+
+	f, err := funnelSvc.CreateFunnel(ctx, repository.Funnel{
+		ProjectID: p.ID,
+		Name:      "Funnel",
+		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+	})
+	require.NoError(t, err)
+
+	// Missing name.
+	_, err = funnelSvc.UpdateFunnel(ctx, repository.Funnel{
+		ID:        f.ID,
+		ProjectID: p.ID,
+		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+	})
+	require.Error(t, err)
+	assert.True(t, domain.IsValidation(err))
+	assert.Contains(t, err.Error(), "name")
+
+	// No steps.
+	_, err = funnelSvc.UpdateFunnel(ctx, repository.Funnel{
+		ID:        f.ID,
+		ProjectID: p.ID,
+		Name:      "Funnel",
+	})
+	require.Error(t, err)
+	assert.True(t, domain.IsValidation(err))
+	assert.Contains(t, err.Error(), "steps")
+
+	// Step with empty event_name.
+	_, err = funnelSvc.UpdateFunnel(ctx, repository.Funnel{
+		ID:        f.ID,
+		ProjectID: p.ID,
+		Name:      "Funnel",
+		Steps:     []repository.FunnelStep{{EventName: ""}},
+	})
+	require.Error(t, err)
+	assert.True(t, domain.IsValidation(err))
+	assert.Contains(t, err.Error(), "event_name")
 }
 
 func TestFunnelService_FunnelSegmentData(t *testing.T) {

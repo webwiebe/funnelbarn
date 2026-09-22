@@ -235,30 +235,6 @@ func TestHandleUpdateFunnel_Success(t *testing.T) {
 	}
 }
 
-func TestHandleUpdateFunnel_MissingName(t *testing.T) {
-	srv, store := newTestServer(t)
-	ctx := context.Background()
-	p, _ := store.CreateProject(ctx, "FUpdVal", "fupdval")
-	f, _ := store.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: p.ID,
-		Name:      "Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "ev"}},
-	})
-
-	body, _ := json.Marshal(map[string]any{
-		"steps": []map[string]string{{"event_name": "ev"}},
-	})
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/projects/"+p.ID+"/funnels/"+f.ID,
-		bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	srv.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("want 400 for missing name, got %d", w.Code)
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Dashboard
 // ---------------------------------------------------------------------------
