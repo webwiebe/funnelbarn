@@ -116,3 +116,13 @@ func requireScope(c Caller, scope string) error {
 
 // ptr returns a pointer to v, for the *bool fields of mcp.ToolAnnotations.
 func ptr[T any](v T) *T { return &v }
+
+// nonNil turns a nil slice into an empty one, so structured tool output
+// serializes as [], which is what the REST handlers return for the same
+// lists.
+func nonNil[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
