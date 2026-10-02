@@ -38,6 +38,42 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   )
 }
 
+type ChartRow = Record<string, number | string>
+
+// Pivot visitors_by_project into per-bucket rows keyed by project id for the
+// multi-line chart. Only the top projects by total events get a line to keep
+// it readable. Hourly buckets ("...T09:00:00Z", used for 24h) are zero-filled
+// so quiet hours show as dips instead of being skipped.
+function pivotVisitors(data: OverviewData | null): { chartRows: ChartRow[]; chartProjectIds: string[]; hourly: boolean } {
+  if (!data) return { chartRows: [], chartProjectIds: [], hourly: false }
+  const topIds = (data.projects ?? []).slice(0, 6).map((p) => p.project_id)
+  const visitors = data.visitors_by_project ?? []
+  const byBucket = new Map<string, ChartRow>()
+  for (const row of visitors) {
+    if (!topIds.includes(row.project_id)) continue
+    const r = byBucket.get(row.day) ?? { day: row.day }
+    r[row.project_id] = row.count
+    byBucket.set(row.day, r)
+  }
+  const hourly = visitors.some((r) => r.day.includes('T'))
+  if (hourly) fillHours(byBucket, new Date(data.to), topIds)
+  const chartRows = Array.from(byBucket.values()).sort((a, b) => String(a.day).localeCompare(String(b.day)))
+  return { chartRows, chartProjectIds: topIds, hourly }
+}
+
+// Adds a zero row for every missing hour in the 24h ending at `to`.
+function fillHours(byBucket: Map<string, ChartRow>, to: Date, ids: string[]) {
+  const end = new Date(to)
+  end.setUTCMinutes(0, 0, 0)
+  for (let t = end.getTime(), i = 0; i < 24; i++, t -= 3600_000) {
+    const key = new Date(t).toISOString().slice(0, 13) + ':00:00Z'
+    if (!byBucket.has(key)) byBucket.set(key, { day: key })
+  }
+  for (const r of byBucket.values()) {
+    for (const id of ids) if (r[id] === undefined) r[id] = 0
+  }
+}
+
 export default function Overview() {
   const { projects, selectedEnvironment } = useProjects()
   const [data, setData] = useState<OverviewData | null>(null)
@@ -61,22 +97,10 @@ export default function Overview() {
     return () => { cancelled = true }
   }, [range, selectedEnvironment])
 
-  // Pivot visitors_by_project into per-day rows keyed by project id for the
-  // multi-line chart. Only the top projects by total events get a line to keep
-  // it readable.
-  const { chartRows, chartProjectIds } = useMemo(() => {
-    if (!data) return { chartRows: [], chartProjectIds: [] as string[] }
-    const topIds = (data.projects ?? []).slice(0, 6).map((p) => p.project_id)
-    const byDay = new Map<string, Record<string, number | string>>()
-    for (const row of data.visitors_by_project ?? []) {
-      if (!topIds.includes(row.project_id)) continue
-      const r = byDay.get(row.day) ?? { day: row.day }
-      r[row.project_id] = row.count
-      byDay.set(row.day, r)
-    }
-    const rows = Array.from(byDay.values()).sort((a, b) => String(a.day).localeCompare(String(b.day)))
-    return { chartRows: rows, chartProjectIds: topIds }
-  }, [data])
+  const { chartRows, chartProjectIds, hourly } = useMemo(() => pivotVisitors(data), [data])
+
+  const formatBucket = (v: string) =>
+    hourly ? new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : v
 
   return (
     <Shell>
@@ -120,9 +144,9 @@ export default function Overview() {
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartRows} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-                <XAxis dataKey="day" stroke={C.muted} fontSize={11} />
+                <XAxis dataKey="day" stroke={C.muted} fontSize={11} tickFormatter={formatBucket} minTickGap={24} />
                 <YAxis stroke={C.muted} fontSize={11} allowDecimals={false} />
-                <Tooltip contentStyle={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text }} />
+                <Tooltip labelFormatter={(l) => formatBucket(String(l))} contentStyle={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text }} />
                 <Legend />
                 {chartProjectIds.map((pid, i) => (
                   <Line key={pid} type="monotone" dataKey={pid} name={nameFor(pid)} stroke={LINE_COLORS[i % LINE_COLORS.length]} dot={false} strokeWidth={2} />

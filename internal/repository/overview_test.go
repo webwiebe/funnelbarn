@@ -235,9 +235,15 @@ func TestOverview_DimensionRollups(t *testing.T) {
 	_, err = s.OverviewTopCountries(ctx, from, to, 10, "")
 	require.NoError(t, err) // no country on seeded events -> empty, but must not error
 
-	visitors, err := s.OverviewVisitorsByProjectDaily(ctx, from, to, "")
+	visitors, err := s.OverviewVisitorsByProject(ctx, from, to, "", false)
 	require.NoError(t, err)
 	require.NotEmpty(t, visitors)
+	require.Len(t, visitors[0].Day, len("2006-01-02"))
+
+	hourly, err := s.OverviewVisitorsByProject(ctx, from, to, "", true)
+	require.NoError(t, err)
+	require.NotEmpty(t, hourly)
+	require.Regexp(t, `^\d{4}-\d{2}-\d{2}T\d{2}:00:00Z$`, hourly[0].Day)
 
 	dims, err := s.OverviewDimensionBreakdown(ctx, "device_type", from, to, 10, "")
 	require.NoError(t, err)

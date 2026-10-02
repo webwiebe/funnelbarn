@@ -13,7 +13,7 @@ interface Props {
 
 // Strip the domain and show only the last meaningful path segment.
 // For referrer domains and special nodes ("%drop-off)", "(direct)") keep as-is.
-function pathLabel(label: string, maxLen = 14): string {
+function pathLabel(label: string, maxLen = 18): string {
   if (label.startsWith('(')) return label
   try {
     const { pathname } = new URL(label)
@@ -50,15 +50,47 @@ function buildSankeyGraph(data: FlowData): {
   return { nodes, links }
 }
 
+// Label beside its own node. The last column labels leftwards so it stays inside
+// the SVG. Nodes too short for a legible line rely on the <title> tooltip.
+function NodeLabel({ nd, x0, x1, y0, y1, isLast, isFocused }: {
+  nd: FlowNode
+  x0: number
+  x1: number
+  y0: number
+  y1: number
+  isLast: boolean
+  isFocused: boolean
+}) {
+  if (y1 - y0 < 14) return null
+  return (
+    <text
+      x={isLast ? x0 - 6 : x1 + 6}
+      y={(y0 + y1) / 2}
+      textAnchor={isLast ? 'end' : 'start'}
+      dominantBaseline="middle"
+      fill={isFocused ? C.amber : C.text}
+      fontSize={11}
+      fontWeight={isFocused ? 700 : 400}
+      stroke={C.bg}
+      strokeWidth={3}
+      strokeLinejoin="round"
+      paintOrder="stroke"
+      style={{ userSelect: 'none' }}
+    >
+      {pathLabel(nd.label)}
+    </text>
+  )
+}
+
 function NodeRect({
   node,
   focusedPage,
-  innerH,
+  isLast,
   onNodeClick,
 }: {
   node: SNode
   focusedPage: string
-  innerH: number
+  isLast: boolean
   onNodeClick: (page: string) => void
 }) {
   const nd = node as unknown as FlowNode
@@ -106,18 +138,7 @@ function NodeRect({
         </text>
       )}
 
-      {/* Label below the chart area, rotated 45° so adjacent columns don't overlap */}
-      <text
-        transform={`translate(${cx},${innerH + 10}) rotate(45)`}
-        textAnchor="start"
-        dominantBaseline="hanging"
-        fill={isFocused ? C.amber : C.text}
-        fontSize={11}
-        fontWeight={isFocused ? 700 : 400}
-        style={{ userSelect: 'none' }}
-      >
-        {pathLabel(nd.label)}
-      </text>
+      <NodeLabel nd={nd} x0={x0} x1={x1} y0={y0} y1={y1} isLast={isLast} isFocused={isFocused} />
     </g>
   )
 }
@@ -144,8 +165,8 @@ function LinkPath({ link, focusedPage }: { link: SLink; focusedPage: string }) {
 }
 
 export function SankeyChart({ data, onNodeClick, width }: Props) {
-  // Small side margins — labels are below the chart now, not to the sides.
-  const margin = { top: 20, right: 50, bottom: 130, left: 50 }
+  // Labels sit beside their nodes, inside the chart area.
+  const margin = { top: 20, right: 50, bottom: 20, left: 50 }
   // Height grows with node count but stays in a sensible range.
   const height = Math.max(320, Math.min(data.nodes.length * 28 + 200, 520))
   const innerW = width - margin.left - margin.right
@@ -178,6 +199,8 @@ export function SankeyChart({ data, onNodeClick, width }: Props) {
     )
   }
 
+  const maxX = Math.max(...layout.nodes.map((n) => n.x1 ?? 0))
+
   return (
     <svg width={width} height={height} style={{ overflow: 'visible', display: 'block' }}>
       <g transform={`translate(${margin.left},${margin.top})`}>
@@ -189,7 +212,7 @@ export function SankeyChart({ data, onNodeClick, width }: Props) {
             key={i}
             node={node as SNode}
             focusedPage={data.focused_page}
-            innerH={innerH}
+            isLast={(node.x1 ?? 0) >= maxX}
             onNodeClick={onNodeClick}
           />
         ))}

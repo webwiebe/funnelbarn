@@ -53,22 +53,28 @@ func (s *Store) OverviewTotals(ctx context.Context, from, to time.Time, env stri
 	return events, sessions, err
 }
 
-// ProjectDayCount is a (day, project) unique-session count for the per-site chart.
+// ProjectDayCount is a (bucket, project) unique-session count for the per-site
+// chart. Day holds "YYYY-MM-DD" for daily buckets and "YYYY-MM-DDTHH:00:00Z"
+// for hourly buckets.
 type ProjectDayCount struct {
 	Day       string `json:"day"`
 	ProjectID string `json:"project_id"`
 	Count     int64  `json:"count"`
 }
 
-// OverviewVisitorsByProjectDaily returns daily unique sessions grouped by project,
-// feeding the "visitors per site" multi-line chart.
-func (s *Store) OverviewVisitorsByProjectDaily(ctx context.Context, from, to time.Time, env string) ([]ProjectDayCount, error) {
-	const q = `
-		SELECT substr(occurred_at, 1, 10) AS day, project_id, COUNT(DISTINCT session_id) AS count
+// OverviewVisitorsByProject returns unique sessions grouped by project and time
+// bucket (hourly or daily), feeding the "visitors per site" multi-line chart.
+func (s *Store) OverviewVisitorsByProject(ctx context.Context, from, to time.Time, env string, hourly bool) ([]ProjectDayCount, error) {
+	bucket := `substr(occurred_at, 1, 10)`
+	if hourly {
+		bucket = `replace(substr(occurred_at, 1, 13), ' ', 'T') || ':00:00Z'`
+	}
+	q := fmt.Sprintf(`
+		SELECT %s AS day, project_id, COUNT(DISTINCT session_id) AS count
 		FROM events
 		WHERE occurred_at >= ? AND occurred_at <= ? AND (? = '' OR environment = ?)
 		GROUP BY day, project_id
-		ORDER BY day`
+		ORDER BY day`, bucket)
 	rows, err := s.db.QueryContext(ctx, q, from, to, env, env)
 	if err != nil {
 		return nil, err

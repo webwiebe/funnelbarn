@@ -34,8 +34,8 @@ func (svc *OverviewService) OverviewTotals(ctx context.Context, from, to time.Ti
 	return svc.store.OverviewTotals(ctx, from, to, env)
 }
 
-func (svc *OverviewService) OverviewVisitorsByProjectDaily(ctx context.Context, from, to time.Time, env string) ([]repository.ProjectDayCount, error) {
-	return svc.store.OverviewVisitorsByProjectDaily(ctx, from, to, env)
+func (svc *OverviewService) OverviewVisitorsByProject(ctx context.Context, from, to time.Time, env string, hourly bool) ([]repository.ProjectDayCount, error) {
+	return svc.store.OverviewVisitorsByProject(ctx, from, to, env, hourly)
 }
 
 func (svc *OverviewService) OverviewTopPages(ctx context.Context, from, to time.Time, limit int, env string) ([]repository.OverviewPageStat, error) {
