@@ -69,7 +69,7 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	if recordOnErr(err, "handleOverview.projectRollups") {
 		return
 	}
-	visitors, err := s.overview.OverviewVisitorsByProjectDaily(ctx, from, to, env)
+	visitors, err := s.overview.OverviewVisitorsByProject(ctx, from, to, env, to.Sub(from) <= 48*time.Hour)
 	if recordOnErr(err, "handleOverview.visitors") {
 		return
 	}

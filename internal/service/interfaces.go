@@ -108,7 +108,7 @@ type Events interface {
 type Overview interface {
 	ProjectRollups(ctx context.Context, from, to time.Time, env string) ([]repository.ProjectRollup, error)
 	OverviewTotals(ctx context.Context, from, to time.Time, env string) (int64, int64, error)
-	OverviewVisitorsByProjectDaily(ctx context.Context, from, to time.Time, env string) ([]repository.ProjectDayCount, error)
+	OverviewVisitorsByProject(ctx context.Context, from, to time.Time, env string, hourly bool) ([]repository.ProjectDayCount, error)
 	OverviewTopPages(ctx context.Context, from, to time.Time, limit int, env string) ([]repository.OverviewPageStat, error)
 	OverviewTopReferrers(ctx context.Context, from, to time.Time, limit int, env string) ([]repository.OverviewReferrerStat, error)
 	OverviewTopCountries(ctx context.Context, from, to time.Time, limit int, env string) ([]repository.OverviewCountryStat, error)
