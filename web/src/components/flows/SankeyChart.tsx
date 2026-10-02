@@ -50,6 +50,38 @@ function buildSankeyGraph(data: FlowData): {
   return { nodes, links }
 }
 
+// Label beside its own node. The last column labels leftwards so it stays inside
+// the SVG. Nodes too short for a legible line rely on the <title> tooltip.
+function NodeLabel({ nd, x0, x1, y0, y1, isLast, isFocused }: {
+  nd: FlowNode
+  x0: number
+  x1: number
+  y0: number
+  y1: number
+  isLast: boolean
+  isFocused: boolean
+}) {
+  if (y1 - y0 < 14) return null
+  return (
+    <text
+      x={isLast ? x0 - 6 : x1 + 6}
+      y={(y0 + y1) / 2}
+      textAnchor={isLast ? 'end' : 'start'}
+      dominantBaseline="middle"
+      fill={isFocused ? C.amber : C.text}
+      fontSize={11}
+      fontWeight={isFocused ? 700 : 400}
+      stroke={C.bg}
+      strokeWidth={3}
+      strokeLinejoin="round"
+      paintOrder="stroke"
+      style={{ userSelect: 'none' }}
+    >
+      {pathLabel(nd.label)}
+    </text>
+  )
+}
+
 function NodeRect({
   node,
   focusedPage,
@@ -106,26 +138,7 @@ function NodeRect({
         </text>
       )}
 
-      {/* Label beside its own node. The last column labels leftwards so it stays inside the SVG.
-          Nodes too short for a legible line rely on the <title> tooltip. */}
-      {h >= 14 && (
-        <text
-          x={isLast ? x0 - 6 : x1 + 6}
-          y={(y0 + y1) / 2}
-          textAnchor={isLast ? 'end' : 'start'}
-          dominantBaseline="middle"
-          fill={isFocused ? C.amber : C.text}
-          fontSize={11}
-          fontWeight={isFocused ? 700 : 400}
-          stroke={C.bg}
-          strokeWidth={3}
-          strokeLinejoin="round"
-          paintOrder="stroke"
-          style={{ userSelect: 'none' }}
-        >
-          {pathLabel(nd.label)}
-        </text>
-      )}
+      <NodeLabel nd={nd} x0={x0} x1={x1} y0={y0} y1={y1} isLast={isLast} isFocused={isFocused} />
     </g>
   )
 }
