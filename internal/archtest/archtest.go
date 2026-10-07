@@ -185,5 +185,20 @@ func Rules() []*Rule {
 			MustNotImport: "internal/command",
 			Reason:        "ports are interfaces; they must not depend on the command dispatcher",
 		},
+		{
+			From:          "internal/api",
+			MustNotImport: "internal/repository/sqlcgen",
+			Reason:        "HTTP handlers go through ports; generated SQL stays inside the repository adapter",
+		},
+		{
+			From:          "internal/service",
+			MustNotImport: "internal/repository/sqlcgen",
+			Reason:        "services go through ports; generated SQL stays inside the repository adapter",
+		},
+		{
+			From:          "internal/mcp",
+			MustNotImport: "internal/repository/sqlcgen",
+			Reason:        "the MCP server go through ports; generated SQL stays inside the repository adapter",
+		},
 	}
 }

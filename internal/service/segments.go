@@ -7,16 +7,17 @@ import (
 	"fmt"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // SegmentService handles segment business logic.
 type SegmentService struct {
-	store repository.Querier
+	store ports.SegmentRepo
 }
 
 // NewSegmentService creates a SegmentService.
-func NewSegmentService(store repository.Querier) *SegmentService {
+func NewSegmentService(store ports.SegmentRepo) *SegmentService {
 	return &SegmentService{store: store}
 }
 

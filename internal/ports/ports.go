@@ -1,5 +1,7 @@
 // Package ports defines the repository interfaces (dependency inversion layer).
-// Services depend on these interfaces; *repository.Store satisfies them all.
+// Services depend on these interfaces. Each aggregate has a Queries port,
+// implemented by *repository.ReadStore (read-only pool), and a Commands port,
+// implemented by *repository.Store; XRepo composes the two.
 //
 // Dependency direction: entry points → services → ports ← repository adapters.
 // Nothing in this package depends on service or api packages.
@@ -12,32 +14,52 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
-// ProjectRepo is the persistence port for projects and setup operations.
-type ProjectRepo interface {
-	CreateProject(ctx context.Context, name, slug string) (repository.Project, error)
+// ProjectQueries is the read side of the project port.
+type ProjectQueries interface {
 	ProjectByID(ctx context.Context, id string) (repository.Project, error)
 	ProjectBySlug(ctx context.Context, slug string) (repository.Project, error)
 	ListProjects(ctx context.Context) ([]repository.Project, error)
+	HasProjects(ctx context.Context) (bool, error)
+	UserByUsername(ctx context.Context, username string) (repository.User, error)
+}
+
+// ProjectCommands is the write side of the project port.
+type ProjectCommands interface {
+	CreateProject(ctx context.Context, name, slug string) (repository.Project, error)
 	UpdateProject(ctx context.Context, id, name, domain string) (repository.Project, error)
 	DeleteProject(ctx context.Context, id string) error
 	ApproveProject(ctx context.Context, id string) (repository.Project, error)
 	EnsureProject(ctx context.Context, slug string) (repository.Project, error)
 	EnsureProjectPending(ctx context.Context, name, slug string) (repository.Project, error)
-	HasProjects(ctx context.Context) (bool, error)
 	EnsureSetupAPIKey(ctx context.Context, projectID, keySHA256 string) error
-	UserByUsername(ctx context.Context, username string) (repository.User, error)
+}
+
+// ProjectRepo is the persistence port for projects and setup operations.
+type ProjectRepo interface {
+	ProjectQueries
+	ProjectCommands
+}
+
+// FunnelQueries is the read side of the funnel port.
+type FunnelQueries interface {
+	FunnelByID(ctx context.Context, id string) (repository.Funnel, error)
+	ListFunnels(ctx context.Context, projectID string) ([]repository.Funnel, error)
+	AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, rules ...repository.SegmentRule) ([]repository.FunnelStepResult, error)
+	FunnelSegmentData(ctx context.Context, projectID string) (repository.FunnelSegments, error)
+	SessionsAtStep(ctx context.Context, f repository.Funnel, stepOrder int, from, to time.Time, limit int) ([]string, error)
+}
+
+// FunnelCommands is the write side of the funnel port.
+type FunnelCommands interface {
+	CreateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error)
+	UpdateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error)
+	DeleteFunnel(ctx context.Context, id string) error
 }
 
 // FunnelRepo is the persistence port for funnels.
 type FunnelRepo interface {
-	CreateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error)
-	FunnelByID(ctx context.Context, id string) (repository.Funnel, error)
-	ListFunnels(ctx context.Context, projectID string) ([]repository.Funnel, error)
-	UpdateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error)
-	DeleteFunnel(ctx context.Context, id string) error
-	AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, rules ...repository.SegmentRule) ([]repository.FunnelStepResult, error)
-	FunnelSegmentData(ctx context.Context, projectID string) (repository.FunnelSegments, error)
-	SessionsAtStep(ctx context.Context, f repository.Funnel, stepOrder int, from, to time.Time, limit int) ([]string, error)
+	FunnelQueries
+	FunnelCommands
 }
 
 // ABTestQueries is the read side of the A/B test port.
@@ -134,6 +156,34 @@ type OverviewQueries interface {
 	OverviewTopCountries(ctx context.Context, from, to time.Time, limit int, env string) ([]repository.OverviewCountryStat, error)
 	OverviewDimensionBreakdown(ctx context.Context, dimension string, from, to time.Time, limit int, env string) ([]repository.DimensionStat, error)
 	ListAllEvents(ctx context.Context, f repository.EventFilter, limit int) ([]repository.Event, error)
+
+	// ListProjects supplies the "all projects" set for aggregate analysis.
+	ListProjects(ctx context.Context) ([]repository.Project, error)
+}
+
+// CanonicalQueries is the read side of the canonical event vocabulary,
+// per-project mappings and cross-project canonical funnels.
+type CanonicalQueries interface {
+	ListCanonicalEvents(ctx context.Context) ([]repository.CanonicalEvent, error)
+	CanonicalKeySet(ctx context.Context) (map[string]bool, error)
+	ListMappings(ctx context.Context, projectID string) ([]repository.EventNameMapping, error)
+	MappingSuggestions(ctx context.Context, projectID string) ([]repository.MappingSuggestion, error)
+	ListCanonicalFunnels(ctx context.Context) ([]repository.CanonicalFunnel, error)
+	CanonicalFunnelByID(ctx context.Context, id string) (repository.CanonicalFunnel, error)
+	AnalyzeCanonicalFunnel(ctx context.Context, f repository.CanonicalFunnel, projectIDs []string, from, to time.Time, seg *repository.SegmentFilter, rules ...repository.SegmentRule) (repository.CanonicalFunnelResult, error)
+}
+
+// CanonicalCommands is the write side of the canonical event vocabulary,
+// per-project mappings and cross-project canonical funnels.
+type CanonicalCommands interface {
+	CreateCanonicalEvent(ctx context.Context, c repository.CanonicalEvent) (repository.CanonicalEvent, error)
+	UpdateCanonicalEvent(ctx context.Context, c repository.CanonicalEvent) (repository.CanonicalEvent, error)
+	DeleteCanonicalEvent(ctx context.Context, key string) error
+	UpsertMapping(ctx context.Context, projectID, rawName, canonicalKey string) error
+	DeleteMapping(ctx context.Context, projectID, rawName string) error
+	CreateCanonicalFunnel(ctx context.Context, f repository.CanonicalFunnel) (repository.CanonicalFunnel, error)
+	UpdateCanonicalFunnel(ctx context.Context, f repository.CanonicalFunnel) (repository.CanonicalFunnel, error)
+	DeleteCanonicalFunnel(ctx context.Context, id string) error
 }
 
 // OverviewRepo is the persistence port for cross-project ("instance-wide")
@@ -141,28 +191,8 @@ type OverviewQueries interface {
 // aggregate cross-project funnels.
 type OverviewRepo interface {
 	OverviewQueries
-
-	// Canonical event catalog + per-project mappings.
-	ListCanonicalEvents(ctx context.Context) ([]repository.CanonicalEvent, error)
-	CreateCanonicalEvent(ctx context.Context, c repository.CanonicalEvent) (repository.CanonicalEvent, error)
-	UpdateCanonicalEvent(ctx context.Context, c repository.CanonicalEvent) (repository.CanonicalEvent, error)
-	DeleteCanonicalEvent(ctx context.Context, key string) error
-	CanonicalKeySet(ctx context.Context) (map[string]bool, error)
-	ListMappings(ctx context.Context, projectID string) ([]repository.EventNameMapping, error)
-	UpsertMapping(ctx context.Context, projectID, rawName, canonicalKey string) error
-	DeleteMapping(ctx context.Context, projectID, rawName string) error
-	MappingSuggestions(ctx context.Context, projectID string) ([]repository.MappingSuggestion, error)
-
-	// Cross-project canonical funnels.
-	CreateCanonicalFunnel(ctx context.Context, f repository.CanonicalFunnel) (repository.CanonicalFunnel, error)
-	ListCanonicalFunnels(ctx context.Context) ([]repository.CanonicalFunnel, error)
-	CanonicalFunnelByID(ctx context.Context, id string) (repository.CanonicalFunnel, error)
-	UpdateCanonicalFunnel(ctx context.Context, f repository.CanonicalFunnel) (repository.CanonicalFunnel, error)
-	DeleteCanonicalFunnel(ctx context.Context, id string) error
-	AnalyzeCanonicalFunnel(ctx context.Context, f repository.CanonicalFunnel, projectIDs []string, from, to time.Time, seg *repository.SegmentFilter, rules ...repository.SegmentRule) (repository.CanonicalFunnelResult, error)
-
-	// ListProjects supplies the "all projects" set for aggregate analysis.
-	ListProjects(ctx context.Context) ([]repository.Project, error)
+	CanonicalQueries
+	CanonicalCommands
 }
 
 // SessionQueries is the read side of the session port.
@@ -203,23 +233,43 @@ type APIKeyRepo interface {
 	APIKeyCommands
 }
 
-// WidgetRepo is the persistence port for dashboard widgets.
-type WidgetRepo interface {
-	CreateWidget(ctx context.Context, w repository.DashboardWidget) (repository.DashboardWidget, error)
+// WidgetQueries is the read side of the dashboard widget port.
+type WidgetQueries interface {
 	WidgetByID(ctx context.Context, id string) (repository.DashboardWidget, error)
 	ListWidgets(ctx context.Context, projectID string) ([]repository.DashboardWidget, error)
+	WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]repository.PropertyBreakdown, error)
+}
+
+// WidgetCommands is the write side of the dashboard widget port.
+type WidgetCommands interface {
+	CreateWidget(ctx context.Context, w repository.DashboardWidget) (repository.DashboardWidget, error)
 	UpdateWidget(ctx context.Context, w repository.DashboardWidget) (repository.DashboardWidget, error)
 	DeleteWidget(ctx context.Context, id string) error
-	WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]repository.PropertyBreakdown, error)
+}
+
+// WidgetRepo is the persistence port for dashboard widgets.
+type WidgetRepo interface {
+	WidgetQueries
+	WidgetCommands
+}
+
+// SegmentQueries is the read side of the segment port.
+type SegmentQueries interface {
+	SegmentByID(ctx context.Context, id string) (repository.Segment, error)
+	ListSegments(ctx context.Context, projectID string) ([]repository.Segment, error)
+}
+
+// SegmentCommands is the write side of the segment port.
+type SegmentCommands interface {
+	CreateSegment(ctx context.Context, seg repository.Segment) (repository.Segment, error)
+	UpdateSegment(ctx context.Context, seg repository.Segment) (repository.Segment, error)
+	DeleteSegment(ctx context.Context, id string) error
 }
 
 // SegmentRepo is the persistence port for user-defined segments.
 type SegmentRepo interface {
-	CreateSegment(ctx context.Context, seg repository.Segment) (repository.Segment, error)
-	SegmentByID(ctx context.Context, id string) (repository.Segment, error)
-	ListSegments(ctx context.Context, projectID string) ([]repository.Segment, error)
-	UpdateSegment(ctx context.Context, seg repository.Segment) (repository.Segment, error)
-	DeleteSegment(ctx context.Context, id string) error
+	SegmentQueries
+	SegmentCommands
 }
 
 // RecordingQueries is the read side of the recording port.
