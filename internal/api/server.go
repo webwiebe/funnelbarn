@@ -16,6 +16,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
+	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
@@ -135,10 +136,7 @@ type DistributionRepo interface {
 }
 
 // InstanceSettingsRepo is the narrow interface for reading/writing instance-level settings.
-type InstanceSettingsRepo interface {
-	GetAllInstanceSettings(ctx context.Context) (map[string]string, error)
-	SetInstanceSetting(ctx context.Context, key, value string) error
-}
+type InstanceSettingsRepo = ports.InstanceSettingsRepo
 
 // GeoAnonymizer can zero out geo fields on sessions.
 type GeoAnonymizer interface {

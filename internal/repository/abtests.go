@@ -53,12 +53,12 @@ func (s *Store) CreateABTest(ctx context.Context, t ABTest) (ABTest, error) {
 }
 
 // ABTestByID fetches a single A/B test.
-func (s *Store) ABTestByID(ctx context.Context, id string) (ABTest, error) {
+func (s *ReadStore) ABTestByID(ctx context.Context, id string) (ABTest, error) {
 	return s.abTestByID(ctx, s.rdb, id)
 }
 
 // abTestByID reads through db, so write paths can read back on the write pool.
-func (s *Store) abTestByID(ctx context.Context, db querier, id string) (ABTest, error) {
+func (s *ReadStore) abTestByID(ctx context.Context, db querier, id string) (ABTest, error) {
 	const q = `
 		SELECT id, project_id, name, status,
 		       COALESCE(control_filter,''), COALESCE(variant_filter,''),
@@ -77,7 +77,7 @@ func (s *Store) abTestByID(ctx context.Context, db querier, id string) (ABTest, 
 }
 
 // ListABTests returns all A/B tests for a project.
-func (s *Store) ListABTests(ctx context.Context, projectID string) ([]ABTest, error) {
+func (s *ReadStore) ListABTests(ctx context.Context, projectID string) ([]ABTest, error) {
 	const q = `
 		SELECT id, project_id, name, status,
 		       COALESCE(control_filter,''), COALESCE(variant_filter,''),
@@ -105,7 +105,7 @@ func (s *Store) ListABTests(ctx context.Context, projectID string) ([]ABTest, er
 }
 
 // AnalyzeABTest counts control vs variant totals and conversions over a time window.
-func (s *Store) AnalyzeABTest(ctx context.Context, t ABTest, from, to time.Time) ([]ABTestResult, error) {
+func (s *ReadStore) AnalyzeABTest(ctx context.Context, t ABTest, from, to time.Time) ([]ABTestResult, error) {
 	type arm struct {
 		name   string
 		filter string
@@ -150,7 +150,7 @@ func (s *Store) AnalyzeABTest(ctx context.Context, t ABTest, from, to time.Time)
 }
 
 // countSessionsWithFilter counts distinct sessions where any event matches the filter.
-func (s *Store) countSessionsWithFilter(ctx context.Context, projectID string, f ABTestFilter, from, to time.Time) (int64, error) {
+func (s *ReadStore) countSessionsWithFilter(ctx context.Context, projectID string, f ABTestFilter, from, to time.Time) (int64, error) {
 	if f.Property == "" {
 		const q = `SELECT COUNT(DISTINCT session_id) FROM events WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?`
 		var n int64
@@ -165,7 +165,7 @@ func (s *Store) countSessionsWithFilter(ctx context.Context, projectID string, f
 }
 
 // countConversionsWithFilter counts sessions matching the filter that also fired the conversion event.
-func (s *Store) countConversionsWithFilter(ctx context.Context, projectID string, f ABTestFilter, conversionEvent string, from, to time.Time) (int64, error) {
+func (s *ReadStore) countConversionsWithFilter(ctx context.Context, projectID string, f ABTestFilter, conversionEvent string, from, to time.Time) (int64, error) {
 	if f.Property == "" {
 		const q = `
 			SELECT COUNT(DISTINCT session_id) FROM events

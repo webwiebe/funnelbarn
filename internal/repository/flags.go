@@ -150,10 +150,10 @@ func (s *Store) EnsureAutoFlag(ctx context.Context, f FeatureFlag) (FeatureFlag,
 
 // CountAutoFlags returns how many auto-created flags a project has. Manual flags
 // are not counted — only the auto-registration spam vector is bounded.
-func (s *Store) CountAutoFlags(ctx context.Context, projectID string) (int, error) {
+func (r *ReadStore) CountAutoFlags(ctx context.Context, projectID string) (int, error) {
 	const q = `SELECT COUNT(*) FROM feature_flags WHERE project_id = ? AND origin = 'auto'`
 	var n int
-	if err := s.rdb.QueryRowContext(ctx, q, projectID).Scan(&n); err != nil {
+	if err := r.rdb.QueryRowContext(ctx, q, projectID).Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -184,24 +184,24 @@ func (s *Store) PurgeStaleAutoFlags(ctx context.Context, cutoff time.Time) (int6
 	return result.RowsAffected()
 }
 
-func (s *Store) FlagByID(ctx context.Context, id string) (FeatureFlag, error) {
-	return s.flagByID(ctx, s.rdb, id)
+func (r *ReadStore) FlagByID(ctx context.Context, id string) (FeatureFlag, error) {
+	return r.flagByID(ctx, r.rdb, id)
 }
 
 // flagByID reads through db, so write paths can read back on the write pool.
-func (s *Store) flagByID(ctx context.Context, db querier, id string) (FeatureFlag, error) {
+func (r *ReadStore) flagByID(ctx context.Context, db querier, id string) (FeatureFlag, error) {
 	q := `SELECT ` + flagColumns + ` FROM feature_flags WHERE id = ?`
 	return scanFlag(db.QueryRowContext(ctx, q, id))
 }
 
-func (s *Store) FlagByKey(ctx context.Context, projectID, flagKey string) (FeatureFlag, error) {
+func (r *ReadStore) FlagByKey(ctx context.Context, projectID, flagKey string) (FeatureFlag, error) {
 	q := `SELECT ` + flagColumns + ` FROM feature_flags WHERE project_id = ? AND flag_key = ?`
-	return scanFlag(s.rdb.QueryRowContext(ctx, q, projectID, flagKey))
+	return scanFlag(r.rdb.QueryRowContext(ctx, q, projectID, flagKey))
 }
 
-func (s *Store) ListFlags(ctx context.Context, projectID string) ([]FeatureFlag, error) {
+func (r *ReadStore) ListFlags(ctx context.Context, projectID string) ([]FeatureFlag, error) {
 	q := `SELECT ` + flagColumns + ` FROM feature_flags WHERE project_id = ? ORDER BY created_at DESC`
-	rows, err := s.rdb.QueryContext(ctx, q, projectID)
+	rows, err := r.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +261,7 @@ func (s *Store) RecordEvaluation(ctx context.Context, eval FlagEvaluation) error
 
 // FlagContextKeySuggestions returns context keys seen in recent evaluations for a project,
 // ordered by frequency, with the percentage of evaluations that included each key.
-func (s *Store) FlagContextKeySuggestions(ctx context.Context, projectID string) ([]ContextKeySuggestion, error) {
+func (r *ReadStore) FlagContextKeySuggestions(ctx context.Context, projectID string) ([]ContextKeySuggestion, error) {
 	const q = `
 		WITH total AS (
 			SELECT COUNT(*) AS n
@@ -279,7 +279,7 @@ func (s *Store) FlagContextKeySuggestions(ctx context.Context, projectID string)
 		FROM key_counts kc, total t
 		ORDER BY kc.seen_count DESC
 		LIMIT 20`
-	rows, err := s.rdb.QueryContext(ctx, q, projectID, projectID)
+	rows, err := r.rdb.QueryContext(ctx, q, projectID, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -295,9 +295,9 @@ func (s *Store) FlagContextKeySuggestions(ctx context.Context, projectID string)
 	return out, rows.Err()
 }
 
-func (s *Store) CountEvaluationsByVariant(ctx context.Context, flagID string, from, to time.Time) (map[string]int64, error) {
+func (r *ReadStore) CountEvaluationsByVariant(ctx context.Context, flagID string, from, to time.Time) (map[string]int64, error) {
 	const q = `SELECT variant, COUNT(DISTINCT context_hash) FROM flag_evaluations WHERE flag_id = ? AND created_at >= ? AND created_at <= ? GROUP BY variant`
-	rows, err := s.rdb.QueryContext(ctx, q, flagID, from, to)
+	rows, err := r.rdb.QueryContext(ctx, q, flagID, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +315,7 @@ func (s *Store) CountEvaluationsByVariant(ctx context.Context, flagID string, fr
 	return result, rows.Err()
 }
 
-func (s *Store) CountConversionsByVariant(ctx context.Context, flagID, conversionEvent, projectID string, from, to time.Time) (map[string]int64, error) {
+func (r *ReadStore) CountConversionsByVariant(ctx context.Context, flagID, conversionEvent, projectID string, from, to time.Time) (map[string]int64, error) {
 	const q = `
 		SELECT fe.variant, COUNT(DISTINCT fe.context_hash)
 		FROM flag_evaluations fe
@@ -323,7 +323,7 @@ func (s *Store) CountConversionsByVariant(ctx context.Context, flagID, conversio
 		WHERE fe.flag_id = ? AND e.name = ? AND e.project_id = ?
 		  AND fe.created_at >= ? AND fe.created_at <= ?
 		GROUP BY fe.variant`
-	rows, err := s.rdb.QueryContext(ctx, q, flagID, conversionEvent, projectID, from, to)
+	rows, err := r.rdb.QueryContext(ctx, q, flagID, conversionEvent, projectID, from, to)
 	if err != nil {
 		return nil, err
 	}

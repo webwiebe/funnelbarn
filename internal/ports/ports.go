@@ -40,30 +40,50 @@ type FunnelRepo interface {
 	SessionsAtStep(ctx context.Context, f repository.Funnel, stepOrder int, from, to time.Time, limit int) ([]string, error)
 }
 
+// ABTestQueries is the read side of the A/B test port.
+type ABTestQueries interface {
+	ABTestByID(ctx context.Context, id string) (repository.ABTest, error)
+	ListABTests(ctx context.Context, projectID string) ([]repository.ABTest, error)
+	AnalyzeABTest(ctx context.Context, t repository.ABTest, from, to time.Time) ([]repository.ABTestResult, error)
+}
+
+// ABTestCommands is the write side of the A/B test port.
+type ABTestCommands interface {
+	CreateABTest(ctx context.Context, t repository.ABTest) (repository.ABTest, error)
+}
+
 // ABTestRepo is the persistence port for A/B tests.
 type ABTestRepo interface {
-	CreateABTest(ctx context.Context, t repository.ABTest) (repository.ABTest, error)
-	ListABTests(ctx context.Context, projectID string) ([]repository.ABTest, error)
-	ABTestByID(ctx context.Context, id string) (repository.ABTest, error)
-	AnalyzeABTest(ctx context.Context, t repository.ABTest, from, to time.Time) ([]repository.ABTestResult, error)
+	ABTestQueries
+	ABTestCommands
+}
+
+// FlagQueries is the read side of the feature flag port.
+type FlagQueries interface {
+	CountAutoFlags(ctx context.Context, projectID string) (int, error)
+	FlagByID(ctx context.Context, id string) (repository.FeatureFlag, error)
+	FlagByKey(ctx context.Context, projectID, flagKey string) (repository.FeatureFlag, error)
+	ListFlags(ctx context.Context, projectID string) ([]repository.FeatureFlag, error)
+	FlagContextKeySuggestions(ctx context.Context, projectID string) ([]repository.ContextKeySuggestion, error)
+	CountEvaluationsByVariant(ctx context.Context, flagID string, from, to time.Time) (map[string]int64, error)
+	CountConversionsByVariant(ctx context.Context, flagID, conversionEvent, projectID string, from, to time.Time) (map[string]int64, error)
+}
+
+// FlagCommands is the write side of the feature flag port.
+type FlagCommands interface {
+	CreateFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error)
+	EnsureAutoFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error)
+	TouchFlagEvaluated(ctx context.Context, flagID string) error
+	PurgeStaleAutoFlags(ctx context.Context, cutoff time.Time) (int64, error)
+	UpdateFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error)
+	DeleteFlag(ctx context.Context, id string) error
+	RecordEvaluation(ctx context.Context, eval repository.FlagEvaluation) error
 }
 
 // FlagRepo is the persistence port for feature flags.
 type FlagRepo interface {
-	CreateFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error)
-	EnsureAutoFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error)
-	CountAutoFlags(ctx context.Context, projectID string) (int, error)
-	TouchFlagEvaluated(ctx context.Context, flagID string) error
-	PurgeStaleAutoFlags(ctx context.Context, cutoff time.Time) (int64, error)
-	FlagByID(ctx context.Context, id string) (repository.FeatureFlag, error)
-	FlagByKey(ctx context.Context, projectID, flagKey string) (repository.FeatureFlag, error)
-	ListFlags(ctx context.Context, projectID string) ([]repository.FeatureFlag, error)
-	UpdateFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error)
-	DeleteFlag(ctx context.Context, id string) error
-	RecordEvaluation(ctx context.Context, eval repository.FlagEvaluation) error
-	CountEvaluationsByVariant(ctx context.Context, flagID string, from, to time.Time) (map[string]int64, error)
-	CountConversionsByVariant(ctx context.Context, flagID, conversionEvent, projectID string, from, to time.Time) (map[string]int64, error)
-	FlagContextKeySuggestions(ctx context.Context, projectID string) ([]repository.ContextKeySuggestion, error)
+	FlagQueries
+	FlagCommands
 }
 
 // EventRepo is the persistence port for events and analytics queries.
@@ -138,14 +158,24 @@ type SessionRepo interface {
 	ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error)
 }
 
-// APIKeyRepo is the persistence port for API keys.
-type APIKeyRepo interface {
-	CreateAPIKey(ctx context.Context, name, projectID, keySHA256, scope string) (repository.APIKey, error)
+// APIKeyQueries is the read side of the API key port.
+type APIKeyQueries interface {
 	ListAPIKeys(ctx context.Context, projectID string) ([]repository.APIKey, error)
 	ListAllAPIKeys(ctx context.Context) ([]repository.APIKey, error)
-	DeleteAPIKey(ctx context.Context, id string) error
 	ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (projectID string, scope string, found bool, err error)
+}
+
+// APIKeyCommands is the write side of the API key port.
+type APIKeyCommands interface {
+	CreateAPIKey(ctx context.Context, name, projectID, keySHA256, scope string) (repository.APIKey, error)
+	DeleteAPIKey(ctx context.Context, id string) error
 	TouchAPIKey(ctx context.Context, keySHA256 string) error
+}
+
+// APIKeyRepo is the persistence port for API keys.
+type APIKeyRepo interface {
+	APIKeyQueries
+	APIKeyCommands
 }
 
 // WidgetRepo is the persistence port for dashboard widgets.
@@ -182,14 +212,41 @@ type RecordingRepo interface {
 	TracesForRecording(ctx context.Context, recordingID string) ([]repository.TraceLink, error)
 }
 
-// ProjectHealthRepo is the persistence port for project integration health.
-type ProjectHealthRepo interface {
+// ProjectHealthQueries is the read side of the project health port.
+type ProjectHealthQueries interface {
 	GetProjectHealth(ctx context.Context, projectID string) (repository.ProjectHealth, error)
+}
+
+// ProjectHealthCommands is the write side of the project health port.
+type ProjectHealthCommands interface {
 	MarkProjectHealthSetupCalled(ctx context.Context, projectID string) error
 	MarkProjectHealthEventsReceived(ctx context.Context, projectID string) error
 	MarkProjectHealthFlagsEvaluated(ctx context.Context, projectID string) error
 	MarkProjectHealthRecordingsReceived(ctx context.Context, projectID string) error
 	ResetProjectHealth(ctx context.Context, projectID string) error
+}
+
+// ProjectHealthRepo is the persistence port for project integration health.
+type ProjectHealthRepo interface {
+	ProjectHealthQueries
+	ProjectHealthCommands
+}
+
+// InstanceSettingsQueries is the read side of the instance settings port.
+type InstanceSettingsQueries interface {
+	GetInstanceSetting(ctx context.Context, key string) (string, bool, error)
+	GetAllInstanceSettings(ctx context.Context) (map[string]string, error)
+}
+
+// InstanceSettingsCommands is the write side of the instance settings port.
+type InstanceSettingsCommands interface {
+	SetInstanceSetting(ctx context.Context, key, value string) error
+}
+
+// InstanceSettingsRepo is the persistence port for instance-level settings.
+type InstanceSettingsRepo interface {
+	InstanceSettingsQueries
+	InstanceSettingsCommands
 }
 
 // EventPersister is the narrow interface worker.PersistEvent requires.
