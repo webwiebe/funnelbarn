@@ -105,12 +105,12 @@ func (s *Store) CreateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
 }
 
 // FunnelByID fetches a funnel with all its steps.
-func (s *Store) FunnelByID(ctx context.Context, id string) (Funnel, error) {
+func (s *ReadStore) FunnelByID(ctx context.Context, id string) (Funnel, error) {
 	return s.funnelByID(ctx, s.rdb, id)
 }
 
 // funnelByID reads a funnel through db, so write paths can read back on the write pool.
-func (s *Store) funnelByID(ctx context.Context, db querier, id string) (Funnel, error) {
+func (s *ReadStore) funnelByID(ctx context.Context, db querier, id string) (Funnel, error) {
 	const qf = `SELECT id, project_id, name, COALESCE(description,''), COALESCE(scope,'session'), created_at FROM funnels WHERE id = ?`
 	var f Funnel
 	if err := db.QueryRowContext(ctx, qf, id).Scan(&f.ID, &f.ProjectID, &f.Name, &f.Description, &f.Scope, &f.CreatedAt); err != nil {
@@ -131,7 +131,7 @@ func (s *Store) funnelByID(ctx context.Context, db querier, id string) (Funnel, 
 }
 
 // ListFunnels returns all funnels for a project.
-func (s *Store) ListFunnels(ctx context.Context, projectID string) ([]Funnel, error) {
+func (s *ReadStore) ListFunnels(ctx context.Context, projectID string) ([]Funnel, error) {
 	const q = `SELECT id, project_id, name, COALESCE(description,''), COALESCE(scope,'session'), created_at FROM funnels WHERE project_id = ? ORDER BY created_at`
 	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
@@ -215,7 +215,7 @@ func (s *Store) DeleteFunnel(ctx context.Context, id string) error {
 }
 
 // funnelSteps returns steps for a funnel ordered by step_order.
-func (s *Store) funnelSteps(ctx context.Context, db querier, funnelID string) ([]FunnelStep, error) {
+func (s *ReadStore) funnelSteps(ctx context.Context, db querier, funnelID string) ([]FunnelStep, error) {
 	const q = `SELECT id, funnel_id, step_order, event_name, COALESCE(filters,'[]') FROM funnel_steps WHERE funnel_id = ? ORDER BY step_order`
 	rows, err := db.QueryContext(ctx, q, funnelID)
 	if err != nil {
@@ -293,7 +293,7 @@ func segmentParam(seg *SegmentFilter) (clause string, arg any, needSessionJoin b
 
 // AnalyzeFunnel computes conversion rates for each step of a funnel over a time range.
 // seg is the legacy preset filter; rules are additional stored segment conditions (ANDed together).
-func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time, seg *SegmentFilter, rules ...SegmentRule) ([]FunnelStepResult, error) {
+func (s *ReadStore) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time, seg *SegmentFilter, rules ...SegmentRule) ([]FunnelStepResult, error) {
 	if len(f.Steps) == 0 {
 		return nil, nil
 	}
@@ -394,7 +394,7 @@ func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time,
 // SessionsAtStep returns distinct session IDs that completed step stepOrder
 // (1-based) but did NOT complete step stepOrder+1. If stepOrder equals the
 // total number of steps, it returns sessions that completed all steps (converters).
-func (s *Store) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int, from, to time.Time, limit int) ([]string, error) {
+func (s *ReadStore) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int, from, to time.Time, limit int) ([]string, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -531,7 +531,7 @@ type FunnelSegments struct {
 }
 
 // FunnelSegmentData returns distinct field values present in the events for a project.
-func (s *Store) FunnelSegmentData(ctx context.Context, projectID string) (FunnelSegments, error) {
+func (s *ReadStore) FunnelSegmentData(ctx context.Context, projectID string) (FunnelSegments, error) {
 	var out FunnelSegments
 
 	// Column names are interpolated into SQL, so guard against any caller ever

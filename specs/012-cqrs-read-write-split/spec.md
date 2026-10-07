@@ -65,13 +65,12 @@ Each pool reports `otelsql` connection-pool metrics with a `db.pool` attribute (
 
 ### Ports
 
-`repository.Querier` and the mixed `ports.*Repo` interfaces are replaced by one command port and one query port per aggregate (`FlagCommands` / `FlagQueries`, `EventCommands` / `EventQueries`, ...). `repository.ReadStore` holds only the read pool and implements every query port; `repository.Store` embeds it and adds the write pool and the command methods. A query adapter therefore has no write handle to misuse.
+`repository.Querier` is removed. Each aggregate has one query port and one command port (`FlagQueries` / `FlagCommands`, `EventQueries` / `EventCommands`, ...). `ports.XRepo` stays as the composition of the two, so a service that both reads and writes takes one value; it declares no methods of its own. `repository.ReadStore` holds only the read pool and implements every query port; `repository.Store` embeds it and adds the write pool and the command methods. A query adapter therefore has no write handle to misuse.
 
-Rules enforced by `internal/archtest` (blocking in CI):
+Enforcement (blocking in CI):
 
-- Query ports declare no method that `ReadStore` does not implement.
-- Query packages do not import command packages.
-- `internal/api` does not import the SQL adapters directly.
+- `internal/ports/assert_test.go` asserts at compile time that `*repository.ReadStore` implements every query port, so a write method added to a query port, or a query method left on `*Store`, fails the build.
+- `internal/archtest`: `internal/ports` does not import `internal/command`; `internal/api`, `internal/service` and `internal/mcp` do not import the generated SQL (`internal/repository/sqlcgen`). The domain types still live in `internal/repository`, so `internal/api` imports that package for types; moving them out is not part of this split.
 
 ---
 

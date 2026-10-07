@@ -103,12 +103,12 @@ func insertCanonicalSteps(ctx context.Context, tx *sql.Tx, funnelID string, step
 
 // CanonicalFunnelByID fetches a canonical funnel with its steps (step labels are
 // resolved from the canonical_events catalog).
-func (s *Store) CanonicalFunnelByID(ctx context.Context, id string) (CanonicalFunnel, error) {
+func (s *ReadStore) CanonicalFunnelByID(ctx context.Context, id string) (CanonicalFunnel, error) {
 	return s.canonicalFunnelByID(ctx, s.rdb, id)
 }
 
 // canonicalFunnelByID reads through db, so write paths can read back on the write pool.
-func (s *Store) canonicalFunnelByID(ctx context.Context, db querier, id string) (CanonicalFunnel, error) {
+func (s *ReadStore) canonicalFunnelByID(ctx context.Context, db querier, id string) (CanonicalFunnel, error) {
 	const qf = `SELECT id, name, COALESCE(description,''), COALESCE(scope,'session'), COALESCE(project_ids,'[]'), COALESCE(segment,''), created_at FROM canonical_funnels WHERE id = ?`
 	var f CanonicalFunnel
 	var projectIDsJSON string
@@ -127,7 +127,7 @@ func (s *Store) canonicalFunnelByID(ctx context.Context, db querier, id string) 
 }
 
 // ListCanonicalFunnels returns all canonical funnels with their steps.
-func (s *Store) ListCanonicalFunnels(ctx context.Context) ([]CanonicalFunnel, error) {
+func (s *ReadStore) ListCanonicalFunnels(ctx context.Context) ([]CanonicalFunnel, error) {
 	const q = `SELECT id, name, COALESCE(description,''), COALESCE(scope,'session'), COALESCE(project_ids,'[]'), COALESCE(segment,''), created_at FROM canonical_funnels ORDER BY created_at`
 	rows, err := s.rdb.QueryContext(ctx, q)
 	if err != nil {
@@ -200,7 +200,7 @@ func (s *Store) DeleteCanonicalFunnel(ctx context.Context, id string) error {
 
 // canonicalFunnelSteps returns steps ordered by step_order, resolving each
 // canonical key's label from the catalog.
-func (s *Store) canonicalFunnelSteps(ctx context.Context, db querier, funnelID string) ([]CanonicalFunnelStep, error) {
+func (s *ReadStore) canonicalFunnelSteps(ctx context.Context, db querier, funnelID string) ([]CanonicalFunnelStep, error) {
 	const q = `
 		SELECT st.step_order, st.canonical_key, COALESCE(ce.label, st.canonical_key)
 		FROM canonical_funnel_steps st
@@ -242,7 +242,7 @@ func nameInClause(names []string) (clause string, args []any) {
 // project that lacks a mapping for ANY step is excluded from the whole funnel
 // and reported in ExcludedProjects. Segmentation reuses the same seg/rules
 // machinery as AnalyzeFunnel.
-func (s *Store) AnalyzeCanonicalFunnel(ctx context.Context, f CanonicalFunnel, projectIDs []string, from, to time.Time, seg *SegmentFilter, rules ...SegmentRule) (CanonicalFunnelResult, error) {
+func (s *ReadStore) AnalyzeCanonicalFunnel(ctx context.Context, f CanonicalFunnel, projectIDs []string, from, to time.Time, seg *SegmentFilter, rules ...SegmentRule) (CanonicalFunnelResult, error) {
 	var result CanonicalFunnelResult
 	if len(f.Steps) == 0 {
 		return result, nil

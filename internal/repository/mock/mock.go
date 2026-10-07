@@ -1,4 +1,4 @@
-// Package mock provides an in-memory implementation of repository.Querier for testing.
+// Package mock provides an in-memory implementation of the persistence ports for testing.
 package mock
 
 import (
@@ -14,16 +14,13 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
-// compile-time check that *Store satisfies repository.Querier.
-var _ repository.Querier = (*Store)(nil)
-
 var mockIDCounter int64
 
 func newMockID(prefix string) string {
 	return fmt.Sprintf("%s-%d", prefix, atomic.AddInt64(&mockIDCounter, 1))
 }
 
-// Store is a thread-safe in-memory implementation of repository.Querier.
+// Store is a thread-safe in-memory implementation of the persistence ports.
 type Store struct {
 	mu       sync.RWMutex
 	projects map[string]repository.Project

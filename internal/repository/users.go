@@ -28,7 +28,7 @@ func (s *Store) UpsertUser(ctx context.Context, username, passwordHash string) e
 // CountUsers returns the number of user rows. Used at startup to decide whether
 // local/DB-user authentication is a configured login mechanism (so the API can
 // fail closed rather than serve routes unauthenticated).
-func (s *Store) CountUsers(ctx context.Context) (int, error) {
+func (s *ReadStore) CountUsers(ctx context.Context) (int, error) {
 	var n int
 	if err := s.rdb.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
 		return 0, err
@@ -37,7 +37,7 @@ func (s *Store) CountUsers(ctx context.Context) (int, error) {
 }
 
 // UserByUsername fetches a user by username.
-func (s *Store) UserByUsername(ctx context.Context, username string) (User, error) {
+func (s *ReadStore) UserByUsername(ctx context.Context, username string) (User, error) {
 	const q = `SELECT id, username, password_hash, COALESCE(iambarn_sub, ''), created_at FROM users WHERE username = ?`
 	var u User
 	err := s.rdb.QueryRowContext(ctx, q, username).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.IAMBarnSub, &u.CreatedAt)
@@ -48,11 +48,11 @@ func (s *Store) UserByUsername(ctx context.Context, username string) (User, erro
 }
 
 // FindUserByIAMBarnSub fetches a user by their IAMBarn subject identifier.
-func (s *Store) FindUserByIAMBarnSub(ctx context.Context, sub string) (User, error) {
+func (s *ReadStore) FindUserByIAMBarnSub(ctx context.Context, sub string) (User, error) {
 	return s.findUserByIAMBarnSub(ctx, s.rdb, sub)
 }
 
-func (s *Store) findUserByIAMBarnSub(ctx context.Context, db querier, sub string) (User, error) {
+func (s *ReadStore) findUserByIAMBarnSub(ctx context.Context, db querier, sub string) (User, error) {
 	const q = `SELECT id, username, password_hash, COALESCE(iambarn_sub, ''), created_at FROM users WHERE iambarn_sub = ?`
 	var u User
 	err := db.QueryRowContext(ctx, q, sub).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.IAMBarnSub, &u.CreatedAt)
