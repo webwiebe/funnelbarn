@@ -17,6 +17,7 @@ internal/geoip	50
 internal/ingest	72
 internal/mcp	87
 internal/middleware	100
+internal/queue	100
 internal/repository	74
 internal/service	74
 internal/session	100

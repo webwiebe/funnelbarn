@@ -137,6 +137,7 @@ flat line.
 | `FUNNELBARN_API_KEY_SHA256` | — | Alternative pre-hashed key |
 | `FUNNELBARN_DB_PATH` | `.data/funnelbarn.db` | SQLite database path |
 | `FUNNELBARN_SPOOL_DIR` | `.data/spool` | Event spool directory |
+| `FUNNELBARN_REDIS_QUEUE_URL` | _(empty)_ | Redis/Valkey URL of the bookkeeping command queue; empty applies commands in-process |
 | `FUNNELBARN_MAX_BODY_BYTES` | `1048576` | Max request body (1 MiB) |
 | `FUNNELBARN_MAX_SPOOL_BYTES` | unlimited | Spool size cap |
 | `FUNNELBARN_ADMIN_USERNAME` | — | Admin username |

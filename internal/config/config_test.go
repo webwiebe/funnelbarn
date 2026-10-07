@@ -248,3 +248,14 @@ func TestLoad_MCPResourceURL(t *testing.T) {
 		t.Errorf("MCPResourceURL without public URL: got %q, want empty", got)
 	}
 }
+
+func TestLoad_RedisQueueURL(t *testing.T) {
+	t.Setenv("FUNNELBARN_REDIS_QUEUE_URL", "")
+	if got := Load().RedisQueueURL; got != "" {
+		t.Errorf("RedisQueueURL default: got %q, want empty (in-process dispatcher)", got)
+	}
+	t.Setenv("FUNNELBARN_REDIS_QUEUE_URL", "redis://valkey:6379/0")
+	if got := Load().RedisQueueURL; got != "redis://valkey:6379/0" {
+		t.Errorf("RedisQueueURL from env: got %q", got)
+	}
+}

@@ -20,13 +20,9 @@ type Envelope struct {
 // Encode serialises c into an Envelope. A RecordEvaluation without an ID gets
 // one here, so every redelivery of the encoded bytes inserts the same row.
 func Encode(c Command, receivedAt time.Time) ([]byte, error) {
-	if re, ok := c.(RecordEvaluation); ok && re.Eval.ID == "" {
-		id, err := newID()
-		if err != nil {
-			return nil, err
-		}
-		re.Eval.ID = id
-		c = re
+	c, err := withID(c)
+	if err != nil {
+		return nil, err
 	}
 	payload, err := json.Marshal(c)
 	if err != nil {
@@ -68,6 +64,22 @@ func Decode(b []byte) (Command, Envelope, error) {
 		return nil, env, fmt.Errorf("decode %s: %w", env.Kind, err)
 	}
 	return c, env, nil
+}
+
+// withID gives a RecordEvaluation without an ID a fresh one. A caller that may
+// apply the same command on two paths (queue and fallback) calls it first, so
+// both paths insert the same row.
+func withID(c Command) (Command, error) {
+	re, ok := c.(RecordEvaluation)
+	if !ok || re.Eval.ID != "" {
+		return c, nil
+	}
+	id, err := newID()
+	if err != nil {
+		return nil, err
+	}
+	re.Eval.ID = id
+	return re, nil
 }
 
 func decodeAs[T Command](payload json.RawMessage) (Command, error) {

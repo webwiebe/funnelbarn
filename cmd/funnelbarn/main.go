@@ -252,15 +252,12 @@ func run() error {
 	}
 	defer store.Close()
 
-	// The dispatcher takes evaluate bookkeeping writes (spec 012) on the write
-	// pool. Deferred LIFO, so the drain runs before store.Close above.
 	healthSvc := service.NewProjectHealthService(store)
-	commands := command.New(command.Options{
-		Logger: slog.Default(),
-		Deps:   command.Deps{Store: store, MarkFlagsEvaluated: healthSvc.MarkFlagsEvaluated},
-	})
-	commands.Start(ctx)
-	defer drainCommands(commands)
+	commands, err := newCommandBus(ctx, cfg, command.Deps{Store: store, MarkFlagsEvaluated: healthSvc.MarkFlagsEvaluated}, slog.Default())
+	if err != nil {
+		return fmt.Errorf("command bus: %w", err)
+	}
+	defer drainCommands(commands) // deferred LIFO: drains before store.Close
 
 	// Wire services.
 	projectsSvc := service.NewProjectService(store)

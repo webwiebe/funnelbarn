@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/XSAM/otelsql v0.42.0
+	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/aws/aws-sdk-go-v2 v1.41.12
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.22
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.103.2
@@ -12,6 +13,7 @@ require (
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/prometheus/client_golang v1.23.2
+	github.com/redis/go-redis/v9 v9.20.1
 	github.com/stretchr/testify v1.11.1
 	github.com/wiebe-xyz/bugbarn-go v0.0.0-00010101000000-000000000000
 	go.opentelemetry.io/contrib/bridges/otelslog v0.19.0
@@ -31,8 +33,6 @@ require (
 )
 
 require (
-	github.com/alicebob/miniredis/v2 v2.38.0 // indirect
-	github.com/redis/go-redis/v9 v9.20.1 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 )
