@@ -63,7 +63,7 @@ func (o OrphanCounts) Total() int64 {
 // CountOrphanedRows counts rows whose project_id matches no row in projects.
 // Foreign keys and a BEFORE-INSERT trigger both refuse these now, so a non-zero
 // result means a guard has been bypassed and is worth an alert, not a metric.
-func (s *Store) CountOrphanedRows(ctx context.Context) (OrphanCounts, error) {
+func (s *ReadStore) CountOrphanedRows(ctx context.Context) (OrphanCounts, error) {
 	const q = `
 		SELECT
 			(SELECT COUNT(*) FROM events   e WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = e.project_id)),
@@ -104,7 +104,7 @@ func (s *Store) InsertEvent(ctx context.Context, e Event) error {
 }
 
 // ListEvents returns a paginated list of events for a project.
-func (s *Store) ListEvents(ctx context.Context, projectID string, limit, offset int) ([]Event, error) {
+func (s *ReadStore) ListEvents(ctx context.Context, projectID string, limit, offset int) ([]Event, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -127,7 +127,7 @@ func (s *Store) ListEvents(ctx context.Context, projectID string, limit, offset 
 }
 
 // CountEvents returns the total event count for a project in a time range.
-func (s *Store) CountEvents(ctx context.Context, projectID string, from, to time.Time, env string) (int64, error) {
+func (s *ReadStore) CountEvents(ctx context.Context, projectID string, from, to time.Time, env string) (int64, error) {
 	const q = `SELECT COUNT(*) FROM events WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ? AND (? = '' OR environment = ?)`
 	var n int64
 	err := s.rdb.QueryRowContext(ctx, q, projectID, from, to, env, env).Scan(&n)
@@ -135,7 +135,7 @@ func (s *Store) CountEvents(ctx context.Context, projectID string, from, to time
 }
 
 // TopPages returns the most visited pages for a project in a time range.
-func (s *Store) TopPages(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]PageStat, error) {
+func (s *ReadStore) TopPages(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]PageStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -170,7 +170,7 @@ type PageStat struct {
 }
 
 // TopReferrers returns the most common referrer domains.
-func (s *Store) TopReferrers(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]ReferrerStat, error) {
+func (s *ReadStore) TopReferrers(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]ReferrerStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -205,7 +205,7 @@ type ReferrerStat struct {
 }
 
 // EventTimeSeries returns hourly event counts for a project over a time range.
-func (s *Store) EventTimeSeries(ctx context.Context, projectID string, from, to time.Time, env string) ([]TimeSeriesPoint, error) {
+func (s *ReadStore) EventTimeSeries(ctx context.Context, projectID string, from, to time.Time, env string) ([]TimeSeriesPoint, error) {
 	const q = `
 		SELECT substr(occurred_at, 1, 13) || ':00:00Z' as hour, COUNT(*) as count
 		FROM events
@@ -266,7 +266,7 @@ func topUTMColumn(ctx context.Context, db *sql.DB, projectID, column, env string
 }
 
 // TopUTMSources returns the most common UTM sources.
-func (s *Store) TopUTMSources(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
+func (s *ReadStore) TopUTMSources(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
 	return topUTMColumn(ctx, s.rdb, projectID, "utm_source", env, from, to, limit)
 }
 
@@ -277,7 +277,7 @@ type UTMStat struct {
 }
 
 // UniqueSessionCount returns distinct session IDs in a time range.
-func (s *Store) UniqueSessionCount(ctx context.Context, projectID string, from, to time.Time, env string) (int64, error) {
+func (s *ReadStore) UniqueSessionCount(ctx context.Context, projectID string, from, to time.Time, env string) (int64, error) {
 	const q = `
 		SELECT COUNT(DISTINCT session_id)
 		FROM events
@@ -288,7 +288,7 @@ func (s *Store) UniqueSessionCount(ctx context.Context, projectID string, from, 
 }
 
 // CountNewEvents returns new event count since a given time.
-func (s *Store) CountNewEvents(ctx context.Context, projectID string, since time.Time, env string) (int64, error) {
+func (s *ReadStore) CountNewEvents(ctx context.Context, projectID string, since time.Time, env string) (int64, error) {
 	const q = `SELECT COUNT(*) FROM events WHERE project_id = ? AND occurred_at >= ? AND (? = '' OR environment = ?)`
 	var n int64
 	err := s.rdb.QueryRowContext(ctx, q, projectID, since, env, env).Scan(&n)
@@ -296,7 +296,7 @@ func (s *Store) CountNewEvents(ctx context.Context, projectID string, since time
 }
 
 // GetEventByIngestID fetches an event by its ingest ID (idempotency check).
-func (s *Store) GetEventByIngestID(ctx context.Context, ingestID string) (*Event, error) {
+func (s *ReadStore) GetEventByIngestID(ctx context.Context, ingestID string) (*Event, error) {
 	const q = `
 		SELECT id, project_id, session_id, COALESCE(user_id_hash,''), name,
 			COALESCE(url,''), COALESCE(referrer,''), COALESCE(referrer_domain,''),
@@ -317,7 +317,7 @@ func (s *Store) GetEventByIngestID(ctx context.Context, ingestID string) (*Event
 }
 
 // TopBrowsers returns the most common browsers.
-func (s *Store) TopBrowsers(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]BrowserStat, error) {
+func (s *ReadStore) TopBrowsers(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]BrowserStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -352,7 +352,7 @@ type BrowserStat struct {
 }
 
 // TopDeviceTypes returns breakdown by device type.
-func (s *Store) TopDeviceTypes(ctx context.Context, projectID string, from, to time.Time, env string) ([]DeviceStat, error) {
+func (s *ReadStore) TopDeviceTypes(ctx context.Context, projectID string, from, to time.Time, env string) ([]DeviceStat, error) {
 	const q = `
 		SELECT COALESCE(device_type, 'unknown'), COUNT(*) as count
 		FROM events
@@ -383,7 +383,7 @@ type DeviceStat struct {
 }
 
 // TopEventNames returns the most frequent event names.
-func (s *Store) TopEventNames(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]EventNameStat, error) {
+func (s *ReadStore) TopEventNames(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]EventNameStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -418,7 +418,7 @@ type EventNameStat struct {
 }
 
 // TopCountries returns breakdown by country code.
-func (s *Store) TopCountries(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]CountryStat, error) {
+func (s *ReadStore) TopCountries(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]CountryStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -453,7 +453,7 @@ type CountryStat struct {
 }
 
 // TopOSSystems returns breakdown by operating system.
-func (s *Store) TopOSSystems(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]OSStat, error) {
+func (s *ReadStore) TopOSSystems(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]OSStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -488,17 +488,17 @@ type OSStat struct {
 }
 
 // TopUTMCampaigns returns breakdown by UTM campaign.
-func (s *Store) TopUTMCampaigns(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
+func (s *ReadStore) TopUTMCampaigns(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
 	return topUTMColumn(ctx, s.rdb, projectID, "utm_campaign", env, from, to, limit)
 }
 
 // TopUTMMediums returns breakdown by UTM medium.
-func (s *Store) TopUTMMediums(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
+func (s *ReadStore) TopUTMMediums(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
 	return topUTMColumn(ctx, s.rdb, projectID, "utm_medium", env, from, to, limit)
 }
 
 // DailyEventCounts returns daily event counts for a project over a time range.
-func (s *Store) DailyEventCounts(ctx context.Context, projectID string, from, to time.Time, env string) ([]TimeSeriesPoint, error) {
+func (s *ReadStore) DailyEventCounts(ctx context.Context, projectID string, from, to time.Time, env string) ([]TimeSeriesPoint, error) {
 	const q = `
 		SELECT substr(occurred_at, 1, 10) as day, COUNT(*) as count
 		FROM events
@@ -523,7 +523,7 @@ func (s *Store) DailyEventCounts(ctx context.Context, projectID string, from, to
 }
 
 // HourlyEventCounts returns hourly event counts for a project over a time range.
-func (s *Store) HourlyEventCounts(ctx context.Context, projectID string, from, to time.Time, env string) ([]TimeSeriesPoint, error) {
+func (s *ReadStore) HourlyEventCounts(ctx context.Context, projectID string, from, to time.Time, env string) ([]TimeSeriesPoint, error) {
 	const q = `
 		SELECT substr(occurred_at, 1, 13) || ':00:00' as hour, COUNT(*) as count
 		FROM events
@@ -548,7 +548,7 @@ func (s *Store) HourlyEventCounts(ctx context.Context, projectID string, from, t
 }
 
 // BounceRate computes the fraction of sessions with only 1 event.
-func (s *Store) BounceRate(ctx context.Context, projectID string, from, to time.Time, env string) (float64, error) {
+func (s *ReadStore) BounceRate(ctx context.Context, projectID string, from, to time.Time, env string) (float64, error) {
 	const q = `
 		WITH session_counts AS (
 			SELECT session_id, COUNT(*) as cnt
@@ -572,7 +572,7 @@ func (s *Store) BounceRate(ctx context.Context, projectID string, from, to time.
 }
 
 // AvgEventsPerSession computes average events per session.
-func (s *Store) AvgEventsPerSession(ctx context.Context, projectID string, from, to time.Time, env string) (float64, error) {
+func (s *ReadStore) AvgEventsPerSession(ctx context.Context, projectID string, from, to time.Time, env string) (float64, error) {
 	const q = `
 		WITH session_counts AS (
 			SELECT session_id, COUNT(*) as cnt
@@ -593,7 +593,7 @@ func (s *Store) AvgEventsPerSession(ctx context.Context, projectID string, from,
 }
 
 // DailyUniqueSessions returns daily unique session counts.
-func (s *Store) DailyUniqueSessions(ctx context.Context, projectID string, from, to time.Time, env string) ([]TimeSeriesPoint, error) {
+func (s *ReadStore) DailyUniqueSessions(ctx context.Context, projectID string, from, to time.Time, env string) ([]TimeSeriesPoint, error) {
 	const q = `
 		SELECT substr(occurred_at, 1, 10) as day, COUNT(DISTINCT session_id) as count
 		FROM events
@@ -618,7 +618,7 @@ func (s *Store) DailyUniqueSessions(ctx context.Context, projectID string, from,
 }
 
 // DistinctEventNames returns all unique event names for a project (for autocomplete).
-func (s *Store) DistinctEventNames(ctx context.Context, projectID string) ([]string, error) {
+func (s *ReadStore) DistinctEventNames(ctx context.Context, projectID string) ([]string, error) {
 	const q = `SELECT DISTINCT name FROM events WHERE project_id = ? ORDER BY name`
 	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
@@ -639,7 +639,7 @@ func (s *Store) DistinctEventNames(ctx context.Context, projectID string) ([]str
 
 // DistinctEventProperties returns all unique JSON property keys used by events
 // with the given name for a project.
-func (s *Store) DistinctEventProperties(ctx context.Context, projectID, eventName string) ([]string, error) {
+func (s *ReadStore) DistinctEventProperties(ctx context.Context, projectID, eventName string) ([]string, error) {
 	const q = `
 		SELECT DISTINCT j.key
 		FROM events e, json_each(e.properties) j
@@ -664,7 +664,7 @@ func (s *Store) DistinctEventProperties(ctx context.Context, projectID, eventNam
 
 // DistinctPropertyValues returns up to `limit` unique values for a JSON
 // property key on events with the given name for a project.
-func (s *Store) DistinctPropertyValues(ctx context.Context, projectID, eventName, property string, limit int) ([]string, error) {
+func (s *ReadStore) DistinctPropertyValues(ctx context.Context, projectID, eventName, property string, limit int) ([]string, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -695,7 +695,7 @@ func (s *Store) DistinctPropertyValues(ctx context.Context, projectID, eventName
 
 // PopulatedMetadataColumns returns only metadata columns that have at least
 // one non-empty value for the given project and event name.
-func (s *Store) PopulatedMetadataColumns(ctx context.Context, projectID, eventName string) ([]string, error) {
+func (s *ReadStore) PopulatedMetadataColumns(ctx context.Context, projectID, eventName string) ([]string, error) {
 	q := `SELECT `
 	for i, col := range metadataColumns {
 		if i > 0 {
@@ -728,12 +728,12 @@ func (s *Store) PopulatedMetadataColumns(ctx context.Context, projectID, eventNa
 }
 
 // TopOS is an alias for TopOSSystems kept for backward compatibility in tests.
-func (s *Store) TopOS(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]OSStat, error) {
+func (s *ReadStore) TopOS(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]OSStat, error) {
 	return s.TopOSSystems(ctx, projectID, from, to, limit, env)
 }
 
 // DistinctEnvironments returns the canonical environment values recorded for a project.
-func (s *Store) DistinctEnvironments(ctx context.Context, projectID string) ([]string, error) {
+func (s *ReadStore) DistinctEnvironments(ctx context.Context, projectID string) ([]string, error) {
 	const q = `SELECT DISTINCT environment FROM events WHERE project_id = ? AND environment != '' ORDER BY environment`
 	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
@@ -772,7 +772,7 @@ func scanEvents(rows *sql.Rows) ([]Event, error) {
 
 // SessionsForPage returns distinct session IDs that have at least one event
 // with the given URL within the time range. Used to link flow nodes to recordings.
-func (s *Store) SessionsForPage(ctx context.Context, projectID, page string, from, to time.Time, limit int) ([]string, error) {
+func (s *ReadStore) SessionsForPage(ctx context.Context, projectID, page string, from, to time.Time, limit int) ([]string, error) {
 	if limit <= 0 {
 		limit = 100
 	}

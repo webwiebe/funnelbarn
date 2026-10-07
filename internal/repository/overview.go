@@ -19,7 +19,7 @@ type ProjectRollup struct {
 }
 
 // ProjectRollups returns one summary row per project that has events in range.
-func (s *Store) ProjectRollups(ctx context.Context, from, to time.Time, env string) ([]ProjectRollup, error) {
+func (s *ReadStore) ProjectRollups(ctx context.Context, from, to time.Time, env string) ([]ProjectRollup, error) {
 	const q = `
 		SELECT project_id, COUNT(*) AS events, COUNT(DISTINCT session_id) AS sessions
 		FROM events
@@ -44,7 +44,7 @@ func (s *Store) ProjectRollups(ctx context.Context, from, to time.Time, env stri
 }
 
 // OverviewTotals returns instance-wide event and unique-session counts in range.
-func (s *Store) OverviewTotals(ctx context.Context, from, to time.Time, env string) (events, sessions int64, err error) {
+func (s *ReadStore) OverviewTotals(ctx context.Context, from, to time.Time, env string) (events, sessions int64, err error) {
 	const q = `
 		SELECT COUNT(*), COUNT(DISTINCT session_id)
 		FROM events
@@ -64,7 +64,7 @@ type ProjectDayCount struct {
 
 // OverviewVisitorsByProject returns unique sessions grouped by project and time
 // bucket (hourly or daily), feeding the "visitors per site" multi-line chart.
-func (s *Store) OverviewVisitorsByProject(ctx context.Context, from, to time.Time, env string, hourly bool) ([]ProjectDayCount, error) {
+func (s *ReadStore) OverviewVisitorsByProject(ctx context.Context, from, to time.Time, env string, hourly bool) ([]ProjectDayCount, error) {
 	bucket := `substr(occurred_at, 1, 10)`
 	if hourly {
 		bucket = `replace(substr(occurred_at, 1, 13), ' ', 'T') || ':00:00Z'`
@@ -101,7 +101,7 @@ type OverviewPageStat struct {
 
 // OverviewTopPages returns the most-viewed pages across all projects, each row
 // attributed to its project for drill-down.
-func (s *Store) OverviewTopPages(ctx context.Context, from, to time.Time, limit int, env string) ([]OverviewPageStat, error) {
+func (s *ReadStore) OverviewTopPages(ctx context.Context, from, to time.Time, limit int, env string) ([]OverviewPageStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -138,7 +138,7 @@ type OverviewReferrerStat struct {
 
 // OverviewTopReferrers returns the most common referrer domains across all
 // projects, attributed to project for drill-down.
-func (s *Store) OverviewTopReferrers(ctx context.Context, from, to time.Time, limit int, env string) ([]OverviewReferrerStat, error) {
+func (s *ReadStore) OverviewTopReferrers(ctx context.Context, from, to time.Time, limit int, env string) ([]OverviewReferrerStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -174,7 +174,7 @@ type OverviewCountryStat struct {
 }
 
 // OverviewTopCountries returns visitor counts by country across all projects.
-func (s *Store) OverviewTopCountries(ctx context.Context, from, to time.Time, limit int, env string) ([]OverviewCountryStat, error) {
+func (s *ReadStore) OverviewTopCountries(ctx context.Context, from, to time.Time, limit int, env string) ([]OverviewCountryStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -222,7 +222,7 @@ type DimensionStat struct {
 // OverviewDimensionBreakdown returns instance-wide counts grouped by one
 // whitelisted dimension (device/country/browser/os/referrer/utm_source),
 // powering the "visitors per type" view. Unknown dimensions return nil.
-func (s *Store) OverviewDimensionBreakdown(ctx context.Context, dimension string, from, to time.Time, limit int, env string) ([]DimensionStat, error) {
+func (s *ReadStore) OverviewDimensionBreakdown(ctx context.Context, dimension string, from, to time.Time, limit int, env string) ([]DimensionStat, error) {
 	col, ok := overviewDimensionColumns[dimension]
 	if !ok {
 		return nil, fmt.Errorf("unsupported dimension %q", dimension)
@@ -267,7 +267,7 @@ type EventFilter struct {
 
 // ListAllEvents returns events across all projects, newest first, using keyset
 // pagination on (occurred_at, id) so deep pages don't degrade into full scans.
-func (s *Store) ListAllEvents(ctx context.Context, f EventFilter, limit int) ([]Event, error) {
+func (s *ReadStore) ListAllEvents(ctx context.Context, f EventFilter, limit int) ([]Event, error) {
 	if limit <= 0 {
 		limit = 50
 	}

@@ -37,7 +37,7 @@ type PageFlowResult struct {
 // PageFlows returns a Sankey flow graph centered on the given page within the
 // time range. If page is empty the most-visited page is used. depth controls
 // how many hops before and after the focused page are included (max 10).
-func (s *Store) PageFlows(ctx context.Context, projectID, page string, depth int, from, to time.Time, env string) (PageFlowResult, error) {
+func (s *ReadStore) PageFlows(ctx context.Context, projectID, page string, depth int, from, to time.Time, env string) (PageFlowResult, error) {
 	ctx, span := tracing.StartSpan(ctx, "repository.PageFlows",
 		attribute.String("project.id", projectID),
 		attribute.String("page", page),
@@ -106,7 +106,7 @@ type flowEntryReferrer struct {
 	Sessions int64
 }
 
-func (s *Store) flowTotalSessions(ctx context.Context, projectID, page string, from, to time.Time, env string) (int64, error) {
+func (s *ReadStore) flowTotalSessions(ctx context.Context, projectID, page string, from, to time.Time, env string) (int64, error) {
 	ctx, span := tracing.StartSpan(ctx, "repository.flows.totalSessions")
 	defer span.End()
 
@@ -126,7 +126,7 @@ WHERE project_id = ?
 	return n, err
 }
 
-func (s *Store) flowTransitions(ctx context.Context, projectID, page string, depth int, from, to time.Time, env string) ([]flowTransition, error) {
+func (s *ReadStore) flowTransitions(ctx context.Context, projectID, page string, depth int, from, to time.Time, env string) ([]flowTransition, error) {
 	ctx, span := tracing.StartSpan(ctx, "repository.flows.transitions",
 		attribute.Int("depth", depth),
 	)
@@ -186,7 +186,7 @@ LIMIT 500`, depth, depth)
 	return out, nil
 }
 
-func (s *Store) flowExitCount(ctx context.Context, projectID, page string, from, to time.Time, env string) (int64, error) {
+func (s *ReadStore) flowExitCount(ctx context.Context, projectID, page string, from, to time.Time, env string) (int64, error) {
 	ctx, span := tracing.StartSpan(ctx, "repository.flows.exitCount")
 	defer span.End()
 
@@ -220,7 +220,7 @@ WHERE nxt.session_id IS NULL`
 	return n, err
 }
 
-func (s *Store) flowEntryReferrers(ctx context.Context, projectID, page string, from, to time.Time, env string) ([]flowEntryReferrer, error) {
+func (s *ReadStore) flowEntryReferrers(ctx context.Context, projectID, page string, from, to time.Time, env string) ([]flowEntryReferrer, error) {
 	ctx, span := tracing.StartSpan(ctx, "repository.flows.entryReferrers")
 	defer span.End()
 
