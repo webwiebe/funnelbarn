@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 
 func newTestStore(t *testing.T) *repository.Store {
 	t.Helper()
-	s, err := repository.Open(":memory:")
+	s, err := repository.Open(filepath.Join(t.TempDir(), "test.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return s

@@ -8,6 +8,7 @@ internal/apierr	100
 internal/archtest	88
 internal/auth	80
 internal/bblog	94
+internal/command	93
 internal/config	77
 internal/domain	100
 internal/enrich	91

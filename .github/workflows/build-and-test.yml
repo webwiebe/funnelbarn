@@ -221,6 +221,54 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  post-deploy-testing:
+    # Latency probe against the freshly deployed testing environment: one
+    # evaluate request per second for three minutes, p99 under 100ms. The daily
+    # maintenance purge once held the single SQLite connection for ~11s and
+    # stalled evaluate for 4-6s; this fails if that comes back.
+    #
+    # A `secrets` context is not available in a job-level `if`, so the job
+    # always runs and the first step decides whether the probe credentials
+    # exist. Without them the job skips with a notice and succeeds. It is not in
+    # deploy-staging's needs, so it does not gate staging.
+    needs: [build, deploy]
+    runs-on: [self-hosted, build]
+    timeout-minutes: 10
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - name: Check probe credentials
+        id: creds
+        env:
+          PROBE_API_KEY: ${{ secrets.FUNNELBARN_TESTING_PROBE_API_KEY }}
+          PROBE_FLAG_KEY: ${{ secrets.FUNNELBARN_TESTING_PROBE_FLAG_KEY }}
+        run: |
+          if [ -z "${PROBE_API_KEY}" ] || [ -z "${PROBE_FLAG_KEY}" ]; then
+            echo "::notice::post-deploy-testing skipped: FUNNELBARN_TESTING_PROBE_API_KEY and FUNNELBARN_TESTING_PROBE_FLAG_KEY are not set"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.creds.outputs.enabled == 'true'
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+
+      - name: Probe testing latency
+        if: steps.creds.outputs.enabled == 'true'
+        env:
+          PROBE_API_KEY: ${{ secrets.FUNNELBARN_TESTING_PROBE_API_KEY }}
+          PROBE_FLAG_KEY: ${{ secrets.FUNNELBARN_TESTING_PROBE_FLAG_KEY }}
+          SPANBARN_URL: ${{ secrets.SPANBARN_URL }}
+          SPANBARN_TOKEN: ${{ secrets.SPANBARN_TOKEN }}
+        run: |
+          timeout 400 scripts/verify-testing.sh \
+            https://funnelbarn.test.wiebe.xyz \
+            "${PROBE_API_KEY}" \
+            "${PROBE_FLAG_KEY}"
+
   deploy-staging:
     # `needs: e2e`, not `needs: deploy`. These two used to be siblings, so
     # Playwright ran in PARALLEL with the staging rollout and an E2E failure

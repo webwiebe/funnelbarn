@@ -29,7 +29,7 @@ type ProjectRecordingSettings struct {
 func (s *Store) GetProjectRecordingSettings(ctx context.Context, projectID string) (*ProjectRecordingSettings, error) {
 	const q = `SELECT enabled, sample_rate, rules, updated_at
                FROM project_recording_settings WHERE project_id = ?`
-	row := s.db.QueryRowContext(ctx, q, projectID)
+	row := s.rdb.QueryRowContext(ctx, q, projectID)
 
 	var enabledInt sql.NullInt64
 	var sampleRate sql.NullFloat64

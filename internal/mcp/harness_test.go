@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -39,7 +40,7 @@ type testEnv struct {
 // non-nil, can adjust Deps before the server is built.
 func newTestEnv(t *testing.T, mutate func(*Deps)) *testEnv {
 	t.Helper()
-	store, err := repository.Open(":memory:")
+	store, err := repository.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("repository.Open: %v", err)
 	}

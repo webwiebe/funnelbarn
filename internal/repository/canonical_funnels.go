@@ -79,7 +79,7 @@ func (s *Store) CreateCanonicalFunnel(ctx context.Context, f CanonicalFunnel) (C
 	if err := tx.Commit(); err != nil {
 		return CanonicalFunnel{}, err
 	}
-	return s.CanonicalFunnelByID(ctx, f.ID)
+	return s.canonicalFunnelByID(ctx, s.db, f.ID)
 }
 
 // insertCanonicalSteps writes ordered steps for a canonical funnel within a tx.
@@ -104,16 +104,21 @@ func insertCanonicalSteps(ctx context.Context, tx *sql.Tx, funnelID string, step
 // CanonicalFunnelByID fetches a canonical funnel with its steps (step labels are
 // resolved from the canonical_events catalog).
 func (s *Store) CanonicalFunnelByID(ctx context.Context, id string) (CanonicalFunnel, error) {
+	return s.canonicalFunnelByID(ctx, s.rdb, id)
+}
+
+// canonicalFunnelByID reads through db, so write paths can read back on the write pool.
+func (s *Store) canonicalFunnelByID(ctx context.Context, db querier, id string) (CanonicalFunnel, error) {
 	const qf = `SELECT id, name, COALESCE(description,''), COALESCE(scope,'session'), COALESCE(project_ids,'[]'), COALESCE(segment,''), created_at FROM canonical_funnels WHERE id = ?`
 	var f CanonicalFunnel
 	var projectIDsJSON string
-	if err := s.db.QueryRowContext(ctx, qf, id).Scan(&f.ID, &f.Name, &f.Description, &f.Scope, &projectIDsJSON, &f.Segment, &f.CreatedAt); err != nil {
+	if err := db.QueryRowContext(ctx, qf, id).Scan(&f.ID, &f.Name, &f.Description, &f.Scope, &projectIDsJSON, &f.Segment, &f.CreatedAt); err != nil {
 		return CanonicalFunnel{}, err
 	}
 	if err := json.Unmarshal([]byte(projectIDsJSON), &f.ProjectIDs); err != nil {
 		slog.WarnContext(ctx, "canonical funnel: malformed project_ids JSON", "funnel_id", f.ID, "raw_len", len(projectIDsJSON), "error", err)
 	}
-	steps, err := s.canonicalFunnelSteps(ctx, id)
+	steps, err := s.canonicalFunnelSteps(ctx, db, id)
 	if err != nil {
 		return CanonicalFunnel{}, err
 	}
@@ -124,7 +129,7 @@ func (s *Store) CanonicalFunnelByID(ctx context.Context, id string) (CanonicalFu
 // ListCanonicalFunnels returns all canonical funnels with their steps.
 func (s *Store) ListCanonicalFunnels(ctx context.Context) ([]CanonicalFunnel, error) {
 	const q = `SELECT id, name, COALESCE(description,''), COALESCE(scope,'session'), COALESCE(project_ids,'[]'), COALESCE(segment,''), created_at FROM canonical_funnels ORDER BY created_at`
-	rows, err := s.db.QueryContext(ctx, q)
+	rows, err := s.rdb.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +150,7 @@ func (s *Store) ListCanonicalFunnels(ctx context.Context) ([]CanonicalFunnel, er
 		return nil, err
 	}
 	for i := range funnels {
-		steps, err := s.canonicalFunnelSteps(ctx, funnels[i].ID)
+		steps, err := s.canonicalFunnelSteps(ctx, s.rdb, funnels[i].ID)
 		if err != nil {
 			return nil, err
 		}
@@ -184,7 +189,7 @@ func (s *Store) UpdateCanonicalFunnel(ctx context.Context, f CanonicalFunnel) (C
 	if err := tx.Commit(); err != nil {
 		return CanonicalFunnel{}, err
 	}
-	return s.CanonicalFunnelByID(ctx, f.ID)
+	return s.canonicalFunnelByID(ctx, s.db, f.ID)
 }
 
 // DeleteCanonicalFunnel removes a canonical funnel and its steps (cascade).
@@ -195,14 +200,14 @@ func (s *Store) DeleteCanonicalFunnel(ctx context.Context, id string) error {
 
 // canonicalFunnelSteps returns steps ordered by step_order, resolving each
 // canonical key's label from the catalog.
-func (s *Store) canonicalFunnelSteps(ctx context.Context, funnelID string) ([]CanonicalFunnelStep, error) {
+func (s *Store) canonicalFunnelSteps(ctx context.Context, db querier, funnelID string) ([]CanonicalFunnelStep, error) {
 	const q = `
 		SELECT st.step_order, st.canonical_key, COALESCE(ce.label, st.canonical_key)
 		FROM canonical_funnel_steps st
 		LEFT JOIN canonical_events ce ON ce.key = st.canonical_key
 		WHERE st.funnel_id = ?
 		ORDER BY st.step_order`
-	rows, err := s.db.QueryContext(ctx, q, funnelID)
+	rows, err := db.QueryContext(ctx, q, funnelID)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +355,7 @@ func (s *Store) AnalyzeCanonicalFunnel(ctx context.Context, f CanonicalFunnel, p
 			args = append(args, extraArgs...)
 
 			var n int64
-			if err := s.db.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
+			if err := s.rdb.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
 				return result, fmt.Errorf("analyze canonical step %d (project %s): %w", i, pid, err)
 			}
 			stepCounts[i] = n

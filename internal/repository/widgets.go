@@ -54,13 +54,17 @@ func (s *Store) CreateWidget(ctx context.Context, w DashboardWidget) (DashboardW
 		return DashboardWidget{}, fmt.Errorf("insert widget: %w", err)
 	}
 
-	return s.WidgetByID(ctx, w.ID)
+	return s.widgetByID(ctx, s.db, w.ID)
 }
 
 func (s *Store) WidgetByID(ctx context.Context, id string) (DashboardWidget, error) {
+	return s.widgetByID(ctx, s.rdb, id)
+}
+
+func (s *Store) widgetByID(ctx context.Context, db querier, id string) (DashboardWidget, error) {
 	const q = `SELECT id, project_id, event_name, property, COALESCE(title,''), position, size, created_at FROM dashboard_widgets WHERE id = ?`
 	var w DashboardWidget
-	if err := s.db.QueryRowContext(ctx, q, id).Scan(&w.ID, &w.ProjectID, &w.EventName, &w.Property, &w.Title, &w.Position, &w.Size, &w.CreatedAt); err != nil {
+	if err := db.QueryRowContext(ctx, q, id).Scan(&w.ID, &w.ProjectID, &w.EventName, &w.Property, &w.Title, &w.Position, &w.Size, &w.CreatedAt); err != nil {
 		return DashboardWidget{}, err
 	}
 	return w, nil
@@ -68,7 +72,7 @@ func (s *Store) WidgetByID(ctx context.Context, id string) (DashboardWidget, err
 
 func (s *Store) ListWidgets(ctx context.Context, projectID string) ([]DashboardWidget, error) {
 	const q = `SELECT id, project_id, event_name, property, COALESCE(title,''), position, size, created_at FROM dashboard_widgets WHERE project_id = ? ORDER BY position, created_at`
-	rows, err := s.db.QueryContext(ctx, q, projectID)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +97,7 @@ func (s *Store) UpdateWidget(ctx context.Context, w DashboardWidget) (DashboardW
 	if _, err := s.db.ExecContext(ctx, q, w.EventName, w.Property, w.Title, w.Position, w.Size, w.ID); err != nil {
 		return DashboardWidget{}, fmt.Errorf("update widget: %w", err)
 	}
-	return s.WidgetByID(ctx, w.ID)
+	return s.widgetByID(ctx, s.db, w.ID)
 }
 
 func (s *Store) DeleteWidget(ctx context.Context, id string) error {
@@ -148,7 +152,7 @@ func (s *Store) WidgetBreakdown(ctx context.Context, projectID, eventName, prope
 			LIMIT ?`, property)
 	}
 
-	rows, err := s.db.QueryContext(ctx, q, projectID, eventName, window, limit)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, eventName, window, limit)
 	if err != nil {
 		return nil, fmt.Errorf("widget breakdown: %w", err)
 	}
@@ -168,7 +172,7 @@ func (s *Store) WidgetBreakdown(ctx context.Context, projectID, eventName, prope
 func (s *Store) widgetCount(ctx context.Context, projectID, eventName string, window int) ([]PropertyBreakdown, error) {
 	const q = `SELECT COUNT(*) FROM (SELECT 1 FROM events WHERE project_id = ? AND name = ? ORDER BY occurred_at DESC LIMIT ?)`
 	var count int64
-	if err := s.db.QueryRowContext(ctx, q, projectID, eventName, window).Scan(&count); err != nil {
+	if err := s.rdb.QueryRowContext(ctx, q, projectID, eventName, window).Scan(&count); err != nil {
 		return nil, fmt.Errorf("widget count: %w", err)
 	}
 	return []PropertyBreakdown{{Value: "_total", Count: count}}, nil

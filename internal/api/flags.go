@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,7 +10,6 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -285,18 +283,17 @@ func (s *Server) handleFlagAnalysis(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleEvaluateFlag(w http.ResponseWriter, r *http.Request) {
+	// One wait sum for the whole request, so the API key touch, the health mark
+	// and the evaluation's own commands all count toward the slow-evaluate check.
+	ctx, _ := service.WithSubmitWait(r.Context())
+	r = r.WithContext(ctx)
 	projectID, _, ok := s.ingest.APIKeyProjectScope(r)
 	if !ok {
 		jsonError(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	if s.projectHealth != nil {
-		pid := projectID
-		bblog.Go("flags-health", func() {
-			if err := s.projectHealth.MarkFlagsEvaluated(context.Background(), pid); err != nil {
-				slog.Warn("evaluate flag: mark health", "project_id", pid, "err", err)
-			}
-		})
+		s.markFlagsEvaluated(r.Context(), projectID)
 	}
 	// SDK callers auto-register unknown flags so they surface in the dashboard.
 	s.evaluateFlagInProject(w, r, projectID, true)
@@ -345,8 +342,11 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 	defer span.End()
 
 	evalStart := time.Now()
+	ctx, submitWait := service.WithSubmitWait(ctx)
+	poolWait := s.currentReadPoolWait()
 	defer func() {
 		metrics.FlagEvaluationDuration.Observe(time.Since(evalStart).Seconds())
+		s.reportEvaluate(ctx, span, projectID, body.FlagKey, time.Since(evalStart), submitWait.Total(), s.currentReadPoolWait()-poolWait)
 	}()
 
 	var result service.FlagEvalResult

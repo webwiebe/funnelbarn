@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -79,7 +80,8 @@ func defaultGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 	t.Helper()
 	store := deps.Store
 	sp := newTestSpool(t)
-	authz := auth.New("").WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
+	commands := newTestDispatcher(t, store)
+	authz := auth.New("").WithDBLookup(store.ValidAPIKeySHA256, dispatcherTouch(commands, store))
 	ingestHandler := ingest.NewHandler(authz, sp, 0)
 	healthSvc := service.NewProjectHealthService(store)
 	// Same wiring as cmd/funnelbarn: an accepted ingest request flips the
@@ -95,7 +97,9 @@ func defaultGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 		Projects:            service.NewProjectService(store),
 		Funnels:             service.NewFunnelService(store),
 		ABTests:             service.NewABTestService(store),
-		Flags:               service.NewFlagService(store),
+		Flags:               service.NewFlagService(store).WithCommands(commands),
+		Commands:            commands,
+		ReadPoolWait:        func() time.Duration { return store.ReadDB().Stats().WaitDuration },
 		Events:              service.NewEventService(store),
 		Overview:            service.NewOverviewService(store),
 		Sessions:            service.NewSessionService(store),
@@ -131,6 +135,33 @@ func defaultGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 	return goldenTarget{
 		Handler: srv, Session: cookie, CSRF: srv.sessionManager.CSRFToken(cookie.Value),
 		Spare: spare, SpareCSRF: srv.sessionManager.CSRFToken(spare.Value),
+		Flush: commands.Flush,
+	}
+}
+
+// newTestDispatcher starts a command dispatcher on store the way
+// cmd/funnelbarn does and closes it when the test ends. Cleanups run last-in
+// first-out, so it drains before the store's own Close cleanup.
+func newTestDispatcher(t *testing.T, store *repository.Store) *command.Dispatcher {
+	t.Helper()
+	d := command.New(command.Options{})
+	d.Start(context.Background())
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := d.Close(ctx); err != nil {
+			t.Errorf("command dispatcher Close: %v", err)
+		}
+	})
+	return d
+}
+
+// dispatcherTouch is the DBKeyTouch cmd/funnelbarn builds: a queued
+// TouchAPIKey command.
+func dispatcherTouch(d *command.Dispatcher, store *repository.Store) auth.DBKeyTouch {
+	return func(ctx context.Context, keySHA256 string) error {
+		service.AddSubmitWait(ctx, d.Submit(ctx, command.TouchAPIKey{Store: store, KeyHash: keySHA256}))
+		return nil
 	}
 }
 

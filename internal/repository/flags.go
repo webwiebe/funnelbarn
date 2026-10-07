@@ -115,7 +115,7 @@ func (s *Store) CreateFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, err
 	); err != nil {
 		return FeatureFlag{}, fmt.Errorf("create flag: %w", err)
 	}
-	return s.FlagByID(ctx, f.ID)
+	return s.flagByID(ctx, s.db, f.ID)
 }
 
 // EnsureAutoFlag inserts an auto-created flag if no flag with the same
@@ -153,7 +153,7 @@ func (s *Store) EnsureAutoFlag(ctx context.Context, f FeatureFlag) (FeatureFlag,
 func (s *Store) CountAutoFlags(ctx context.Context, projectID string) (int, error) {
 	const q = `SELECT COUNT(*) FROM feature_flags WHERE project_id = ? AND origin = 'auto'`
 	var n int
-	if err := s.db.QueryRowContext(ctx, q, projectID).Scan(&n); err != nil {
+	if err := s.rdb.QueryRowContext(ctx, q, projectID).Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -185,18 +185,23 @@ func (s *Store) PurgeStaleAutoFlags(ctx context.Context, cutoff time.Time) (int6
 }
 
 func (s *Store) FlagByID(ctx context.Context, id string) (FeatureFlag, error) {
+	return s.flagByID(ctx, s.rdb, id)
+}
+
+// flagByID reads through db, so write paths can read back on the write pool.
+func (s *Store) flagByID(ctx context.Context, db querier, id string) (FeatureFlag, error) {
 	q := `SELECT ` + flagColumns + ` FROM feature_flags WHERE id = ?`
-	return scanFlag(s.db.QueryRowContext(ctx, q, id))
+	return scanFlag(db.QueryRowContext(ctx, q, id))
 }
 
 func (s *Store) FlagByKey(ctx context.Context, projectID, flagKey string) (FeatureFlag, error) {
 	q := `SELECT ` + flagColumns + ` FROM feature_flags WHERE project_id = ? AND flag_key = ?`
-	return scanFlag(s.db.QueryRowContext(ctx, q, projectID, flagKey))
+	return scanFlag(s.rdb.QueryRowContext(ctx, q, projectID, flagKey))
 }
 
 func (s *Store) ListFlags(ctx context.Context, projectID string) ([]FeatureFlag, error) {
 	q := `SELECT ` + flagColumns + ` FROM feature_flags WHERE project_id = ? ORDER BY created_at DESC`
-	rows, err := s.db.QueryContext(ctx, q, projectID)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +234,7 @@ func (s *Store) UpdateFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, err
 	); err != nil {
 		return FeatureFlag{}, fmt.Errorf("update flag: %w", err)
 	}
-	return s.FlagByID(ctx, f.ID)
+	return s.flagByID(ctx, s.db, f.ID)
 }
 
 func (s *Store) DeleteFlag(ctx context.Context, id string) error {
@@ -274,7 +279,7 @@ func (s *Store) FlagContextKeySuggestions(ctx context.Context, projectID string)
 		FROM key_counts kc, total t
 		ORDER BY kc.seen_count DESC
 		LIMIT 20`
-	rows, err := s.db.QueryContext(ctx, q, projectID, projectID)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +297,7 @@ func (s *Store) FlagContextKeySuggestions(ctx context.Context, projectID string)
 
 func (s *Store) CountEvaluationsByVariant(ctx context.Context, flagID string, from, to time.Time) (map[string]int64, error) {
 	const q = `SELECT variant, COUNT(DISTINCT context_hash) FROM flag_evaluations WHERE flag_id = ? AND created_at >= ? AND created_at <= ? GROUP BY variant`
-	rows, err := s.db.QueryContext(ctx, q, flagID, from, to)
+	rows, err := s.rdb.QueryContext(ctx, q, flagID, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -310,14 +315,6 @@ func (s *Store) CountEvaluationsByVariant(ctx context.Context, flagID string, fr
 	return result, rows.Err()
 }
 
-func (s *Store) PurgeOldEvaluations(ctx context.Context, cutoff time.Time) (int64, error) {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM flag_evaluations WHERE created_at < ?`, cutoff)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
 func (s *Store) CountConversionsByVariant(ctx context.Context, flagID, conversionEvent, projectID string, from, to time.Time) (map[string]int64, error) {
 	const q = `
 		SELECT fe.variant, COUNT(DISTINCT fe.context_hash)
@@ -326,7 +323,7 @@ func (s *Store) CountConversionsByVariant(ctx context.Context, flagID, conversio
 		WHERE fe.flag_id = ? AND e.name = ? AND e.project_id = ?
 		  AND fe.created_at >= ? AND fe.created_at <= ?
 		GROUP BY fe.variant`
-	rows, err := s.db.QueryContext(ctx, q, flagID, conversionEvent, projectID, from, to)
+	rows, err := s.rdb.QueryContext(ctx, q, flagID, conversionEvent, projectID, from, to)
 	if err != nil {
 		return nil, err
 	}

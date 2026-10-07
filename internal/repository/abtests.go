@@ -49,18 +49,23 @@ func (s *Store) CreateABTest(ctx context.Context, t ABTest) (ABTest, error) {
 	); err != nil {
 		return ABTest{}, fmt.Errorf("create ab_test: %w", err)
 	}
-	return s.ABTestByID(ctx, t.ID)
+	return s.abTestByID(ctx, s.db, t.ID)
 }
 
 // ABTestByID fetches a single A/B test.
 func (s *Store) ABTestByID(ctx context.Context, id string) (ABTest, error) {
+	return s.abTestByID(ctx, s.rdb, id)
+}
+
+// abTestByID reads through db, so write paths can read back on the write pool.
+func (s *Store) abTestByID(ctx context.Context, db querier, id string) (ABTest, error) {
 	const q = `
 		SELECT id, project_id, name, status,
 		       COALESCE(control_filter,''), COALESCE(variant_filter,''),
 		       conversion_event, created_at
 		FROM ab_tests WHERE id = ?`
 	var t ABTest
-	err := s.db.QueryRowContext(ctx, q, id).Scan(
+	err := db.QueryRowContext(ctx, q, id).Scan(
 		&t.ID, &t.ProjectID, &t.Name, &t.Status,
 		&t.ControlFilter, &t.VariantFilter,
 		&t.ConversionEvent, &t.CreatedAt,
@@ -78,7 +83,7 @@ func (s *Store) ListABTests(ctx context.Context, projectID string) ([]ABTest, er
 		       COALESCE(control_filter,''), COALESCE(variant_filter,''),
 		       conversion_event, created_at
 		FROM ab_tests WHERE project_id = ? ORDER BY created_at DESC`
-	rows, err := s.db.QueryContext(ctx, q, projectID)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -149,14 +154,14 @@ func (s *Store) countSessionsWithFilter(ctx context.Context, projectID string, f
 	if f.Property == "" {
 		const q = `SELECT COUNT(DISTINCT session_id) FROM events WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?`
 		var n int64
-		return n, s.db.QueryRowContext(ctx, q, projectID, from, to).Scan(&n)
+		return n, s.rdb.QueryRowContext(ctx, q, projectID, from, to).Scan(&n)
 	}
 	const q = `
 		SELECT COUNT(DISTINCT session_id) FROM events
 		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?
 		  AND json_extract(properties, '$.' || ?) = ?`
 	var n int64
-	return n, s.db.QueryRowContext(ctx, q, projectID, from, to, f.Property, f.Value).Scan(&n)
+	return n, s.rdb.QueryRowContext(ctx, q, projectID, from, to, f.Property, f.Value).Scan(&n)
 }
 
 // countConversionsWithFilter counts sessions matching the filter that also fired the conversion event.
@@ -166,7 +171,7 @@ func (s *Store) countConversionsWithFilter(ctx context.Context, projectID string
 			SELECT COUNT(DISTINCT session_id) FROM events
 			WHERE project_id = ? AND name = ? AND occurred_at >= ? AND occurred_at <= ?`
 		var n int64
-		return n, s.db.QueryRowContext(ctx, q, projectID, conversionEvent, from, to).Scan(&n)
+		return n, s.rdb.QueryRowContext(ctx, q, projectID, conversionEvent, from, to).Scan(&n)
 	}
 	const q = `
 		SELECT COUNT(DISTINCT e1.session_id)
@@ -178,7 +183,7 @@ func (s *Store) countConversionsWithFilter(ctx context.Context, projectID string
 		  AND e2.name = ?
 		  AND e2.project_id = ?`
 	var n int64
-	err := s.db.QueryRowContext(ctx, q,
+	err := s.rdb.QueryRowContext(ctx, q,
 		projectID, from, to,
 		f.Property, f.Value,
 		conversionEvent, projectID,

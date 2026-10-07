@@ -26,7 +26,7 @@ func (s *Store) ProjectRollups(ctx context.Context, from, to time.Time, env stri
 		WHERE occurred_at >= ? AND occurred_at <= ? AND (? = '' OR environment = ?)
 		GROUP BY project_id
 		ORDER BY events DESC`
-	rows, err := s.db.QueryContext(ctx, q, from, to, env, env)
+	rows, err := s.rdb.QueryContext(ctx, q, from, to, env, env)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func (s *Store) OverviewTotals(ctx context.Context, from, to time.Time, env stri
 		SELECT COUNT(*), COUNT(DISTINCT session_id)
 		FROM events
 		WHERE occurred_at >= ? AND occurred_at <= ? AND (? = '' OR environment = ?)`
-	err = s.db.QueryRowContext(ctx, q, from, to, env, env).Scan(&events, &sessions)
+	err = s.rdb.QueryRowContext(ctx, q, from, to, env, env).Scan(&events, &sessions)
 	return events, sessions, err
 }
 
@@ -75,7 +75,7 @@ func (s *Store) OverviewVisitorsByProject(ctx context.Context, from, to time.Tim
 		WHERE occurred_at >= ? AND occurred_at <= ? AND (? = '' OR environment = ?)
 		GROUP BY day, project_id
 		ORDER BY day`, bucket)
-	rows, err := s.db.QueryContext(ctx, q, from, to, env, env)
+	rows, err := s.rdb.QueryContext(ctx, q, from, to, env, env)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func (s *Store) OverviewTopPages(ctx context.Context, from, to time.Time, limit 
 		GROUP BY project_id, url
 		ORDER BY views DESC
 		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, from, to, env, env, limit)
+	rows, err := s.rdb.QueryContext(ctx, q, from, to, env, env, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func (s *Store) OverviewTopReferrers(ctx context.Context, from, to time.Time, li
 		GROUP BY project_id, referrer_domain
 		ORDER BY visits DESC
 		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, from, to, env, env, limit)
+	rows, err := s.rdb.QueryContext(ctx, q, from, to, env, env, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +185,7 @@ func (s *Store) OverviewTopCountries(ctx context.Context, from, to time.Time, li
 		GROUP BY project_id, country_code
 		ORDER BY count DESC
 		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, from, to, env, env, limit)
+	rows, err := s.rdb.QueryContext(ctx, q, from, to, env, env, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +237,7 @@ func (s *Store) OverviewDimensionBreakdown(ctx context.Context, dimension string
 		GROUP BY %s
 		ORDER BY count DESC
 		LIMIT ?`, col, col, col, col)
-	rows, err := s.db.QueryContext(ctx, q, from, to, env, env, limit)
+	rows, err := s.rdb.QueryContext(ctx, q, from, to, env, env, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +300,7 @@ func (s *Store) ListAllEvents(ctx context.Context, f EventFilter, limit int) ([]
 	q += ` ORDER BY occurred_at DESC, id DESC LIMIT ?`
 	args = append(args, limit)
 
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.rdb.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

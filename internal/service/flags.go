@@ -14,7 +14,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
+	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -50,6 +50,10 @@ type FlagService struct {
 	// touchedMu guards the last_evaluated_at write throttle.
 	touchedMu sync.Mutex
 	touchedAt map[string]time.Time
+
+	// commands, when set, takes every write the evaluate path used to make
+	// synchronously (see flags_async.go). Nil keeps the synchronous behaviour.
+	commands *command.Dispatcher
 }
 
 func NewFlagService(store ports.FlagRepo) *FlagService {
@@ -306,16 +310,22 @@ func (svc *FlagService) evaluateFlag(ctx context.Context, projectID, flagKey str
 
 // recordEvaluation writes the analytics row for one evaluation. It is
 // best-effort: the evaluation already happened and only the row is lost, so a
-// storage failure is logged at Warn and the caller still gets its value.
+// storage failure is logged at Warn and the caller still gets its value. With a
+// dispatcher the row is queued and the request does not touch the write pool.
 func (svc *FlagService) recordEvaluation(ctx context.Context, flag repository.FeatureFlag, variant, targetingKey, sessionID string, ctxKeys []string, path string) {
-	if err := svc.store.RecordEvaluation(ctx, repository.FlagEvaluation{
+	eval := repository.FlagEvaluation{
 		FlagID:      flag.ID,
 		ProjectID:   flag.ProjectID,
 		Variant:     variant,
 		ContextHash: hashContext(targetingKey),
 		SessionID:   sessionID,
 		ContextKeys: ctxKeys,
-	}); err != nil {
+	}
+	if svc.commands != nil {
+		svc.submit(ctx, command.RecordEvaluation{Store: svc.store, Eval: eval})
+		return
+	}
+	if err := svc.store.RecordEvaluation(ctx, eval); err != nil {
 		slog.WarnContext(ctx, "flag: record evaluation ("+path+")",
 			"err", err, "handled", true,
 			"flag_id", flag.ID, "project_id", flag.ProjectID)
@@ -391,7 +401,7 @@ func (svc *FlagService) EvaluateOrRegisterFlag(ctx context.Context, projectID, f
 		// a live manual flag returns a real reason, not DISABLED, and would be
 		// filtered on origin anyway. last_evaluated_at therefore marked the
 		// flags nobody used and left the busy ones reading as never-evaluated.
-		svc.touchEvaluated(projectID, flagKey)
+		svc.touchEvaluated(ctx, projectID, flagKey)
 		return res, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -402,6 +412,21 @@ func (svc *FlagService) EvaluateOrRegisterFlag(ctx context.Context, projectID, f
 	}
 	if n, cerr := svc.store.CountAutoFlags(ctx, projectID); cerr == nil && n >= maxAuto {
 		return FlagEvalResult{}, fmt.Errorf("project %s: %w", projectID, domain.ErrAutoRegisterLimit)
+	}
+	if svc.commands != nil {
+		// No synchronous write: the flag is created by the dispatcher and the
+		// caller gets what a freshly registered inert flag evaluates to.
+		auto := buildAutoFlag(projectID, flagKey, defaultValue, kind)
+		svc.submit(ctx, command.EnsureAutoFlag{Store: svc.store, Flag: auto, Max: maxAuto})
+		// FIFO order guarantees the flag exists when the touch is applied.
+		svc.touchEvaluated(ctx, projectID, flagKey)
+		return FlagEvalResult{
+			Value:              defaultValue,
+			Variant:            "default",
+			Reason:             "DISABLED",
+			FlagKey:            flagKey,
+			CacheMaxAgeSeconds: svc.cacheHintSeconds(auto),
+		}, nil
 	}
 	if _, cerr := svc.store.EnsureAutoFlag(ctx, buildAutoFlag(projectID, flagKey, defaultValue, kind)); cerr != nil {
 		slog.WarnContext(ctx, "flag: auto-register failed", "err", cerr, "handled", true,
@@ -416,59 +441,9 @@ func (svc *FlagService) EvaluateOrRegisterFlag(ctx context.Context, projectID, f
 	// keeps reading as never-evaluated.
 	res, err = svc.EvaluateFlag(ctx, projectID, flagKey, evalContext)
 	if err == nil {
-		svc.touchEvaluated(projectID, flagKey)
+		svc.touchEvaluated(ctx, projectID, flagKey)
 	}
 	return res, err
-}
-
-// touchInterval throttles the last_evaluated_at write to at most one per flag
-// per minute. The gate it replaces was an origin filter, which limited write
-// amplification by excluding the flags that generate the most evaluations —
-// exactly the ones the column needs to be right about. A time throttle applies
-// the same concern uniformly: staleness is measured in days, so a minute's
-// resolution costs nothing and a flag served a thousand times a second still
-// produces one write per minute.
-const touchInterval = time.Minute
-
-// maxTrackedTouches bounds the throttle map. Flags per instance are few (tens),
-// but auto-registration can mint them, so the map is dropped rather than grown
-// without limit; the only cost of losing it is one extra write per flag.
-const maxTrackedTouches = 4096
-
-// shouldTouch reports whether this flag's last_evaluated_at is due for a write,
-// recording the decision so the next evaluation within touchInterval skips it.
-func (svc *FlagService) shouldTouch(projectID, flagKey string, now time.Time) bool {
-	key := projectID + "\x00" + flagKey
-	svc.touchedMu.Lock()
-	defer svc.touchedMu.Unlock()
-	if last, ok := svc.touchedAt[key]; ok && now.Sub(last) < touchInterval {
-		return false
-	}
-	if len(svc.touchedAt) >= maxTrackedTouches {
-		svc.touchedAt = make(map[string]time.Time, maxTrackedTouches)
-	}
-	svc.touchedAt[key] = now
-	return true
-}
-
-// touchEvaluated best-effort bumps last_evaluated_at for any flag, whatever its
-// origin or evaluation reason, off the request path so it never adds latency or
-// fails the evaluation.
-func (svc *FlagService) touchEvaluated(projectID, flagKey string) {
-	if !svc.shouldTouch(projectID, flagKey, time.Now()) {
-		return
-	}
-	bblog.Go("flags-touch-evaluated", func() {
-		ctx := context.Background()
-		f, err := svc.store.FlagByKey(ctx, projectID, flagKey)
-		if err != nil {
-			return
-		}
-		if err := svc.store.TouchFlagEvaluated(ctx, f.ID); err != nil {
-			slog.WarnContext(ctx, "flag: touch last_evaluated_at", "err", err, "handled", true,
-				"flag_id", f.ID, "project_id", projectID)
-		}
-	})
 }
 
 func (svc *FlagService) AnalyzeFlag(ctx context.Context, flag repository.FeatureFlag, from, to time.Time) ([]repository.FlagAnalysisResult, error) {

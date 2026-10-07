@@ -59,7 +59,7 @@ func (s *Store) GetWebSession(ctx context.Context, idHash string) (WebSession, e
 	var ws WebSession
 	var idpSub, idpSid, idToken, accessToken, refreshToken, claimsJSON sql.NullString
 	var accessExpiresAt, lastRefreshAt, refreshFailingSince sql.NullInt64
-	err := s.db.QueryRowContext(ctx, q, idHash).Scan(
+	err := s.rdb.QueryRowContext(ctx, q, idHash).Scan(
 		&ws.IDHash, &ws.Username, &ws.AuthMethod, &idpSub, &idpSid,
 		&idToken, &accessToken, &refreshToken, &accessExpiresAt,
 		&claimsJSON, &ws.CreatedAt, &ws.AbsoluteExpiresAt,

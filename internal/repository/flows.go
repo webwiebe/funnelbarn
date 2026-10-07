@@ -119,7 +119,7 @@ WHERE project_id = ?
     AND url = ?
     AND (? = '' OR environment = ?)`
 	var n int64
-	err := s.db.QueryRowContext(ctx, q, projectID, from, to, page, env, env).Scan(&n)
+	err := s.rdb.QueryRowContext(ctx, q, projectID, from, to, page, env, env).Scan(&n)
 	if err != nil {
 		tracing.RecordError(span, err)
 	}
@@ -162,7 +162,7 @@ GROUP BY a.url, a.depth, b.url, b.depth
 ORDER BY COUNT(DISTINCT a.session_id) DESC
 LIMIT 500`, depth, depth)
 
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env, page)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, from, to, env, env, page)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return nil, err
@@ -213,7 +213,7 @@ LEFT JOIN page_seq nxt
     ON nxt.session_id = f.session_id AND nxt.pos = f.target_pos + 1
 WHERE nxt.session_id IS NULL`
 	var n int64
-	err := s.db.QueryRowContext(ctx, q, projectID, from, to, env, env, page).Scan(&n)
+	err := s.rdb.QueryRowContext(ctx, q, projectID, from, to, env, env, page).Scan(&n)
 	if err != nil {
 		tracing.RecordError(span, err)
 	}
@@ -252,7 +252,7 @@ GROUP BY referrer
 ORDER BY COUNT(DISTINCT f.session_id) DESC
 LIMIT 20`
 
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env, page)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, from, to, env, env, page)
 	if err != nil {
 		tracing.RecordError(span, err)
 		return nil, err

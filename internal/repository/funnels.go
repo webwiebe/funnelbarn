@@ -101,91 +101,39 @@ func (s *Store) CreateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
 		return Funnel{}, err
 	}
 
-	return s.FunnelByID(ctx, f.ID)
+	return s.funnelByID(ctx, s.db, f.ID)
 }
 
 // FunnelByID fetches a funnel with all its steps.
 func (s *Store) FunnelByID(ctx context.Context, id string) (Funnel, error) {
+	return s.funnelByID(ctx, s.rdb, id)
+}
+
+// funnelByID reads a funnel through db, so write paths can read back on the write pool.
+func (s *Store) funnelByID(ctx context.Context, db querier, id string) (Funnel, error) {
 	const qf = `SELECT id, project_id, name, COALESCE(description,''), COALESCE(scope,'session'), created_at FROM funnels WHERE id = ?`
 	var f Funnel
-	if err := s.db.QueryRowContext(ctx, qf, id).Scan(&f.ID, &f.ProjectID, &f.Name, &f.Description, &f.Scope, &f.CreatedAt); err != nil {
+	if err := db.QueryRowContext(ctx, qf, id).Scan(&f.ID, &f.ProjectID, &f.Name, &f.Description, &f.Scope, &f.CreatedAt); err != nil {
 		return Funnel{}, err
 	}
 
-	steps, err := s.funnelSteps(ctx, id)
+	steps, err := s.funnelSteps(ctx, db, id)
 	if err != nil {
 		return Funnel{}, err
 	}
 	f.Steps = steps
 
 	one := []Funnel{f}
-	if err := s.annotateUnmatchedSteps(ctx, f.ProjectID, one); err != nil {
+	if err := s.annotateUnmatchedSteps(ctx, db, f.ProjectID, one); err != nil {
 		return Funnel{}, err
 	}
 	return one[0], nil
 }
 
-// annotateUnmatchedSteps fills UnmatchedSteps on each funnel from the set of
-// event names the project has actually emitted. One query for the whole list,
-// not one per funnel.
-//
-// "Never emitted" means within the event retention window: a name the project
-// sent once a year ago and whose events have since been purged reads as
-// unmatched, which is the same thing the funnel itself experiences.
-func (s *Store) annotateUnmatchedSteps(ctx context.Context, projectID string, funnels []Funnel) error {
-	if len(funnels) == 0 {
-		return nil
-	}
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT DISTINCT name FROM events WHERE project_id = ?`, projectID)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	seen := make(map[string]struct{})
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return err
-		}
-		seen[name] = struct{}{}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	// A project that has sent nothing at all would have every step of every
-	// funnel flagged, which says nothing useful — there is no evidence either
-	// way yet, and the dashboard already shows the project as having no data.
-	// Flag only once there is something to compare against.
-	if len(seen) == 0 {
-		return nil
-	}
-
-	for i := range funnels {
-		var unmatched []string
-		reported := make(map[string]struct{}, len(funnels[i].Steps))
-		for _, step := range funnels[i].Steps {
-			if _, ok := seen[step.EventName]; ok {
-				continue
-			}
-			// A name repeated across steps is reported once.
-			if _, dup := reported[step.EventName]; dup {
-				continue
-			}
-			reported[step.EventName] = struct{}{}
-			unmatched = append(unmatched, step.EventName)
-		}
-		funnels[i].UnmatchedSteps = unmatched
-	}
-	return nil
-}
-
 // ListFunnels returns all funnels for a project.
 func (s *Store) ListFunnels(ctx context.Context, projectID string) ([]Funnel, error) {
 	const q = `SELECT id, project_id, name, COALESCE(description,''), COALESCE(scope,'session'), created_at FROM funnels WHERE project_id = ? ORDER BY created_at`
-	rows, err := s.db.QueryContext(ctx, q, projectID)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -204,14 +152,14 @@ func (s *Store) ListFunnels(ctx context.Context, projectID string) ([]Funnel, er
 	}
 
 	for i := range funnels {
-		steps, err := s.funnelSteps(ctx, funnels[i].ID)
+		steps, err := s.funnelSteps(ctx, s.rdb, funnels[i].ID)
 		if err != nil {
 			return nil, err
 		}
 		funnels[i].Steps = steps
 	}
 
-	if err := s.annotateUnmatchedSteps(ctx, projectID, funnels); err != nil {
+	if err := s.annotateUnmatchedSteps(ctx, s.rdb, projectID, funnels); err != nil {
 		return nil, err
 	}
 
@@ -256,7 +204,7 @@ func (s *Store) UpdateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
 		return Funnel{}, err
 	}
 
-	return s.FunnelByID(ctx, f.ID)
+	return s.funnelByID(ctx, s.db, f.ID)
 }
 
 // DeleteFunnel removes a funnel and its steps (cascade).
@@ -267,9 +215,9 @@ func (s *Store) DeleteFunnel(ctx context.Context, id string) error {
 }
 
 // funnelSteps returns steps for a funnel ordered by step_order.
-func (s *Store) funnelSteps(ctx context.Context, funnelID string) ([]FunnelStep, error) {
+func (s *Store) funnelSteps(ctx context.Context, db querier, funnelID string) ([]FunnelStep, error) {
 	const q = `SELECT id, funnel_id, step_order, event_name, COALESCE(filters,'[]') FROM funnel_steps WHERE funnel_id = ? ORDER BY step_order`
-	rows, err := s.db.QueryContext(ctx, q, funnelID)
+	rows, err := db.QueryContext(ctx, q, funnelID)
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +370,7 @@ func (s *Store) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time,
 			args = append(args, filter.Value)
 		}
 
-		if err := s.db.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
+		if err := s.rdb.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
 			return nil, fmt.Errorf("analyze step %d: %w", i, err)
 		}
 		stepCounts[i] = n
@@ -467,7 +415,7 @@ func (s *Store) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int, fro
 		SELECT DISTINCT session_id
 		FROM events
 		WHERE project_id = ? AND name = ? AND occurred_at >= ? AND occurred_at <= ?`
-	rows, err := s.db.QueryContext(ctx, reachedQ, f.ProjectID, targetStep.EventName, from, to)
+	rows, err := s.rdb.QueryContext(ctx, reachedQ, f.ProjectID, targetStep.EventName, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("SessionsAtStep reached: %w", err)
 	}
@@ -509,7 +457,7 @@ func (s *Store) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int, fro
 		SELECT DISTINCT session_id
 		FROM events
 		WHERE project_id = ? AND name = ? AND occurred_at >= ? AND occurred_at <= ?`
-	nextRows, err := s.db.QueryContext(ctx, nextQ, f.ProjectID, nextStep.EventName, from, to)
+	nextRows, err := s.rdb.QueryContext(ctx, nextQ, f.ProjectID, nextStep.EventName, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("SessionsAtStep next: %w", err)
 	}
@@ -596,7 +544,7 @@ func (s *Store) FunnelSegmentData(ctx context.Context, projectID string) (Funnel
 			return nil, fmt.Errorf("FunnelSegmentData: disallowed column %q", col)
 		}
 		q := fmt.Sprintf(`SELECT DISTINCT %s FROM events WHERE project_id = ? AND %s IS NOT NULL AND %s != '' ORDER BY %s`, col, col, col, col)
-		rows, err := s.db.QueryContext(ctx, q, projectID)
+		rows, err := s.rdb.QueryContext(ctx, q, projectID)
 		if err != nil {
 			return nil, err
 		}
