@@ -9,7 +9,7 @@ import "context"
 // "Never emitted" means within the event retention window: a name the project
 // sent once a year ago and whose events have since been purged reads as
 // unmatched, which is the same thing the funnel itself experiences.
-func (s *Store) annotateUnmatchedSteps(ctx context.Context, db querier, projectID string, funnels []Funnel) error {
+func (s *ReadStore) annotateUnmatchedSteps(ctx context.Context, db querier, projectID string, funnels []Funnel) error {
 	if len(funnels) == 0 {
 		return nil
 	}

@@ -29,7 +29,7 @@ type MappingSuggestion struct {
 }
 
 // ListCanonicalEvents returns the canonical event catalog ordered for display.
-func (s *Store) ListCanonicalEvents(ctx context.Context) ([]CanonicalEvent, error) {
+func (s *ReadStore) ListCanonicalEvents(ctx context.Context) ([]CanonicalEvent, error) {
 	const q = `SELECT key, label, sort_order FROM canonical_events ORDER BY sort_order, key`
 	rows, err := s.rdb.QueryContext(ctx, q)
 	if err != nil {
@@ -98,7 +98,7 @@ func (s *Store) DeleteCanonicalEvent(ctx context.Context, key string) error {
 }
 
 // CanonicalKeySet returns the set of catalog keys for existence validation.
-func (s *Store) CanonicalKeySet(ctx context.Context) (map[string]bool, error) {
+func (s *ReadStore) CanonicalKeySet(ctx context.Context) (map[string]bool, error) {
 	events, err := s.ListCanonicalEvents(ctx)
 	if err != nil {
 		return nil, err
@@ -111,7 +111,7 @@ func (s *Store) CanonicalKeySet(ctx context.Context) (map[string]bool, error) {
 }
 
 // ListMappings returns all raw→canonical mappings for a project.
-func (s *Store) ListMappings(ctx context.Context, projectID string) ([]EventNameMapping, error) {
+func (s *ReadStore) ListMappings(ctx context.Context, projectID string) ([]EventNameMapping, error) {
 	const q = `SELECT project_id, raw_name, canonical_key FROM event_name_mappings WHERE project_id = ? ORDER BY raw_name`
 	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
@@ -154,7 +154,7 @@ func (s *Store) DeleteMapping(ctx context.Context, projectID, rawName string) er
 // MappingsByProject returns every mapping grouped as
 // result[projectID][canonicalKey] = []rawName. It is the input to the aggregate
 // funnel engine — one query, grouped in Go.
-func (s *Store) MappingsByProject(ctx context.Context) (map[string]map[string][]string, error) {
+func (s *ReadStore) MappingsByProject(ctx context.Context) (map[string]map[string][]string, error) {
 	const q = `SELECT project_id, canonical_key, raw_name FROM event_name_mappings ORDER BY project_id, canonical_key`
 	rows, err := s.rdb.QueryContext(ctx, q)
 	if err != nil {
@@ -180,7 +180,7 @@ func (s *Store) MappingsByProject(ctx context.Context) (map[string]map[string][]
 // MappingSuggestions returns unmapped raw event names for a project, each with a
 // best-guess canonical key (empty when uncertain). Already-mapped raw names are
 // excluded. Suggestions are advisory — they are persisted only when confirmed.
-func (s *Store) MappingSuggestions(ctx context.Context, projectID string) ([]MappingSuggestion, error) {
+func (s *ReadStore) MappingSuggestions(ctx context.Context, projectID string) ([]MappingSuggestion, error) {
 	rawNames, err := s.DistinctEventNames(ctx, projectID)
 	if err != nil {
 		return nil, err

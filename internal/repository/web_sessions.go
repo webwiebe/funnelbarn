@@ -49,7 +49,7 @@ func (s *Store) CreateWebSession(ctx context.Context, ws WebSession) error {
 
 // GetWebSession loads a session row. Returns sql.ErrNoRows when the handle is
 // unknown (revoked, expired-and-pruned, or forged).
-func (s *Store) GetWebSession(ctx context.Context, idHash string) (WebSession, error) {
+func (s *ReadStore) GetWebSession(ctx context.Context, idHash string) (WebSession, error) {
 	const q = `
 		SELECT id_hash, username, auth_method, idp_sub, idp_sid,
 			id_token, access_token, refresh_token, access_expires_at,

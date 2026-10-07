@@ -69,12 +69,12 @@ func (s *Store) CreateProject(ctx context.Context, name, slug string) (Project, 
 }
 
 // ProjectByID fetches a project by its ID.
-func (s *Store) ProjectByID(ctx context.Context, id string) (Project, error) {
+func (s *ReadStore) ProjectByID(ctx context.Context, id string) (Project, error) {
 	return s.projectByID(ctx, s.rq, id)
 }
 
 // projectByID reads through q so write paths can read back on the write pool.
-func (s *Store) projectByID(ctx context.Context, q *sqlcgen.Queries, id string) (Project, error) {
+func (s *ReadStore) projectByID(ctx context.Context, q *sqlcgen.Queries, id string) (Project, error) {
 	p, err := q.GetProjectByID(ctx, id)
 	if err != nil {
 		return Project{}, err
@@ -83,11 +83,11 @@ func (s *Store) projectByID(ctx context.Context, q *sqlcgen.Queries, id string) 
 }
 
 // ProjectBySlug fetches a project by its slug.
-func (s *Store) ProjectBySlug(ctx context.Context, slug string) (Project, error) {
+func (s *ReadStore) ProjectBySlug(ctx context.Context, slug string) (Project, error) {
 	return s.projectBySlug(ctx, s.rq, slug)
 }
 
-func (s *Store) projectBySlug(ctx context.Context, q *sqlcgen.Queries, slug string) (Project, error) {
+func (s *ReadStore) projectBySlug(ctx context.Context, q *sqlcgen.Queries, slug string) (Project, error) {
 	p, err := q.GetProjectBySlug(ctx, slug)
 	if err != nil {
 		return Project{}, err
@@ -188,7 +188,7 @@ func (s *Store) ApproveProject(ctx context.Context, id string) (Project, error) 
 }
 
 // ListProjects returns all projects.
-func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
+func (s *ReadStore) ListProjects(ctx context.Context) ([]Project, error) {
 	rows, err := s.rq.ListProjects(ctx)
 	if err != nil {
 		return nil, err
@@ -235,7 +235,7 @@ func (s *Store) UpdateProject(ctx context.Context, id, name, domain string) (Pro
 }
 
 // HasProjects returns true if at least one project exists in the database.
-func (s *Store) HasProjects(ctx context.Context) (bool, error) {
+func (s *ReadStore) HasProjects(ctx context.Context) (bool, error) {
 	n, err := s.rq.CountProjects(ctx)
 	if err != nil {
 		return false, err

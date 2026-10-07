@@ -55,11 +55,11 @@ func (s *Store) CreateSegment(ctx context.Context, seg Segment) (Segment, error)
 }
 
 // SegmentByID fetches a segment by ID.
-func (s *Store) SegmentByID(ctx context.Context, id string) (Segment, error) {
+func (s *ReadStore) SegmentByID(ctx context.Context, id string) (Segment, error) {
 	return s.segmentByID(ctx, s.rdb, id)
 }
 
-func (s *Store) segmentByID(ctx context.Context, db querier, id string) (Segment, error) {
+func (s *ReadStore) segmentByID(ctx context.Context, db querier, id string) (Segment, error) {
 	const q = `SELECT id, project_id, name, rules, created_at FROM segments WHERE id = ?`
 	var seg Segment
 	var rulesJSON string
@@ -77,7 +77,7 @@ func (s *Store) segmentByID(ctx context.Context, db querier, id string) (Segment
 }
 
 // ListSegments returns all segments for a project.
-func (s *Store) ListSegments(ctx context.Context, projectID string) ([]Segment, error) {
+func (s *ReadStore) ListSegments(ctx context.Context, projectID string) ([]Segment, error) {
 	const q = `SELECT id, project_id, name, rules, created_at FROM segments WHERE project_id = ? ORDER BY created_at DESC`
 	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
