@@ -92,7 +92,7 @@ func (s *Store) GetRecording(ctx context.Context, id string) (Recording, error) 
 		SELECT id, project_id, session_id, environment, first_chunk_index, last_chunk_index, chunk_count, has_snapshot, duration_ms, started_at, ended_at, created_at,
 		       device_type, user_agent, is_bot, page_url
 		FROM recordings WHERE id = ?`
-	return scanRecording(s.db.QueryRowContext(ctx, q, id))
+	return scanRecording(s.rdb.QueryRowContext(ctx, q, id))
 }
 
 // ListRecordings returns recordings for a project with optional filters.
@@ -139,7 +139,7 @@ func (s *Store) ListRecordings(ctx context.Context, projectID string, opts Recor
 		LIMIT ? OFFSET ?`, strings.Join(where, " AND "))
 	args = append(args, limit, offset)
 
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.rdb.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +163,7 @@ func (s *Store) ListOldRecordings(ctx context.Context, before time.Time) ([]Reco
 		FROM recordings
 		WHERE started_at < ?
 		LIMIT 500`
-	rows, err := s.db.QueryContext(ctx, q, before)
+	rows, err := s.rdb.QueryContext(ctx, q, before)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +189,7 @@ func (s *Store) ListBrokenRecordings(ctx context.Context) ([]Recording, error) {
 		FROM recordings
 		WHERE has_snapshot = 0 OR chunk_count = 0
 		LIMIT 500`
-	rows, err := s.db.QueryContext(ctx, q)
+	rows, err := s.rdb.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +214,7 @@ func (s *Store) ListBotRecordings(ctx context.Context) ([]Recording, error) {
 		FROM recordings
 		WHERE is_bot = 1
 		LIMIT 500`
-	rows, err := s.db.QueryContext(ctx, q)
+	rows, err := s.rdb.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +251,7 @@ func (s *Store) FlagEvaluationsForSession(ctx context.Context, sessionID, projec
 		JOIN feature_flags f ON f.id = fe.flag_id
 		WHERE fe.session_id = ? AND fe.project_id = ?
 		ORDER BY fe.created_at ASC`
-	rows, err := s.db.QueryContext(ctx, q, sessionID, projectID)
+	rows, err := s.rdb.QueryContext(ctx, q, sessionID, projectID)
 	if err != nil {
 		return nil, err
 	}

@@ -51,15 +51,19 @@ func (s *Store) CreateSegment(ctx context.Context, seg Segment) (Segment, error)
 	if _, err := s.db.ExecContext(ctx, q, seg.ID, seg.ProjectID, seg.Name, string(rulesJSON)); err != nil {
 		return Segment{}, err
 	}
-	return s.SegmentByID(ctx, seg.ID)
+	return s.segmentByID(ctx, s.db, seg.ID)
 }
 
 // SegmentByID fetches a segment by ID.
 func (s *Store) SegmentByID(ctx context.Context, id string) (Segment, error) {
+	return s.segmentByID(ctx, s.rdb, id)
+}
+
+func (s *Store) segmentByID(ctx context.Context, db querier, id string) (Segment, error) {
 	const q = `SELECT id, project_id, name, rules, created_at FROM segments WHERE id = ?`
 	var seg Segment
 	var rulesJSON string
-	err := s.db.QueryRowContext(ctx, q, id).Scan(&seg.ID, &seg.ProjectID, &seg.Name, &rulesJSON, &seg.CreatedAt)
+	err := db.QueryRowContext(ctx, q, id).Scan(&seg.ID, &seg.ProjectID, &seg.Name, &rulesJSON, &seg.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Segment{}, fmt.Errorf("segment not found: %w", err)
 	}
@@ -75,7 +79,7 @@ func (s *Store) SegmentByID(ctx context.Context, id string) (Segment, error) {
 // ListSegments returns all segments for a project.
 func (s *Store) ListSegments(ctx context.Context, projectID string) ([]Segment, error) {
 	const q = `SELECT id, project_id, name, rules, created_at FROM segments WHERE project_id = ? ORDER BY created_at DESC`
-	rows, err := s.db.QueryContext(ctx, q, projectID)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +107,7 @@ func (s *Store) UpdateSegment(ctx context.Context, seg Segment) (Segment, error)
 	if _, err := s.db.ExecContext(ctx, q, seg.Name, string(rulesJSON), seg.ID); err != nil {
 		return Segment{}, err
 	}
-	return s.SegmentByID(ctx, seg.ID)
+	return s.segmentByID(ctx, s.db, seg.ID)
 }
 
 // DeleteSegment removes a segment.

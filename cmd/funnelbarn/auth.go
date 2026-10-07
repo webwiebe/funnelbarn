@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log/slog"
+	"sync"
+	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
 // buildOIDCClient returns an OIDC adapter when all four FUNNELBARN_OIDC_* vars
@@ -48,7 +53,9 @@ func validateFailClosed(env string, apiKeyConfigured, authConfigured bool) error
 	return nil
 }
 
-func newAPIAuthorizer(cfg config.Config, store *repository.Store) (*auth.Authorizer, error) {
+// newAPIAuthorizer builds the ingest/evaluate authorizer. With a dispatcher the
+// last_used_at touch is a queued command instead of a write on the request path.
+func newAPIAuthorizer(cfg config.Config, store *repository.Store, commands *command.Dispatcher) (*auth.Authorizer, error) {
 	var base *auth.Authorizer
 	var err error
 	if cfg.APIKeySHA256 != "" {
@@ -59,7 +66,61 @@ func newAPIAuthorizer(cfg config.Config, store *repository.Store) (*auth.Authori
 	} else {
 		base = auth.New(cfg.APIKey)
 	}
-	return base.WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey), nil
+	return base.WithDBLookup(store.ValidAPIKeySHA256, apiKeyToucher(store, commands)), nil
+}
+
+// apiKeyToucher returns the DBKeyTouch for the authorizer: a direct write when
+// commands is nil, otherwise a TouchAPIKey command whose submit wait is added
+// to the request's wait sum. Queued touches are throttled to one per key per
+// apiKeyTouchInterval, so a busy SDK key does not put a write on the single
+// consumer for every request.
+func apiKeyToucher(store *repository.Store, commands *command.Dispatcher) auth.DBKeyTouch {
+	if commands == nil {
+		return store.TouchAPIKey
+	}
+	th := newTouchThrottle(apiKeyTouchInterval, maxTrackedKeyTouches)
+	return func(ctx context.Context, keySHA256 string) error {
+		if !th.due(keySHA256, time.Now()) {
+			return nil
+		}
+		waited := commands.Submit(ctx, command.TouchAPIKey{Store: store, KeyHash: keySHA256})
+		service.AddSubmitWait(ctx, waited)
+		return nil
+	}
+}
+
+// last_used_at is read in days ("unused for 90 days"), so minute resolution
+// loses nothing.
+const (
+	apiKeyTouchInterval  = time.Minute
+	maxTrackedKeyTouches = 4096
+)
+
+// touchThrottle remembers when each key was last touched. The map is reset
+// rather than grown past max; losing it costs one extra write per key.
+type touchThrottle struct {
+	mu       sync.Mutex
+	interval time.Duration
+	max      int
+	last     map[string]time.Time
+}
+
+func newTouchThrottle(interval time.Duration, max int) *touchThrottle {
+	return &touchThrottle{interval: interval, max: max, last: make(map[string]time.Time)}
+}
+
+// due reports whether key is due for a touch and records it if so.
+func (t *touchThrottle) due(key string, now time.Time) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if prev, ok := t.last[key]; ok && now.Sub(prev) < t.interval {
+		return false
+	}
+	if len(t.last) >= t.max {
+		t.last = make(map[string]time.Time, t.max)
+	}
+	t.last[key] = now
+	return true
 }
 
 const (

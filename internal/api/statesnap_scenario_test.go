@@ -47,8 +47,7 @@ type snapStack struct {
 	store   *repository.Store
 	sp      *spool.Spool
 	handler *ingest.Handler
-	// Flush drains the async writes. Nil today (writes are fire-and-forget
-	// goroutines, so flushAsync only polls). PR 2 sets it to dispatcher.Flush.
+	// Flush drains the async writes: the command dispatcher's Flush.
 	Flush func(context.Context) error
 }
 
@@ -68,7 +67,8 @@ func newSnapStack(t *testing.T) *snapStack {
 	t.Cleanup(func() { store.Close() })
 	sp := newTestSpool(t)
 	var base *auth.Authorizer // nil: only DB-stored keys are accepted
-	authz := base.WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
+	commands := newTestDispatcher(t, store)
+	authz := base.WithDBLookup(store.ValidAPIKeySHA256, dispatcherTouch(commands, store))
 	handler := ingest.NewHandler(authz, sp, 0)
 	healthSvc := service.NewProjectHealthService(store)
 	handler.OnEventsReceived = func(ctx context.Context, projectID string) {
@@ -82,7 +82,8 @@ func newSnapStack(t *testing.T) *snapStack {
 		Projects:            service.NewProjectService(store),
 		Funnels:             service.NewFunnelService(store),
 		ABTests:             service.NewABTestService(store),
-		Flags:               service.NewFlagService(store),
+		Flags:               service.NewFlagService(store).WithCommands(commands),
+		Commands:            commands,
 		Events:              service.NewEventService(store),
 		Overview:            service.NewOverviewService(store),
 		Sessions:            service.NewSessionService(store),
@@ -104,7 +105,7 @@ func newSnapStack(t *testing.T) *snapStack {
 		ProjectHealth:       healthSvc,
 		FlagAutoRegisterMax: snapAutoMax,
 	})
-	st := &snapStack{srv: srv, store: store, sp: sp, handler: handler}
+	st := &snapStack{srv: srv, store: store, sp: sp, handler: handler, Flush: commands.Flush}
 	snapStacks.Store(store, st)
 	t.Cleanup(func() { snapStacks.Delete(store) })
 	return st

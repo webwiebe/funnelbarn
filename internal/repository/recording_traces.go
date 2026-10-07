@@ -83,7 +83,7 @@ func (s *Store) LookupTrace(ctx context.Context, projectID, traceID string) (Tra
 		ORDER BY rt.occurred_at ASC
 		LIMIT 1`
 	var out TraceLookup
-	err := s.db.QueryRowContext(ctx, q, projectID, traceID).Scan(
+	err := s.rdb.QueryRowContext(ctx, q, projectID, traceID).Scan(
 		&out.ProjectID, &out.SessionID, &out.RecordingID, &out.TraceID,
 		&out.URL, &out.OccurredAt, &out.RecordingStartedAt,
 		&out.FirstChunkIndex, &out.LastChunkIndex, &out.ChunkCount, &out.DurationMs, &out.Environment, &out.PageURL,
@@ -109,7 +109,7 @@ func (s *Store) TracesForRecording(ctx context.Context, recordingID string) ([]T
 		FROM recording_traces
 		WHERE recording_id = ?
 		ORDER BY occurred_at ASC`
-	rows, err := s.db.QueryContext(ctx, q, recordingID)
+	rows, err := s.rdb.QueryContext(ctx, q, recordingID)
 	if err != nil {
 		return nil, err
 	}

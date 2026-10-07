@@ -81,7 +81,7 @@ func (s *Store) SessionByID(ctx context.Context, projectID, id string) (Session,
 			COALESCE(timezone,''), COALESCE(asn_org,''), COALESCE(connection_class,''),
 			geo_anonymized
 		FROM sessions WHERE project_id = ? AND id = ?`
-	return scanSession(s.db.QueryRowContext(ctx, q, projectID, id))
+	return scanSession(s.rdb.QueryRowContext(ctx, q, projectID, id))
 }
 
 // ListSessions returns paginated sessions for a project.
@@ -102,7 +102,7 @@ func (s *Store) ListSessions(ctx context.Context, projectID string, limit, offse
 		WHERE project_id = ?
 		ORDER BY last_seen_at DESC
 		LIMIT ? OFFSET ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, limit, offset)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (s *Store) ActiveSessionCount(ctx context.Context, projectID string, within
 		WHERE project_id = ?
 		AND last_seen_at >= datetime('now', ? || ' minutes')`
 	var count int64
-	err := s.db.QueryRowContext(ctx, q, projectID, fmt.Sprintf("-%d", withinMinutes)).Scan(&count)
+	err := s.rdb.QueryRowContext(ctx, q, projectID, fmt.Sprintf("-%d", withinMinutes)).Scan(&count)
 	return count, err
 }
 

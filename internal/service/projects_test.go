@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,7 +14,7 @@ import (
 
 func newTestStore(t *testing.T) *repository.Store {
 	t.Helper()
-	s, err := repository.Open(":memory:")
+	s, err := repository.Open(filepath.Join(t.TempDir(), "test.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return s

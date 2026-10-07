@@ -78,7 +78,7 @@ func (s *Store) sessionColDistribution(ctx context.Context, table, projectID, co
 		table, col, col, col,
 	)
 
-	rows, err := s.db.QueryContext(ctx, q, projectID, projectID)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, projectID)
 	if err != nil {
 		return nil, err
 	}

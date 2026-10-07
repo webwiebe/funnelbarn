@@ -71,7 +71,7 @@ func (s *Store) CountOrphanedRows(ctx context.Context) (OrphanCounts, error) {
 			(SELECT COUNT(*) FROM funnels  f WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = f.project_id)),
 			(SELECT COUNT(*) FROM api_keys k WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = k.project_id))`
 	var out OrphanCounts
-	if err := s.db.QueryRowContext(ctx, q).Scan(&out.Events, &out.Sessions, &out.Funnels, &out.APIKeys); err != nil {
+	if err := s.rdb.QueryRowContext(ctx, q).Scan(&out.Events, &out.Sessions, &out.Funnels, &out.APIKeys); err != nil {
 		return OrphanCounts{}, err
 	}
 	return out, nil
@@ -118,7 +118,7 @@ func (s *Store) ListEvents(ctx context.Context, projectID string, limit, offset 
 		WHERE project_id = ?
 		ORDER BY occurred_at DESC
 		LIMIT ? OFFSET ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, limit, offset)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (s *Store) ListEvents(ctx context.Context, projectID string, limit, offset 
 func (s *Store) CountEvents(ctx context.Context, projectID string, from, to time.Time, env string) (int64, error) {
 	const q = `SELECT COUNT(*) FROM events WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ? AND (? = '' OR environment = ?)`
 	var n int64
-	err := s.db.QueryRowContext(ctx, q, projectID, from, to, env, env).Scan(&n)
+	err := s.rdb.QueryRowContext(ctx, q, projectID, from, to, env, env).Scan(&n)
 	return n, err
 }
 
@@ -146,7 +146,7 @@ func (s *Store) TopPages(ctx context.Context, projectID string, from, to time.Ti
 		GROUP BY url
 		ORDER BY views DESC
 		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env, limit)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, from, to, env, env, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func (s *Store) TopReferrers(ctx context.Context, projectID string, from, to tim
 		GROUP BY referrer_domain
 		ORDER BY visits DESC
 		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env, limit)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, from, to, env, env, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +212,7 @@ func (s *Store) EventTimeSeries(ctx context.Context, projectID string, from, to 
 		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ? AND (? = '' OR environment = ?)
 		GROUP BY hour
 		ORDER BY hour`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, from, to, env, env)
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +267,7 @@ func topUTMColumn(ctx context.Context, db *sql.DB, projectID, column, env string
 
 // TopUTMSources returns the most common UTM sources.
 func (s *Store) TopUTMSources(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
-	return topUTMColumn(ctx, s.db, projectID, "utm_source", env, from, to, limit)
+	return topUTMColumn(ctx, s.rdb, projectID, "utm_source", env, from, to, limit)
 }
 
 // UTMStat is a UTM value with count.
@@ -283,7 +283,7 @@ func (s *Store) UniqueSessionCount(ctx context.Context, projectID string, from, 
 		FROM events
 		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ? AND (? = '' OR environment = ?)`
 	var n int64
-	err := s.db.QueryRowContext(ctx, q, projectID, from, to, env, env).Scan(&n)
+	err := s.rdb.QueryRowContext(ctx, q, projectID, from, to, env, env).Scan(&n)
 	return n, err
 }
 
@@ -291,7 +291,7 @@ func (s *Store) UniqueSessionCount(ctx context.Context, projectID string, from, 
 func (s *Store) CountNewEvents(ctx context.Context, projectID string, since time.Time, env string) (int64, error) {
 	const q = `SELECT COUNT(*) FROM events WHERE project_id = ? AND occurred_at >= ? AND (? = '' OR environment = ?)`
 	var n int64
-	err := s.db.QueryRowContext(ctx, q, projectID, since, env, env).Scan(&n)
+	err := s.rdb.QueryRowContext(ctx, q, projectID, since, env, env).Scan(&n)
 	return n, err
 }
 
@@ -304,7 +304,7 @@ func (s *Store) GetEventByIngestID(ctx context.Context, ingestID string) (*Event
 			COALESCE(properties,''), COALESCE(user_agent,''), COALESCE(browser,''), COALESCE(os,''), COALESCE(device_type,''), COALESCE(country_code,''),
 			ingest_id, occurred_at, created_at, COALESCE(environment,'')
 		FROM events WHERE ingest_id = ? LIMIT 1`
-	rows, err := s.db.QueryContext(ctx, q, ingestID)
+	rows, err := s.rdb.QueryContext(ctx, q, ingestID)
 	if err != nil {
 		return nil, err
 	}
@@ -328,7 +328,7 @@ func (s *Store) TopBrowsers(ctx context.Context, projectID string, from, to time
 		GROUP BY browser
 		ORDER BY count DESC
 		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env, limit)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, from, to, env, env, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +359,7 @@ func (s *Store) TopDeviceTypes(ctx context.Context, projectID string, from, to t
 		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ? AND (? = '' OR environment = ?)
 		GROUP BY device_type
 		ORDER BY count DESC`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, from, to, env, env)
 	if err != nil {
 		return nil, err
 	}
@@ -394,7 +394,7 @@ func (s *Store) TopEventNames(ctx context.Context, projectID string, from, to ti
 		GROUP BY name
 		ORDER BY count DESC
 		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env, limit)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, from, to, env, env, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +429,7 @@ func (s *Store) TopCountries(ctx context.Context, projectID string, from, to tim
 		GROUP BY country_code
 		ORDER BY count DESC
 		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env, limit)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, from, to, env, env, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -464,7 +464,7 @@ func (s *Store) TopOSSystems(ctx context.Context, projectID string, from, to tim
 		GROUP BY os
 		ORDER BY count DESC
 		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env, limit)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, from, to, env, env, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -489,12 +489,12 @@ type OSStat struct {
 
 // TopUTMCampaigns returns breakdown by UTM campaign.
 func (s *Store) TopUTMCampaigns(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
-	return topUTMColumn(ctx, s.db, projectID, "utm_campaign", env, from, to, limit)
+	return topUTMColumn(ctx, s.rdb, projectID, "utm_campaign", env, from, to, limit)
 }
 
 // TopUTMMediums returns breakdown by UTM medium.
 func (s *Store) TopUTMMediums(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
-	return topUTMColumn(ctx, s.db, projectID, "utm_medium", env, from, to, limit)
+	return topUTMColumn(ctx, s.rdb, projectID, "utm_medium", env, from, to, limit)
 }
 
 // DailyEventCounts returns daily event counts for a project over a time range.
@@ -505,7 +505,7 @@ func (s *Store) DailyEventCounts(ctx context.Context, projectID string, from, to
 		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ? AND (? = '' OR environment = ?)
 		GROUP BY day
 		ORDER BY day`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, from, to, env, env)
 	if err != nil {
 		return nil, err
 	}
@@ -530,7 +530,7 @@ func (s *Store) HourlyEventCounts(ctx context.Context, projectID string, from, t
 		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ? AND (? = '' OR environment = ?)
 		GROUP BY hour
 		ORDER BY hour`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, from, to, env, env)
 	if err != nil {
 		return nil, err
 	}
@@ -561,7 +561,7 @@ func (s *Store) BounceRate(ctx context.Context, projectID string, from, to time.
 			CAST(COUNT(*) AS REAL)
 		FROM session_counts`
 	var rate sql.NullFloat64
-	err := s.db.QueryRowContext(ctx, q, projectID, from, to, env, env).Scan(&rate)
+	err := s.rdb.QueryRowContext(ctx, q, projectID, from, to, env, env).Scan(&rate)
 	if err != nil {
 		return 0, err
 	}
@@ -582,7 +582,7 @@ func (s *Store) AvgEventsPerSession(ctx context.Context, projectID string, from,
 		)
 		SELECT AVG(cnt) FROM session_counts`
 	var avg sql.NullFloat64
-	err := s.db.QueryRowContext(ctx, q, projectID, from, to, env, env).Scan(&avg)
+	err := s.rdb.QueryRowContext(ctx, q, projectID, from, to, env, env).Scan(&avg)
 	if err != nil {
 		return 0, err
 	}
@@ -600,7 +600,7 @@ func (s *Store) DailyUniqueSessions(ctx context.Context, projectID string, from,
 		WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ? AND (? = '' OR environment = ?)
 		GROUP BY day
 		ORDER BY day`
-	rows, err := s.db.QueryContext(ctx, q, projectID, from, to, env, env)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, from, to, env, env)
 	if err != nil {
 		return nil, err
 	}
@@ -620,7 +620,7 @@ func (s *Store) DailyUniqueSessions(ctx context.Context, projectID string, from,
 // DistinctEventNames returns all unique event names for a project (for autocomplete).
 func (s *Store) DistinctEventNames(ctx context.Context, projectID string) ([]string, error) {
 	const q = `SELECT DISTINCT name FROM events WHERE project_id = ? ORDER BY name`
-	rows, err := s.db.QueryContext(ctx, q, projectID)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -645,7 +645,7 @@ func (s *Store) DistinctEventProperties(ctx context.Context, projectID, eventNam
 		FROM events e, json_each(e.properties) j
 		WHERE e.project_id = ? AND e.name = ? AND e.properties != '' AND e.properties IS NOT NULL
 		ORDER BY j.key`
-	rows, err := s.db.QueryContext(ctx, q, projectID, eventName)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, eventName)
 	if err != nil {
 		return nil, err
 	}
@@ -676,7 +676,7 @@ func (s *Store) DistinctPropertyValues(ctx context.Context, projectID, eventName
 		  AND val IS NOT NULL AND val != ''
 		ORDER BY val
 		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, property, projectID, eventName, limit)
+	rows, err := s.rdb.QueryContext(ctx, q, property, projectID, eventName, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -705,7 +705,7 @@ func (s *Store) PopulatedMetadataColumns(ctx context.Context, projectID, eventNa
 	}
 	q += ` FROM events WHERE project_id = ? AND name = ? LIMIT 1000`
 
-	row := s.db.QueryRowContext(ctx, q, projectID, eventName)
+	row := s.rdb.QueryRowContext(ctx, q, projectID, eventName)
 	flags := make([]int, len(metadataColumns))
 	ptrs := make([]any, len(metadataColumns))
 	for i := range flags {
@@ -735,7 +735,7 @@ func (s *Store) TopOS(ctx context.Context, projectID string, from, to time.Time,
 // DistinctEnvironments returns the canonical environment values recorded for a project.
 func (s *Store) DistinctEnvironments(ctx context.Context, projectID string) ([]string, error) {
 	const q = `SELECT DISTINCT environment FROM events WHERE project_id = ? AND environment != '' ORDER BY environment`
-	rows, err := s.db.QueryContext(ctx, q, projectID)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -770,15 +770,6 @@ func scanEvents(rows *sql.Rows) ([]Event, error) {
 	return events, rows.Err()
 }
 
-// PurgeOldEvents deletes events older than the given cutoff time and returns the number deleted.
-func (s *Store) PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, error) {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM events WHERE occurred_at < ?`, cutoff)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
 // SessionsForPage returns distinct session IDs that have at least one event
 // with the given URL within the time range. Used to link flow nodes to recordings.
 func (s *Store) SessionsForPage(ctx context.Context, projectID, page string, from, to time.Time, limit int) ([]string, error) {
@@ -790,7 +781,7 @@ func (s *Store) SessionsForPage(ctx context.Context, projectID, page string, fro
 		FROM events
 		WHERE project_id = ? AND url = ? AND occurred_at >= ? AND occurred_at <= ?
 		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, projectID, page, from, to, limit)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, page, from, to, limit)
 	if err != nil {
 		return nil, err
 	}

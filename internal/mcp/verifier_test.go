@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"slices"
 	"sync/atomic"
 	"testing"
@@ -135,7 +136,7 @@ func (f *fakeIssuer) client() *fbauth.OIDCClient {
 
 func openStore(t *testing.T) *repository.Store {
 	t.Helper()
-	store, err := repository.Open(":memory:")
+	store, err := repository.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("repository.Open: %v", err)
 	}

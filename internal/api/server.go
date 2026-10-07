@@ -3,9 +3,6 @@ package api
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/json"
-	"errors"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,7 +12,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
-	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
@@ -113,6 +110,13 @@ type ServerConfig struct {
 	// endpoint (0 disables auto-registration).
 	FlagAutoRegisterMax int
 
+	// Commands, when set, takes the evaluate endpoint's bookkeeping writes
+	// (spec 012). Nil keeps the old fire-and-forget goroutines.
+	Commands *command.Dispatcher
+	// ReadPoolWait returns the read pool's cumulative connection wait
+	// (sql.DBStats.WaitDuration). The evaluate span reports its delta.
+	ReadPoolWait func() time.Duration
+
 	// MCPResourceURL is the OAuth resource identifier of the MCP endpoint and
 	// the audience its IAMBarn access tokens must carry. The MCP endpoint and
 	// its protected-resource metadata are served only when this and OIDC are
@@ -185,6 +189,10 @@ type Server struct {
 	recordingSettings   ProjectRecordingSettingsRepo
 	projectHealth       service.ProjectHealth
 	flagAutoRegisterMax int
+	commands            *command.Dispatcher
+	readPoolWait        func() time.Duration
+	slow                slowEvaluate
+	slowLog             slowLogLimiter
 	spanRelay           *tracing.SpanRelay
 	mcpResourceURL      string
 
@@ -264,6 +272,9 @@ func NewServer(cfg ServerConfig) *Server {
 		recordingSettings:   cfg.RecordingSettings,
 		projectHealth:       cfg.ProjectHealth,
 		flagAutoRegisterMax: cfg.FlagAutoRegisterMax,
+		commands:            cfg.Commands,
+		readPoolWait:        cfg.ReadPoolWait,
+		slow:                defaultSlowEvaluate,
 		spanRelay:           cfg.SpanRelay,
 	}
 	if s.oidcRefreshGrace <= 0 {
@@ -652,50 +663,4 @@ const accessTokenSkew = 30 * time.Second
 
 func isMutating(method string) bool {
 	return method == http.MethodPost || method == http.MethodPut || method == http.MethodDelete || method == http.MethodPatch
-}
-
-// mapServiceError maps domain/service errors to appropriate HTTP status codes.
-// It never leaks internal error details to the client.
-// Expected errors (not-found, conflict, validation) are logged at Warn level with handled=true.
-// Unexpected errors are logged at Error level with handled=false.
-func mapServiceError(w http.ResponseWriter, err error, op string) {
-	switch {
-	case domain.IsNotFound(err):
-		slog.Warn("service error: not found", "op", op, "error", err, "handled", true)
-		jsonError(w, "not found", http.StatusNotFound)
-	case domain.IsConflict(err):
-		slog.Warn("service error: conflict", "op", op, "error", err, "handled", true)
-		jsonError(w, "already exists", http.StatusConflict)
-	case domain.IsValidation(err):
-		slog.Warn("service error: validation", "op", op, "error", err, "handled", true)
-		var ve *domain.ValidationError
-		if errors.As(err, &ve) {
-			jsonError(w, ve.Error(), http.StatusUnprocessableEntity)
-		} else {
-			jsonError(w, "invalid request", http.StatusUnprocessableEntity)
-		}
-	default:
-		slog.Error("unexpected service error", "op", op, "error", err, "handled", false)
-		jsonError(w, "internal server error", http.StatusInternalServerError)
-	}
-}
-
-// --------------------------------------------------------------------------
-// Helper utilities
-// --------------------------------------------------------------------------
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("write json response", "err", err)
-	}
-}
-
-func jsonError(w http.ResponseWriter, msg string, status int) {
-	writeJSON(w, status, map[string]string{"error": msg})
-}
-
-func readJSON(r *http.Request, v any) error {
-	return json.NewDecoder(r.Body).Decode(v)
 }

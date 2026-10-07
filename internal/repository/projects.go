@@ -65,12 +65,17 @@ func (s *Store) CreateProject(ctx context.Context, name, slug string) (Project, 
 	if err := s.q.InsertProject(ctx, sqlcgen.InsertProjectParams{ID: id, Name: name, Slug: slug}); err != nil {
 		return Project{}, fmt.Errorf("create project: %w", err)
 	}
-	return s.ProjectByID(ctx, id)
+	return s.projectByID(ctx, s.q, id)
 }
 
 // ProjectByID fetches a project by its ID.
 func (s *Store) ProjectByID(ctx context.Context, id string) (Project, error) {
-	p, err := s.q.GetProjectByID(ctx, id)
+	return s.projectByID(ctx, s.rq, id)
+}
+
+// projectByID reads through q so write paths can read back on the write pool.
+func (s *Store) projectByID(ctx context.Context, q *sqlcgen.Queries, id string) (Project, error) {
+	p, err := q.GetProjectByID(ctx, id)
 	if err != nil {
 		return Project{}, err
 	}
@@ -79,7 +84,11 @@ func (s *Store) ProjectByID(ctx context.Context, id string) (Project, error) {
 
 // ProjectBySlug fetches a project by its slug.
 func (s *Store) ProjectBySlug(ctx context.Context, slug string) (Project, error) {
-	p, err := s.q.GetProjectBySlug(ctx, slug)
+	return s.projectBySlug(ctx, s.rq, slug)
+}
+
+func (s *Store) projectBySlug(ctx context.Context, q *sqlcgen.Queries, slug string) (Project, error) {
+	p, err := q.GetProjectBySlug(ctx, slug)
 	if err != nil {
 		return Project{}, err
 	}
@@ -101,7 +110,7 @@ var ErrProjectUnresolvable = errors.New("project cannot be resolved from slug")
 // exact ID already exists, we route the event to that existing project
 // instead of auto-creating a duplicate named after the UUID.
 func (s *Store) EnsureProject(ctx context.Context, slug string) (Project, error) {
-	p, err := s.ProjectBySlug(ctx, slug)
+	p, err := s.projectBySlug(ctx, s.q, slug)
 	if err == nil {
 		return p, nil
 	}
@@ -110,7 +119,7 @@ func (s *Store) EnsureProject(ctx context.Context, slug string) (Project, error)
 	}
 
 	if looksLikeUUID(slug) {
-		if byID, idErr := s.ProjectByID(ctx, slug); idErr == nil {
+		if byID, idErr := s.projectByID(ctx, s.q, slug); idErr == nil {
 			return byID, nil
 		} else if idErr != sql.ErrNoRows {
 			return Project{}, idErr
@@ -156,7 +165,7 @@ func looksLikeUUID(s string) bool {
 // EnsureProjectPending fetches a project by slug or creates it with status='pending'.
 // If the project already exists (any status) it is returned as-is.
 func (s *Store) EnsureProjectPending(ctx context.Context, name, slug string) (Project, error) {
-	p, err := s.ProjectBySlug(ctx, slug)
+	p, err := s.projectBySlug(ctx, s.q, slug)
 	if err == nil {
 		return p, nil
 	}
@@ -167,7 +176,7 @@ func (s *Store) EnsureProjectPending(ctx context.Context, name, slug string) (Pr
 	if err := s.q.InsertProjectPending(ctx, sqlcgen.InsertProjectPendingParams{ID: id, Name: name, Slug: slug}); err != nil {
 		return Project{}, fmt.Errorf("create pending project: %w", err)
 	}
-	return s.ProjectByID(ctx, id)
+	return s.projectByID(ctx, s.q, id)
 }
 
 // ApproveProject sets status='active' for a project and returns the updated project.
@@ -175,12 +184,12 @@ func (s *Store) ApproveProject(ctx context.Context, id string) (Project, error) 
 	if err := s.q.ApproveProject(ctx, id); err != nil {
 		return Project{}, fmt.Errorf("approve project: %w", err)
 	}
-	return s.ProjectByID(ctx, id)
+	return s.projectByID(ctx, s.q, id)
 }
 
 // ListProjects returns all projects.
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.q.ListProjects(ctx)
+	rows, err := s.rq.ListProjects(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -222,12 +231,12 @@ func (s *Store) UpdateProject(ctx context.Context, id, name, domain string) (Pro
 	if err := s.q.UpdateProject(ctx, sqlcgen.UpdateProjectParams{Name: name, Domain: domainVal, ID: id}); err != nil {
 		return Project{}, fmt.Errorf("update project: %w", err)
 	}
-	return s.ProjectByID(ctx, id)
+	return s.projectByID(ctx, s.q, id)
 }
 
 // HasProjects returns true if at least one project exists in the database.
 func (s *Store) HasProjects(ctx context.Context) (bool, error) {
-	n, err := s.q.CountProjects(ctx)
+	n, err := s.rq.CountProjects(ctx)
 	if err != nil {
 		return false, err
 	}

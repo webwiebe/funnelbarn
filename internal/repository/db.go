@@ -5,11 +5,15 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"net/url"
+	"path/filepath"
+	"strings"
 
 	"github.com/XSAM/otelsql"
 	"github.com/pressly/goose/v3"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/sqlcgen"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	_ "modernc.org/sqlite"
@@ -19,10 +23,37 @@ import (
 var migrations embed.FS
 
 // Store wraps a SQLite database connection.
+//
+// It holds two pools: db is the single-connection write pool, rdb is a
+// read-only pool that serves queries without waiting on a running write. For
+// in-memory databases rdb aliases db.
 type Store struct {
-	db       *sql.DB
-	q        *sqlcgen.Queries
-	statsReg metric.Registration
+	db           *sql.DB
+	q            *sqlcgen.Queries
+	rdb          *sql.DB
+	rq           *sqlcgen.Queries
+	statsReg     metric.Registration
+	readStatsReg metric.Registration
+}
+
+// poolAttr labels the otelsql metrics and spans of one pool.
+func poolAttr(pool string) attribute.KeyValue {
+	return attribute.String("db.pool", pool)
+}
+
+// readOnlyDSN builds the DSN of the read pool for the database at absPath.
+func readOnlyDSN(absPath string) string {
+	u := url.URL{Scheme: "file", Path: filepath.ToSlash(absPath)}
+	return u.String() + "?mode=ro&_pragma=query_only(1)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+}
+
+// isFileDB reports whether path names an on-disk database that a second pool
+// can open.
+func isFileDB(path string) bool {
+	if path == ":memory:" || strings.HasPrefix(path, "file:") || strings.Contains(path, "mode=memory") {
+		return false
+	}
+	return true
 }
 
 // Open opens the SQLite database at path and runs goose migrations.
@@ -44,7 +75,7 @@ func Open(path string) (*Store, error) {
 	// db.sql.* histograms are silently bound to the no-op default forever.
 	dsn := path + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
 	db, err := otelsql.Open("sqlite", dsn,
-		otelsql.WithAttributes(semconv.DBSystemSqlite),
+		otelsql.WithAttributes(semconv.DBSystemSqlite, poolAttr("write")),
 		otelsql.WithSpanOptions(otelsql.SpanOptions{
 			OmitConnPrepare:      true,
 			OmitConnResetSession: true,
@@ -61,7 +92,9 @@ func Open(path string) (*Store, error) {
 	// must have already called tracing.InitMetrics before repository.Open so
 	// this binds to the real provider instead of the no-op default; see the
 	// comment on otelsql.Open above.
-	statsReg, err := otelsql.RegisterDBStatsMetrics(db, otelsql.WithMeterProvider(otel.GetMeterProvider()))
+	statsReg, err := otelsql.RegisterDBStatsMetrics(db,
+		otelsql.WithMeterProvider(otel.GetMeterProvider()),
+		otelsql.WithAttributes(semconv.DBSystemSqlite, poolAttr("write")))
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("register db stats metrics: %w", err)
@@ -107,7 +140,65 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("ensure columns: %w", err)
 	}
 
-	return &Store{db: db, q: sqlcgen.New(db), statsReg: statsReg}, nil
+	st := &Store{db: db, q: sqlcgen.New(db), rdb: db, rq: sqlcgen.New(db), statsReg: statsReg}
+
+	// The read pool opens after migrations so the schema exists and the WAL
+	// shared-memory file has been created by the write pool.
+	if isFileDB(path) {
+		if err := st.openReadPool(path); err != nil {
+			closeAll()
+			return nil, err
+		}
+	}
+	return st, nil
+}
+
+// openReadPool opens the read-only pool on the same file as the write pool.
+func (s *Store) openReadPool(path string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("resolve db path: %w", err)
+	}
+	rdb, err := otelsql.Open("sqlite", readOnlyDSN(abs),
+		otelsql.WithAttributes(semconv.DBSystemSqlite, poolAttr("read")),
+		otelsql.WithSpanOptions(otelsql.SpanOptions{
+			OmitConnPrepare:      true,
+			OmitConnResetSession: true,
+			OmitRows:             true,
+			DisableErrSkip:       true,
+		}),
+	)
+	if err != nil {
+		return fmt.Errorf("open sqlite read pool: %w", err)
+	}
+	rdb.SetMaxOpenConns(4)
+	rdb.SetMaxIdleConns(4)
+	rdb.SetConnMaxLifetime(0)
+
+	reg, err := otelsql.RegisterDBStatsMetrics(rdb,
+		otelsql.WithMeterProvider(otel.GetMeterProvider()),
+		otelsql.WithAttributes(semconv.DBSystemSqlite, poolAttr("read")))
+	if err != nil {
+		_ = rdb.Close()
+		return fmt.Errorf("register read pool db stats metrics: %w", err)
+	}
+
+	var qo int
+	if err := rdb.QueryRow("PRAGMA query_only").Scan(&qo); err != nil {
+		_ = reg.Unregister()
+		_ = rdb.Close()
+		return fmt.Errorf("check query_only pragma: %w", err)
+	}
+	if qo != 1 {
+		_ = reg.Unregister()
+		_ = rdb.Close()
+		return fmt.Errorf("read pool is writable (PRAGMA query_only=%d)", qo)
+	}
+
+	s.rdb = rdb
+	s.rq = sqlcgen.New(rdb)
+	s.readStatsReg = reg
+	return nil
 }
 
 // ensureColumns adds any columns that may be missing on databases older than
@@ -148,23 +239,40 @@ func ensureColumns(db *sql.DB) error {
 	return nil
 }
 
-// Close closes the underlying database connection.
+// Close closes both pools. When the read pool aliases the write pool it is
+// closed once.
 func (s *Store) Close() error {
 	if s == nil || s.db == nil {
 		return nil
 	}
+	var rerr error
+	if s.rdb != nil && s.rdb != s.db {
+		if s.readStatsReg != nil {
+			_ = s.readStatsReg.Unregister()
+		}
+		rerr = s.rdb.Close()
+	}
 	if s.statsReg != nil {
 		s.statsReg.Unregister()
 	}
-	return s.db.Close()
+	if err := s.db.Close(); err != nil {
+		return err
+	}
+	return rerr
 }
 
-// DB returns the underlying *sql.DB for use by other packages.
+// DB returns the write pool for use by other packages.
 func (s *Store) DB() *sql.DB {
 	return s.db
 }
 
-// Ping verifies the database connection is alive.
+// ReadDB returns the read-only pool. For in-memory databases it is the write
+// pool.
+func (s *Store) ReadDB() *sql.DB {
+	return s.rdb
+}
+
+// Ping verifies the read pool connection is alive.
 func (s *Store) Ping(ctx context.Context) error {
-	return s.db.PingContext(ctx)
+	return s.rdb.PingContext(ctx)
 }

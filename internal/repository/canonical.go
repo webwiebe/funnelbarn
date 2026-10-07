@@ -31,7 +31,7 @@ type MappingSuggestion struct {
 // ListCanonicalEvents returns the canonical event catalog ordered for display.
 func (s *Store) ListCanonicalEvents(ctx context.Context) ([]CanonicalEvent, error) {
 	const q = `SELECT key, label, sort_order FROM canonical_events ORDER BY sort_order, key`
-	rows, err := s.db.QueryContext(ctx, q)
+	rows, err := s.rdb.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +113,7 @@ func (s *Store) CanonicalKeySet(ctx context.Context) (map[string]bool, error) {
 // ListMappings returns all raw→canonical mappings for a project.
 func (s *Store) ListMappings(ctx context.Context, projectID string) ([]EventNameMapping, error) {
 	const q = `SELECT project_id, raw_name, canonical_key FROM event_name_mappings WHERE project_id = ? ORDER BY raw_name`
-	rows, err := s.db.QueryContext(ctx, q, projectID)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +156,7 @@ func (s *Store) DeleteMapping(ctx context.Context, projectID, rawName string) er
 // funnel engine — one query, grouped in Go.
 func (s *Store) MappingsByProject(ctx context.Context) (map[string]map[string][]string, error) {
 	const q = `SELECT project_id, canonical_key, raw_name FROM event_name_mappings ORDER BY project_id, canonical_key`
-	rows, err := s.db.QueryContext(ctx, q)
+	rows, err := s.rdb.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
 	}

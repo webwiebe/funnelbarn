@@ -20,6 +20,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/api"
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
+	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
@@ -251,11 +252,17 @@ func run() error {
 	}
 	defer store.Close()
 
+	// The dispatcher takes evaluate bookkeeping writes (spec 012) on the write
+	// pool. Deferred LIFO, so the drain runs before store.Close above.
+	commands := command.New(command.Options{Logger: slog.Default()})
+	commands.Start(ctx)
+	defer drainCommands(commands)
+
 	// Wire services.
 	projectsSvc := service.NewProjectService(store)
 	funnelsSvc := service.NewFunnelService(store)
 	abtestsSvc := service.NewABTestService(store)
-	flagsSvc := service.NewFlagService(store).WithConfigCacheTTL(time.Duration(cfg.ConfigFlagCacheSeconds) * time.Second)
+	flagsSvc := service.NewFlagService(store).WithConfigCacheTTL(time.Duration(cfg.ConfigFlagCacheSeconds) * time.Second).WithCommands(commands)
 	eventsSvc := service.NewEventService(store)
 	overviewSvc := service.NewOverviewService(store)
 	sessionsSvc := service.NewSessionService(store)
@@ -301,7 +308,7 @@ func run() error {
 		runBackgroundWorker(ctx, cfg, store, eventSpool, geoLookup, recordingsSvc)
 	})
 
-	apiAuthorizer, err := newAPIAuthorizer(cfg, store)
+	apiAuthorizer, err := newAPIAuthorizer(cfg, store, commands)
 	if err != nil {
 		return err
 	}
@@ -412,6 +419,8 @@ func run() error {
 		RecordingSettings:     store,
 		ProjectHealth:         healthSvc,
 		FlagAutoRegisterMax:   cfg.AutoRegisterMaxFlags,
+		Commands:              commands,
+		ReadPoolWait:          func() time.Duration { return store.ReadDB().Stats().WaitDuration },
 		SpanRelay:             spanRelay,
 		MCPResourceURL:        cfg.MCPResourceURL,
 	})
@@ -441,17 +450,7 @@ func run() error {
 		errCh <- server.ListenAndServe()
 	})
 
-	select {
-	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return server.Shutdown(shutdownCtx)
-	case err := <-errCh:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return err
-	}
+	return waitServer(ctx, server, errCh)
 }
 
 // deadLetterRecord parks an unprocessable record and advances the cursor past

@@ -57,7 +57,7 @@ Each pool reports `otelsql` connection-pool metrics with a `db.pool` attribute (
 - `Flush(ctx)` waits until every submitted command is applied; tests use it, and shutdown drains with a timeout before the store closes.
 - Phase 2 replaces the channel with Redis/Valkey without touching the handlers.
 
-`EvaluateOrRegisterFlag` for an unknown key checks the auto-flag cap on the read pool, submits `EnsureAutoFlag`, and returns the caller's default with reason `DISABLED`, which is what the endpoint returns for a freshly auto-registered flag today. Concurrent first evaluations of different new keys can overshoot the cap by the number of commands in flight; `EnsureAutoFlag` is idempotent per key.
+`EvaluateOrRegisterFlag` for an unknown key checks the auto-flag cap on the read pool, submits `EnsureAutoFlag`, and returns the caller's default with reason `DISABLED`, which is what the endpoint returns for a freshly auto-registered flag today. Concurrent first evaluations of different new keys can all pass that read, so `EnsureAutoFlag` checks the cap again when the consumer applies it and skips a new key past the cap. It is idempotent per key.
 
 ### Maintenance
 
@@ -121,6 +121,7 @@ Async commands are eventually consistent: an evaluation row, a touch or an inges
 ## Verification
 
 - `make regress` (blocking in CI): golden API snapshots of every GET route and of flag evaluation, a golden dump of the bookkeeping tables after a scripted scenario, and the architecture rules. The goldens were recorded on the code before this split, so every later change must reproduce them.
-- A contention test runs the maintenance purge on a large database while evaluate requests go in, and asserts p99 under 100 ms.
+- A contention gate holds the only write connection and sends evaluate requests, including one for an unknown key; every request must complete, and every queued row must land once the connection is released. It fails on any write or read the evaluate path still does on the write pool, and does not depend on machine speed.
+- A latency test runs the maintenance purge on a large database while evaluate requests go in, and asserts p99 under 100 ms. It is opt-in (`FUNNELBARN_CONTENTION_TEST=1`) because a wall-clock bound flakes on the shared CI runners.
 - In phase 2 the same goldens run against standalone and against an in-process reader and writer pair, and a durability test stops the writer, sends traffic to a reader, restarts the writer and checks that every row landed exactly once.
 - After each deploy to testing, `scripts/verify-testing.sh` probes evaluate latency through the post-boot maintenance pass and checks that a `maintenance.purge` span reached SpanBarn.
