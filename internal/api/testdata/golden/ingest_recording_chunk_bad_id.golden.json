@@ -1,0 +1,9 @@
+{
+  "body": {
+    "error": "recording_id and session_id must be alphanumeric (with '-' or '_'), max 64 chars"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 422
+}

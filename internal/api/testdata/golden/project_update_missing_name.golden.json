@@ -1,0 +1,9 @@
+{
+  "body": {
+    "error": "name is required"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 400
+}

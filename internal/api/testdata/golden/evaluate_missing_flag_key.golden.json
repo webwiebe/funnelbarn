@@ -1,0 +1,9 @@
+{
+  "body": {
+    "error": "flag_key is required"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 422
+}

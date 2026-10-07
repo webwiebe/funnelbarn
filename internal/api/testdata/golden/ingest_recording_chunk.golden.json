@@ -1,0 +1,9 @@
+{
+  "body": {
+    "accepted": true
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 202
+}

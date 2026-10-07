@@ -1,0 +1,22 @@
+{
+  "body": {
+    "chunk_count": 2,
+    "duration_ms": 5000,
+    "environment": "production",
+    "first_chunk_index": 0,
+    "last_chunk_index": 1,
+    "occurred_at": "2026-03-02T09:00:02Z",
+    "offset_ms": 2000,
+    "page_url": "https://acme.example/",
+    "project_id": "f0000000-0001-4000-8000-000000000001",
+    "recording_id": "rec-A-01",
+    "recording_started_at": "2026-03-02T09:00:00Z",
+    "session_id": "sess-A-00",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "url": "https://acme.example/api/cart"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

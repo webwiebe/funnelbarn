@@ -1,0 +1,9 @@
+{
+  "body": {
+    "error": "sample_rate must be between 0 and 1"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 400
+}

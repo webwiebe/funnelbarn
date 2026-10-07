@@ -1,0 +1,14 @@
+{
+  "body": {
+    "created_at": "<now>",
+    "domain": "store.gamma.example",
+    "id": "<uuid>",
+    "name": "Gamma Store",
+    "slug": "gamma-example",
+    "status": "active"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

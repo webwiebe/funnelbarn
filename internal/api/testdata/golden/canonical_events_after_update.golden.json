@@ -1,0 +1,45 @@
+{
+  "body": {
+    "canonical_events": [
+      {
+        "key": "page_view",
+        "label": "Page View",
+        "sort_order": 10
+      },
+      {
+        "key": "sign_up",
+        "label": "Sign Up",
+        "sort_order": 20
+      },
+      {
+        "key": "login",
+        "label": "Login",
+        "sort_order": 30
+      },
+      {
+        "key": "add_to_cart",
+        "label": "Add to Cart",
+        "sort_order": 40
+      },
+      {
+        "key": "checkout_start",
+        "label": "Checkout Start",
+        "sort_order": 50
+      },
+      {
+        "key": "purchase",
+        "label": "Purchase",
+        "sort_order": 60
+      },
+      {
+        "key": "golden_evt",
+        "label": "Golden event v2",
+        "sort_order": 98
+      }
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

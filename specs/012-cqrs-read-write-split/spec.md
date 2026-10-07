@@ -52,7 +52,8 @@ Each pool reports `otelsql` connection-pool metrics with a `db.pool` attribute (
 `internal/command` holds typed commands and a dispatcher:
 
 - `RecordEvaluation`, `TouchAPIKey`, `TouchFlagEvaluated`, `MarkFlagsEvaluated`, `EnsureAutoFlag`.
-- Phase 1: a buffered channel drained by one goroutine on the write pool. Submitting never blocks; a full buffer drops the command with a Warn log and a counter. The queue depth is exported as a gauge.
+- Phase 1: a buffered channel drained by one goroutine on the write pool. The queue depth is exported as a gauge.
+- A full buffer applies backpressure: submitting blocks until there is room, independent of the request context, so a caller that disconnects does not lose its row. Commands are never dropped, so A/B exposure rows stay complete. The time a submit waited is recorded on the request span, and an evaluate whose total time, or whose wait to submit, crosses a threshold logs at Error level, which opens a BugBarn issue. Dropping bookkeeping under pressure is deferred until that measurement shows evaluate actually slowing down.
 - `Flush(ctx)` waits until every submitted command is applied; tests use it, and shutdown drains with a timeout before the store closes.
 - Phase 2 replaces the channel with Redis/Valkey without touching the handlers.
 
@@ -99,7 +100,7 @@ Delivery is at-least-once: the consumer moves an item to a per-queue processing 
 
 ### Durability while the writer or Redis is down
 
-Readers keep writing ingest to the existing on-disk spool and advance its cursor only after a successful `LPUSH`. With the writer down, items wait in Redis and land when it is back. With Redis down, the spool backs up and drains later. Bookkeeping commands from readers retry a bounded number of times and are then dropped with a counter, since they are best-effort today as well.
+Readers keep writing ingest to the existing on-disk spool and advance its cursor only after a successful `LPUSH`. With the writer down, items wait in Redis and land when it is back. With Redis down, the spool backs up and drains later. Bookkeeping commands that cannot reach Redis go to the reader's spool as well, so an outage delays them and loses none. As in phase 1, nothing is dropped until evaluate latency measurements call for it.
 
 ### How readers see the database
 

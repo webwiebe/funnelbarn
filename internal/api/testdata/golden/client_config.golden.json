@@ -1,0 +1,18 @@
+{
+  "body": {
+    "bugbarn_endpoint": "",
+    "bugbarn_ingest_key": "",
+    "funnelbarn_endpoint": "http://localhost",
+    "funnelbarn_recording": true,
+    "funnelbarn_recording_rate": 0.25,
+    "iambarn": {},
+    "local_auth_available": true,
+    "oidc": {
+      "enabled": false
+    }
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

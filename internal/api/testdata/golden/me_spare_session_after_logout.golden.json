@@ -1,0 +1,9 @@
+{
+  "body": {
+    "error": "session expired"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 401
+}

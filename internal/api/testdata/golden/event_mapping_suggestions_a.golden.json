@@ -1,0 +1,14 @@
+{
+  "body": {
+    "suggestions": [
+      {
+        "raw_name": "click_cta",
+        "suggested_key": ""
+      }
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

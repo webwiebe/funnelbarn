@@ -1,0 +1,14 @@
+sdk exp_split 200 cache="no-store" {"cache_max_age_seconds":0,"flag_key":"exp_split","reason":"SPLIT","value":true,"variant":"on"}
+sdk exp_split 200 cache="no-store" {"cache_max_age_seconds":0,"flag_key":"exp_split","reason":"SPLIT","value":true,"variant":"on"}
+sdk exp_target 200 cache="no-store" {"cache_max_age_seconds":0,"flag_key":"exp_target","flag_metadata":{"evaluated_rule_name":"pro-users"},"reason":"TARGETING_MATCH","value":true,"variant":"on"}
+sdk exp_target 200 cache="no-store" {"cache_max_age_seconds":0,"flag_key":"exp_target","reason":"SPLIT","value":true,"variant":"on"}
+sdk cfg_flag 200 cache="private, max-age=60" {"cache_max_age_seconds":60,"flag_key":"cfg_flag","reason":"STATIC","value":"beta","variant":"v2"}
+sdk off_flag 200 cache="no-store" {"cache_max_age_seconds":0,"flag_key":"off_flag","reason":"DISABLED","value":false,"variant":"off"}
+sdk auto_exp 200 cache="no-store" {"cache_max_age_seconds":0,"flag_key":"auto_exp","reason":"DISABLED","value":true,"variant":"default"}
+sdk auto_cfg 200 cache="private, max-age=60" {"cache_max_age_seconds":60,"flag_key":"auto_cfg","reason":"DISABLED","value":"x","variant":"default"}
+sdk auto_third 200 cache="no-store" {"cache_max_age_seconds":0,"flag_key":"auto_third","reason":"DISABLED","value":5,"variant":"default"}
+sdk auto_over 200 cache="no-store" {"cache_max_age_seconds":0,"error":"project <project:snap>: auto-register limit reached","error_code":"AUTO_REGISTER_LIMIT","flag_key":"auto_over","reason":"ERROR","value":1,"variant":""}
+sdk bad key! 200 cache="no-store" {"cache_max_age_seconds":0,"error":"flag not found: sql: no rows in result set","error_code":"FLAG_NOT_FOUND","flag_key":"bad key!","reason":"ERROR","value":"d","variant":""}
+sdk auto_exp 200 cache="no-store" {"cache_max_age_seconds":0,"flag_key":"auto_exp","reason":"DISABLED","value":true,"variant":"default"}
+playground exp_split 200 {"cache_max_age_seconds":0,"flag_key":"exp_split","reason":"SPLIT","value":false,"variant":"off"}
+playground playground_unknown 200 {"cache_max_age_seconds":0,"error":"flag not found: sql: no rows in result set","error_code":"FLAG_NOT_FOUND","flag_key":"playground_unknown","reason":"ERROR","value":"d","variant":""}

@@ -1,0 +1,22 @@
+{
+  "body": {
+    "conversion_event": "",
+    "created_at": "2026-03-01T00:00:04Z",
+    "default_variant": "off",
+    "flag_key": "legacy_search",
+    "flag_kind": "experiment",
+    "flag_type": "boolean",
+    "id": "f0000000-0005-4000-8000-000000000004",
+    "name": "Legacy search",
+    "origin": "manual",
+    "project_id": "f0000000-0001-4000-8000-000000000001",
+    "split": "{\"on\":0,\"off\":100}",
+    "status": "paused",
+    "targeting_rules": "[]",
+    "variants": "{\"on\":true,\"off\":false}"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

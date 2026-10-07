@@ -1,0 +1,17 @@
+{
+  "body": {
+    "session_ids": [
+      "sess-A-03",
+      "sess-A-09",
+      "sess-A-15",
+      "sess-A-21",
+      "sess-A-27",
+      "sess-A-33",
+      "sess-A-39"
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

@@ -1,0 +1,16 @@
+{
+  "body": {
+    "event_names": [
+      "add_to_cart",
+      "checkout_start",
+      "click_cta",
+      "page_view",
+      "purchase",
+      "signup"
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

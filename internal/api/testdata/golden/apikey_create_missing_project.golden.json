@@ -1,0 +1,9 @@
+{
+  "body": {
+    "error": "project_id is required — an API key is always scoped to one project"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 400
+}

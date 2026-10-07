@@ -1,0 +1,14 @@
+{
+  "body": {
+    "cache_max_age_seconds": 0,
+    "flag_key": "brand_new_flag",
+    "reason": "DISABLED",
+    "value": true,
+    "variant": "default"
+  },
+  "headers": {
+    "Cache-Control": "no-store",
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

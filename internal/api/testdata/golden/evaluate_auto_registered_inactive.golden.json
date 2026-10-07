@@ -1,0 +1,14 @@
+{
+  "body": {
+    "cache_max_age_seconds": 0,
+    "flag_key": "sdk_discovered",
+    "reason": "DISABLED",
+    "value": false,
+    "variant": "default"
+  },
+  "headers": {
+    "Cache-Control": "no-store",
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

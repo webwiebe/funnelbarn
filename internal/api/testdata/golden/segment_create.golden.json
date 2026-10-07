@@ -1,0 +1,19 @@
+{
+  "body": {
+    "created_at": "<now>",
+    "id": "<uuid>",
+    "name": "Golden segment",
+    "project_id": "f0000000-0001-4000-8000-000000000001",
+    "rules": [
+      {
+        "field": "country_code",
+        "operator": "eq",
+        "value": "FR"
+      }
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 201
+}

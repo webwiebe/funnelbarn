@@ -1,0 +1,5 @@
+{"context_hash":"011e39efe22590f4a339ad19cd180f4d","context_keys":"[\"plan\",\"targetingKey\"]","flag_id":"<flag:snap/exp_target>","project_id":"<project:snap>","session_id":null,"variant":"on"}
+{"context_hash":"553f26abeeebe4be18603f3c15bbf6cd","context_keys":"[\"targetingKey\"]","flag_id":"<flag:snap/exp_split>","project_id":"<project:snap>","session_id":null,"variant":"off"}
+{"context_hash":"6ca202c88e549dff68c09bfafbfc60b2","context_keys":"[\"targetingKey\"]","flag_id":"<flag:snap/exp_split>","project_id":"<project:snap>","session_id":null,"variant":"on"}
+{"context_hash":"bb82030dbc2bcaba32a90bf2e207a84a","context_keys":"[\"session_id\",\"targetingKey\"]","flag_id":"<flag:snap/exp_split>","project_id":"<project:snap>","session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1","variant":"on"}
+{"context_hash":"e9c981a479986215bab0bf6c32efefa1","context_keys":"[\"plan\",\"targetingKey\"]","flag_id":"<flag:snap/exp_target>","project_id":"<project:snap>","session_id":null,"variant":"on"}

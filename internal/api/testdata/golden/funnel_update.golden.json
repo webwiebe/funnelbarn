@@ -1,0 +1,37 @@
+{
+  "body": {
+    "created_at": "<now>",
+    "description": "",
+    "id": "<uuid>",
+    "name": "Golden funnel v2",
+    "project_id": "f0000000-0001-4000-8000-000000000001",
+    "scope": "session",
+    "steps": [
+      {
+        "event_name": "page_view",
+        "filters": null,
+        "funnel_id": "<uuid>",
+        "id": "<uuid>",
+        "step_order": 1
+      },
+      {
+        "event_name": "add_to_cart",
+        "filters": null,
+        "funnel_id": "<uuid>",
+        "id": "<uuid>",
+        "step_order": 2
+      },
+      {
+        "event_name": "purchase",
+        "filters": null,
+        "funnel_id": "<uuid>",
+        "id": "<uuid>",
+        "step_order": 3
+      }
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

@@ -1,0 +1,14 @@
+{
+  "body": {
+    "events_received": false,
+    "flags_evaluated": false,
+    "project_id": "f0000000-0001-4000-8000-000000000001",
+    "recordings_received": false,
+    "setup_called": false,
+    "updated_at": "<now>"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

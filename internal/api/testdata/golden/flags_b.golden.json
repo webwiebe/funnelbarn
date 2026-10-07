@@ -1,0 +1,26 @@
+{
+  "body": {
+    "flags": [
+      {
+        "conversion_event": "",
+        "created_at": "2026-03-01T00:00:06Z",
+        "default_variant": "off",
+        "flag_key": "beta_banner",
+        "flag_kind": "experiment",
+        "flag_type": "boolean",
+        "id": "f0000000-0005-4000-8000-000000000006",
+        "name": "Beta banner",
+        "origin": "manual",
+        "project_id": "f0000000-0001-4000-8000-000000000002",
+        "split": "{\"on\":30,\"off\":70}",
+        "status": "active",
+        "targeting_rules": "[]",
+        "variants": "{\"on\":true,\"off\":false}"
+      }
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

@@ -1,0 +1,35 @@
+{
+  "body": {
+    "created_at": "<now>",
+    "description": "created by the golden suite",
+    "id": "<uuid>",
+    "name": "Golden funnel",
+    "project_id": "f0000000-0001-4000-8000-000000000001",
+    "scope": "session",
+    "steps": [
+      {
+        "event_name": "page_view",
+        "filters": null,
+        "funnel_id": "<uuid>",
+        "id": "<uuid>",
+        "step_order": 1
+      },
+      {
+        "event_name": "purchase",
+        "filters": [
+          {
+            "property": "plan",
+            "value": "pro"
+          }
+        ],
+        "funnel_id": "<uuid>",
+        "id": "<uuid>",
+        "step_order": 2
+      }
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 201
+}

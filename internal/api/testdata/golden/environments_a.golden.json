@@ -1,0 +1,12 @@
+{
+  "body": {
+    "environments": [
+      "production",
+      "staging"
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

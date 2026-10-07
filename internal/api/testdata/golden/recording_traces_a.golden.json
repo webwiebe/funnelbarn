@@ -1,0 +1,16 @@
+{
+  "body": {
+    "traces": [
+      {
+        "occurred_at": "2026-03-02T09:00:02Z",
+        "span_id": "00f067aa0ba902b7",
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+        "url": "https://acme.example/api/cart"
+      }
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

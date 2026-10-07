@@ -1,0 +1,18 @@
+{
+  "body": {
+    "effective_enabled": true,
+    "effective_rate": 0.5,
+    "enabled": true,
+    "rules": [
+      {
+        "action": "capture",
+        "pattern": "/checkout*"
+      }
+    ],
+    "sample_rate": 0.5
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

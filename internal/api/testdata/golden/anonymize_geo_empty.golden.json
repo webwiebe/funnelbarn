@@ -1,0 +1,9 @@
+{
+  "body": {
+    "error": "session_id or ip is required"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 422
+}

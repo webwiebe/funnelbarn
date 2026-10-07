@@ -1,0 +1,20 @@
+{
+  "body": {
+    "evaluations": [
+      {
+        "evaluated_at": "<now>",
+        "flag_name": "Checkout redesign",
+        "variant": "control"
+      },
+      {
+        "evaluated_at": "<now>",
+        "flag_name": "Pricing banner",
+        "variant": "b"
+      }
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

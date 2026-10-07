@@ -1,0 +1,9 @@
+{
+  "body": {
+    "error": "steps: at least one step required"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 422
+}

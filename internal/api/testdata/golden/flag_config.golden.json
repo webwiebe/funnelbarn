@@ -1,0 +1,22 @@
+{
+  "body": {
+    "conversion_event": "",
+    "created_at": "2026-03-01T00:00:03Z",
+    "default_variant": "default",
+    "flag_key": "max_items",
+    "flag_kind": "config",
+    "flag_type": "number",
+    "id": "f0000000-0005-4000-8000-000000000003",
+    "name": "Max items per page",
+    "origin": "manual",
+    "project_id": "f0000000-0001-4000-8000-000000000001",
+    "split": "{}",
+    "status": "active",
+    "targeting_rules": "[]",
+    "variants": "{\"default\":25,\"high\":100}"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

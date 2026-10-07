@@ -1,0 +1,14 @@
+{
+  "body": {
+    "cache_max_age_seconds": 60,
+    "flag_key": "max_items",
+    "reason": "STATIC",
+    "value": 25,
+    "variant": "default"
+  },
+  "headers": {
+    "Cache-Control": "private, max-age=60",
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

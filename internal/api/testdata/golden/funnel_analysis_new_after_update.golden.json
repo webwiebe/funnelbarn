@@ -1,0 +1,64 @@
+{
+  "body": {
+    "from": "2026-03-02T00:00:00Z",
+    "funnel": {
+      "created_at": "<now>",
+      "description": "",
+      "id": "<uuid>",
+      "name": "Golden funnel v2",
+      "project_id": "f0000000-0001-4000-8000-000000000001",
+      "scope": "session",
+      "steps": [
+        {
+          "event_name": "page_view",
+          "filters": null,
+          "funnel_id": "<uuid>",
+          "id": "<uuid>",
+          "step_order": 1
+        },
+        {
+          "event_name": "add_to_cart",
+          "filters": null,
+          "funnel_id": "<uuid>",
+          "id": "<uuid>",
+          "step_order": 2
+        },
+        {
+          "event_name": "purchase",
+          "filters": null,
+          "funnel_id": "<uuid>",
+          "id": "<uuid>",
+          "step_order": 3
+        }
+      ]
+    },
+    "results": [
+      {
+        "conversion": 1,
+        "count": 40,
+        "drop_off": 0,
+        "event_name": "page_view",
+        "step_order": 1
+      },
+      {
+        "conversion": 0.35,
+        "count": 14,
+        "drop_off": 0.65,
+        "event_name": "add_to_cart",
+        "step_order": 2
+      },
+      {
+        "conversion": 0.175,
+        "count": 7,
+        "drop_off": 0.5,
+        "event_name": "purchase",
+        "step_order": 3
+      }
+    ],
+    "to": "2026-03-08T00:00:00Z"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

@@ -1,0 +1,95 @@
+{
+  "body": {
+    "from": "2026-03-02T00:00:00Z",
+    "funnel": {
+      "created_at": "2026-03-01T00:00:01Z",
+      "description": "Across projects",
+      "id": "f0000000-0009-4000-8000-000000000001",
+      "name": "Visit to signup",
+      "project_ids": [
+        "f0000000-0001-4000-8000-000000000001",
+        "f0000000-0001-4000-8000-000000000002"
+      ],
+      "scope": "session",
+      "segment": "",
+      "steps": [
+        {
+          "canonical_key": "page_view",
+          "label": "Page View",
+          "step_order": 1
+        },
+        {
+          "canonical_key": "sign_up",
+          "label": "Sign Up",
+          "step_order": 2
+        }
+      ]
+    },
+    "result": {
+      "by_project": [
+        {
+          "project_id": "f0000000-0001-4000-8000-000000000001",
+          "project_name": "Acme Shop",
+          "steps": [
+            {
+              "conversion": 1,
+              "count": 40,
+              "drop_off": 0,
+              "event_name": "page_view",
+              "step_order": 1
+            },
+            {
+              "conversion": 0.2,
+              "count": 8,
+              "drop_off": 0.8,
+              "event_name": "sign_up",
+              "step_order": 2
+            }
+          ]
+        },
+        {
+          "project_id": "f0000000-0001-4000-8000-000000000002",
+          "project_name": "Beta Blog",
+          "steps": [
+            {
+              "conversion": 1,
+              "count": 12,
+              "drop_off": 0,
+              "event_name": "page_view",
+              "step_order": 1
+            },
+            {
+              "conversion": 0.3333333333333333,
+              "count": 4,
+              "drop_off": 0.6666666666666667,
+              "event_name": "sign_up",
+              "step_order": 2
+            }
+          ]
+        }
+      ],
+      "excluded_projects": null,
+      "steps": [
+        {
+          "conversion": 1,
+          "count": 52,
+          "drop_off": 0,
+          "event_name": "page_view",
+          "step_order": 1
+        },
+        {
+          "conversion": 0.23076923076923078,
+          "count": 12,
+          "drop_off": 0.7692307692307692,
+          "event_name": "sign_up",
+          "step_order": 2
+        }
+      ]
+    },
+    "to": "2026-03-08T00:00:00Z"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

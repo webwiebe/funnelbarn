@@ -1,0 +1,17 @@
+{
+  "body": {
+    "cache_max_age_seconds": 0,
+    "flag_key": "pricing_banner",
+    "flag_metadata": {
+      "evaluated_rule_name": "dutch visitors"
+    },
+    "reason": "TARGETING_MATCH",
+    "value": "dutch-promo",
+    "variant": "b"
+  },
+  "headers": {
+    "Cache-Control": "no-store",
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

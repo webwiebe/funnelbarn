@@ -1,0 +1,16 @@
+{
+  "body": {
+    "cache_max_age_seconds": 0,
+    "error": "flag not found: sql: no rows in result set",
+    "error_code": "FLAG_NOT_FOUND",
+    "flag_key": "never_registered",
+    "reason": "ERROR",
+    "value": "fallback",
+    "variant": ""
+  },
+  "headers": {
+    "Cache-Control": "no-store",
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

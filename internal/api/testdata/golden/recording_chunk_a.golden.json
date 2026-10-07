@@ -1,0 +1,16 @@
+{
+  "body": [
+    {
+      "data": {
+        "source": 1
+      },
+      "timestamp": 1772442005000,
+      "type": 3
+    }
+  ],
+  "headers": {
+    "Cache-Control": "private, max-age=3600",
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}
