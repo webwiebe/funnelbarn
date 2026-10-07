@@ -254,7 +254,11 @@ func run() error {
 
 	// The dispatcher takes evaluate bookkeeping writes (spec 012) on the write
 	// pool. Deferred LIFO, so the drain runs before store.Close above.
-	commands := command.New(command.Options{Logger: slog.Default()})
+	healthSvc := service.NewProjectHealthService(store)
+	commands := command.New(command.Options{
+		Logger: slog.Default(),
+		Deps:   command.Deps{Store: store, MarkFlagsEvaluated: healthSvc.MarkFlagsEvaluated},
+	})
 	commands.Start(ctx)
 	defer drainCommands(commands)
 
@@ -269,7 +273,6 @@ func run() error {
 	apikeysSvc := service.NewAPIKeyService(store)
 	widgetsSvc := service.NewWidgetService(store)
 	segmentsSvc := service.NewSegmentService(store)
-	healthSvc := service.NewProjectHealthService(store)
 
 	eventSpool, err := spool.NewWithLimit(cfg.SpoolDir, cfg.MaxSpoolBytes)
 	if err != nil {

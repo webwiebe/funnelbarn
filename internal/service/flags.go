@@ -53,7 +53,7 @@ type FlagService struct {
 
 	// commands, when set, takes every write the evaluate path used to make
 	// synchronously (see flags_async.go). Nil keeps the synchronous behaviour.
-	commands *command.Dispatcher
+	commands command.Bus
 }
 
 func NewFlagService(store ports.FlagRepo) *FlagService {
@@ -322,7 +322,7 @@ func (svc *FlagService) recordEvaluation(ctx context.Context, flag repository.Fe
 		ContextKeys: ctxKeys,
 	}
 	if svc.commands != nil {
-		svc.submit(ctx, command.RecordEvaluation{Store: svc.store, Eval: eval})
+		svc.submit(ctx, command.RecordEvaluation{Eval: eval})
 		return
 	}
 	if err := svc.store.RecordEvaluation(ctx, eval); err != nil {
@@ -417,7 +417,7 @@ func (svc *FlagService) EvaluateOrRegisterFlag(ctx context.Context, projectID, f
 		// No synchronous write: the flag is created by the dispatcher and the
 		// caller gets what a freshly registered inert flag evaluates to.
 		auto := buildAutoFlag(projectID, flagKey, defaultValue, kind)
-		svc.submit(ctx, command.EnsureAutoFlag{Store: svc.store, Flag: auto, Max: maxAuto})
+		svc.submit(ctx, command.EnsureAutoFlag{Flag: auto, Max: maxAuto})
 		// FIFO order guarantees the flag exists when the touch is applied.
 		svc.touchEvaluated(ctx, projectID, flagKey)
 		return FlagEvalResult{

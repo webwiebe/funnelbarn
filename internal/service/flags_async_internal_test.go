@@ -94,9 +94,15 @@ func (s *asyncFlagStore) TouchFlagEvaluated(_ context.Context, id string) error 
 	return nil
 }
 
-func startDispatcher(t *testing.T) *command.Dispatcher {
+// TouchAPIKey completes command.Store; the flag service never submits it.
+func (s *asyncFlagStore) TouchAPIKey(context.Context, string) error { return nil }
+
+func startDispatcher(t *testing.T, store command.Store) *command.Dispatcher {
 	t.Helper()
-	d := command.New(command.Options{})
+	d := command.New(command.Options{Deps: command.Deps{
+		Store:              store,
+		MarkFlagsEvaluated: func(context.Context, string) error { return nil },
+	}})
 	d.Start(context.Background())
 	t.Cleanup(func() {
 		if err := d.Close(context.Background()); err != nil {
@@ -112,7 +118,7 @@ func TestEvaluateFlag_NoSynchronousWrite(t *testing.T) {
 		ID: "f1", ProjectID: "p1", FlagKey: "exp", Status: "active", Kind: repository.FlagKindExperiment,
 		Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":100,"off":0}`, TargetingRules: "[]",
 	}
-	d := startDispatcher(t)
+	d := startDispatcher(t, store)
 	svc := NewFlagService(store).WithCommands(d)
 
 	res, err := svc.EvaluateFlag(context.Background(), "p1", "exp", map[string]any{"targetingKey": "u1"})
@@ -136,7 +142,7 @@ func TestEvaluateFlag_PreviewWritesNothing(t *testing.T) {
 		ID: "f1", ProjectID: "p1", FlagKey: "exp", Status: "active", Kind: repository.FlagKindExperiment,
 		Variants: `{"on":true}`, DefaultVariant: "on", Split: `{"on":100}`, TargetingRules: "[]",
 	}
-	d := startDispatcher(t)
+	d := startDispatcher(t, store)
 	svc := NewFlagService(store).WithCommands(d)
 	if _, err := svc.PreviewFlag(context.Background(), "p1", "exp", nil); err != nil {
 		t.Fatal(err)
@@ -151,7 +157,7 @@ func TestEvaluateFlag_PreviewWritesNothing(t *testing.T) {
 
 func TestEvaluateOrRegisterFlag_AsyncReturnsDisabledDefault(t *testing.T) {
 	store := newAsyncFlagStore(t)
-	d := startDispatcher(t)
+	d := startDispatcher(t, store)
 	svc := NewFlagService(store).WithCommands(d)
 	ctx, wait := WithSubmitWait(context.Background())
 
@@ -185,7 +191,7 @@ func TestEvaluateOrRegisterFlag_AsyncReturnsDisabledDefault(t *testing.T) {
 func TestEvaluateOrRegisterFlag_AsyncRespectsCap(t *testing.T) {
 	store := newAsyncFlagStore(t)
 	store.ensured = []repository.FeatureFlag{{}, {}}
-	d := startDispatcher(t)
+	d := startDispatcher(t, store)
 	svc := NewFlagService(store).WithCommands(d)
 	if _, err := svc.EvaluateOrRegisterFlag(context.Background(), "p1", "x", nil, 1, 2, ""); err == nil {
 		t.Fatal("want the auto-register limit error")

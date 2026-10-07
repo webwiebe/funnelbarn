@@ -81,7 +81,7 @@ func defaultGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 	store := deps.Store
 	sp := newTestSpool(t)
 	commands := newTestDispatcher(t, store)
-	authz := auth.New("").WithDBLookup(store.ValidAPIKeySHA256, dispatcherTouch(commands, store))
+	authz := auth.New("").WithDBLookup(store.ValidAPIKeySHA256, dispatcherTouch(commands))
 	ingestHandler := ingest.NewHandler(authz, sp, 0)
 	healthSvc := service.NewProjectHealthService(store)
 	// Same wiring as cmd/funnelbarn: an accepted ingest request flips the
@@ -144,7 +144,10 @@ func defaultGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 // first-out, so it drains before the store's own Close cleanup.
 func newTestDispatcher(t *testing.T, store *repository.Store) *command.Dispatcher {
 	t.Helper()
-	d := command.New(command.Options{})
+	d := command.New(command.Options{Deps: command.Deps{
+		Store:              store,
+		MarkFlagsEvaluated: service.NewProjectHealthService(store).MarkFlagsEvaluated,
+	}})
 	d.Start(context.Background())
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -158,9 +161,9 @@ func newTestDispatcher(t *testing.T, store *repository.Store) *command.Dispatche
 
 // dispatcherTouch is the DBKeyTouch cmd/funnelbarn builds: a queued
 // TouchAPIKey command.
-func dispatcherTouch(d *command.Dispatcher, store *repository.Store) auth.DBKeyTouch {
+func dispatcherTouch(d command.Bus) auth.DBKeyTouch {
 	return func(ctx context.Context, keySHA256 string) error {
-		service.AddSubmitWait(ctx, d.Submit(ctx, command.TouchAPIKey{Store: store, KeyHash: keySHA256}))
+		service.AddSubmitWait(ctx, d.Submit(ctx, command.TouchAPIKey{KeyHash: keySHA256}))
 		return nil
 	}
 }

@@ -34,7 +34,7 @@ func waitServer(ctx context.Context, server *http.Server, errCh <-chan error) er
 
 // drainCommands applies every queued command before the store closes, giving
 // up after 10s.
-func drainCommands(commands *command.Dispatcher) {
+func drainCommands(commands command.Bus) {
 	closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := commands.Close(closeCtx); err != nil {

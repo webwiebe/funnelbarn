@@ -34,8 +34,9 @@ func TestWaitServer(t *testing.T) {
 
 type countCommand struct{ n *int }
 
-func (countCommand) Kind() string                  { return "count" }
-func (c countCommand) Apply(context.Context) error { *c.n++; return nil }
+func (countCommand) Kind() string                                { return "count" }
+func (countCommand) Project() string                             { return "" }
+func (c countCommand) Apply(context.Context, command.Deps) error { *c.n++; return nil }
 
 func TestDrainCommandsAppliesQueued(t *testing.T) {
 	d := command.New(command.Options{})

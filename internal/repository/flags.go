@@ -243,10 +243,12 @@ func (s *Store) DeleteFlag(ctx context.Context, id string) error {
 }
 
 func (s *Store) RecordEvaluation(ctx context.Context, eval FlagEvaluation) error {
-	var err error
-	eval.ID, err = generateUUID()
-	if err != nil {
-		return fmt.Errorf("generate uuid: %w", err)
+	if eval.ID == "" {
+		id, err := generateUUID()
+		if err != nil {
+			return fmt.Errorf("generate uuid: %w", err)
+		}
+		eval.ID = id
 	}
 	keysJSON := "[]"
 	if len(eval.ContextKeys) > 0 {
@@ -254,8 +256,10 @@ func (s *Store) RecordEvaluation(ctx context.Context, eval FlagEvaluation) error
 			keysJSON = string(b)
 		}
 	}
-	const q = `INSERT INTO flag_evaluations (id, flag_id, project_id, variant, context_hash, session_id, context_keys) VALUES (?, ?, ?, ?, ?, ?, ?)`
-	_, err = s.db.ExecContext(ctx, q, eval.ID, eval.FlagID, eval.ProjectID, eval.Variant, eval.ContextHash, nullStr(eval.SessionID), keysJSON)
+	// OR IGNORE: a queued command redelivered after a crash carries the same
+	// id and inserts nothing new.
+	const q = `INSERT OR IGNORE INTO flag_evaluations (id, flag_id, project_id, variant, context_hash, session_id, context_keys) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	_, err := s.db.ExecContext(ctx, q, eval.ID, eval.FlagID, eval.ProjectID, eval.Variant, eval.ContextHash, nullStr(eval.SessionID), keysJSON)
 	return err
 }
 

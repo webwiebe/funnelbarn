@@ -117,10 +117,7 @@ func (s *Server) reportEvaluate(ctx context.Context, span trace.Span, projectID,
 // cache makes the applied command a cheap lookup after the first success.
 func (s *Server) markFlagsEvaluated(ctx context.Context, projectID string) {
 	if s.commands != nil {
-		waited := s.commands.Submit(ctx, command.MarkFlagsEvaluated{
-			Mark:      s.projectHealth.MarkFlagsEvaluated,
-			ProjectID: projectID,
-		})
+		waited := s.commands.Submit(ctx, command.MarkFlagsEvaluated{ProjectID: projectID})
 		service.AddSubmitWait(ctx, waited)
 		return
 	}
