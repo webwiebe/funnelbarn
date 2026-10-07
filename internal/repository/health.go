@@ -33,8 +33,8 @@ func projectHealthFromGen(g sqlcgen.ProjectHealth) ProjectHealth {
 // GetProjectHealth returns the health row for projectID.
 // If no row exists (project has never triggered any health event) a zeroed
 // ProjectHealth is returned with no error.
-func (s *Store) GetProjectHealth(ctx context.Context, projectID string) (ProjectHealth, error) {
-	row, err := s.rq.GetProjectHealth(ctx, projectID)
+func (r *ReadStore) GetProjectHealth(ctx context.Context, projectID string) (ProjectHealth, error) {
+	row, err := r.rq.GetProjectHealth(ctx, projectID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ProjectHealth{ProjectID: projectID}, nil
 	}

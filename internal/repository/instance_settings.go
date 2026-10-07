@@ -9,10 +9,10 @@ import (
 
 // GetInstanceSetting retrieves a single setting by key.
 // Returns ("", false, nil) when the key does not exist.
-func (s *Store) GetInstanceSetting(ctx context.Context, key string) (string, bool, error) {
+func (r *ReadStore) GetInstanceSetting(ctx context.Context, key string) (string, bool, error) {
 	const q = `SELECT value FROM instance_settings WHERE key = ?`
 	var value string
-	err := s.rdb.QueryRowContext(ctx, q, key).Scan(&value)
+	err := r.rdb.QueryRowContext(ctx, q, key).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
@@ -33,9 +33,9 @@ func (s *Store) SetInstanceSetting(ctx context.Context, key, value string) error
 }
 
 // GetAllInstanceSettings returns all settings as a map.
-func (s *Store) GetAllInstanceSettings(ctx context.Context) (map[string]string, error) {
+func (r *ReadStore) GetAllInstanceSettings(ctx context.Context) (map[string]string, error) {
 	const q = `SELECT key, value FROM instance_settings ORDER BY key`
-	rows, err := s.rdb.QueryContext(ctx, q)
+	rows, err := r.rdb.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
 	}

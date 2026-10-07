@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"context"
 	"database/sql"
 	"embed"
 	"fmt"
@@ -24,16 +23,20 @@ var migrations embed.FS
 
 // Store wraps a SQLite database connection.
 //
-// It holds two pools: db is the single-connection write pool, rdb is a
-// read-only pool that serves queries without waiting on a running write. For
-// in-memory databases rdb aliases db.
+// It embeds the ReadStore, which holds the read-only pool, and adds db, the
+// single-connection write pool, for the command methods. For in-memory
+// databases the read pool aliases db.
 type Store struct {
+	*ReadStore
 	db           *sql.DB
 	q            *sqlcgen.Queries
-	rdb          *sql.DB
-	rq           *sqlcgen.Queries
 	statsReg     metric.Registration
 	readStatsReg metric.Registration
+}
+
+// Reader returns the query side of the store. It holds no write handle.
+func (s *Store) Reader() *ReadStore {
+	return s.ReadStore
 }
 
 // poolAttr labels the otelsql metrics and spans of one pool.
@@ -140,7 +143,12 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("ensure columns: %w", err)
 	}
 
-	st := &Store{db: db, q: sqlcgen.New(db), rdb: db, rq: sqlcgen.New(db), statsReg: statsReg}
+	st := &Store{
+		ReadStore: &ReadStore{rdb: db, rq: sqlcgen.New(db)},
+		db:        db,
+		q:         sqlcgen.New(db),
+		statsReg:  statsReg,
+	}
 
 	// The read pool opens after migrations so the schema exists and the WAL
 	// shared-memory file has been created by the write pool.
@@ -264,15 +272,4 @@ func (s *Store) Close() error {
 // DB returns the write pool for use by other packages.
 func (s *Store) DB() *sql.DB {
 	return s.db
-}
-
-// ReadDB returns the read-only pool. For in-memory databases it is the write
-// pool.
-func (s *Store) ReadDB() *sql.DB {
-	return s.rdb
-}
-
-// Ping verifies the read pool connection is alive.
-func (s *Store) Ping(ctx context.Context) error {
-	return s.rdb.PingContext(ctx)
 }

@@ -25,7 +25,7 @@ type APIKey struct {
 
 // ValidAPIKeySHA256 looks up an API key by its SHA256 hex digest.
 // Returns (projectID, scope, true, nil) on match.
-func (s *Store) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (projectID string, scope string, found bool, err error) {
+func (s *ReadStore) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (projectID string, scope string, found bool, err error) {
 	row, err := s.rq.LookupAPIKeyBySHA256(ctx, keySHA256)
 	if err != nil {
 		if isNoRows(err) {
@@ -72,7 +72,7 @@ func (s *Store) CreateAPIKey(ctx context.Context, name, projectID, keySHA256, sc
 }
 
 // ListAPIKeys returns all API keys for a project.
-func (s *Store) ListAPIKeys(ctx context.Context, projectID string) ([]APIKey, error) {
+func (s *ReadStore) ListAPIKeys(ctx context.Context, projectID string) ([]APIKey, error) {
 	rows, err := s.rq.ListAPIKeysByProject(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -85,7 +85,7 @@ func (s *Store) ListAPIKeys(ctx context.Context, projectID string) ([]APIKey, er
 }
 
 // ListAllAPIKeys returns all API keys across all projects, ordered by creation time.
-func (s *Store) ListAllAPIKeys(ctx context.Context) ([]APIKey, error) {
+func (s *ReadStore) ListAllAPIKeys(ctx context.Context) ([]APIKey, error) {
 	rows, err := s.rq.ListAllAPIKeys(ctx)
 	if err != nil {
 		return nil, err

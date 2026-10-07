@@ -180,5 +180,10 @@ func Rules() []*Rule {
 			MustNotImport: "internal/api",
 			Reason:        "ports are interfaces; they must not depend on HTTP handlers",
 		},
+		{
+			From:          "internal/ports",
+			MustNotImport: "internal/command",
+			Reason:        "ports are interfaces; they must not depend on the command dispatcher",
+		},
 	}
 }
