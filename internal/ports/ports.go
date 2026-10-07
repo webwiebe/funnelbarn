@@ -86,9 +86,8 @@ type FlagRepo interface {
 	FlagCommands
 }
 
-// EventRepo is the persistence port for events and analytics queries.
-type EventRepo interface {
-	InsertEvent(ctx context.Context, e repository.Event) error
+// EventQueries is the read side of the event port.
+type EventQueries interface {
 	ListEvents(ctx context.Context, projectID string, limit, offset int) ([]repository.Event, error)
 	CountEvents(ctx context.Context, projectID string, from, to time.Time, env string) (int64, error)
 	GetEventByIngestID(ctx context.Context, ingestID string) (*repository.Event, error)
@@ -113,11 +112,20 @@ type EventRepo interface {
 	SessionsForPage(ctx context.Context, projectID, page string, from, to time.Time, limit int) ([]string, error)
 }
 
-// OverviewRepo is the persistence port for cross-project ("instance-wide")
-// analytics: GA-like rollups, the canonical-event vocabulary + mappings, and
-// aggregate cross-project funnels.
-type OverviewRepo interface {
-	// GA-like overview rollups.
+// EventCommands is the write side of the event port.
+type EventCommands interface {
+	InsertEvent(ctx context.Context, e repository.Event) error
+}
+
+// EventRepo is the persistence port for events and analytics queries.
+type EventRepo interface {
+	EventQueries
+	EventCommands
+}
+
+// OverviewQueries is the read side of the cross-project overview port:
+// GA-like rollups and the cross-project event list.
+type OverviewQueries interface {
 	ProjectRollups(ctx context.Context, from, to time.Time, env string) ([]repository.ProjectRollup, error)
 	OverviewTotals(ctx context.Context, from, to time.Time, env string) (events, sessions int64, err error)
 	OverviewVisitorsByProject(ctx context.Context, from, to time.Time, env string, hourly bool) ([]repository.ProjectDayCount, error)
@@ -126,6 +134,13 @@ type OverviewRepo interface {
 	OverviewTopCountries(ctx context.Context, from, to time.Time, limit int, env string) ([]repository.OverviewCountryStat, error)
 	OverviewDimensionBreakdown(ctx context.Context, dimension string, from, to time.Time, limit int, env string) ([]repository.DimensionStat, error)
 	ListAllEvents(ctx context.Context, f repository.EventFilter, limit int) ([]repository.Event, error)
+}
+
+// OverviewRepo is the persistence port for cross-project ("instance-wide")
+// analytics: GA-like rollups, the canonical-event vocabulary + mappings, and
+// aggregate cross-project funnels.
+type OverviewRepo interface {
+	OverviewQueries
 
 	// Canonical event catalog + per-project mappings.
 	ListCanonicalEvents(ctx context.Context) ([]repository.CanonicalEvent, error)
@@ -150,12 +165,22 @@ type OverviewRepo interface {
 	ListProjects(ctx context.Context) ([]repository.Project, error)
 }
 
-// SessionRepo is the persistence port for sessions.
-type SessionRepo interface {
-	UpsertSession(ctx context.Context, sess repository.Session) error
+// SessionQueries is the read side of the session port.
+type SessionQueries interface {
 	SessionByID(ctx context.Context, projectID, id string) (repository.Session, error)
 	ListSessions(ctx context.Context, projectID string, limit, offset int) ([]repository.Session, error)
 	ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error)
+}
+
+// SessionCommands is the write side of the session port.
+type SessionCommands interface {
+	UpsertSession(ctx context.Context, sess repository.Session) error
+}
+
+// SessionRepo is the persistence port for sessions.
+type SessionRepo interface {
+	SessionQueries
+	SessionCommands
 }
 
 // APIKeyQueries is the read side of the API key port.
@@ -197,19 +222,29 @@ type SegmentRepo interface {
 	DeleteSegment(ctx context.Context, id string) error
 }
 
-// RecordingRepo is the persistence port for session recordings.
-type RecordingRepo interface {
-	UpsertRecording(ctx context.Context, r repository.Recording) error
+// RecordingQueries is the read side of the recording port.
+type RecordingQueries interface {
 	GetRecording(ctx context.Context, id string) (repository.Recording, error)
 	ListRecordings(ctx context.Context, projectID string, opts repository.RecordingListOpts) ([]repository.Recording, error)
 	ListOldRecordings(ctx context.Context, before time.Time) ([]repository.Recording, error)
 	ListBrokenRecordings(ctx context.Context) ([]repository.Recording, error)
 	ListBotRecordings(ctx context.Context) ([]repository.Recording, error)
-	DeleteRecording(ctx context.Context, id string) error
 	FlagEvaluationsForSession(ctx context.Context, sessionID, projectID string) ([]repository.FlagEvaluationEntry, error)
-	InsertTraceLinks(ctx context.Context, projectID, sessionID, recordingID string, links []repository.TraceLink) error
 	LookupTrace(ctx context.Context, projectID, traceID string) (repository.TraceLookup, bool, error)
 	TracesForRecording(ctx context.Context, recordingID string) ([]repository.TraceLink, error)
+}
+
+// RecordingCommands is the write side of the recording port.
+type RecordingCommands interface {
+	UpsertRecording(ctx context.Context, r repository.Recording) error
+	DeleteRecording(ctx context.Context, id string) error
+	InsertTraceLinks(ctx context.Context, projectID, sessionID, recordingID string, links []repository.TraceLink) error
+}
+
+// RecordingRepo is the persistence port for session recordings.
+type RecordingRepo interface {
+	RecordingQueries
+	RecordingCommands
 }
 
 // ProjectHealthQueries is the read side of the project health port.

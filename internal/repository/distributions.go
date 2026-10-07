@@ -15,7 +15,7 @@ type DistributionEntry struct {
 // SessionDistributions returns project-wide value distributions for the fields
 // used by the segment system: device_type, country_code, connection_class,
 // dark_mode, browser_timezone (all from sessions), plus browser and os from events.
-func (s *Store) SessionDistributions(ctx context.Context, projectID string) (map[string][]DistributionEntry, error) {
+func (s *ReadStore) SessionDistributions(ctx context.Context, projectID string) (map[string][]DistributionEntry, error) {
 	result := make(map[string][]DistributionEntry)
 
 	// Fields on the sessions table.
@@ -46,7 +46,7 @@ func (s *Store) SessionDistributions(ctx context.Context, projectID string) (map
 	return result, nil
 }
 
-func (s *Store) sessionColDistribution(ctx context.Context, table, projectID, col, key string) ([]DistributionEntry, error) {
+func (s *ReadStore) sessionColDistribution(ctx context.Context, table, projectID, col, key string) ([]DistributionEntry, error) {
 	// Friendly label for dark_mode values.
 	var labelExpr string
 	if key == "dark_mode" {

@@ -26,7 +26,7 @@ type ProjectRecordingSettings struct {
 
 // GetProjectRecordingSettings returns per-project recording settings.
 // Returns a zero-value struct (all nil) if no settings have been saved yet.
-func (s *Store) GetProjectRecordingSettings(ctx context.Context, projectID string) (*ProjectRecordingSettings, error) {
+func (s *ReadStore) GetProjectRecordingSettings(ctx context.Context, projectID string) (*ProjectRecordingSettings, error) {
 	const q = `SELECT enabled, sample_rate, rules, updated_at
                FROM project_recording_settings WHERE project_id = ?`
 	row := s.rdb.QueryRowContext(ctx, q, projectID)

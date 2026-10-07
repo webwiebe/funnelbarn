@@ -73,7 +73,7 @@ func (s *Store) InsertTraceLinks(ctx context.Context, projectID, sessionID, reco
 // LookupTrace resolves a trace_id to its recording within a project. When a trace
 // spans multiple chunks it returns the earliest observation (the most useful seek
 // target). Returns sql.ErrNoRows-wrapped nil + found=false when the trace is unknown.
-func (s *Store) LookupTrace(ctx context.Context, projectID, traceID string) (TraceLookup, bool, error) {
+func (s *ReadStore) LookupTrace(ctx context.Context, projectID, traceID string) (TraceLookup, bool, error) {
 	const q = `
 		SELECT rt.project_id, rt.session_id, rt.recording_id, rt.trace_id, rt.url, rt.occurred_at,
 		       r.started_at, r.first_chunk_index, r.last_chunk_index, r.chunk_count, r.duration_ms, r.environment, r.page_url
@@ -103,7 +103,7 @@ func (s *Store) LookupTrace(ctx context.Context, projectID, traceID string) (Tra
 
 // TracesForRecording returns the ordered trace timeline for a recording, for the
 // replay UI/CLI to overlay trace markers on the scrubber.
-func (s *Store) TracesForRecording(ctx context.Context, recordingID string) ([]TraceLink, error) {
+func (s *ReadStore) TracesForRecording(ctx context.Context, recordingID string) ([]TraceLink, error) {
 	const q = `
 		SELECT trace_id, span_id, url, occurred_at
 		FROM recording_traces

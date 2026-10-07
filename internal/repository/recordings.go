@@ -87,7 +87,7 @@ func (s *Store) UpsertRecording(ctx context.Context, r Recording) error {
 }
 
 // GetRecording fetches a single recording by ID.
-func (s *Store) GetRecording(ctx context.Context, id string) (Recording, error) {
+func (s *ReadStore) GetRecording(ctx context.Context, id string) (Recording, error) {
 	const q = `
 		SELECT id, project_id, session_id, environment, first_chunk_index, last_chunk_index, chunk_count, has_snapshot, duration_ms, started_at, ended_at, created_at,
 		       device_type, user_agent, is_bot, page_url
@@ -96,7 +96,7 @@ func (s *Store) GetRecording(ctx context.Context, id string) (Recording, error) 
 }
 
 // ListRecordings returns recordings for a project with optional filters.
-func (s *Store) ListRecordings(ctx context.Context, projectID string, opts RecordingListOpts) ([]Recording, error) {
+func (s *ReadStore) ListRecordings(ctx context.Context, projectID string, opts RecordingListOpts) ([]Recording, error) {
 	where := []string{"project_id = ?"}
 	args := []any{projectID}
 
@@ -157,7 +157,7 @@ func (s *Store) ListRecordings(ctx context.Context, projectID string, opts Recor
 }
 
 // ListOldRecordings returns recordings older than the given threshold (by created_at).
-func (s *Store) ListOldRecordings(ctx context.Context, before time.Time) ([]Recording, error) {
+func (s *ReadStore) ListOldRecordings(ctx context.Context, before time.Time) ([]Recording, error) {
 	const q = `
 		SELECT id, project_id, chunk_count
 		FROM recordings
@@ -183,7 +183,7 @@ func (s *Store) ListOldRecordings(ctx context.Context, before time.Time) ([]Reco
 // whose rrweb full snapshot never reached storage (has_snapshot = 0) or that
 // hold no chunks at all. last_chunk_index/chunk_count are returned so callers
 // can clean up any orphaned R2 chunks.
-func (s *Store) ListBrokenRecordings(ctx context.Context) ([]Recording, error) {
+func (s *ReadStore) ListBrokenRecordings(ctx context.Context) ([]Recording, error) {
 	const q = `
 		SELECT id, project_id, last_chunk_index, chunk_count
 		FROM recordings
@@ -208,7 +208,7 @@ func (s *Store) ListBrokenRecordings(ctx context.Context) ([]Recording, error) {
 // ListBotRecordings returns recordings flagged as bot traffic.
 // last_chunk_index/chunk_count are returned so the caller can delete the
 // matching R2 chunk objects, which no SQL delete can reach.
-func (s *Store) ListBotRecordings(ctx context.Context) ([]Recording, error) {
+func (s *ReadStore) ListBotRecordings(ctx context.Context) ([]Recording, error) {
 	const q = `
 		SELECT id, project_id, last_chunk_index, chunk_count
 		FROM recordings
@@ -244,7 +244,7 @@ func (s *Store) DeleteRecording(ctx context.Context, id string) error {
 
 // FlagEvaluationsForSession returns all flag evaluations that occurred
 // during the session associated with a recording.
-func (s *Store) FlagEvaluationsForSession(ctx context.Context, sessionID, projectID string) ([]FlagEvaluationEntry, error) {
+func (s *ReadStore) FlagEvaluationsForSession(ctx context.Context, sessionID, projectID string) ([]FlagEvaluationEntry, error) {
 	const q = `
 		SELECT f.name, fe.variant, fe.created_at
 		FROM flag_evaluations fe

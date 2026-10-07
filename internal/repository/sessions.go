@@ -70,7 +70,7 @@ func (s *Store) UpsertSession(ctx context.Context, sess Session) error {
 // SessionByID fetches one project's session. The project is part of the key:
 // a session ID can legitimately exist under several projects, so an id-only
 // lookup would return an arbitrary one of them.
-func (s *Store) SessionByID(ctx context.Context, projectID, id string) (Session, error) {
+func (s *ReadStore) SessionByID(ctx context.Context, projectID, id string) (Session, error) {
 	const q = `
 		SELECT id, project_id, first_seen_at, last_seen_at, event_count,
 			COALESCE(entry_url,''), COALESCE(exit_url,''), COALESCE(referrer,''),
@@ -85,7 +85,7 @@ func (s *Store) SessionByID(ctx context.Context, projectID, id string) (Session,
 }
 
 // ListSessions returns paginated sessions for a project.
-func (s *Store) ListSessions(ctx context.Context, projectID string, limit, offset int) ([]Session, error) {
+func (s *ReadStore) ListSessions(ctx context.Context, projectID string, limit, offset int) ([]Session, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -120,7 +120,7 @@ func (s *Store) ListSessions(ctx context.Context, projectID string, limit, offse
 }
 
 // ActiveSessionCount returns the number of sessions with last_seen_at within the last withinMinutes minutes.
-func (s *Store) ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error) {
+func (s *ReadStore) ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error) {
 	const q = `
 		SELECT COUNT(*) FROM sessions
 		WHERE project_id = ?
