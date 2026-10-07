@@ -1,0 +1,10 @@
+{
+  "body": {
+    "active_sessions": 0,
+    "window_minutes": 5
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

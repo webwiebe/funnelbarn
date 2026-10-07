@@ -1,0 +1,25 @@
+{
+  "body": {
+    "browsers": [
+      "Chrome",
+      "Firefox",
+      "Safari"
+    ],
+    "countries": [
+      "DE",
+      "FR",
+      "GB",
+      "NL",
+      "US"
+    ],
+    "device_types": [
+      "desktop",
+      "mobile",
+      "tablet"
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

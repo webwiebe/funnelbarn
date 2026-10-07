@@ -1,0 +1,30 @@
+{
+  "body": {
+    "session_ids": [
+      "sess-A-00",
+      "sess-A-02",
+      "sess-A-04",
+      "sess-A-06",
+      "sess-A-08",
+      "sess-A-10",
+      "sess-A-12",
+      "sess-A-14",
+      "sess-A-16",
+      "sess-A-18",
+      "sess-A-20",
+      "sess-A-22",
+      "sess-A-24",
+      "sess-A-26",
+      "sess-A-28",
+      "sess-A-30",
+      "sess-A-32",
+      "sess-A-34",
+      "sess-A-36",
+      "sess-A-38"
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

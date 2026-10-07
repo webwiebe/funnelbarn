@@ -1,0 +1,14 @@
+{
+  "body": {
+    "cache_max_age_seconds": 0,
+    "flag_key": "pricing_banner",
+    "reason": "SPLIT",
+    "value": "standard",
+    "variant": "a"
+  },
+  "headers": {
+    "Cache-Control": "no-store",
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

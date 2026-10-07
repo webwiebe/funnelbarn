@@ -1,0 +1,22 @@
+{
+  "body": {
+    "conversion_event": "",
+    "created_at": "2026-03-01T00:00:05Z",
+    "default_variant": "default",
+    "flag_key": "sdk_discovered",
+    "flag_kind": "experiment",
+    "flag_type": "boolean",
+    "id": "f0000000-0005-4000-8000-000000000005",
+    "name": "sdk_discovered",
+    "origin": "auto",
+    "project_id": "f0000000-0001-4000-8000-000000000001",
+    "split": "{}",
+    "status": "inactive",
+    "targeting_rules": "[]",
+    "variants": "{\"default\":false}"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

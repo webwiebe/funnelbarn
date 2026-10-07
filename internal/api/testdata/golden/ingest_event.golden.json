@@ -1,0 +1,10 @@
+{
+  "body": {
+    "accepted": true,
+    "ingestId": "<ingest-id>"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 202
+}

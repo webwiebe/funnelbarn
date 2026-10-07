@@ -1,0 +1,9 @@
+{
+  "body": {
+    "error": "oidc not configured"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 404
+}

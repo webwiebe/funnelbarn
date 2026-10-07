@@ -1,0 +1,104 @@
+{
+  "body": {
+    "funnels": [
+      {
+        "created_at": "2026-03-01T00:00:01Z",
+        "description": "Visit to purchase",
+        "id": "f0000000-0003-4000-8000-000000000001",
+        "name": "Purchase",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "scope": "session",
+        "steps": [
+          {
+            "event_name": "page_view",
+            "filters": null,
+            "funnel_id": "f0000000-0003-4000-8000-000000000001",
+            "id": "f0000000-0004-4000-8000-000000000001",
+            "step_order": 1
+          },
+          {
+            "event_name": "add_to_cart",
+            "filters": null,
+            "funnel_id": "f0000000-0003-4000-8000-000000000001",
+            "id": "f0000000-0004-4000-8000-000000000002",
+            "step_order": 2
+          },
+          {
+            "event_name": "checkout_start",
+            "filters": null,
+            "funnel_id": "f0000000-0003-4000-8000-000000000001",
+            "id": "f0000000-0004-4000-8000-000000000003",
+            "step_order": 3
+          },
+          {
+            "event_name": "purchase",
+            "filters": null,
+            "funnel_id": "f0000000-0003-4000-8000-000000000001",
+            "id": "f0000000-0004-4000-8000-000000000004",
+            "step_order": 4
+          }
+        ]
+      },
+      {
+        "created_at": "2026-03-01T00:00:02Z",
+        "description": "",
+        "id": "f0000000-0003-4000-8000-000000000002",
+        "name": "Pricing to cart",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "scope": "page_view",
+        "steps": [
+          {
+            "event_name": "page_view",
+            "filters": null,
+            "funnel_id": "f0000000-0003-4000-8000-000000000002",
+            "id": "f0000000-0004-4000-8000-000000000005",
+            "step_order": 1
+          },
+          {
+            "event_name": "add_to_cart",
+            "filters": null,
+            "funnel_id": "f0000000-0003-4000-8000-000000000002",
+            "id": "f0000000-0004-4000-8000-000000000006",
+            "step_order": 2
+          }
+        ]
+      },
+      {
+        "created_at": "<now>",
+        "description": "",
+        "id": "<uuid>",
+        "name": "Golden funnel v2",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "scope": "session",
+        "steps": [
+          {
+            "event_name": "page_view",
+            "filters": null,
+            "funnel_id": "<uuid>",
+            "id": "<uuid>",
+            "step_order": 1
+          },
+          {
+            "event_name": "add_to_cart",
+            "filters": null,
+            "funnel_id": "<uuid>",
+            "id": "<uuid>",
+            "step_order": 2
+          },
+          {
+            "event_name": "purchase",
+            "filters": null,
+            "funnel_id": "<uuid>",
+            "id": "<uuid>",
+            "step_order": 3
+          }
+        ]
+      }
+    ],
+    "total_count": 3
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

@@ -1,0 +1,14 @@
+{
+  "body": {
+    "settings": {
+      "geo_enabled": "true",
+      "recording_enabled": "true",
+      "recording_sample_rate": "0.25",
+      "retention_days": "90"
+    }
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

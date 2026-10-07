@@ -1,0 +1,9 @@
+{
+  "body": {
+    "username": "admin"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

@@ -1,0 +1,9 @@
+{
+  "body": {
+    "error": "message is required"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 422
+}

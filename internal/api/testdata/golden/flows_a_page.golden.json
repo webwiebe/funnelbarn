@@ -1,0 +1,45 @@
+{
+  "body": {
+    "focused_page": "https://acme.example/pricing",
+    "links": [
+      {
+        "source": "https://acme.example/pricing|0",
+        "target": "exit|1",
+        "value": 20
+      },
+      {
+        "source": "https://acme.example/|-1",
+        "target": "https://acme.example/pricing|0",
+        "value": 20
+      }
+    ],
+    "nodes": [
+      {
+        "depth": -1,
+        "id": "https://acme.example/|-1",
+        "label": "https://acme.example/",
+        "sessions": 20,
+        "type": "page"
+      },
+      {
+        "depth": 0,
+        "id": "https://acme.example/pricing|0",
+        "label": "https://acme.example/pricing",
+        "sessions": 20,
+        "type": "page"
+      },
+      {
+        "depth": 1,
+        "id": "exit|1",
+        "label": "(drop-off)",
+        "sessions": 20,
+        "type": "exit"
+      }
+    ],
+    "total_sessions": 20
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

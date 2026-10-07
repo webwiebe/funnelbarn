@@ -1,0 +1,23 @@
+{
+  "body": {
+    "properties": [
+      "url",
+      "referrer",
+      "referrer_domain",
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "browser",
+      "os",
+      "device_type",
+      "country_code",
+      "amount",
+      "plan",
+      "variant"
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

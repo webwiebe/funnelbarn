@@ -8,7 +8,7 @@ export XDG_CACHE_HOME := $(CURDIR)/.cache
 export GOCACHE := $(CURDIR)/.cache/go-build
 export GOMODCACHE := $(CURDIR)/.cache/go-mod
 
-.PHONY: help setup build test lint soak gate-test dev docker-build clean
+.PHONY: help setup build test lint soak gate-test regress dev docker-build clean
 
 help:
 	@printf '%s\n' \
@@ -19,6 +19,7 @@ help:
 		'  lint         run linters' \
 		'  soak         run the report-only quality soaks against their baselines' \
 		'  gate-test    run the tests for the gate scripts themselves' \
+		'  regress      run the regression harness (golden API, state snapshot, purge retention, architecture rules)' \
 		'  dev          start docker compose stack' \
 		'  docker-build build Docker images locally' \
 		'  clean        remove build artifacts'
@@ -55,6 +56,11 @@ lint:
 	gofmt -l $$(find . $(FIND_PRUNE) -name '*.go' -print) | { read f; [ -z "$$f" ] || { echo "Unformatted files: $$f"; exit 1; }; }
 	go vet ./...
 	pnpm --filter @funnelbarn/web lint && pnpm --filter @funnelbarn/web lint:eslint
+
+regress:
+	go test -race ./internal/api -run 'TestGolden|TestStateSnapshot' -count=1
+	go test -race ./internal/repository -run TestPurgeRetention -count=1
+	go test -race ./internal/archtest/... -count=1
 
 # Report-only soaks. Each compares the current measurement against a committed
 # baseline in scripts/soak-baselines/ and fails on a new violation, a worsened

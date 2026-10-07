@@ -1,0 +1,236 @@
+{
+  "body": {
+    "dimension_breakdown": [
+      {
+        "count": 65,
+        "value": "desktop"
+      },
+      {
+        "count": 32,
+        "value": "tablet"
+      },
+      {
+        "count": 31,
+        "value": "mobile"
+      }
+    ],
+    "from": "2026-03-02T00:00:00Z",
+    "projects": [
+      {
+        "events": 106,
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "unique_sessions": 40
+      },
+      {
+        "events": 22,
+        "project_id": "f0000000-0001-4000-8000-000000000002",
+        "unique_sessions": 12
+      }
+    ],
+    "to": "2026-03-08T00:00:00Z",
+    "top_countries": [
+      {
+        "count": 29,
+        "country_code": "NL",
+        "project_id": "f0000000-0001-4000-8000-000000000001"
+      },
+      {
+        "count": 21,
+        "country_code": "DE",
+        "project_id": "f0000000-0001-4000-8000-000000000001"
+      },
+      {
+        "count": 19,
+        "country_code": "FR",
+        "project_id": "f0000000-0001-4000-8000-000000000001"
+      },
+      {
+        "count": 19,
+        "country_code": "GB",
+        "project_id": "f0000000-0001-4000-8000-000000000001"
+      },
+      {
+        "count": 18,
+        "country_code": "US",
+        "project_id": "f0000000-0001-4000-8000-000000000001"
+      },
+      {
+        "count": 6,
+        "country_code": "NL",
+        "project_id": "f0000000-0001-4000-8000-000000000002"
+      },
+      {
+        "count": 5,
+        "country_code": "DE",
+        "project_id": "f0000000-0001-4000-8000-000000000002"
+      },
+      {
+        "count": 4,
+        "country_code": "FR",
+        "project_id": "f0000000-0001-4000-8000-000000000002"
+      },
+      {
+        "count": 4,
+        "country_code": "GB",
+        "project_id": "f0000000-0001-4000-8000-000000000002"
+      },
+      {
+        "count": 3,
+        "country_code": "US",
+        "project_id": "f0000000-0001-4000-8000-000000000002"
+      }
+    ],
+    "top_pages": [
+      {
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "url": "https://acme.example/",
+        "views": 50
+      },
+      {
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "url": "https://acme.example/pricing",
+        "views": 20
+      },
+      {
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "url": "https://acme.example/products/widget",
+        "views": 14
+      },
+      {
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "url": "https://acme.example/signup",
+        "views": 8
+      },
+      {
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "url": "https://acme.example/checkout",
+        "views": 7
+      },
+      {
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "url": "https://acme.example/thanks",
+        "views": 7
+      },
+      {
+        "project_id": "f0000000-0001-4000-8000-000000000002",
+        "url": "https://beta.example/blog/",
+        "views": 6
+      },
+      {
+        "project_id": "f0000000-0001-4000-8000-000000000002",
+        "url": "https://beta.example/signup",
+        "views": 4
+      },
+      {
+        "project_id": "f0000000-0001-4000-8000-000000000002",
+        "url": "https://beta.example/blog/post-0",
+        "views": 3
+      },
+      {
+        "project_id": "f0000000-0001-4000-8000-000000000002",
+        "url": "https://beta.example/blog/post-1",
+        "views": 3
+      }
+    ],
+    "top_referrers": [
+      {
+        "domain": "(direct)",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "visits": 34
+      },
+      {
+        "domain": "twitter.com",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "visits": 31
+      },
+      {
+        "domain": "google.com",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "visits": 25
+      },
+      {
+        "domain": "news.ycombinator.com",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "visits": 16
+      },
+      {
+        "domain": "(direct)",
+        "project_id": "f0000000-0001-4000-8000-000000000002",
+        "visits": 7
+      },
+      {
+        "domain": "twitter.com",
+        "project_id": "f0000000-0001-4000-8000-000000000002",
+        "visits": 7
+      },
+      {
+        "domain": "google.com",
+        "project_id": "f0000000-0001-4000-8000-000000000002",
+        "visits": 4
+      },
+      {
+        "domain": "news.ycombinator.com",
+        "project_id": "f0000000-0001-4000-8000-000000000002",
+        "visits": 4
+      }
+    ],
+    "total_events": 128,
+    "unique_sessions": 52,
+    "visitors_by_project": [
+      {
+        "count": 8,
+        "day": "2026-03-02",
+        "project_id": "f0000000-0001-4000-8000-000000000001"
+      },
+      {
+        "count": 3,
+        "day": "2026-03-02",
+        "project_id": "f0000000-0001-4000-8000-000000000002"
+      },
+      {
+        "count": 8,
+        "day": "2026-03-03",
+        "project_id": "f0000000-0001-4000-8000-000000000001"
+      },
+      {
+        "count": 3,
+        "day": "2026-03-03",
+        "project_id": "f0000000-0001-4000-8000-000000000002"
+      },
+      {
+        "count": 8,
+        "day": "2026-03-04",
+        "project_id": "f0000000-0001-4000-8000-000000000001"
+      },
+      {
+        "count": 2,
+        "day": "2026-03-04",
+        "project_id": "f0000000-0001-4000-8000-000000000002"
+      },
+      {
+        "count": 8,
+        "day": "2026-03-05",
+        "project_id": "f0000000-0001-4000-8000-000000000001"
+      },
+      {
+        "count": 2,
+        "day": "2026-03-05",
+        "project_id": "f0000000-0001-4000-8000-000000000002"
+      },
+      {
+        "count": 8,
+        "day": "2026-03-06",
+        "project_id": "f0000000-0001-4000-8000-000000000001"
+      },
+      {
+        "count": 2,
+        "day": "2026-03-06",
+        "project_id": "f0000000-0001-4000-8000-000000000002"
+      }
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

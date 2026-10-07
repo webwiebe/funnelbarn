@@ -1,0 +1,14 @@
+{
+  "body": {
+    "cache_max_age_seconds": 0,
+    "flag_key": "beta_banner",
+    "reason": "SPLIT",
+    "value": false,
+    "variant": "off"
+  },
+  "headers": {
+    "Cache-Control": "no-store",
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

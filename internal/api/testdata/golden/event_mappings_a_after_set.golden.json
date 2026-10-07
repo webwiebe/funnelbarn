@@ -1,0 +1,40 @@
+{
+  "body": {
+    "mappings": [
+      {
+        "canonical_key": "add_to_cart",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "raw_name": "add_to_cart"
+      },
+      {
+        "canonical_key": "checkout_start",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "raw_name": "checkout_start"
+      },
+      {
+        "canonical_key": "page_view",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "raw_name": "golden_raw"
+      },
+      {
+        "canonical_key": "page_view",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "raw_name": "page_view"
+      },
+      {
+        "canonical_key": "purchase",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "raw_name": "purchase"
+      },
+      {
+        "canonical_key": "sign_up",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "raw_name": "signup"
+      }
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

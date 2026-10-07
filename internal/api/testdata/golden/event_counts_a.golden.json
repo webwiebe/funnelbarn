@@ -1,0 +1,40 @@
+{
+  "body": {
+    "environment": "",
+    "events": [
+      {
+        "count": 60,
+        "name": "page_view"
+      },
+      {
+        "count": 14,
+        "name": "add_to_cart"
+      },
+      {
+        "count": 10,
+        "name": "click_cta"
+      },
+      {
+        "count": 8,
+        "name": "signup"
+      },
+      {
+        "count": 7,
+        "name": "purchase"
+      },
+      {
+        "count": 7,
+        "name": "checkout_start"
+      }
+    ],
+    "from": "2026-03-02T00:00:00Z",
+    "limit": 100,
+    "project_id": "f0000000-0001-4000-8000-000000000001",
+    "to": "2026-03-08T00:00:00Z",
+    "total_events": 106
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

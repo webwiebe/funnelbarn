@@ -1,0 +1,93 @@
+{
+  "body": {
+    "focused_page": "https://acme.example/",
+    "links": [
+      {
+        "source": "https://acme.example/|0",
+        "target": "exit|1",
+        "value": 20
+      },
+      {
+        "source": "https://acme.example/|0",
+        "target": "https://acme.example/pricing|1",
+        "value": 20
+      },
+      {
+        "source": "referrer:(direct)|-1",
+        "target": "https://acme.example/|0",
+        "value": 10
+      },
+      {
+        "source": "referrer:google.com|-1",
+        "target": "https://acme.example/|0",
+        "value": 10
+      },
+      {
+        "source": "referrer:news.ycombinator.com|-1",
+        "target": "https://acme.example/|0",
+        "value": 10
+      },
+      {
+        "source": "referrer:twitter.com|-1",
+        "target": "https://acme.example/|0",
+        "value": 10
+      }
+    ],
+    "nodes": [
+      {
+        "depth": -1,
+        "id": "referrer:(direct)|-1",
+        "label": "(direct)",
+        "sessions": 10,
+        "type": "referrer"
+      },
+      {
+        "depth": -1,
+        "id": "referrer:google.com|-1",
+        "label": "google.com",
+        "sessions": 10,
+        "type": "referrer"
+      },
+      {
+        "depth": -1,
+        "id": "referrer:news.ycombinator.com|-1",
+        "label": "news.ycombinator.com",
+        "sessions": 10,
+        "type": "referrer"
+      },
+      {
+        "depth": -1,
+        "id": "referrer:twitter.com|-1",
+        "label": "twitter.com",
+        "sessions": 10,
+        "type": "referrer"
+      },
+      {
+        "depth": 0,
+        "id": "https://acme.example/|0",
+        "label": "https://acme.example/",
+        "sessions": 40,
+        "type": "page"
+      },
+      {
+        "depth": 1,
+        "id": "exit|1",
+        "label": "(drop-off)",
+        "sessions": 20,
+        "type": "exit"
+      },
+      {
+        "depth": 1,
+        "id": "https://acme.example/pricing|1",
+        "label": "https://acme.example/pricing",
+        "sessions": 20,
+        "type": "page"
+      }
+    ],
+    "total_sessions": 40
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

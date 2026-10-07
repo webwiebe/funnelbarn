@@ -1,0 +1,28 @@
+{
+  "body": {
+    "background_color": "#0f1117",
+    "body_text_color": "#e2e8f0",
+    "card_color": "#1a1d27",
+    "dark": {
+      "background_color": "#0f1117",
+      "body_text_color": "#e2e8f0",
+      "card_color": "#1a1d27",
+      "primary_color": "#f59e0b"
+    },
+    "default_locale": "en",
+    "from_address": "wiebe@wiebe.xyz",
+    "from_name": "FunnelBarn",
+    "locale": "en",
+    "logo_url": "https://funnelbarn.wiebe.xyz/icons/icon-512.png",
+    "name": "FunnelBarn",
+    "primary_color": "#f59e0b",
+    "support_url": "https://funnelbarn.wiebe.xyz/",
+    "supported_locales": [
+      "en"
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

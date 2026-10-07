@@ -1,0 +1,22 @@
+{
+  "events_deleted": 1302,
+  "evaluations_deleted": 1302,
+  "events_second_run": 0,
+  "evaluations_second_run": 0,
+  "events_remaining": [
+    "ev-alpha-at",
+    "ev-alpha-new",
+    "ev-alpha-plus1s",
+    "ev-beta-at",
+    "ev-beta-new",
+    "ev-beta-plus1s"
+  ],
+  "evaluations_remaining": [
+    "fe-alpha-at",
+    "fe-alpha-new",
+    "fe-alpha-plus1s",
+    "fe-beta-at",
+    "fe-beta-new",
+    "fe-beta-plus1s"
+  ]
+}

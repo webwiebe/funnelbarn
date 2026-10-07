@@ -1,0 +1,49 @@
+{
+  "body": {
+    "segments": [
+      {
+        "created_at": "<now>",
+        "id": "<uuid>",
+        "name": "Golden segment",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "rules": [
+          {
+            "field": "country_code",
+            "operator": "eq",
+            "value": "FR"
+          }
+        ]
+      },
+      {
+        "created_at": "2026-03-01T00:00:02Z",
+        "id": "f0000000-0008-4000-8000-000000000065",
+        "name": "Dutch visitors",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "rules": [
+          {
+            "field": "country_code",
+            "operator": "eq",
+            "value": "NL"
+          }
+        ]
+      },
+      {
+        "created_at": "2026-03-01T00:00:01Z",
+        "id": "f0000000-0008-4000-8000-000000000064",
+        "name": "Mobile visitors",
+        "project_id": "f0000000-0001-4000-8000-000000000001",
+        "rules": [
+          {
+            "field": "device_type",
+            "operator": "eq",
+            "value": "mobile"
+          }
+        ]
+      }
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

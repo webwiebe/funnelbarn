@@ -1,0 +1,30 @@
+{
+  "body": {
+    "created_at": "<now>",
+    "description": "created by the golden suite",
+    "id": "<uuid>",
+    "name": "Golden canonical funnel",
+    "project_ids": [
+      "f0000000-0001-4000-8000-000000000001",
+      "f0000000-0001-4000-8000-000000000002"
+    ],
+    "scope": "session",
+    "segment": "",
+    "steps": [
+      {
+        "canonical_key": "page_view",
+        "label": "Page View",
+        "step_order": 1
+      },
+      {
+        "canonical_key": "sign_up",
+        "label": "Sign Up",
+        "step_order": 2
+      }
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 201
+}

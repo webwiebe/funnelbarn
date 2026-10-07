@@ -1,0 +1,25 @@
+{
+  "body": {
+    "suggestions": [
+      {
+        "context_key": "country",
+        "pct": 100,
+        "seen_count": 80
+      },
+      {
+        "context_key": "session_id",
+        "pct": 100,
+        "seen_count": 80
+      },
+      {
+        "context_key": "targeting_key",
+        "pct": 100,
+        "seen_count": 80
+      }
+    ]
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

@@ -1,0 +1,9 @@
+{
+  "body": {
+    "anonymized": 1
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

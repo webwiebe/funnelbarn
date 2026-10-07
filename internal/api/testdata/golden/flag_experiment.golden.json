@@ -1,0 +1,22 @@
+{
+  "body": {
+    "conversion_event": "purchase",
+    "created_at": "2026-03-01T00:00:01Z",
+    "default_variant": "control",
+    "flag_key": "checkout_redesign",
+    "flag_kind": "experiment",
+    "flag_type": "experiment",
+    "id": "f0000000-0005-4000-8000-000000000001",
+    "name": "Checkout redesign",
+    "origin": "manual",
+    "project_id": "f0000000-0001-4000-8000-000000000001",
+    "split": "{\"control\":50,\"treatment\":50}",
+    "status": "active",
+    "targeting_rules": "[]",
+    "variants": "{\"control\":false,\"treatment\":true}"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

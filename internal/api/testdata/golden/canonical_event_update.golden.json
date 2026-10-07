@@ -1,0 +1,11 @@
+{
+  "body": {
+    "key": "golden_evt",
+    "label": "Golden event v2",
+    "sort_order": 98
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

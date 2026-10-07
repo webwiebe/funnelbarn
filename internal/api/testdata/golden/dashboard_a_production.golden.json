@@ -1,0 +1,163 @@
+{
+  "body": {
+    "avg_events_per_session": 2.6470588235294117,
+    "bounce_rate": 0.11764705882352941,
+    "device_types": [
+      {
+        "count": 46,
+        "device_type": "desktop"
+      },
+      {
+        "count": 22,
+        "device_type": "tablet"
+      },
+      {
+        "count": 22,
+        "device_type": "mobile"
+      }
+    ],
+    "events_time_series": [
+      {
+        "count": 21,
+        "time": "2026-03-02"
+      },
+      {
+        "count": 18,
+        "time": "2026-03-03"
+      },
+      {
+        "count": 17,
+        "time": "2026-03-04"
+      },
+      {
+        "count": 17,
+        "time": "2026-03-05"
+      },
+      {
+        "count": 17,
+        "time": "2026-03-06"
+      }
+    ],
+    "from": "2026-03-02T00:00:00Z",
+    "project_id": "f0000000-0001-4000-8000-000000000001",
+    "sessions_time_series": [
+      {
+        "count": 6,
+        "time": "2026-03-02"
+      },
+      {
+        "count": 7,
+        "time": "2026-03-03"
+      },
+      {
+        "count": 7,
+        "time": "2026-03-04"
+      },
+      {
+        "count": 7,
+        "time": "2026-03-05"
+      },
+      {
+        "count": 7,
+        "time": "2026-03-06"
+      }
+    ],
+    "to": "2026-03-08T00:00:00Z",
+    "top_browsers": [
+      {
+        "browser": "Chrome",
+        "count": 46
+      },
+      {
+        "browser": "Safari",
+        "count": 22
+      },
+      {
+        "browser": "Firefox",
+        "count": 22
+      }
+    ],
+    "top_event_names": [
+      {
+        "count": 51,
+        "name": "page_view"
+      },
+      {
+        "count": 12,
+        "name": "add_to_cart"
+      },
+      {
+        "count": 9,
+        "name": "click_cta"
+      },
+      {
+        "count": 6,
+        "name": "signup"
+      },
+      {
+        "count": 6,
+        "name": "purchase"
+      },
+      {
+        "count": 6,
+        "name": "checkout_start"
+      }
+    ],
+    "top_pages": [
+      {
+        "url": "https://acme.example/",
+        "views": 43
+      },
+      {
+        "url": "https://acme.example/pricing",
+        "views": 17
+      },
+      {
+        "url": "https://acme.example/products/widget",
+        "views": 12
+      },
+      {
+        "url": "https://acme.example/thanks",
+        "views": 6
+      },
+      {
+        "url": "https://acme.example/signup",
+        "views": 6
+      },
+      {
+        "url": "https://acme.example/checkout",
+        "views": 6
+      }
+    ],
+    "top_referrers": [
+      {
+        "domain": "twitter.com",
+        "visits": 29
+      },
+      {
+        "domain": "(direct)",
+        "visits": 26
+      },
+      {
+        "domain": "google.com",
+        "visits": 22
+      },
+      {
+        "domain": "news.ycombinator.com",
+        "visits": 13
+      }
+    ],
+    "top_utm_sources": [
+      {
+        "count": 18,
+        "value": "newsletter"
+      }
+    ],
+    "total_events": 90,
+    "unique_sessions": 34
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

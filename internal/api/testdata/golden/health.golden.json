@@ -1,0 +1,11 @@
+{
+  "body": {
+    "status": "ok",
+    "time": "<now>",
+    "version": "golden"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

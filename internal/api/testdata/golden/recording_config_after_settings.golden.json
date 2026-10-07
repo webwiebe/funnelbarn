@@ -1,0 +1,16 @@
+{
+  "body": {
+    "enabled": false,
+    "rules": [
+      {
+        "action": "ignore",
+        "pattern": "/admin*"
+      }
+    ],
+    "sample_rate": 0.1
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

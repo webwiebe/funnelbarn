@@ -35,6 +35,9 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      - name: Regression harness (make regress)
+        run: make regress
+
       - name: staticcheck
         run: go install honnef.co/go/tools/cmd/staticcheck@latest && staticcheck ./...
 

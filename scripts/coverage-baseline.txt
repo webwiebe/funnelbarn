@@ -5,6 +5,7 @@ TOTAL	64
 cmd/funnelbarn	11
 internal/api	61
 internal/apierr	100
+internal/archtest	88
 internal/auth	80
 internal/bblog	94
 internal/config	77

@@ -1,0 +1,16 @@
+{
+  "body": {
+    "created_at": "<now>",
+    "event_name": "add_to_cart",
+    "id": "<uuid>",
+    "position": 5,
+    "project_id": "f0000000-0001-4000-8000-000000000001",
+    "property": "plan",
+    "size": 1,
+    "title": "Golden widget"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 201
+}

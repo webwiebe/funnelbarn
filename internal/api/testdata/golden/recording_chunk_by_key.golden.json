@@ -1,0 +1,23 @@
+{
+  "body": [
+    {
+      "data": {
+        "href": "https://acme.example/"
+      },
+      "timestamp": 1772442000000,
+      "type": 4
+    },
+    {
+      "data": {
+        "node": {}
+      },
+      "timestamp": 1772442000100,
+      "type": 2
+    }
+  ],
+  "headers": {
+    "Cache-Control": "private, max-age=3600",
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

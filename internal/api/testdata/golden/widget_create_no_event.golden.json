@@ -1,0 +1,9 @@
+{
+  "body": {
+    "error": "event_name is required"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 422
+}

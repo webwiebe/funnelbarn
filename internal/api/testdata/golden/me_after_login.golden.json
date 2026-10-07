@@ -1,0 +1,10 @@
+{
+  "body": {
+    "has_projects": true,
+    "username": "golden-admin"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}
