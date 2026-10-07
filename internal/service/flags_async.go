@@ -14,7 +14,7 @@ import (
 // last_evaluated_at, auto-registration) through the dispatcher so a request
 // never waits on the write connection (spec 012, phase 1). A nil dispatcher
 // keeps the synchronous behaviour.
-func (svc *FlagService) WithCommands(d *command.Dispatcher) *FlagService {
+func (svc *FlagService) WithCommands(d command.Bus) *FlagService {
 	svc.commands = d
 	return svc
 }
@@ -92,7 +92,7 @@ func (svc *FlagService) touchEvaluated(ctx context.Context, projectID, flagKey s
 		return
 	}
 	if svc.commands != nil {
-		svc.submit(ctx, command.TouchFlagEvaluated{Store: svc.store, ProjectID: projectID, FlagKey: flagKey})
+		svc.submit(ctx, command.TouchFlagEvaluated{ProjectID: projectID, FlagKey: flagKey})
 		return
 	}
 	bblog.Go("flags-touch-evaluated", func() {

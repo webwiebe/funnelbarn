@@ -113,7 +113,7 @@ type ServerConfig struct {
 
 	// Commands, when set, takes the evaluate endpoint's bookkeeping writes
 	// (spec 012). Nil keeps the old fire-and-forget goroutines.
-	Commands *command.Dispatcher
+	Commands command.Bus
 	// ReadPoolWait returns the read pool's cumulative connection wait
 	// (sql.DBStats.WaitDuration). The evaluate span reports its delta.
 	ReadPoolWait func() time.Duration
@@ -187,7 +187,7 @@ type Server struct {
 	recordingSettings   ProjectRecordingSettingsRepo
 	projectHealth       service.ProjectHealth
 	flagAutoRegisterMax int
-	commands            *command.Dispatcher
+	commands            command.Bus
 	readPoolWait        func() time.Duration
 	slow                slowEvaluate
 	slowLog             slowLogLimiter

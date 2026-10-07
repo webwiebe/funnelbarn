@@ -26,7 +26,7 @@ Adopt the estate CQRS shape that BugBarn (specs 006 and 007) and SpanBarn (`SPAN
 
 1. **Queries cannot write.** A query adapter holds a connection opened with `mode=ro` and `PRAGMA query_only`. A write routed to it fails loudly, in tests and in production.
 2. **Requests that read do not wait for writes.** Bookkeeping writes caused by a query (evaluation rows, touches, health marks, auto-registration) become commands handed to an asynchronous dispatcher.
-3. **One writer.** All writes go through one write connection and, from phase 1 step 4, one write mutex shared by command handlers, the dispatcher consumer, the worker and maintenance.
+3. **One writer.** All writes go through one write connection (`MaxOpenConns(1)`), which serialises every statement. Writes that must happen together use a transaction, or run on the single command consumer (the `EnsureAutoFlag` cap check). A separate write mutex would only duplicate the connection pool's queue, so there is none.
 4. **No long write transactions.** Maintenance deletes in bounded batches and gives the write connection back between batches.
 5. **Unset means today.** With `FUNNELBARN_MODE` and `FUNNELBARN_REDIS_QUEUE_URL` unset, FunnelBarn runs as one standalone process with an in-process dispatcher. That is also the rollback path.
 
@@ -96,6 +96,12 @@ Enforcement (blocking in CI):
 One Redis list per kind (`ingest`, `recordings`, `bookkeeping`), so an ingest backlog does not delay evaluation bookkeeping and the other way round. The envelope follows BugBarn's `QueueItem`: `{kind, project_id, received_at, payload}`.
 
 Delivery is at-least-once: the consumer moves an item to a per-queue processing list with `BLMOVE`, applies it, then removes it; on startup the consumer requeues anything left in its processing list. Every consumer is idempotent: events dedupe on `ingest_id`, evaluation rows carry an id inserted with `INSERT OR IGNORE`, touches and health marks are idempotent by nature.
+
+Phase 2 step 1 ships the `bookkeeping` queue with a standalone consume and an in-process fallback when a publish fails; the `ingest` and `recordings` queues arrive with the reader and writer modes.
+
+After a failed publish, commands go straight to the in-process fallback for a cooldown (5 s), so an outage that times out instead of refusing connections costs one publish timeout, and evaluate does not wait two seconds on every call. The evaluation id is fixed before the publish, so a push that lands while its reply times out stores one row on both paths.
+
+Exactly one process consumes a queue: `Recover` requeues the whole processing list at startup, so a second live consumer would re-apply the first one's in-flight item. Standalone runs one replica, and the writer Deployment uses `Recreate`. A command whose apply fails is logged at Warn and acked, as in phase 1: the write connection has a 5 s busy timeout, and a retrying consumer would hold up every command behind a bad one.
 
 ### Durability while the writer or Redis is down
 

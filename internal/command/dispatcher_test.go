@@ -19,8 +19,9 @@ type fn struct {
 	fn   func(ctx context.Context) error
 }
 
-func (f fn) Kind() string                    { return f.kind }
-func (f fn) Apply(ctx context.Context) error { return f.fn(ctx) }
+func (f fn) Kind() string                                    { return f.kind }
+func (f fn) Project() string                                 { return "" }
+func (f fn) Apply(ctx context.Context, _ command.Deps) error { return f.fn(ctx) }
 
 func newStarted(t *testing.T, buf int) *command.Dispatcher {
 	t.Helper()
@@ -193,14 +194,14 @@ func TestEnsureAutoFlagRechecksCap(t *testing.T) {
 	st := &fakeStore{}
 	ctx := context.Background()
 	for _, k := range []string{"a", "b", "c"} {
-		require.NoError(t, command.EnsureAutoFlag{Store: st, Flag: repository.FeatureFlag{FlagKey: k}, Max: 2}.Apply(ctx))
+		require.NoError(t, command.EnsureAutoFlag{Flag: repository.FeatureFlag{FlagKey: k}, Max: 2}.Apply(ctx, command.Deps{Store: st}))
 	}
 	require.Equal(t, []string{"auto:a", "auto:b"}, st.calls)
 }
 
 func TestTouchFlagEvaluatedSkipsMissingFlag(t *testing.T) {
 	st := &missingFlagStore{}
-	require.NoError(t, command.TouchFlagEvaluated{Store: st, ProjectID: "p", FlagKey: "gone"}.Apply(context.Background()))
+	require.NoError(t, command.TouchFlagEvaluated{ProjectID: "p", FlagKey: "gone"}.Apply(context.Background(), command.Deps{Store: st}))
 	require.Empty(t, st.calls)
 }
 
@@ -208,14 +209,15 @@ func TestTypedCommands(t *testing.T) {
 	st := &fakeStore{}
 	ctx := context.Background()
 	cmds := []command.Command{
-		command.RecordEvaluation{Store: st, Eval: repository.FlagEvaluation{ID: "e1"}},
-		command.TouchAPIKey{Store: st, KeyHash: "h"},
-		command.TouchFlagEvaluated{Store: st, ProjectID: "p", FlagKey: "k"},
-		command.MarkFlagsEvaluated{ProjectID: "p", Mark: func(_ context.Context, p string) error { st.rec("mark:" + p); return nil }},
-		command.EnsureAutoFlag{Store: st, Flag: repository.FeatureFlag{FlagKey: "new"}},
+		command.RecordEvaluation{Eval: repository.FlagEvaluation{ID: "e1"}},
+		command.TouchAPIKey{KeyHash: "h"},
+		command.TouchFlagEvaluated{ProjectID: "p", FlagKey: "k"},
+		command.MarkFlagsEvaluated{ProjectID: "p"},
+		command.EnsureAutoFlag{Flag: repository.FeatureFlag{FlagKey: "new"}},
 	}
+	deps := command.Deps{Store: st, MarkFlagsEvaluated: func(_ context.Context, p string) error { st.rec("mark:" + p); return nil }}
 	for _, c := range cmds {
-		require.NoError(t, c.Apply(ctx), c.Kind())
+		require.NoError(t, c.Apply(ctx, deps), c.Kind())
 	}
 	require.Equal(t, []string{"eval:e1", "key:h", "touch:id-p-k", "mark:p", "auto:new"}, st.calls)
 }

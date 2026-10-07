@@ -68,7 +68,7 @@ func newSnapStack(t *testing.T) *snapStack {
 	sp := newTestSpool(t)
 	var base *auth.Authorizer // nil: only DB-stored keys are accepted
 	commands := newTestDispatcher(t, store)
-	authz := base.WithDBLookup(store.ValidAPIKeySHA256, dispatcherTouch(commands, store))
+	authz := base.WithDBLookup(store.ValidAPIKeySHA256, dispatcherTouch(commands))
 	handler := ingest.NewHandler(authz, sp, 0)
 	healthSvc := service.NewProjectHealthService(store)
 	handler.OnEventsReceived = func(ctx context.Context, projectID string) {

@@ -55,7 +55,7 @@ func validateFailClosed(env string, apiKeyConfigured, authConfigured bool) error
 
 // newAPIAuthorizer builds the ingest/evaluate authorizer. With a dispatcher the
 // last_used_at touch is a queued command instead of a write on the request path.
-func newAPIAuthorizer(cfg config.Config, store *repository.Store, commands *command.Dispatcher) (*auth.Authorizer, error) {
+func newAPIAuthorizer(cfg config.Config, store *repository.Store, commands command.Bus) (*auth.Authorizer, error) {
 	var base *auth.Authorizer
 	var err error
 	if cfg.APIKeySHA256 != "" {
@@ -74,7 +74,7 @@ func newAPIAuthorizer(cfg config.Config, store *repository.Store, commands *comm
 // to the request's wait sum. Queued touches are throttled to one per key per
 // apiKeyTouchInterval, so a busy SDK key does not put a write on the single
 // consumer for every request.
-func apiKeyToucher(store *repository.Store, commands *command.Dispatcher) auth.DBKeyTouch {
+func apiKeyToucher(store *repository.Store, commands command.Bus) auth.DBKeyTouch {
 	if commands == nil {
 		return store.TouchAPIKey
 	}
@@ -83,7 +83,7 @@ func apiKeyToucher(store *repository.Store, commands *command.Dispatcher) auth.D
 		if !th.due(keySHA256, time.Now()) {
 			return nil
 		}
-		waited := commands.Submit(ctx, command.TouchAPIKey{Store: store, KeyHash: keySHA256})
+		waited := commands.Submit(ctx, command.TouchAPIKey{KeyHash: keySHA256})
 		service.AddSubmitWait(ctx, waited)
 		return nil
 	}

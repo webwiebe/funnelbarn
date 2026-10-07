@@ -18,20 +18,14 @@ import (
 // DefaultBuffer is the queue size used when Options.Buffer is zero.
 const DefaultBuffer = 1024
 
-// Command is one unit of best-effort bookkeeping work.
-type Command interface {
-	// Kind labels the command in metrics and spans.
-	Kind() string
-	// Apply performs the work. ctx carries a span and no request cancellation.
-	Apply(ctx context.Context) error
-}
-
 // Options configures a Dispatcher.
 type Options struct {
 	// Buffer is the channel capacity. Zero means DefaultBuffer.
 	Buffer int
 	// Logger receives Apply failures. Nil means slog.Default().
 	Logger *slog.Logger
+	// Deps is what the consumer applies commands against.
+	Deps Deps
 }
 
 // item is one queue entry: a command, or a flush marker.
@@ -47,6 +41,7 @@ type Dispatcher struct {
 	ch     chan item
 	logger *slog.Logger
 	tracer trace.Tracer
+	deps   Deps
 
 	mu      sync.Mutex
 	closed  bool
@@ -69,6 +64,7 @@ func New(opts Options) *Dispatcher {
 		ch:     make(chan item, size),
 		logger: logger,
 		tracer: otel.Tracer("funnelbarn/command"),
+		deps:   opts.Deps,
 		done:   make(chan struct{}),
 	}
 }
@@ -183,33 +179,36 @@ func (d *Dispatcher) run() {
 			close(it.flush)
 			continue
 		}
-		d.apply(it.cmd)
+		apply(d.tracer, d.logger, d.deps, it.cmd)
 	}
 	queueDepth.Set(0)
 }
 
-func (d *Dispatcher) apply(c Command) {
+// apply runs one command under a command.apply span. A failure is logged and
+// counted; the command is not retried, because each one is idempotent
+// bookkeeping and a retry loop would hold up the commands behind it.
+func apply(tracer trace.Tracer, logger *slog.Logger, deps Deps, c Command) {
 	kind := c.Kind()
-	ctx, span := d.tracer.Start(context.Background(), "command.apply",
+	ctx, span := tracer.Start(context.Background(), "command.apply",
 		trace.WithAttributes(attribute.String("command.kind", kind)))
 	defer span.End()
 
-	err := safeApply(ctx, c)
+	err := safeApply(ctx, c, deps)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		applied.WithLabelValues(kind, "error").Inc()
-		d.logger.Warn("command apply failed", "kind", kind, "error", err, "handled", true)
+		logger.Warn("command apply failed", "kind", kind, "error", err, "handled", true)
 		return
 	}
 	applied.WithLabelValues(kind, "ok").Inc()
 }
 
-func safeApply(ctx context.Context, c Command) (err error) {
+func safeApply(ctx context.Context, c Command, deps Deps) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panic applying command: %v", r)
 		}
 	}()
-	return c.Apply(ctx)
+	return c.Apply(ctx, deps)
 }

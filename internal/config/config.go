@@ -97,6 +97,11 @@ type Config struct {
 	R2SecretAccessKey string // FUNNELBARN_R2_SECRET_ACCESS_KEY
 	R2Bucket          string // FUNNELBARN_R2_BUCKET — bucket name for recordings
 	R2Endpoint        string // FUNNELBARN_R2_ENDPOINT — full endpoint URL (required for EU jurisdiction buckets)
+
+	// RedisQueueURL (FUNNELBARN_REDIS_QUEUE_URL) is the Redis/Valkey URL of the
+	// command queue. Empty keeps bookkeeping commands on the in-process
+	// dispatcher, which is also the rollback path.
+	RedisQueueURL string
 }
 
 // Load reads config from config files and environment variables.
@@ -232,6 +237,8 @@ func Load() Config {
 	cfg.R2SecretAccessKey = os.Getenv("FUNNELBARN_R2_SECRET_ACCESS_KEY")
 	cfg.R2Bucket = os.Getenv("FUNNELBARN_R2_BUCKET")
 	cfg.R2Endpoint = os.Getenv("FUNNELBARN_R2_ENDPOINT")
+
+	cfg.RedisQueueURL = os.Getenv("FUNNELBARN_REDIS_QUEUE_URL")
 
 	cfg.SetupRatePerMinute = 10
 	cfg.SetupRateBurst = 5
