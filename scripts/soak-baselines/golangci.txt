@@ -5,7 +5,7 @@
 # ENFORCE AT 0 entries: replace this dimension with a blocking
 # `golangci-lint run ./...` step in ci.yml's go-quality job.
 # Refresh with: python3 scripts/quality-soak.py golangci --update-baseline
-# entries: 57  total: 119
+# entries: 57  total: 118
 #
 5 cmd/funnelbarn/cli.go
 6 cmd/funnelbarn/main.go
@@ -61,6 +61,6 @@
 1 internal/service/sessions_test.go
 1 internal/service/validation_test.go
 1 internal/session/fingerprint.go
-3 internal/spool/spool.go
+2 internal/spool/spool.go
 1 internal/storage/r2.go
 1 internal/tracing/relay.go
