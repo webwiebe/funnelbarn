@@ -8,7 +8,8 @@
 #      (default 180), sequentially. The p99 of the request time must stay
 #      under P99_LIMIT_SECONDS (default 0.1) and every response must be 200.
 #      The daily maintenance purge used to stall this endpoint for 4-6s.
-#   3. When SPANBARN_URL and SPANBARN_TOKEN are set, look for a recent
+#   3. When SPANBARN_URL and SPANBARN_TOKEN (a read-scoped SpanBarn API key
+#      for project funnelbarn) are set, look for a recent
 #      maintenance.purge trace in SpanBarn. A miss is a warning, because the
 #      pass runs once a day and SpanBarn samples clean traces; set
 #      SPANBARN_REQUIRE=1 to make it a failure.
@@ -86,7 +87,7 @@ if [ -n "${SPANBARN_URL:-}" ] && [ -n "${SPANBARN_TOKEN:-}" ]; then
   echo "== spanbarn: maintenance.purge within the last ${SPANBARN_LOOKBACK_HOURS}h"
   from="$(($(date +%s) - SPANBARN_LOOKBACK_HOURS * 3600))"
   resp="$(curl -sS --max-time 20 -G "${SPANBARN_URL%/}/api/v1/traces" \
-    -H "Authorization: Bearer $SPANBARN_TOKEN" \
+    -H "X-SpanBarn-Api-Key: $SPANBARN_TOKEN" \
     --data-urlencode "operation=maintenance.purge" \
     --data-urlencode "root_only=true" \
     --data-urlencode "from=$from" \

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/redis/go-redis/v9/maintnotifications"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -23,6 +24,8 @@ const (
 	keyPrefix = "funnelbarn:queue:"
 	// defaultPollTimeout is how long Receive blocks before reporting an idle queue.
 	defaultPollTimeout = 2 * time.Second
+	// minIdleConns is how many connections the pool keeps open between bursts.
+	minIdleConns = 4
 )
 
 var tracer = otel.Tracer("funnelbarn/queue")
@@ -39,7 +42,20 @@ func NewClient(redisURL string) (*redis.Client, error) {
 		}
 		return nil, fmt.Errorf("queue: parse redis url: %w", err)
 	}
+	applyPoolOptions(opts)
 	return redis.NewClient(opts), nil
+}
+
+// applyPoolOptions keeps publishes off the connection-setup path. Every
+// evaluate publishes while the request waits, and a burst of concurrent
+// evaluates used to open fresh connections: a DNS search-path lookup, TCP,
+// HELLO with AUTH, two CLIENT SETINFO and a CLIENT MAINT_NOTIFICATIONS, which
+// took 10-75 ms in production. Warm idle connections absorb a burst, and the
+// two optional handshakes are dropped because Valkey has no use for them.
+func applyPoolOptions(opts *redis.Options) {
+	opts.MinIdleConns = minIdleConns
+	opts.DisableIdentity = true
+	opts.MaintNotificationsConfig = &maintnotifications.Config{Mode: maintnotifications.ModeDisabled}
 }
 
 // Ping verifies that Redis is reachable.
