@@ -75,6 +75,7 @@ sops set deploy/k8s/staging/secret.yaml '["stringData"]["IAMBARN_ADMIN_TOKEN"]' 
 | Value | Used by | Description |
 |--------|---------|-------------|
 | `IAMBARN_ADMIN_TOKEN` | build-and-test.yml (`deploy-staging` job), deploy-production.yml | IAMBarn PAT with scope `admin:clients:write`, for the organization that owns the FunnelBarn OAuth clients. Stored in SOPS at `deploy/k8s/<env>/secret.yaml` (key `stringData.IAMBARN_ADMIN_TOKEN`). It lands in the app Secret, but no container references it, so it never reaches a pod's environment. Staging and production are separate IAMBarn instances, so each file holds its own PAT. |
+| `FUNNELBARN_REDIS_QUEUE_URL` | funnelbarn pod (env) | Durable bookkeeping command queue (spec 012) on the shared Valkey: `redis://funnelbarn:<pw>@valkey-primary.shared-<env>.svc:6379/0`. The `funnelbarn` ACL user may only touch `funnelbarn:*` keys with list commands (k3s-infra#68). The password lives in k3s-infra's SOPS (`valkey.tenants.funnelbarn.password` in `environments/<env>.secrets.yaml`) and is copied here with `sops set --value-stdin`. After a rotation there, copy it again and redeploy. Unset means the in-process dispatcher. |
 
 ## APT Repository Dispatch
 

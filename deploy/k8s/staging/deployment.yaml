@@ -140,6 +140,12 @@ spec:
                   name: funnelbarn-secrets
                   key: FUNNELBARN_R2_BUCKET
                   optional: true
+            - name: FUNNELBARN_REDIS_QUEUE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_REDIS_QUEUE_URL
+                  optional: true
             - name: FUNNELBARN_SPANBARN_ENDPOINT
               valueFrom:
                 secretKeyRef:
