@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -67,23 +68,22 @@ func main() {
 }
 
 // buildLogger constructs a multi-sink slog.Logger based on the config.
-// It always writes JSON to stderr, optionally fans out Warn+ to BugBarn, and
+// It always writes JSON to out, optionally captures Error+ in BugBarn, and
 // (when spanbarn != nil) ships >= SpanBarnLogLevel records to SpanBarn via OTLP,
 // minus the high-volume health-probe access logs.
-func buildLogger(cfg config.Config, spanbarn slog.Handler) *slog.Logger {
+func buildLogger(out io.Writer, cfg config.Config, spanbarn slog.Handler) *slog.Logger {
 	var handlers []slog.Handler
 
-	// Always: structured JSON to stderr.
-	jsonHandler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+	// Always: structured JSON to out. With BugBarn configured, the BugBarn
+	// handler wraps it and passes every record on, so it replaces the plain
+	// handler; listing both wrote every line twice.
+	var stdout slog.Handler = slog.NewJSONHandler(out, &slog.HandlerOptions{
 		Level: cfg.LogLevel,
 	})
-	handlers = append(handlers, jsonHandler)
-
-	// Optional: BugBarn for Warn+ events.
 	if cfg.SelfEndpoint != "" && cfg.SelfAPIKey != "" {
-		bbHandler := bblog.NewHandler(jsonHandler)
-		handlers = append(handlers, bbHandler)
+		stdout = bblog.NewHandler(stdout)
 	}
+	handlers = append(handlers, stdout)
 
 	// Optional: SpanBarn OTLP logs (trace-correlated), filtered to keep volume
 	// sane on indefinitely-retained log storage.
@@ -187,7 +187,7 @@ func run() error {
 	defer shutdownLogs(context.Background())
 
 	// Rewire the global logger with the appropriate sinks.
-	slog.SetDefault(buildLogger(cfg, spanbarnLogHandler))
+	slog.SetDefault(buildLogger(os.Stderr, cfg, spanbarnLogHandler))
 	if selfReporting {
 		slog.Info("self-reporting enabled", "endpoint", cfg.SelfEndpoint)
 	} else {
