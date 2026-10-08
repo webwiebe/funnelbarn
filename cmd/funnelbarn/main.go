@@ -453,31 +453,6 @@ func run() error {
 	return waitServer(ctx, server, errCh)
 }
 
-// deadLetterRecord parks an unprocessable record and advances the cursor past
-// it, so one bad record can never wedge the spool. reason labels the metric:
-// "dead_letter" for a record that exhausted its retries, "unresolved_project"
-// for one that could never have been persisted at all. Returns the new offset.
-func deadLetterRecord(spoolDir string, record spool.Record, endOffset int64, reason string) int64 {
-	if err := spool.AppendDeadLetter(spoolDir, record); err != nil {
-		// A full dead-letter file is its own alert: something has been failing
-		// in bulk and nothing has drained it. handled=false so it reaches
-		// BugBarn as an issue rather than scrolling past in the log.
-		if errors.Is(err, spool.ErrDeadLetterFull) {
-			slog.Error("dead-letter file is full; records are being discarded — replay it with 'funnelbarn replay-dead-letter' and find what is failing",
-				"err", err, "handled", false,
-				"ingest_id", record.IngestID,
-				"limit_bytes", spool.MaxDeadLetterBytes)
-		} else {
-			slog.Error("worker dead-letter write", "ingest_id", record.IngestID, "err", err)
-		}
-	}
-	metrics.EventErrors.WithLabelValues(reason).Inc()
-	if err := spool.WriteCursor(spoolDir, endOffset); err != nil {
-		slog.Error("worker write cursor", "err", err)
-	}
-	return endOffset
-}
-
 // resolveEventProject looks up the project a spool record belongs to. A record
 // with no slug, or one whose slug can never resolve, comes back wrapped in
 // repository.ErrProjectUnresolvable: events.project_id is NOT NULL REFERENCES
@@ -535,33 +510,12 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				tracing.RecordError(tickSpan, err)
 				tickSpan.End()
 				slog.Error("worker read spool", "err", err)
+				checkSpoolProgress(health, cfg.SpoolDir, offset)
 				continue
 			}
 			tickSpan.SetAttributes(attribute.Int("spool.entries", len(entries)))
 			metrics.SpoolQueueDepth.Set(float64(len(entries)))
-
-			// Stall detection: if the spool has pending bytes the cursor isn't
-			// draining, raise an issue. This is the blindspot that hid a ~5-day
-			// ingestion outage.
-			if size, serr := spool.ActiveSize(cfg.SpoolDir); serr == nil {
-				pending := size - offset
-				if pending < 0 {
-					pending = 0
-				}
-				metrics.IngestPendingBytes.Set(float64(pending))
-				if stalled, since := health.CheckProgress(offset, pending); stalled {
-					slog.Error("ingest worker stalled: spool backlog not draining",
-						"handled", false,
-						"pending_bytes", pending,
-						"offset", offset,
-						"stalled_for", since.Round(time.Second).String())
-				}
-				stalledGauge := 0.0
-				if health.Stalled() {
-					stalledGauge = 1
-				}
-				metrics.IngestStalled.Set(stalledGauge)
-			}
+			checkSpoolProgress(health, cfg.SpoolDir, offset)
 
 			// Check geo_enabled once per batch to avoid a DB round-trip per event.
 			geoEnabled := geoLookup != nil
@@ -571,6 +525,10 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 			}
 
 			for _, entry := range entries {
+				if entry.Malformed != nil {
+					offset = skipMalformed(cfg.SpoolDir, entry, offset)
+					continue
+				}
 				record := entry.Record
 
 				event, err := worker.SafeProcess(record)
