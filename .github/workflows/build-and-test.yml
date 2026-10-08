@@ -258,13 +258,15 @@ jobs:
 
       - name: Probe testing latency
         if: steps.creds.outputs.enabled == 'true'
+        # The macOS runner has no coreutils `timeout`; the step limit bounds it.
+        timeout-minutes: 7
         env:
           PROBE_API_KEY: ${{ secrets.FUNNELBARN_TESTING_PROBE_API_KEY }}
           PROBE_FLAG_KEY: ${{ secrets.FUNNELBARN_TESTING_PROBE_FLAG_KEY }}
           SPANBARN_URL: ${{ secrets.SPANBARN_URL }}
           SPANBARN_TOKEN: ${{ secrets.SPANBARN_TOKEN }}
         run: |
-          timeout 400 scripts/verify-testing.sh \
+          scripts/verify-testing.sh \
             https://funnelbarn.test.wiebe.xyz \
             "${PROBE_API_KEY}" \
             "${PROBE_FLAG_KEY}"
