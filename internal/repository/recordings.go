@@ -53,6 +53,10 @@ type RecordingListOpts struct {
 // sticky once any chunk carrying the rrweb full snapshot lands. Metadata fields
 // (device_type, user_agent, is_bot, page_url) are set only on insert.
 func (s *Store) UpsertRecording(ctx context.Context, r Recording) error {
+	return upsertRecording(ctx, s.db, r)
+}
+
+func upsertRecording(ctx context.Context, ex execer, r Recording) error {
 	const q = `
 		INSERT INTO recordings
 			(id, project_id, session_id, environment, first_chunk_index, last_chunk_index, chunk_count, has_snapshot,
@@ -77,7 +81,7 @@ func (s *Store) UpsertRecording(ctx context.Context, r Recording) error {
 	if r.HasSnapshot {
 		hasSnapshot = 1
 	}
-	_, err := s.db.ExecContext(ctx, q,
+	_, err := ex.ExecContext(ctx, q,
 		r.ID, r.ProjectID, r.SessionID, r.Environment,
 		r.FirstChunkIndex, r.LastChunkIndex, hasSnapshot,
 		r.DurationMs, r.StartedAt, endedAt,

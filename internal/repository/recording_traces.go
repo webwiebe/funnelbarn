@@ -44,30 +44,32 @@ func (s *Store) InsertTraceLinks(ctx context.Context, projectID, sessionID, reco
 	if len(links) == 0 {
 		return nil
 	}
-	const q = `
-		INSERT INTO recording_traces
-			(project_id, session_id, recording_id, trace_id, span_id, url, occurred_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(recording_id, trace_id, occurred_at) DO NOTHING`
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	stmt, err := tx.PrepareContext(ctx, q)
-	if err != nil {
+	if err := insertTraceLinks(ctx, tx, projectID, sessionID, recordingID, links); err != nil {
 		return err
 	}
-	defer stmt.Close()
+	return tx.Commit()
+}
+
+func insertTraceLinks(ctx context.Context, ex execer, projectID, sessionID, recordingID string, links []TraceLink) error {
+	const q = `
+		INSERT INTO recording_traces
+			(project_id, session_id, recording_id, trace_id, span_id, url, occurred_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(recording_id, trace_id, occurred_at) DO NOTHING`
 	for _, l := range links {
 		if l.TraceID == "" {
 			continue
 		}
-		if _, err := stmt.ExecContext(ctx, projectID, sessionID, recordingID, l.TraceID, l.SpanID, l.URL, l.OccurredAt); err != nil {
+		if _, err := ex.ExecContext(ctx, q, projectID, sessionID, recordingID, l.TraceID, l.SpanID, l.URL, l.OccurredAt); err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // LookupTrace resolves a trace_id to its recording within a project. When a trace

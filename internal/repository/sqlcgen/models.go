@@ -196,6 +196,12 @@ type Recording struct {
 	HasSnapshot     int64        `json:"has_snapshot"`
 }
 
+type RecordingChunk struct {
+	RecordingID string    `json:"recording_id"`
+	ChunkIndex  int64     `json:"chunk_index"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 type RecordingTrace struct {
 	ProjectID   string    `json:"project_id"`
 	SessionID   string    `json:"session_id"`

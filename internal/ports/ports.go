@@ -289,6 +289,7 @@ type RecordingCommands interface {
 	UpsertRecording(ctx context.Context, r repository.Recording) error
 	DeleteRecording(ctx context.Context, id string) error
 	InsertTraceLinks(ctx context.Context, projectID, sessionID, recordingID string, links []repository.TraceLink) error
+	ApplyChunk(ctx context.Context, r repository.Recording, chunkIndex int, links []repository.TraceLink) (bool, error)
 }
 
 // RecordingRepo is the persistence port for session recordings.
