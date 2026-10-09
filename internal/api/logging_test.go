@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -141,5 +142,28 @@ func TestRequestIDPropagation(t *testing.T) {
 	}
 	if len(capturedID) != 16 {
 		t.Errorf("expected 16-char hex request_id, got %q (len %d)", capturedID, len(capturedID))
+	}
+}
+
+// Every response says how long the server took, whether the handler sets the
+// status itself or lets the first Write imply 200. The testing probe gates on
+// this value instead of on the time the CI host measured.
+func TestRequestLoggerSetsServerTiming(t *testing.T) {
+	for name, h := range map[string]http.HandlerFunc{
+		"explicit status": func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) },
+		"implied status":  func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			requestLogger(h).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/x", nil))
+
+			got := rr.Header().Get("Server-Timing")
+			if !strings.HasPrefix(got, "app;dur=") {
+				t.Fatalf("Server-Timing = %q, want app;dur=<ms>", got)
+			}
+			if _, err := strconv.ParseFloat(strings.TrimPrefix(got, "app;dur="), 64); err != nil {
+				t.Errorf("Server-Timing duration %q is not a number: %v", got, err)
+			}
+		})
 	}
 }
