@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -366,12 +367,20 @@ func TestMCP_GetSetupGuideMatchesHTTPEndpoint(t *testing.T) {
 		t.Fatalf("decode structured content %s: %v", raw, err)
 	}
 
-	if out.Markdown != string(httpBody) {
+	// Each render stamps the current second; under -race the two can straddle
+	// a second boundary, so the stamp is masked before comparing.
+	if maskGenerated(out.Markdown) != maskGenerated(string(httpBody)) {
 		t.Errorf("get_setup_guide output does not match GET /api/v1/setup/%s\n--- MCP ---\n%s\n--- HTTP ---\n%s", p.Slug, out.Markdown, httpBody)
 	}
 	if !strings.Contains(out.Markdown, "## Connect an AI assistant (MCP)") {
 		t.Error("setup guide missing the MCP section even though MCP is enabled")
 	}
+}
+
+var generatedLine = regexp.MustCompile(`(?m)^Generated: \S+$`)
+
+func maskGenerated(md string) string {
+	return generatedLine.ReplaceAllString(md, "Generated: <now>")
 }
 
 // The setup guide only advertises MCP when the instance actually serves it.
