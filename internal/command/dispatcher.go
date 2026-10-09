@@ -179,15 +179,16 @@ func (d *Dispatcher) run() {
 			close(it.flush)
 			continue
 		}
-		apply(d.tracer, d.logger, d.deps, it.cmd)
+		_ = apply(d.tracer, d.logger, d.deps, it.cmd)
 	}
 	queueDepth.Set(0)
 }
 
-// apply runs one command under a command.apply span. A failure is logged and
-// counted; the command is not retried, because each one is idempotent
-// bookkeeping and a retry loop would hold up the commands behind it.
-func apply(tracer trace.Tracer, logger *slog.Logger, deps Deps, c Command) {
+// apply runs one command under a command.apply span. A failure is logged,
+// counted and returned. Bookkeeping commands are not retried, because each one
+// is idempotent bookkeeping and a retry loop would hold up the commands behind
+// it; RedisBus retries a durable command (see Durable).
+func apply(tracer trace.Tracer, logger *slog.Logger, deps Deps, c Command) error {
 	kind := c.Kind()
 	ctx, span := tracer.Start(context.Background(), "command.apply",
 		trace.WithAttributes(attribute.String("command.kind", kind)))
@@ -199,9 +200,10 @@ func apply(tracer trace.Tracer, logger *slog.Logger, deps Deps, c Command) {
 		span.SetStatus(codes.Error, err.Error())
 		applied.WithLabelValues(kind, "error").Inc()
 		logger.Warn("command apply failed", "kind", kind, "error", err, "handled", true)
-		return
+		return err
 	}
 	applied.WithLabelValues(kind, "ok").Inc()
+	return nil
 }
 
 func safeApply(ctx context.Context, c Command, deps Deps) (err error) {

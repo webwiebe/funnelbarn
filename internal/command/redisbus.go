@@ -29,6 +29,11 @@ const (
 	// out instead of refusing connections does not add PublishTimeout to every
 	// request.
 	DefaultPublishCooldown = 5 * time.Second
+	// DefaultMaxAttempts is RedisOptions.MaxAttempts when zero; it matches the
+	// spool worker's retry budget.
+	DefaultMaxAttempts = 3
+	// DefaultRetryDelay is RedisOptions.RetryDelay when zero.
+	DefaultRetryDelay = time.Second
 )
 
 // RedisOptions configures a RedisBus.
@@ -49,6 +54,15 @@ type RedisOptions struct {
 	// PublishCooldown is how long commands go straight to the fallback after a
 	// failed publish. Zero means DefaultPublishCooldown.
 	PublishCooldown time.Duration
+	// MaxAttempts is how often the consumer applies a Durable command before
+	// it gives up. Zero means DefaultMaxAttempts.
+	MaxAttempts int
+	// RetryDelay is the wait before the second attempt; it doubles after each
+	// one. Zero means DefaultRetryDelay.
+	RetryDelay time.Duration
+	// DeadLetter takes a Durable command that failed with ErrPermanent or ran
+	// out of attempts, with the last error. Nil logs it at Error and drops it.
+	DeadLetter func(ctx context.Context, c Command, err error)
 }
 
 // RedisBus publishes commands to a Queue and, when Consume is set, applies
@@ -65,6 +79,10 @@ type RedisBus struct {
 	tracer   trace.Tracer
 	timeout  time.Duration
 	cooldown time.Duration
+
+	maxAttempts int
+	retryDelay  time.Duration
+	deadLetter  func(ctx context.Context, c Command, err error)
 
 	publishFailing atomic.Bool
 	lastFailure    atomic.Int64 // unix nanos of the last failed publish
@@ -92,16 +110,27 @@ func NewRedisBus(opts RedisOptions) *RedisBus {
 	if cooldown <= 0 {
 		cooldown = DefaultPublishCooldown
 	}
+	maxAttempts := opts.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = DefaultMaxAttempts
+	}
+	retryDelay := opts.RetryDelay
+	if retryDelay <= 0 {
+		retryDelay = DefaultRetryDelay
+	}
 	return &RedisBus{
-		queue:    opts.Queue,
-		deps:     opts.Deps,
-		fallback: opts.Fallback,
-		consume:  opts.Consume,
-		logger:   logger,
-		tracer:   otel.Tracer("funnelbarn/command"),
-		timeout:  timeout,
-		cooldown: cooldown,
-		done:     make(chan struct{}),
+		maxAttempts: maxAttempts,
+		retryDelay:  retryDelay,
+		deadLetter:  opts.DeadLetter,
+		queue:       opts.Queue,
+		deps:        opts.Deps,
+		fallback:    opts.Fallback,
+		consume:     opts.Consume,
+		logger:      logger,
+		tracer:      otel.Tracer("funnelbarn/command"),
+		timeout:     timeout,
+		cooldown:    cooldown,
+		done:        make(chan struct{}),
 	}
 }
 
@@ -261,8 +290,12 @@ func (b *RedisBus) handle(ctx context.Context, payload []byte, ack func(context.
 	if decodeErr != nil {
 		// It can never apply, and redelivering it would block the queue.
 		b.logger.ErrorContext(ctx, "command decode failed, dropping payload", "error", decodeErr, "handled", true)
-	} else {
-		apply(b.tracer, b.logger, b.deps, c)
+	} else if err := apply(b.tracer, b.logger, b.deps, c); err != nil {
+		if d, ok := c.(Durable); ok && !b.retryDurable(ctx, d, err) {
+			// Stopped mid-retry: leave it unacked in the processing list,
+			// so Recover hands it to the next consumer.
+			return
+		}
 	}
 
 	ackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ackTimeout)
@@ -278,6 +311,35 @@ func (b *RedisBus) handle(ctx context.Context, payload []byte, ack func(context.
 			queueDepth.Set(float64(n))
 		}
 	}
+}
+
+// retryDurable applies a Durable command again, with a doubling delay, until
+// it succeeds or runs out of attempts, and dead-letters it if it never does.
+// It returns false when ctx ends during a wait, and the command is neither
+// applied nor dead-lettered. Retrying in place holds up the queue behind it,
+// as the spool worker does: ingest keeps its order, and a failure that lasts
+// is dead-lettered after a few seconds.
+func (b *RedisBus) retryDurable(ctx context.Context, c Durable, err error) bool {
+	delay := b.retryDelay
+	for attempt := 1; attempt < b.maxAttempts && !errors.Is(err, ErrPermanent); attempt++ {
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return false
+		case <-timer.C:
+		}
+		delay *= 2
+		if err = apply(b.tracer, b.logger, b.deps, c); err == nil {
+			return true
+		}
+	}
+	if b.deadLetter != nil {
+		b.deadLetter(ctx, c, err)
+	} else {
+		b.logger.ErrorContext(ctx, "durable command failed, dropping it", "kind", c.Kind(), "error", err, "handled", false)
+	}
+	return true
 }
 
 func ackWithRetry(ctx context.Context, ack func(context.Context) error) error {

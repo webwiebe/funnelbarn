@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
+	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 	"github.com/wiebe-xyz/funnelbarn/internal/workerhealth"
 )
 
@@ -15,6 +19,17 @@ import (
 // "dead_letter" for a record that exhausted its retries, "unresolved_project"
 // for one that could never have been persisted at all. Returns the new offset.
 func deadLetterRecord(spoolDir string, record spool.Record, endOffset int64, reason string) int64 {
+	parkRecord(spoolDir, record, reason)
+	if err := spool.WriteCursor(spoolDir, endOffset); err != nil {
+		slog.Error("worker write cursor", "err", err)
+	}
+	return endOffset
+}
+
+// parkRecord appends record to the dead-letter file and counts it under
+// reason. The ingest queue consumer calls it directly: its records are past
+// the spool cursor already.
+func parkRecord(spoolDir string, record spool.Record, reason string) {
 	if err := spool.AppendDeadLetter(spoolDir, record); err != nil {
 		// A full dead-letter file is its own alert: something has been failing
 		// in bulk and nothing has drained it. handled=false so it reaches
@@ -29,10 +44,14 @@ func deadLetterRecord(spoolDir string, record spool.Record, endOffset int64, rea
 		}
 	}
 	metrics.EventErrors.WithLabelValues(reason).Inc()
-	if err := spool.WriteCursor(spoolDir, endOffset); err != nil {
-		slog.Error("worker write cursor", "err", err)
+}
+
+// rotateSpool rotates the spool file once it passes workerRotateThreshold.
+func rotateSpool(ctx context.Context, eventSpool *spool.Spool, span trace.Span) {
+	if err := eventSpool.RotateIfExceeds(workerRotateThreshold); err != nil {
+		tracing.RecordError(span, err)
+		slog.ErrorContext(ctx, "worker rotate spool", "err", err)
 	}
-	return endOffset
 }
 
 // skipMalformed reports spool bytes that are not a record and moves the cursor

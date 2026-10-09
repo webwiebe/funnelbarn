@@ -8,6 +8,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 )
 
 func fullFlag() repository.FeatureFlag {
@@ -51,6 +52,17 @@ func TestCodecRoundTripsEveryKind(t *testing.T) {
 		command.TouchFlagEvaluated{ProjectID: "proj-1", FlagKey: "new-checkout"},
 		command.MarkFlagsEvaluated{ProjectID: "proj-1"},
 		command.EnsureAutoFlag{Flag: fullFlag(), Max: 50},
+		command.IngestRecord{Record: spool.Record{
+			IngestID:      "ing-1",
+			ReceivedAt:    time.Date(2026, 10, 7, 8, 59, 0, 0, time.UTC),
+			ContentType:   "application/json",
+			RemoteAddr:    "10.0.0.1:5555",
+			ClientIP:      "203.0.113.9",
+			ContentLength: 42,
+			BodyBase64:    "eyJuYW1lIjoicGFnZXZpZXcifQ==",
+			ProjectSlug:   "site",
+			UserAgent:     "Mozilla/5.0",
+		}},
 	}
 	for _, want := range cmds {
 		t.Run(want.Kind(), func(t *testing.T) {

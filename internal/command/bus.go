@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 )
 
 // Command is one unit of bookkeeping work. Commands are plain data so they can
@@ -36,6 +37,9 @@ type Deps struct {
 	// MarkFlagsEvaluated is the project health service's marker, which caches
 	// the first success so later marks skip the write.
 	MarkFlagsEvaluated func(ctx context.Context, projectID string) error
+	// ApplyIngest stores one ingest record. Set only on the consumer of the
+	// ingest queue.
+	ApplyIngest func(ctx context.Context, rec spool.Record) error
 }
 
 // Bus carries commands from request handlers to the single writer. The

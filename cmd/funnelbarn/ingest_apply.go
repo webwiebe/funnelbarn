@@ -102,3 +102,62 @@ func (a *ingestApplier) apply(ctx context.Context, record spool.Record, geoEnabl
 	}
 	return nil
 }
+
+// applyEntries applies spool entries in order from offset and returns the new
+// offset. It writes the cursor after each stored record. A failing record stops
+// the batch so the next tick retries it; after workerMaxRetries failures, or
+// at once for an unresolvable project, the record is dead-lettered.
+func (a *ingestApplier) applyEntries(ctx context.Context, spoolDir string, entries []spool.RecordAtOffset, offset int64, retryCounts map[string]int) int64 {
+	// Check geo_enabled once per batch to avoid a DB round-trip per event.
+	geoEnabled := a.geo != nil
+	if geoEnabled {
+		val, _, _ := a.store.GetInstanceSetting(ctx, "geo_enabled")
+		geoEnabled = val != "false"
+	}
+
+	for _, entry := range entries {
+		if entry.Malformed != nil {
+			offset = skipMalformed(spoolDir, entry, offset)
+			continue
+		}
+		record := entry.Record
+
+		err := a.apply(ctx, record, geoEnabled)
+		if errors.Is(err, repository.ErrProjectUnresolvable) {
+			delete(retryCounts, record.IngestID)
+			offset = deadLetterRecord(spoolDir, record, entry.EndOffset, "unresolved_project")
+			continue
+		}
+		if err != nil {
+			stage := "persist"
+			if errors.Is(err, errProcessRecord) {
+				stage = "process"
+			}
+			retryCounts[record.IngestID]++
+			slog.Error("worker "+stage+" record",
+				"ingest_id", record.IngestID,
+				"attempt", retryCounts[record.IngestID],
+				"err", err,
+			)
+			if retryCounts[record.IngestID] >= workerMaxRetries {
+				slog.Error("worker dead-lettering record after "+stage+" failures",
+					"ingest_id", record.IngestID,
+					"attempts", retryCounts[record.IngestID],
+				)
+				delete(retryCounts, record.IngestID)
+				offset = deadLetterRecord(spoolDir, record, entry.EndOffset, "dead_letter")
+			} else {
+				metrics.EventErrors.WithLabelValues("retry").Inc()
+			}
+			return offset
+		}
+
+		metrics.EventsProcessed.Inc()
+		delete(retryCounts, record.IngestID)
+		offset = entry.EndOffset
+		if err := spool.WriteCursor(spoolDir, offset); err != nil {
+			slog.Error("worker write cursor", "err", err)
+		}
+	}
+	return offset
+}

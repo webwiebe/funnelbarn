@@ -56,6 +56,41 @@ func TestFIFOOrder(t *testing.T) {
 	}
 }
 
+// A batch keeps its order and joins the queue behind what was already there.
+func TestPublishBatchKeepsOrder(t *testing.T) {
+	ctx := context.Background()
+	l, _ := newList(t)
+	require.NoError(t, l.Publish(ctx, []byte("first")))
+	require.NoError(t, l.PublishBatch(ctx, [][]byte{[]byte("a"), []byte("b"), []byte("c")}))
+	require.NoError(t, l.PublishBatch(ctx, nil))
+
+	n, err := l.QueuedLen(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(4), n)
+
+	for _, want := range []string{"first", "a", "b", "c"} {
+		got, ack := receive(t, l)
+		require.Equal(t, want, got)
+		require.NoError(t, ack(ctx))
+	}
+}
+
+// QueuedLen leaves out what a consumer holds, so a producer's cap measures the
+// backlog only.
+func TestQueuedLenExcludesProcessing(t *testing.T) {
+	ctx := context.Background()
+	l, _ := newList(t)
+	require.NoError(t, l.PublishBatch(ctx, [][]byte{[]byte("a"), []byte("b")}))
+	_, _ = receive(t, l)
+
+	queued, err := l.QueuedLen(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), queued)
+	total, err := l.Len(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+}
+
 func TestReceiveIdleReturnsNil(t *testing.T) {
 	l, _ := newList(t)
 	payload, ack, err := l.Receive(context.Background())
@@ -135,6 +170,9 @@ func TestErrorsWhenRedisIsDown(t *testing.T) {
 
 	require.ErrorContains(t, queue.Ping(ctx, client), "redis ping")
 	require.ErrorContains(t, l.Publish(ctx, []byte("a")), "lpush")
+	require.ErrorContains(t, l.PublishBatch(ctx, [][]byte{[]byte("a")}), "lpush")
+	_, err = l.QueuedLen(ctx)
+	require.ErrorContains(t, err, "llen")
 	_, _, err = l.Receive(ctx)
 	require.ErrorContains(t, err, "blmove")
 	_, err = l.Recover(ctx)
