@@ -47,6 +47,20 @@ type RecordingService struct {
 	funnels ports.FunnelRepo
 	events  ports.EventRepo
 	storage RecordingStorage
+	queue   ChunkQueue
+}
+
+// ChunkQueue takes an uploaded chunk's metadata off the request path. Enqueue
+// reports false when it did not queue the chunk (the queue is full or cannot
+// be reached), and the caller applies the chunk itself.
+type ChunkQueue interface {
+	Enqueue(ctx context.Context, meta ChunkMeta) bool
+}
+
+// SetChunkQueue routes chunk metadata through q. Call it before the service
+// handles requests.
+func (svc *RecordingService) SetChunkQueue(q ChunkQueue) {
+	svc.queue = q
 }
 
 // NewRecordingService creates a new RecordingService.
@@ -63,11 +77,16 @@ type ChunkMeta struct {
 	Traces     []repository.TraceLink `json:"traces,omitempty"`
 }
 
-// IngestChunk uploads the chunk to R2 and applies its metadata to SQLite.
+// IngestChunk uploads the chunk to R2 and applies its metadata to SQLite. With
+// a chunk queue set, the metadata goes onto the queue instead, and is applied
+// here only when the queue does not take it.
 func (svc *RecordingService) IngestChunk(ctx context.Context, chunk RecordingChunk) error {
 	meta, ok, err := svc.UploadChunk(ctx, chunk)
 	if err != nil || !ok {
 		return err
+	}
+	if svc.queue != nil && svc.queue.Enqueue(ctx, meta) {
+		return nil
 	}
 	return svc.ApplyChunkMeta(ctx, meta)
 }

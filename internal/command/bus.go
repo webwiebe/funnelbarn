@@ -40,6 +40,9 @@ type Deps struct {
 	// ApplyIngest stores one ingest record. Set only on the consumer of the
 	// ingest queue.
 	ApplyIngest func(ctx context.Context, rec spool.Record) error
+	// ApplyChunk folds one recording chunk's metadata into SQLite. Set only on
+	// the consumer of the recordings queue.
+	ApplyChunk func(ctx context.Context, c ApplyRecordingChunk) error
 }
 
 // Bus carries commands from request handlers to the single writer. The

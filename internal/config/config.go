@@ -110,6 +110,14 @@ type Config struct {
 	// IngestQueueMaxLen (FUNNELBARN_INGEST_QUEUE_MAX_LEN) is the backlog at
 	// which the forwarder stops publishing and leaves records in the spool.
 	IngestQueueMaxLen int64
+
+	// RecordingsViaQueue (FUNNELBARN_RECORDINGS_VIA_QUEUE) sends recording
+	// chunk metadata through the "recordings" queue instead of applying it on
+	// the request. Needs RedisQueueURL. Off keeps it in-process.
+	RecordingsViaQueue bool
+	// RecordingsQueueMaxLen (FUNNELBARN_RECORDINGS_QUEUE_MAX_LEN) is the
+	// backlog at which chunks are applied on the request again.
+	RecordingsQueueMaxLen int64
 }
 
 // Load reads config from config files and environment variables.
@@ -248,12 +256,9 @@ func Load() Config {
 
 	cfg.RedisQueueURL = os.Getenv("FUNNELBARN_REDIS_QUEUE_URL")
 	cfg.IngestViaQueue = os.Getenv("FUNNELBARN_INGEST_VIA_QUEUE") == "true"
-	cfg.IngestQueueMaxLen = 10000
-	if raw := os.Getenv("FUNNELBARN_INGEST_QUEUE_MAX_LEN"); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			cfg.IngestQueueMaxLen = parsed
-		}
-	}
+	cfg.IngestQueueMaxLen = int64(envPositiveInt("FUNNELBARN_INGEST_QUEUE_MAX_LEN", 10000))
+	cfg.RecordingsViaQueue = os.Getenv("FUNNELBARN_RECORDINGS_VIA_QUEUE") == "true"
+	cfg.RecordingsQueueMaxLen = int64(envPositiveInt("FUNNELBARN_RECORDINGS_QUEUE_MAX_LEN", 5000))
 
 	cfg.SetupRatePerMinute = 10
 	cfg.SetupRateBurst = 5
