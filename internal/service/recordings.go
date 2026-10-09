@@ -54,9 +54,28 @@ func NewRecordingService(store ports.RecordingRepo, funnels ports.FunnelRepo, ev
 	return &RecordingService{store: store, funnels: funnels, events: events, storage: storage}
 }
 
-// IngestChunk compresses the rrweb event chunk, uploads it to R2, and
-// upserts the recording metadata row in SQLite.
+// ChunkMeta is what applying a chunk to SQLite needs once its events are in
+// R2: the recording row it folds into, its index and its trace links. It is
+// small, so it can travel on a queue while the chunk itself stays in R2.
+type ChunkMeta struct {
+	Recording  repository.Recording   `json:"recording"`
+	ChunkIndex int                    `json:"chunk_index"`
+	Traces     []repository.TraceLink `json:"traces,omitempty"`
+}
+
+// IngestChunk uploads the chunk to R2 and applies its metadata to SQLite.
 func (svc *RecordingService) IngestChunk(ctx context.Context, chunk RecordingChunk) error {
+	meta, ok, err := svc.UploadChunk(ctx, chunk)
+	if err != nil || !ok {
+		return err
+	}
+	return svc.ApplyChunkMeta(ctx, meta)
+}
+
+// UploadChunk compresses the rrweb event chunk and uploads it to R2. It
+// returns ok=false for a chunk it drops (bot traffic). The upload writes a
+// fixed key per chunk index, so uploading a chunk twice stores it once.
+func (svc *RecordingService) UploadChunk(ctx context.Context, chunk RecordingChunk) (meta ChunkMeta, ok bool, err error) {
 	// Bot traffic is dropped here rather than stored and filtered out of the
 	// list query later. DetectBot already has the answer at the first chunk, and
 	// a crawler's replay has no value at any age — so there is no retention
@@ -68,18 +87,18 @@ func (svc *RecordingService) IngestChunk(ctx context.Context, chunk RecordingChu
 		slog.DebugContext(ctx, "recordings: dropping bot chunk",
 			"recording_id", chunk.RecordingID, "project_id", chunk.ProjectID,
 			"user_agent", chunk.UserAgent)
-		return nil
+		return ChunkMeta{}, false, nil
 	}
 
 	// Compress events.
 	compressed, err := gzipJSON(chunk.Events)
 	if err != nil {
-		return fmt.Errorf("recordings: compress chunk: %w", err)
+		return ChunkMeta{}, false, fmt.Errorf("recordings: compress chunk: %w", err)
 	}
 
 	key := chunkKey(chunk.ProjectID, chunk.RecordingID, chunk.ChunkIndex)
 	if err := svc.storage.Put(ctx, key, compressed); err != nil {
-		return fmt.Errorf("recordings: upload chunk: %w", err)
+		return ChunkMeta{}, false, fmt.Errorf("recordings: upload chunk: %w", err)
 	}
 
 	endedAt := chunk.StartedAt.Add(time.Duration(chunk.DurationMs) * time.Millisecond)
@@ -100,19 +119,25 @@ func (svc *RecordingService) IngestChunk(ctx context.Context, chunk RecordingChu
 		IsBot:           DetectBot(chunk.UserAgent),
 		PageURL:         chunk.PageURL,
 	}
-	if err := svc.store.UpsertRecording(ctx, rec); err != nil {
-		return err
+	return ChunkMeta{Recording: rec, ChunkIndex: chunk.ChunkIndex, Traces: chunk.Traces}, true, nil
+}
+
+// ApplyChunkMeta folds an uploaded chunk into its recording row and stores its
+// trace links, in one transaction. A chunk applied before (an SDK retry, or a
+// queue message delivered twice) changes nothing, so chunk_count counts each
+// chunk index once.
+//
+// A trace-link failure fails the whole chunk. It used to be logged and
+// skipped so the chunk was kept; now the retry re-applies the chunk in full,
+// and nothing is counted twice.
+func (svc *RecordingService) ApplyChunkMeta(ctx context.Context, meta ChunkMeta) error {
+	applied, err := svc.store.ApplyChunk(ctx, meta.Recording, meta.ChunkIndex, meta.Traces)
+	if err != nil {
+		return fmt.Errorf("recordings: apply chunk: %w", err)
 	}
-	// Persist trace links last: the recording row must exist first (LookupTrace
-	// joins against it for the seek offset). A trace-link failure should not lose
-	// the chunk itself, so log and continue rather than returning an error.
-	if len(chunk.Traces) > 0 {
-		if err := svc.store.InsertTraceLinks(ctx, chunk.ProjectID, chunk.SessionID, chunk.RecordingID, chunk.Traces); err != nil {
-			slog.WarnContext(ctx, "recordings: persist trace links failed",
-				"err", err, "handled", true,
-				"recording_id", chunk.RecordingID, "project_id", chunk.ProjectID,
-				"trace_count", len(chunk.Traces))
-		}
+	if !applied {
+		slog.DebugContext(ctx, "recordings: chunk already applied",
+			"recording_id", meta.Recording.ID, "chunk_index", meta.ChunkIndex)
 	}
 	return nil
 }
