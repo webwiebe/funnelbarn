@@ -478,6 +478,19 @@ func (s *Store) InsertEvent(ctx context.Context, e repository.Event) error {
 	return nil
 }
 
+// PersistEvent mirrors repository.Store.PersistEvent: an ingest_id that is
+// already stored changes nothing, otherwise the event is stored and the
+// session upserted. Signals are not tracked by the mock.
+func (s *Store) PersistEvent(ctx context.Context, e repository.Event, sess repository.Session, _ *repository.SessionSignals) (bool, error) {
+	if existing, _ := s.GetEventByIngestID(ctx, e.IngestID); existing != nil {
+		return false, nil
+	}
+	if err := s.InsertEvent(ctx, e); err != nil {
+		return false, err
+	}
+	return true, s.UpsertSession(ctx, sess)
+}
+
 func (s *Store) ListEvents(ctx context.Context, projectID string, limit, offset int) ([]repository.Event, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

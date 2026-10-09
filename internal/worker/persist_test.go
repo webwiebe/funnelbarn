@@ -18,29 +18,60 @@ import (
 type fakeEventStore struct {
 	events   []repository.Event
 	sessions []repository.Session
+	signals  []*repository.SessionSignals
+	err      error
 }
 
-func (f *fakeEventStore) GetEventByIngestID(_ context.Context, ingestID string) (*repository.Event, error) {
+func (f *fakeEventStore) PersistEvent(_ context.Context, e repository.Event, sess repository.Session, signals *repository.SessionSignals) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
 	for i := range f.events {
-		if f.events[i].IngestID == ingestID {
-			return &f.events[i], nil
+		if f.events[i].IngestID == e.IngestID {
+			return false, nil
 		}
 	}
-	return nil, nil
-}
-
-func (f *fakeEventStore) InsertEvent(_ context.Context, e repository.Event) error {
 	f.events = append(f.events, e)
-	return nil
-}
-
-func (f *fakeEventStore) UpsertSession(_ context.Context, sess repository.Session) error {
 	f.sessions = append(f.sessions, sess)
-	return nil
+	f.signals = append(f.signals, signals)
+	return true, nil
 }
 
-func (f *fakeEventStore) UpsertSessionSignals(_ context.Context, _, _ string, _ repository.SessionSignals) error {
-	return nil
+// A store failure is returned, so the worker retries or dead-letters the
+// record. It used to log a failed session upsert and report success.
+func TestPersistEvent_ReturnsStoreError(t *testing.T) {
+	store := &fakeEventStore{err: errors.New("database is locked")}
+	event := repository.Event{ID: "evt-err", ProjectID: "proj-1", SessionID: "sess-1", Name: "signup", IngestID: "ingest-err", OccurredAt: time.Now().UTC()}
+
+	err := PersistEvent(context.Background(), store, event, nil)
+	if err == nil || !strings.Contains(err.Error(), "database is locked") {
+		t.Fatalf("want the store error, got %v", err)
+	}
+}
+
+func TestPersistEvent_PassesSessionSignals(t *testing.T) {
+	store := &fakeEventStore{}
+	event := repository.Event{
+		ID: "evt-sig", ProjectID: "proj-1", SessionID: "sess-sig", Name: "pageview", IngestID: "ingest-sig",
+		OccurredAt:        time.Now().UTC(),
+		SessionSignalsRaw: map[string]any{"screen_width": float64(1440), "dark_mode": true},
+	}
+	if err := PersistEvent(context.Background(), store, event, nil); err != nil {
+		t.Fatalf("PersistEvent: %v", err)
+	}
+	got := store.signals[0]
+	if got == nil || got.ScreenWidth == nil || *got.ScreenWidth != 1440 || got.DarkMode == nil || !*got.DarkMode {
+		t.Fatalf("signals not passed through: %+v", got)
+	}
+
+	plain := event
+	plain.IngestID, plain.SessionSignalsRaw = "ingest-plain", nil
+	if err := PersistEvent(context.Background(), store, plain, nil); err != nil {
+		t.Fatalf("PersistEvent: %v", err)
+	}
+	if store.signals[1] != nil {
+		t.Fatalf("want nil signals without a payload, got %+v", store.signals[1])
+	}
 }
 
 func TestPersistEvent_InsertsEventAndUpsertSession(t *testing.T) {
