@@ -10,9 +10,10 @@
 #      The daily maintenance purge used to stall this endpoint for 4-6s.
 #   3. When SPANBARN_URL and SPANBARN_TOKEN (a read-scoped SpanBarn API key
 #      for project funnelbarn) are set, look for a recent
-#      maintenance.purge trace in SpanBarn. A miss is a warning, because the
-#      pass runs once a day and SpanBarn samples clean traces; set
-#      SPANBARN_REQUIRE=1 to make it a failure.
+#      maintenance.purge trace in SpanBarn. A miss is a warning unless
+#      SPANBARN_REQUIRE=1, which makes it a failure. The pass runs daily and
+#      2 minutes after each boot, and SpanBarn keeps rare root operations
+#      since spanbarn#270.
 #
 # Every network call and the probe loop itself are bounded by timeouts.
 set -euo pipefail
