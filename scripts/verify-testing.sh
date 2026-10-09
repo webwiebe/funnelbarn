@@ -5,9 +5,14 @@
 #
 #   1. GET  $BASE_URL/api/v1/health must answer 200.
 #   2. POST $BASE_URL/api/v1/evaluate once per second for PROBE_SECONDS
-#      (default 180), sequentially. The p99 of the request time must stay
-#      under P99_LIMIT_SECONDS (default 0.1) and every response must be 200.
-#      The daily maintenance purge used to stall this endpoint for 4-6s.
+#      (default 180), sequentially. Every response must be 200 and carry a
+#      Server-Timing app;dur=<ms> header. The p99 of that server-side time
+#      must stay under P99_LIMIT_SECONDS (default 0.1). It covers the whole
+#      handler, pool waits included, so the daily maintenance purge that used
+#      to stall this endpoint for 4-6s still fails the gate. The time curl
+#      measures is printed for information only: it includes the load of the
+#      CI host running this script, which swung the old gate between 30ms
+#      and 166ms on identical builds.
 #   3. When SPANBARN_URL and SPANBARN_TOKEN (a read-scoped SpanBarn API key
 #      for project funnelbarn) are set, look for a recent
 #      maintenance.purge trace in SpanBarn. A miss is a warning unless
@@ -53,7 +58,7 @@ body="$(printf '{"flag_key":"%s","default_value":false,"context":{"targeting_key
 deadline=$(($(date +%s) + PROBE_SECONDS))
 while [ "$(date +%s)" -lt "$deadline" ]; do
   started="$(date +%s)"
-  out="$(curl -sS -o /dev/null -w '%{http_code} %{time_total}' --max-time 10 \
+  out="$(curl -sS -o /dev/null -w '%{http_code} %{time_total} %header{server-timing}' --max-time 10 \
     -X POST "$BASE_URL/api/v1/evaluate" \
     -H 'Content-Type: application/json' \
     -H "x-funnelbarn-api-key: $API_KEY" \
@@ -70,17 +75,32 @@ if [ "$total" -eq 0 ]; then
   echo "FAIL no probe samples were taken" >&2
   exit 1
 fi
-p99="$(awk '{print $2}' "$times" | sort -n | awk '{a[NR]=$1} END {i=int(NR*0.99); if (i<NR*0.99) i++; if (i<1) i=1; print a[i]}')"
-max="$(awk '{print $2}' "$times" | sort -n | tail -1)"
-echo "samples=$total non200=$non200 p99=${p99}s max=${max}s limit=${P99_LIMIT_SECONDS}s"
+pct99() { sort -n | awk '{a[NR]=$1} END {i=int(NR*0.99); if (i<NR*0.99) i++; if (i<1) i=1; print a[i]}'; }
+# Column 3 is the Server-Timing value, e.g. "app;dur=4.2" (milliseconds).
+server="$work/server"
+awk '$1 == 200 && $3 ~ /^app;dur=[0-9.]+$/ {sub(/^app;dur=/, "", $3); print $3 / 1000}' "$times" >"$server"
+untimed="$(awk '$1 == 200 && $3 !~ /^app;dur=[0-9.]+$/' "$times" | wc -l | tr -d ' ')"
+client_p99="$(awk '{print $2}' "$times" | pct99)"
+echo "samples=$total non200=$non200 untimed=$untimed client_p99=${client_p99}s (informational)"
+
+p99=""
+if [ -s "$server" ]; then
+  p99="$(pct99 <"$server")"
+  max="$(sort -n "$server" | tail -1)"
+  echo "server_p99=${p99}s server_max=${max}s limit=${P99_LIMIT_SECONDS}s"
+fi
 
 if [ "$non200" -gt 0 ]; then
   echo "FAIL $non200 of $total evaluate responses were not 200" >&2
   awk '$1 != 200' "$times" | sort | uniq -c >&2
   fail=1
 fi
-if awk -v p="$p99" -v l="$P99_LIMIT_SECONDS" 'BEGIN {exit !(p > l)}'; then
-  echo "FAIL evaluate p99 ${p99}s exceeds ${P99_LIMIT_SECONDS}s" >&2
+if [ "$untimed" -gt 0 ]; then
+  echo "FAIL $untimed evaluate responses had no Server-Timing app;dur header" >&2
+  fail=1
+fi
+if [ -n "$p99" ] && awk -v p="$p99" -v l="$P99_LIMIT_SECONDS" 'BEGIN {exit !(p > l)}'; then
+  echo "FAIL evaluate server p99 ${p99}s exceeds ${P99_LIMIT_SECONDS}s" >&2
   fail=1
 fi
 

@@ -305,20 +305,29 @@ func defaultClientIP(r *http.Request) string {
 // Request Logging Middleware
 // --------------------------------------------------------------------------
 
-// responseWriter wraps http.ResponseWriter to capture the status code.
+// responseWriter wraps http.ResponseWriter to capture the status code. When
+// start is set, the response carries "Server-Timing: app;dur=<ms>", the time
+// from the request reaching the middleware to its headers being written. The
+// testing probe gates on it, so the CI host's own load does not count against
+// the server.
 type responseWriter struct {
 	http.ResponseWriter
 	status int
+	start  time.Time
 }
 
 func (rw *responseWriter) WriteHeader(status int) {
+	if rw.status == 0 && !rw.start.IsZero() {
+		ms := float64(time.Since(rw.start).Microseconds()) / 1000
+		rw.Header().Set("Server-Timing", "app;dur="+strconv.FormatFloat(ms, 'f', 1, 64))
+	}
 	rw.status = status
 	rw.ResponseWriter.WriteHeader(status)
 }
 
 func (rw *responseWriter) Write(b []byte) (int, error) {
 	if rw.status == 0 {
-		rw.status = http.StatusOK
+		rw.WriteHeader(http.StatusOK)
 	}
 	return rw.ResponseWriter.Write(b)
 }
@@ -342,7 +351,7 @@ func requestLogger(next http.Handler) http.Handler {
 			ua = ua[:128]
 		}
 
-		rw := &responseWriter{ResponseWriter: w, status: 0}
+		rw := &responseWriter{ResponseWriter: w, start: start}
 		next.ServeHTTP(rw, r)
 
 		status := rw.status
