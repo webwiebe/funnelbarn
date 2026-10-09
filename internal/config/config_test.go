@@ -259,3 +259,34 @@ func TestLoad_RedisQueueURL(t *testing.T) {
 		t.Errorf("RedisQueueURL from env: got %q", got)
 	}
 }
+
+func TestLoad_QueueFlags(t *testing.T) {
+	for _, k := range []string{
+		"FUNNELBARN_INGEST_VIA_QUEUE", "FUNNELBARN_INGEST_QUEUE_MAX_LEN",
+		"FUNNELBARN_RECORDINGS_VIA_QUEUE", "FUNNELBARN_RECORDINGS_QUEUE_MAX_LEN",
+	} {
+		t.Setenv(k, "")
+	}
+	cfg := Load()
+	if cfg.IngestViaQueue || cfg.RecordingsViaQueue {
+		t.Errorf("queues default on: ingest=%v recordings=%v", cfg.IngestViaQueue, cfg.RecordingsViaQueue)
+	}
+	if cfg.IngestQueueMaxLen != 10000 || cfg.RecordingsQueueMaxLen != 5000 {
+		t.Errorf("max len defaults: ingest=%d recordings=%d", cfg.IngestQueueMaxLen, cfg.RecordingsQueueMaxLen)
+	}
+
+	t.Setenv("FUNNELBARN_INGEST_VIA_QUEUE", "true")
+	t.Setenv("FUNNELBARN_INGEST_QUEUE_MAX_LEN", "200")
+	t.Setenv("FUNNELBARN_RECORDINGS_VIA_QUEUE", "true")
+	t.Setenv("FUNNELBARN_RECORDINGS_QUEUE_MAX_LEN", "-1")
+	cfg = Load()
+	if !cfg.IngestViaQueue || !cfg.RecordingsViaQueue {
+		t.Errorf("queues from env: ingest=%v recordings=%v", cfg.IngestViaQueue, cfg.RecordingsViaQueue)
+	}
+	if cfg.IngestQueueMaxLen != 200 {
+		t.Errorf("IngestQueueMaxLen from env: got %d", cfg.IngestQueueMaxLen)
+	}
+	if cfg.RecordingsQueueMaxLen != 5000 {
+		t.Errorf("RecordingsQueueMaxLen ignores a negative value: got %d", cfg.RecordingsQueueMaxLen)
+	}
+}

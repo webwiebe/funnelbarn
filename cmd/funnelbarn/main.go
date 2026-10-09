@@ -29,7 +29,6 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
-	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 	"github.com/wiebe-xyz/funnelbarn/internal/workerhealth"
 )
@@ -275,16 +274,11 @@ func run() error {
 	}
 	defer eventSpool.Close()
 
-	var recordingsSvc service.Recordings
-	if cfg.R2Endpoint != "" && cfg.R2AccessKeyID != "" && cfg.R2SecretAccessKey != "" && cfg.R2Bucket != "" {
-		r2, r2err := storage.NewR2(cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
-		if r2err != nil {
-			slog.Warn("session recording disabled: failed to initialize R2 storage", "err", r2err)
-		} else {
-			recordingsSvc = service.NewRecordingService(store, store, store, r2)
-			slog.Info("session recording enabled", "bucket", cfg.R2Bucket)
-		}
+	recordingsSvc, recordingsQ, err := newRecordings(ctx, cfg, store, slog.Default())
+	if err != nil {
+		return fmt.Errorf("recordings queue: %w", err)
 	}
+	defer drainQueue("recordings queue", recordingsQ) // deferred LIFO: drains before store.Close
 
 	var geoLookup *geoip.Lookup
 	if cfg.GeoIPCityDB != "" {
@@ -307,7 +301,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("ingest queue: %w", err)
 	}
-	defer drainIngestQueue(ingestQ) // deferred LIFO: drains before store.Close
+	defer drainQueue("ingest queue", ingestQ) // deferred LIFO: drains before store.Close
 
 	bblog.Go("background-worker", func() {
 		runBackgroundWorker(ctx, cfg, store, eventSpool, applier, ingestQ, recordingsSvc)

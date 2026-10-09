@@ -45,6 +45,37 @@ func fullEvaluation() repository.FlagEvaluation {
 	}
 }
 
+func fullRecordingChunk() command.ApplyRecordingChunk {
+	started := time.Date(2026, 10, 9, 10, 0, 0, 0, time.UTC)
+	ended := started.Add(5 * time.Second)
+	return command.ApplyRecordingChunk{
+		Recording: repository.Recording{
+			ID:              "rec-1",
+			ProjectID:       "proj-1",
+			SessionID:       "sess-1",
+			Environment:     "production",
+			FirstChunkIndex: 2,
+			LastChunkIndex:  2,
+			ChunkCount:      1,
+			HasSnapshot:     true,
+			DurationMs:      5000,
+			StartedAt:       started,
+			EndedAt:         &ended,
+			CreatedAt:       started,
+			DeviceType:      "desktop",
+			UserAgent:       "Mozilla/5.0",
+			PageURL:         "https://example.com/checkout",
+		},
+		ChunkIndex: 2,
+		Traces: []repository.TraceLink{{
+			TraceID:    "4bf92f3577b34da6a3ce929d0e0e4736",
+			SpanID:     "00f067aa0ba902b7",
+			URL:        "/api/cart",
+			OccurredAt: started.Add(time.Second),
+		}},
+	}
+}
+
 func TestCodecRoundTripsEveryKind(t *testing.T) {
 	cmds := []command.Command{
 		command.RecordEvaluation{Eval: fullEvaluation()},
@@ -63,6 +94,7 @@ func TestCodecRoundTripsEveryKind(t *testing.T) {
 			ProjectSlug:   "site",
 			UserAgent:     "Mozilla/5.0",
 		}},
+		fullRecordingChunk(),
 	}
 	for _, want := range cmds {
 		t.Run(want.Kind(), func(t *testing.T) {

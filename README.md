@@ -140,6 +140,8 @@ flat line.
 | `FUNNELBARN_REDIS_QUEUE_URL` | _(empty)_ | Redis/Valkey URL of the bookkeeping command queue; empty applies commands in-process |
 | `FUNNELBARN_INGEST_VIA_QUEUE` | `false` | `true` sends spool records through the `ingest` queue on `FUNNELBARN_REDIS_QUEUE_URL` |
 | `FUNNELBARN_INGEST_QUEUE_MAX_LEN` | `10000` | Ingest queue backlog at which records wait in the spool |
+| `FUNNELBARN_RECORDINGS_VIA_QUEUE` | `false` | `true` sends recording chunk metadata through the `recordings` queue on `FUNNELBARN_REDIS_QUEUE_URL`; chunks stay in R2 |
+| `FUNNELBARN_RECORDINGS_QUEUE_MAX_LEN` | `5000` | Recordings queue backlog at which chunks are applied on the request again |
 | `FUNNELBARN_MAX_BODY_BYTES` | `1048576` | Max request body (1 MiB) |
 | `FUNNELBARN_MAX_SPOOL_BYTES` | unlimited | Spool size cap |
 | `FUNNELBARN_ADMIN_USERNAME` | — | Admin username |

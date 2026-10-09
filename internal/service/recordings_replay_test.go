@@ -98,3 +98,39 @@ func TestRecordingService_UploadChunk_BotIsDropped(t *testing.T) {
 	assert.False(t, ok)
 	assert.Empty(t, storage.keys())
 }
+
+// fakeChunkQueue records what it is handed and takes it when accept is set.
+type fakeChunkQueue struct {
+	accept bool
+	got    []service.ChunkMeta
+}
+
+func (q *fakeChunkQueue) Enqueue(_ context.Context, meta service.ChunkMeta) bool {
+	q.got = append(q.got, meta)
+	return q.accept
+}
+
+// With a chunk queue set, a queued chunk is left to the queue's consumer, and
+// one the queue refuses is applied on the request as before.
+func TestRecordingService_IngestChunk_ChunkQueue(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	p, err := service.NewProjectService(store).CreateProject(ctx, "Replay", "replay")
+	require.NoError(t, err)
+	svc := service.NewRecordingService(store, store, store, newMemStorage())
+	q := &fakeChunkQueue{accept: true}
+	svc.SetChunkQueue(q)
+
+	chunk := replayChunk(p.ID)
+	require.NoError(t, svc.IngestChunk(ctx, chunk))
+	require.Len(t, q.got, 1)
+	assert.Equal(t, 0, q.got[0].ChunkIndex)
+	_, err = store.GetRecording(ctx, "rec-replay")
+	require.Error(t, err, "a queued chunk is not applied on the request")
+
+	q.accept = false
+	require.NoError(t, svc.IngestChunk(ctx, chunk))
+	rec, err := store.GetRecording(ctx, "rec-replay")
+	require.NoError(t, err)
+	assert.Equal(t, 1, rec.ChunkCount)
+}

@@ -59,6 +59,8 @@ func Decode(b []byte) (Command, Envelope, error) {
 		c, err = decodeAs[EnsureAutoFlag](env.Payload)
 	case KindIngestRecord:
 		c, err = decodeAs[IngestRecord](env.Payload)
+	case KindApplyRecordingChunk:
+		c, err = decodeAs[ApplyRecordingChunk](env.Payload)
 	default:
 		return nil, env, fmt.Errorf("decode envelope: unknown kind %q", env.Kind)
 	}
