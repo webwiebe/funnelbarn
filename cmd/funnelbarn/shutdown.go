@@ -32,6 +32,17 @@ func waitServer(ctx context.Context, server *http.Server, errCh <-chan error) er
 	}
 }
 
+// drainIngestQueue stores what the ingest queue holds before the store
+// closes, giving up after 10s. What is left stays in Valkey for the next
+// consumer.
+func drainIngestQueue(q *ingestQueue) {
+	closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := q.Close(closeCtx); err != nil {
+		slog.Warn("ingest queue: drain on shutdown", "err", err, "handled", true)
+	}
+}
+
 // drainCommands applies every queued command before the store closes, giving
 // up after 10s.
 func drainCommands(commands command.Bus) {

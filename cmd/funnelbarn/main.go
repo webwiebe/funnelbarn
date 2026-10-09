@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -303,8 +302,15 @@ func run() error {
 		}
 	}
 
+	applier := &ingestApplier{store: store, geo: geoLookup, health: workerhealth.New(workerhealth.Options{})}
+	ingestQ, err := newIngestQueue(ctx, cfg, applier, slog.Default())
+	if err != nil {
+		return fmt.Errorf("ingest queue: %w", err)
+	}
+	defer drainIngestQueue(ingestQ) // deferred LIFO: drains before store.Close
+
 	bblog.Go("background-worker", func() {
-		runBackgroundWorker(ctx, cfg, store, eventSpool, geoLookup, recordingsSvc)
+		runBackgroundWorker(ctx, cfg, store, eventSpool, applier, ingestQ, recordingsSvc)
 	})
 
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store, commands)
@@ -467,7 +473,7 @@ func resolveEventProject(ctx context.Context, store *repository.Store, slug stri
 	return proj.ID, nil
 }
 
-func runBackgroundWorker(ctx context.Context, cfg config.Config, store *repository.Store, eventSpool *spool.Spool, geoLookup *geoip.Lookup, recordings service.Recordings) {
+func runBackgroundWorker(ctx context.Context, cfg config.Config, store *repository.Store, eventSpool *spool.Spool, applier *ingestApplier, ingestQ *ingestQueue, recordings service.Recordings) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -487,10 +493,9 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 
 	// Surface silent failure modes (stalled consumer, geo resolving nothing) as
 	// BugBarn issues via slog.Error.
-	health := workerhealth.New(workerhealth.Options{})
+	health := applier.health
 
 	retryCounts := make(map[string]int)
-	applier := &ingestApplier{store: store, geo: geoLookup, health: health}
 
 	for {
 		select {
@@ -517,62 +522,13 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 			metrics.SpoolQueueDepth.Set(float64(len(entries)))
 			checkSpoolProgress(health, cfg.SpoolDir, offset)
 
-			// Check geo_enabled once per batch to avoid a DB round-trip per event.
-			geoEnabled := geoLookup != nil
-			if geoEnabled {
-				val, _, _ := store.GetInstanceSetting(tickCtx, "geo_enabled")
-				geoEnabled = val != "false"
+			if ingestQ != nil {
+				offset = ingestQ.forwarder.forward(tickCtx, entries, offset)
+			} else {
+				offset = applier.applyEntries(tickCtx, cfg.SpoolDir, entries, offset, retryCounts)
 			}
 
-			for _, entry := range entries {
-				if entry.Malformed != nil {
-					offset = skipMalformed(cfg.SpoolDir, entry, offset)
-					continue
-				}
-				record := entry.Record
-
-				err := applier.apply(tickCtx, record, geoEnabled)
-				if errors.Is(err, repository.ErrProjectUnresolvable) {
-					delete(retryCounts, record.IngestID)
-					offset = deadLetterRecord(cfg.SpoolDir, record, entry.EndOffset, "unresolved_project")
-					continue
-				}
-				if err != nil {
-					stage := "persist"
-					if errors.Is(err, errProcessRecord) {
-						stage = "process"
-					}
-					retryCounts[record.IngestID]++
-					slog.Error("worker "+stage+" record",
-						"ingest_id", record.IngestID,
-						"attempt", retryCounts[record.IngestID],
-						"err", err,
-					)
-					if retryCounts[record.IngestID] >= workerMaxRetries {
-						slog.Error("worker dead-lettering record after "+stage+" failures",
-							"ingest_id", record.IngestID,
-							"attempts", retryCounts[record.IngestID],
-						)
-						delete(retryCounts, record.IngestID)
-						offset = deadLetterRecord(cfg.SpoolDir, record, entry.EndOffset, "dead_letter")
-					} else {
-						metrics.EventErrors.WithLabelValues("retry").Inc()
-					}
-					break
-				}
-
-				metrics.EventsProcessed.Inc()
-				delete(retryCounts, record.IngestID)
-				offset = entry.EndOffset
-				if err := spool.WriteCursor(cfg.SpoolDir, offset); err != nil {
-					slog.Error("worker write cursor", "err", err)
-				}
-			}
-
-			if err := eventSpool.RotateIfExceeds(workerRotateThreshold); err != nil {
-				tracing.RecordError(tickSpan, err)
-				slog.Error("worker rotate spool", "err", err)
-			}
+			rotateSpool(tickCtx, eventSpool, tickSpan)
 			tickSpan.End()
 		}
 	}

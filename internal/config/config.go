@@ -102,6 +102,14 @@ type Config struct {
 	// command queue. Empty keeps bookkeeping commands on the in-process
 	// dispatcher, which is also the rollback path.
 	RedisQueueURL string
+
+	// IngestViaQueue (FUNNELBARN_INGEST_VIA_QUEUE) sends spool records through
+	// the "ingest" queue instead of storing them in the worker loop. Needs
+	// RedisQueueURL. Off keeps ingest in-process.
+	IngestViaQueue bool
+	// IngestQueueMaxLen (FUNNELBARN_INGEST_QUEUE_MAX_LEN) is the backlog at
+	// which the forwarder stops publishing and leaves records in the spool.
+	IngestQueueMaxLen int64
 }
 
 // Load reads config from config files and environment variables.
@@ -239,6 +247,13 @@ func Load() Config {
 	cfg.R2Endpoint = os.Getenv("FUNNELBARN_R2_ENDPOINT")
 
 	cfg.RedisQueueURL = os.Getenv("FUNNELBARN_REDIS_QUEUE_URL")
+	cfg.IngestViaQueue = os.Getenv("FUNNELBARN_INGEST_VIA_QUEUE") == "true"
+	cfg.IngestQueueMaxLen = 10000
+	if raw := os.Getenv("FUNNELBARN_INGEST_QUEUE_MAX_LEN"); raw != "" {
+		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
+			cfg.IngestQueueMaxLen = parsed
+		}
+	}
 
 	cfg.SetupRatePerMinute = 10
 	cfg.SetupRateBurst = 5

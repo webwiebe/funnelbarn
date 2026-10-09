@@ -4,10 +4,10 @@
 # The BLOCKING limit in scripts/go-quality-gates.sh is still 49.
 # ENFORCE AT 0 entries: set MAX_CYCLO=12 there and drop this dimension.
 # Refresh with: python3 scripts/quality-soak.py go-complexity --update-baseline
-# entries: 19  total: 24
+# entries: 19  total: 23
 #
 1 cmd/funnelbarn/cli.go
-2 cmd/funnelbarn/main.go
+1 cmd/funnelbarn/main.go
 1 cmd/funnelbarn/maintenance.go
 1 internal/api/abtests.go
 1 internal/api/dashboard.go

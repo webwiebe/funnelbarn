@@ -116,6 +116,42 @@ func (l *RedisList) Publish(ctx context.Context, payload []byte) error {
 	return nil
 }
 
+// PublishBatch appends payloads in order with one LPUSH, so either all of them
+// are queued or none is. An empty batch does nothing.
+func (l *RedisList) PublishBatch(ctx context.Context, payloads [][]byte) error {
+	if len(payloads) == 0 {
+		return nil
+	}
+	ctx, span := tracer.Start(ctx, "queue.publish_batch",
+		trace.WithAttributes(
+			attribute.String("queue.name", l.name),
+			attribute.Int("queue.batch_size", len(payloads)),
+		),
+	)
+	defer span.End()
+
+	args := make([]interface{}, len(payloads))
+	for i, p := range payloads {
+		args[i] = p
+	}
+	if err := l.client.LPush(ctx, l.queueKey, args...).Err(); err != nil {
+		err = fmt.Errorf("queue: lpush: %w", err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	return nil
+}
+
+// QueuedLen returns the number of payloads waiting to be received, processing
+// list excluded. Producers compare it with their length cap.
+func (l *RedisList) QueuedLen(ctx context.Context) (int64, error) {
+	n, err := l.client.LLen(ctx, l.queueKey).Result()
+	if err != nil {
+		return 0, fmt.Errorf("queue: llen: %w", err)
+	}
+	return n, nil
+}
+
 // Receive blocks for up to the poll timeout and returns the oldest payload,
 // moved onto the processing list. The returned ack removes exactly that payload
 // from the processing list. An idle queue returns a nil payload and nil error.
