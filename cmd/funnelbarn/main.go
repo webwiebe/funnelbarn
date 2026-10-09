@@ -32,7 +32,6 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
-	"github.com/wiebe-xyz/funnelbarn/internal/worker"
 	"github.com/wiebe-xyz/funnelbarn/internal/workerhealth"
 )
 
@@ -491,6 +490,7 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 	health := workerhealth.New(workerhealth.Options{})
 
 	retryCounts := make(map[string]int)
+	applier := &ingestApplier{store: store, geo: geoLookup, health: health}
 
 	for {
 		select {
@@ -531,94 +531,27 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 				}
 				record := entry.Record
 
-				event, err := worker.SafeProcess(record)
+				err := applier.apply(tickCtx, record, geoEnabled)
+				if errors.Is(err, repository.ErrProjectUnresolvable) {
+					delete(retryCounts, record.IngestID)
+					offset = deadLetterRecord(cfg.SpoolDir, record, entry.EndOffset, "unresolved_project")
+					continue
+				}
 				if err != nil {
+					stage := "persist"
+					if errors.Is(err, errProcessRecord) {
+						stage = "process"
+					}
 					retryCounts[record.IngestID]++
-					slog.Error("worker process record",
+					slog.Error("worker "+stage+" record",
 						"ingest_id", record.IngestID,
 						"attempt", retryCounts[record.IngestID],
 						"err", err,
 					)
 					if retryCounts[record.IngestID] >= workerMaxRetries {
-						slog.Error("worker dead-lettering record",
+						slog.Error("worker dead-lettering record after "+stage+" failures",
 							"ingest_id", record.IngestID,
 							"attempts", retryCounts[record.IngestID],
-						)
-						delete(retryCounts, record.IngestID)
-						offset = deadLetterRecord(cfg.SpoolDir, record, entry.EndOffset, "dead_letter")
-					} else {
-						metrics.EventErrors.WithLabelValues("retry").Inc()
-					}
-					break
-				}
-
-				eventStart := time.Now()
-
-				// Resolve project from the slug stored in the spool record.
-				// Each DB operation gets a 30s timeout so a stuck write can't block the worker.
-				opCtx, opCancel := context.WithTimeout(tickCtx, 30*time.Second)
-				opCtx, span := tracing.StartSpan(opCtx, "worker.persist_event",
-					attribute.String("ingest.id", record.IngestID),
-					attribute.String("project.slug", record.ProjectSlug),
-				)
-				projectID, projectErr := resolveEventProject(opCtx, store, record.ProjectSlug)
-				switch {
-				case projectErr == nil:
-					event.ProjectID = projectID
-				case errors.Is(projectErr, repository.ErrProjectUnresolvable):
-					// Unrecoverable: retrying an insert that must fail the
-					// project_id foreign key only burns attempts.
-					tracing.RecordError(span, projectErr)
-					span.End()
-					opCancel()
-					slog.Error("worker dead-lettering record: project cannot be resolved",
-						"err", projectErr, "handled", false,
-						"ingest_id", record.IngestID,
-						"project_slug", record.ProjectSlug,
-						"event_name", event.Name,
-					)
-					delete(retryCounts, record.IngestID)
-					offset = deadLetterRecord(cfg.SpoolDir, record, entry.EndOffset, "unresolved_project")
-					continue
-				default:
-					// A transient lookup failure (DB busy, timeout) — leave
-					// ProjectID unset and let the persist path retry the record.
-					slog.Warn("worker ensure project", "slug", record.ProjectSlug, "err", projectErr, "handled", true)
-				}
-
-				var geoResult *geoip.GeoResult
-				if geoEnabled {
-					geoResult = geoLookup.Lookup(event.ClientIP)
-					// Geo is on but resolving nothing usually means the real
-					// client IP isn't reaching us (proxy/forwarding config).
-					hit := geoResult != nil && geoResult.CountryCode != ""
-					metrics.GeoLookups.Inc()
-					if hit {
-						metrics.GeoHits.Inc()
-					}
-					if alert, n := health.RecordGeo(hit); alert {
-						slog.Error("geo enrichment resolved 0 countries over recent lookups; check FUNNELBARN_TRUSTED_PROXIES and client-IP forwarding",
-							"handled", false, "lookups", n)
-					}
-				}
-
-				persistErr := worker.PersistEvent(opCtx, store, event, geoResult)
-				if persistErr != nil {
-					tracing.RecordError(span, persistErr)
-				}
-				span.End()
-				opCancel()
-				metrics.EventProcessingDuration.Observe(time.Since(eventStart).Seconds())
-				if persistErr != nil {
-					retryCounts[record.IngestID]++
-					slog.Error("worker persist record",
-						"ingest_id", record.IngestID,
-						"attempt", retryCounts[record.IngestID],
-						"err", persistErr,
-					)
-					if retryCounts[record.IngestID] >= workerMaxRetries {
-						slog.Error("worker dead-lettering record after persist failures",
-							"ingest_id", record.IngestID,
 						)
 						delete(retryCounts, record.IngestID)
 						offset = deadLetterRecord(cfg.SpoolDir, record, entry.EndOffset, "dead_letter")
