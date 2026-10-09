@@ -77,32 +77,6 @@ func (s *ReadStore) CountOrphanedRows(ctx context.Context) (OrphanCounts, error)
 	return out, nil
 }
 
-// InsertEvent writes a new event to the database.
-func (s *Store) InsertEvent(ctx context.Context, e Event) error {
-	const q = `
-		INSERT INTO events (
-			id, project_id, session_id, user_id_hash, name,
-			url, referrer, referrer_domain,
-			utm_source, utm_medium, utm_campaign, utm_term, utm_content,
-			properties, user_agent, browser, os, device_type, country_code,
-			page_view_id, ingest_id, occurred_at, environment
-		) VALUES (
-			?, ?, ?, ?, ?,
-			?, ?, ?,
-			?, ?, ?, ?, ?,
-			?, ?, ?, ?, ?, ?,
-			?, ?, ?, ?
-		)`
-	_, err := s.db.ExecContext(ctx, q,
-		e.ID, e.ProjectID, e.SessionID, nullStr(e.UserIDHash), e.Name,
-		nullStr(e.URL), nullStr(e.Referrer), nullStr(e.ReferrerDomain),
-		nullStr(e.UTMSource), nullStr(e.UTMMedium), nullStr(e.UTMCampaign), nullStr(e.UTMTerm), nullStr(e.UTMContent),
-		nullStr(e.Properties), nullStr(e.UserAgent), nullStr(e.Browser), nullStr(e.OS), nullStr(e.DeviceType), nullStr(e.CountryCode),
-		nullStr(e.PageViewID), e.IngestID, e.OccurredAt, e.Environment,
-	)
-	return err
-}
-
 // ListEvents returns a paginated list of events for a project.
 func (s *ReadStore) ListEvents(ctx context.Context, projectID string, limit, offset int) ([]Event, error) {
 	if limit <= 0 {

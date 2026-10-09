@@ -130,6 +130,20 @@ func runMaintenance(ctx context.Context, cfg config.Config, store *repository.St
 			)
 		}
 	})
+	// Ingest now skips an ingest_id that is already stored, so this count can
+	// only fall as old rows age out. Zero everywhere would allow a unique
+	// index on events.ingest_id.
+	step("duplicate_ingest_ids", func(c context.Context, span trace.Span) {
+		n, err := store.CountDuplicateIngestIDs(c)
+		if err != nil {
+			fail(span, "count duplicate ingest ids", err)
+			return
+		}
+		span.SetAttributes(attribute.Int64("rows", n))
+		if n > 0 {
+			slog.Info("events stored more than once before ingest deduplicated them", "ingest_ids", n)
+		}
+	})
 
 	// Surface the dead-letter backlog. It is invisible otherwise — a file on a
 	// volume nobody looks at — and 108,343 records accumulated in it over two

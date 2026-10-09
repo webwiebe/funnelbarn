@@ -43,6 +43,10 @@ type Session struct {
 // id alone, two projects that emitted the same session ID upserted the same
 // row and its project_id was decided by whichever wrote last.
 func (s *Store) UpsertSession(ctx context.Context, sess Session) error {
+	return upsertSession(ctx, s.db, sess)
+}
+
+func upsertSession(ctx context.Context, ex execer, sess Session) error {
 	const q = `
 		INSERT INTO sessions (
 			id, project_id, first_seen_at, last_seen_at, event_count,
@@ -55,7 +59,7 @@ func (s *Store) UpsertSession(ctx context.Context, sess Session) error {
 			last_seen_at = excluded.last_seen_at,
 			event_count  = event_count + 1,
 			exit_url     = excluded.exit_url`
-	_, err := s.db.ExecContext(ctx, q,
+	_, err := ex.ExecContext(ctx, q,
 		sess.ID, sess.ProjectID, sess.FirstSeenAt, sess.LastSeenAt,
 		nullStr(sess.EntryURL), nullStr(sess.ExitURL),
 		nullStr(sess.Referrer), nullStr(sess.UTMSource), nullStr(sess.UTMMedium), nullStr(sess.UTMCampaign),

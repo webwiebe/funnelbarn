@@ -176,11 +176,10 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 }
 
 // EventPersister is the narrow repository interface PersistEvent requires.
+// PersistEvent stores the event, the session upsert and the session signals
+// in one transaction and skips an ingest_id that is already stored.
 type EventPersister interface {
-	GetEventByIngestID(ctx context.Context, ingestID string) (*repository.Event, error)
-	InsertEvent(ctx context.Context, e repository.Event) error
-	UpsertSession(ctx context.Context, sess repository.Session) error
-	UpsertSessionSignals(ctx context.Context, projectID, sessionID string, signals repository.SessionSignals) error
+	PersistEvent(ctx context.Context, e repository.Event, sess repository.Session, signals *repository.SessionSignals) (bool, error)
 }
 
 // ErrNoProject means the event carries no project ID. events.project_id is
@@ -205,30 +204,6 @@ func PersistEvent(ctx context.Context, store EventPersister, event repository.Ev
 		event.CountryCode = geo.CountryCode
 	}
 
-	// Check idempotency: skip if already stored.
-	existing, err := store.GetEventByIngestID(ctx, event.IngestID)
-	if err != nil {
-		return fmt.Errorf("check idempotency: %w", err)
-	}
-	if existing != nil {
-		slog.Debug("event already stored, skipping", "ingest_id", event.IngestID)
-		return nil
-	}
-
-	// Insert the event.
-	if err := store.InsertEvent(ctx, event); err != nil {
-		return fmt.Errorf("insert event: %w", err)
-	}
-
-	slog.Info("event stored",
-		"ingest_id", event.IngestID,
-		"event_id", event.ID,
-		"project_id", event.ProjectID,
-		"event_name", event.Name,
-		"session_id", event.SessionID,
-	)
-
-	// Upsert session.
 	sess := repository.Session{
 		ID:          event.SessionID,
 		ProjectID:   event.ProjectID,
@@ -255,18 +230,31 @@ func PersistEvent(ctx context.Context, store EventPersister, event repository.Ev
 		sess.ASNOrg = geo.ASNOrg
 		sess.ConnectionClass = geo.ConnectionClass
 	}
-	if err := store.UpsertSession(ctx, sess); err != nil {
-		slog.Warn("upsert session failed", "err", err, "session_id", event.SessionID)
-	}
-
-	// Persist device/browser signals if present (first event of session only).
+	// Device/browser signals arrive on the first event of a session only.
+	var signals *repository.SessionSignals
 	if len(event.SessionSignalsRaw) > 0 {
-		signals := parseSessionSignals(event.SessionSignalsRaw)
-		if err := store.UpsertSessionSignals(ctx, event.ProjectID, event.SessionID, signals); err != nil {
-			slog.Warn("upsert session signals failed", "err", err, "session_id", event.SessionID)
-		}
+		parsed := parseSessionSignals(event.SessionSignalsRaw)
+		signals = &parsed
 	}
 
+	// One transaction: a redelivered ingest_id is skipped, so a replay cannot
+	// count the session twice, and a failure stores nothing and is retried.
+	inserted, err := store.PersistEvent(ctx, event, sess, signals)
+	if err != nil {
+		return fmt.Errorf("persist event: %w", err)
+	}
+	if !inserted {
+		slog.Debug("event already stored, skipping", "ingest_id", event.IngestID)
+		return nil
+	}
+
+	slog.Info("event stored",
+		"ingest_id", event.IngestID,
+		"event_id", event.ID,
+		"project_id", event.ProjectID,
+		"event_name", event.Name,
+		"session_id", event.SessionID,
+	)
 	return nil
 }
 

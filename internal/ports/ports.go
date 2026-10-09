@@ -335,10 +335,6 @@ type InstanceSettingsRepo interface {
 }
 
 // EventPersister is the narrow interface worker.PersistEvent requires.
-// It is a subset of EventRepo + SessionRepo to avoid injecting the full store.
 type EventPersister interface {
-	GetEventByIngestID(ctx context.Context, ingestID string) (*repository.Event, error)
-	InsertEvent(ctx context.Context, e repository.Event) error
-	UpsertSession(ctx context.Context, sess repository.Session) error
-	UpsertSessionSignals(ctx context.Context, projectID, sessionID string, signals repository.SessionSignals) error
+	PersistEvent(ctx context.Context, e repository.Event, sess repository.Session, signals *repository.SessionSignals) (bool, error)
 }
