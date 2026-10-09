@@ -265,6 +265,9 @@ jobs:
           PROBE_FLAG_KEY: ${{ secrets.FUNNELBARN_TESTING_PROBE_FLAG_KEY }}
           SPANBARN_URL: ${{ secrets.SPANBARN_URL }}
           SPANBARN_TOKEN: ${{ secrets.SPANBARN_TOKEN }}
+          # SpanBarn keeps rare root operations since spanbarn#270, so the
+          # daily maintenance.purge trace must be there.
+          SPANBARN_REQUIRE: "1"
         run: |
           scripts/verify-testing.sh \
             https://funnelbarn.test.wiebe.xyz \
