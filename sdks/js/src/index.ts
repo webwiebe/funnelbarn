@@ -141,6 +141,15 @@ function normaliseEndpoint(endpoint: string): string {
   return trimmed.replace(/\/api\/v1\/events$/, "");
 }
 
+// Observe a performance entry type; browsers that do not support it throw.
+function observePerformance(type: string, onEntries: PerformanceObserverCallback): void {
+  try {
+    new PerformanceObserver(onEntries).observe({ type, buffered: true });
+  } catch {
+    // Not supported in this environment.
+  }
+}
+
 export class FunnelBarnClient {
   private readonly apiKey: string;
   private readonly endpoint: string;
@@ -168,6 +177,8 @@ export class FunnelBarnClient {
   // web vitals
   private pendingVitals: Record<string, number> = {};
   private vitalsPageViewId: string | undefined;
+  // Captured at page(): vitals can flush after an SPA navigation (#296).
+  private vitalsPageURL: string | undefined;
   private vitalsFlushed = false;
 
   // session recording
@@ -213,6 +224,7 @@ export class FunnelBarnClient {
         this.vitalsFlushed = true;
         this.enqueue({
           name: "web_vitals",
+          url: this.vitalsPageURL,
           page_view_id: this.vitalsPageViewId,
           session_id: this.getOrCreateSessionID(),
           properties: { ...this.pendingVitals },
@@ -235,29 +247,14 @@ export class FunnelBarnClient {
       // Fetch server recording config and apply overrides (does not block init).
       this.applyServerRecordingConfig(options.recordingChunkMs).catch(() => {});
 
-      // LCP observer.
-      try {
-        new PerformanceObserver((list) => {
-          const entries = list.getEntries();
-          if (entries.length) {
-            this.pendingVitals.lcp = Math.round(
-              entries[entries.length - 1].startTime
-            );
-          }
-        }).observe({ type: "largest-contentful-paint", buffered: true });
-      } catch {
-        // Not supported in this environment.
-      }
-
-      // FCP observer.
-      try {
-        new PerformanceObserver((list) => {
-          const e = list.getEntriesByName("first-contentful-paint")[0];
-          if (e) this.pendingVitals.fcp = Math.round(e.startTime);
-        }).observe({ type: "paint", buffered: true });
-      } catch {
-        // Not supported in this environment.
-      }
+      observePerformance("largest-contentful-paint", (list) => {
+        const entries = list.getEntries();
+        if (entries.length) this.pendingVitals.lcp = Math.round(entries[entries.length - 1].startTime);
+      });
+      observePerformance("paint", (list) => {
+        const e = list.getEntriesByName("first-contentful-paint")[0];
+        if (e) this.pendingVitals.fcp = Math.round(e.startTime);
+      });
     }
   }
 
@@ -272,9 +269,12 @@ export class FunnelBarnClient {
     // Clean up engagement tracking from any previous page view.
     this.cleanupEngagement();
 
+    const url = this.detectURL();
+
     // Reset web vitals state for this page view.
     this.pendingVitals = {};
     this.vitalsPageViewId = this.currentPageViewId;
+    this.vitalsPageURL = url;
     this.vitalsFlushed = false;
 
     // Collect TTFB synchronously.
@@ -297,7 +297,6 @@ export class FunnelBarnClient {
       sessionSignals = this.collectSessionSignals();
     }
 
-    const url = this.detectURL();
     const referrer = this.detectReferrer();
     const utms = this.extractUTMs(url);
 
@@ -324,7 +323,7 @@ export class FunnelBarnClient {
     this.enqueue(payload);
 
     // Start engagement tracking for this page view.
-    this.startEngagementTracking();
+    this.startEngagementTracking(url);
   }
 
   /**
@@ -539,7 +538,7 @@ export class FunnelBarnClient {
     return signals;
   }
 
-  private startEngagementTracking(): void {
+  private startEngagementTracking(url: string | undefined): void {
     if (typeof window === "undefined") return;
 
     this.engagementFired = false;
@@ -551,6 +550,7 @@ export class FunnelBarnClient {
       this.cleanupEngagement();
       this.enqueue({
         name: "page_engaged",
+        url,
         page_view_id: pageViewId,
         session_id: this.getOrCreateSessionID(),
         timestamp: new Date().toISOString(),

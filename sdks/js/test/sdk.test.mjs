@@ -277,6 +277,55 @@ describe('FunnelBarnClient', () => {
   });
 
   // -------------------------------------------------------------------------
+  // web_vitals and page_engaged carry the url of their page view (#296)
+  // -------------------------------------------------------------------------
+
+  it('web_vitals and page_engaged send the url of their page view after an SPA navigation', async () => {
+    const listeners = {};
+    const on = (type, fn) => { (listeners[type] ??= []).push(fn); };
+    const restoreWindow = defineWritable(global, 'window', {
+      location: { href: 'https://app.example/first', origin: 'https://app.example' },
+      scrollY: 0,
+      addEventListener: on,
+      removeEventListener: () => {},
+      fetch: async () => ({ ok: true, status: 200 }),
+    });
+    const restoreDocument = defineWritable(global, 'document', {
+      hidden: false,
+      referrer: '',
+      documentElement: { scrollHeight: 2000, clientHeight: 1000 },
+      addEventListener: on,
+    });
+    try {
+      const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'https://app.example' });
+      client.page();
+      client.pendingVitals.lcp = 1200;
+
+      // A client-side navigation changes the location before the visitor
+      // scrolls far enough to count as engaged and before the vitals flush.
+      global.window.location.href = 'https://app.example/second';
+      global.window.scrollY = 600;
+      for (const fn of listeners.scroll ?? []) fn();
+      global.document.hidden = true;
+      for (const fn of listeners.visibilitychange ?? []) fn();
+      // The visibilitychange handler starts its own flush. The fetch stub does
+      // no I/O, so its sends have all landed by the next macrotask.
+      await new Promise((resolve) => setImmediate(resolve));
+
+      const events = requests
+        .filter((r) => r.url.endsWith('/api/v1/events'))
+        .map((r) => JSON.parse(r.options.body));
+      const byName = Object.fromEntries(events.map((e) => [e.name, e]));
+      assert.equal(byName.page_view?.url, 'https://app.example/first');
+      assert.equal(byName.web_vitals?.url, 'https://app.example/first');
+      assert.equal(byName.page_engaged?.url, 'https://app.example/first');
+    } finally {
+      restoreDocument();
+      restoreWindow();
+    }
+  });
+
+  // -------------------------------------------------------------------------
   // session_signals — included on first page() only
   // -------------------------------------------------------------------------
 
