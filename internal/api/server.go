@@ -2,13 +2,11 @@ package api
 
 import (
 	"context"
-	"crypto/subtle"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
@@ -117,6 +115,10 @@ type ServerConfig struct {
 	// ReadPoolWait returns the read pool's cumulative connection wait
 	// (sql.DBStats.WaitDuration). The evaluate span reports its delta.
 	ReadPoolWait func() time.Duration
+	// Ready, when set, gates GET /api/v1/ready: a non-nil error answers 503
+	// with that reason. A reader process uses it to wait for the writer's
+	// migrations. Nil means ready whenever the database answers.
+	Ready func(ctx context.Context) error
 
 	// MCPResourceURL is the OAuth resource identifier of the MCP endpoint and
 	// the audience its IAMBarn access tokens must carry. The MCP endpoint and
@@ -189,6 +191,7 @@ type Server struct {
 	flagAutoRegisterMax int
 	commands            command.Bus
 	readPoolWait        func() time.Duration
+	ready               func(ctx context.Context) error
 	slow                slowEvaluate
 	slowLog             slowLogLimiter
 	spanRelay           *tracing.SpanRelay
@@ -272,6 +275,7 @@ func NewServer(cfg ServerConfig) *Server {
 		flagAutoRegisterMax: cfg.FlagAutoRegisterMax,
 		commands:            cfg.Commands,
 		readPoolWait:        cfg.ReadPoolWait,
+		ready:               cfg.Ready,
 		slow:                defaultSlowEvaluate,
 		spanRelay:           cfg.SpanRelay,
 	}
@@ -324,6 +328,7 @@ func (s *Server) registerRoutes() {
 
 	// Public
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
+	s.mux.HandleFunc("GET /api/v1/ready", s.handleReady)
 	s.mux.Handle("GET /api/v1/setup/{slug}", s.limit(s.setupLimiter, http.HandlerFunc(s.handleSetup)))
 	s.mux.Handle("GET /api/v1/client-config", s.limit(s.eventsLimiter, http.HandlerFunc(s.handleClientConfig)))
 	s.mux.HandleFunc("GET "+themeManifestPath, s.handleThemeManifest)
@@ -537,35 +542,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// Apply middleware: requestLogger (innermost) → securityHeaders → tracing → dispatch.
 	tracing.Middleware(requestLogger(s.securityMW(s.mux))).ServeHTTP(w, r)
-}
-
-// SetMetricsToken configures a bearer token required to access /metrics.
-// Call this after NewServer; an empty string means open access (backwards compatible).
-func (s *Server) SetMetricsToken(token string) {
-	s.metricsToken = token
-	// Re-register the metrics route with the updated token.
-	s.mux = http.NewServeMux()
-	s.registerRoutes()
-}
-
-// metricsHandler returns the Prometheus metrics handler, optionally
-// protected by a bearer token when metricsToken is non-empty.
-func (s *Server) metricsHandler() http.Handler {
-	promH := promhttp.Handler()
-	if s.metricsToken == "" {
-		return promH // no token configured — open access (backwards compatible)
-	}
-	expected := "Bearer " + s.metricsToken
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		presented := r.Header.Get("Authorization")
-		// Constant-time compare to avoid leaking the token via response timing.
-		if subtle.ConstantTimeCompare([]byte(presented), []byte(expected)) != 1 {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="metrics"`)
-			jsonError(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		promH.ServeHTTP(w, r)
-	})
 }
 
 // publicIngestCORSPaths are the endpoints a browser SDK on an arbitrary

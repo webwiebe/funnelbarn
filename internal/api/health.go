@@ -49,6 +49,26 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleReady is the readiness probe. It answers 503 while the Ready gate
+// fails, and otherwise as handleHealth does. The gate failing is expected while
+// a writer migrates, so it logs at Warn.
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	if s.ready != nil {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), healthPingTimeout)
+		defer cancel()
+		if err := s.ready(ctx); err != nil {
+			slog.WarnContext(ctx, "not ready", "reason", err.Error(), "handled", true)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"status": "not_ready",
+				"reason": err.Error(),
+				"time":   time.Now().UTC().Format(time.RFC3339),
+			})
+			return
+		}
+	}
+	s.handleHealth(w, r)
+}
+
 func (s *Server) handleGetProjectHealth(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {

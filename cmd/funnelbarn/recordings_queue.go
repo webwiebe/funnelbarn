@@ -36,6 +36,9 @@ type recordingsQueue struct {
 	maxLen int64
 	bus    *command.RedisBus
 	client *redis.Client
+	// fallback is set in a reader, which cannot apply a chunk itself: a chunk
+	// the queue does not take is buffered on disk and published later.
+	fallback *fallbackForwarder
 
 	// Requests enqueue concurrently, so the once-per-episode log flags are
 	// atomic.
@@ -70,10 +73,16 @@ func newRecordings(ctx context.Context, cfg config.Config, store *repository.Sto
 	return svc, q, nil
 }
 
-// newRecordingsQueue returns nil when FUNNELBARN_RECORDINGS_VIA_QUEUE is off,
-// which keeps chunks on the request path and is the rollback path.
+// recordingsFallbackName names a reader's on-disk buffer of chunk metadata in
+// its spool directory.
+const recordingsFallbackName = "recordings-fallback"
+
+// newRecordingsQueue returns nil when FUNNELBARN_RECORDINGS_VIA_QUEUE is off
+// in a standalone process, which keeps chunks on the request path and is the
+// rollback path. A reader and a writer always use the queue; a reader only
+// publishes to it.
 func newRecordingsQueue(ctx context.Context, cfg config.Config, svc *service.RecordingService, logger *slog.Logger) (*recordingsQueue, error) {
-	if !cfg.RecordingsViaQueue {
+	if !cfg.RecordingsViaQueue && !isSplit(cfg) {
 		return nil, nil
 	}
 	if cfg.RedisQueueURL == "" {
@@ -85,7 +94,20 @@ func newRecordingsQueue(ctx context.Context, cfg config.Config, svc *service.Rec
 	}
 	list := queue.NewRedisList(client, recordingsQueueName)
 	// The URL may carry a password, so only the queue name is logged.
-	logger.Info("recordings: redis queue", "queue", recordingsQueueName, "max_len", cfg.RecordingsQueueMaxLen)
+	logger.Info("recordings: redis queue", "queue", recordingsQueueName, "max_len", cfg.RecordingsQueueMaxLen, "consume", !isReader(cfg))
+	if isReader(cfg) {
+		fallback, err := command.NewSpoolFallback(cfg.SpoolDir, recordingsFallbackName, 0, logger)
+		if err != nil {
+			_ = client.Close()
+			return nil, err
+		}
+		return &recordingsQueue{
+			list:     list,
+			maxLen:   cfg.RecordingsQueueMaxLen,
+			client:   client,
+			fallback: &fallbackForwarder{name: "recordings", fallback: fallback, list: list},
+		}, nil
+	}
 
 	bus := command.NewRedisBus(command.RedisOptions{
 		Queue:      list,
@@ -126,27 +148,28 @@ func deadLetterChunk(logger *slog.Logger) func(context.Context, command.Command,
 // Enqueue publishes meta and reports whether it is queued. It returns false
 // while the queue holds maxLen chunks or Valkey cannot be reached.
 func (q *recordingsQueue) Enqueue(ctx context.Context, meta service.ChunkMeta) bool {
+	chunk := command.ApplyRecordingChunk{
+		Recording:  meta.Recording,
+		ChunkIndex: meta.ChunkIndex,
+		Traces:     meta.Traces,
+	}
 	queued, err := q.list.QueuedLen(ctx)
 	if err != nil {
 		q.publishFailed(ctx, err)
-		return false
+		return q.toFallback(ctx, chunk)
 	}
 	if queued >= q.maxLen {
 		if !q.full.Swap(true) {
-			slog.WarnContext(ctx, "recordings queue full, applying chunks on the request",
+			slog.WarnContext(ctx, "recordings queue full, chunks bypass it (applied on the request, or buffered on disk in a reader)",
 				"handled", true, "queued", queued, "max_len", q.maxLen)
 		}
-		return false
+		return q.toFallback(ctx, chunk)
 	}
 	if q.full.Swap(false) {
 		slog.InfoContext(ctx, "recordings queue has room again", "queued", queued)
 	}
 
-	payload, err := command.Encode(command.ApplyRecordingChunk{
-		Recording:  meta.Recording,
-		ChunkIndex: meta.ChunkIndex,
-		Traces:     meta.Traces,
-	}, time.Now())
+	payload, err := command.Encode(chunk, time.Now())
 	if err != nil {
 		slog.ErrorContext(ctx, "recordings queue encode chunk", "err", err,
 			"recording_id", meta.Recording.ID, "chunk_index", meta.ChunkIndex)
@@ -154,7 +177,7 @@ func (q *recordingsQueue) Enqueue(ctx context.Context, meta service.ChunkMeta) b
 	}
 	if err := q.list.Publish(ctx, payload); err != nil {
 		q.publishFailed(ctx, err)
-		return false
+		return q.toFallback(ctx, chunk)
 	}
 	if q.failing.Swap(false) {
 		slog.InfoContext(ctx, "recordings queue publish recovered")
@@ -164,18 +187,36 @@ func (q *recordingsQueue) Enqueue(ctx context.Context, meta service.ChunkMeta) b
 
 func (q *recordingsQueue) publishFailed(ctx context.Context, err error) {
 	if !q.failing.Swap(true) {
-		slog.ErrorContext(ctx, "recordings queue publish failed, applying chunks on the request",
+		slog.ErrorContext(ctx, "recordings queue publish failed, chunks bypass it (applied on the request, or buffered on disk in a reader)",
 			"err", err, "handled", true)
 		return
 	}
-	slog.DebugContext(ctx, "recordings queue publish failed, applying chunks on the request",
+	slog.DebugContext(ctx, "recordings queue publish failed, chunks bypass it (applied on the request, or buffered on disk in a reader)",
 		"err", err, "handled", true)
 }
 
-// Close drains the consumer, then closes the client. Safe on a nil queue.
+// toFallback buffers chunk in a reader and reports it queued. Without a
+// fallback it reports false, and the caller applies the chunk itself.
+func (q *recordingsQueue) toFallback(ctx context.Context, chunk command.ApplyRecordingChunk) bool {
+	if q.fallback == nil {
+		return false
+	}
+	q.fallback.fallback.Submit(ctx, chunk)
+	return true
+}
+
+// Close drains the consumer, if any, closes a reader's fallback file, then
+// the client. Safe on a nil queue.
 func (q *recordingsQueue) Close(ctx context.Context) error {
 	if q == nil {
 		return nil
 	}
-	return errors.Join(q.bus.Close(ctx), q.client.Close())
+	var errs []error
+	if q.bus != nil {
+		errs = append(errs, q.bus.Close(ctx))
+	}
+	if q.fallback != nil {
+		errs = append(errs, q.fallback.fallback.Close(ctx))
+	}
+	return errors.Join(append(errs, q.client.Close())...)
 }

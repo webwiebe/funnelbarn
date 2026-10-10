@@ -28,11 +28,12 @@ type ingestQueue struct {
 	client    *redis.Client
 }
 
-// newIngestQueue returns nil when FUNNELBARN_INGEST_VIA_QUEUE is off, which
-// keeps ingest in the worker loop and is the rollback path. The consumer is
-// started.
+// newIngestQueue returns nil when FUNNELBARN_INGEST_VIA_QUEUE is off in a
+// standalone process, which keeps ingest in the worker loop and is the
+// rollback path. A reader and a writer always use the queue; a reader only
+// forwards to it. The consumer is started.
 func newIngestQueue(ctx context.Context, cfg config.Config, applier *ingestApplier, logger *slog.Logger) (*ingestQueue, error) {
-	if !cfg.IngestViaQueue {
+	if !cfg.IngestViaQueue && !isSplit(cfg) {
 		return nil, nil
 	}
 	if cfg.RedisQueueURL == "" {
@@ -44,7 +45,11 @@ func newIngestQueue(ctx context.Context, cfg config.Config, applier *ingestAppli
 	}
 	list := queue.NewRedisList(client, ingestQueueName)
 	// The URL may carry a password, so only the queue name is logged.
-	logger.Info("ingest: redis queue", "queue", ingestQueueName, "max_len", cfg.IngestQueueMaxLen)
+	logger.Info("ingest: redis queue", "queue", ingestQueueName, "max_len", cfg.IngestQueueMaxLen, "consume", !isReader(cfg))
+	forwarder := &spoolForwarder{list: list, spoolDir: cfg.SpoolDir, maxLen: cfg.IngestQueueMaxLen}
+	if isReader(cfg) {
+		return &ingestQueue{forwarder: forwarder, client: client}, nil
+	}
 
 	// The consumer runs on its own goroutine, and a workerhealth.Monitor is
 	// not safe for concurrent use, so it gets its own.
@@ -67,19 +72,20 @@ func newIngestQueue(ctx context.Context, cfg config.Config, applier *ingestAppli
 		},
 	})
 	bus.Start(ctx)
-	return &ingestQueue{
-		forwarder: &spoolForwarder{list: list, spoolDir: cfg.SpoolDir, maxLen: cfg.IngestQueueMaxLen},
-		bus:       bus,
-		client:    client,
-	}, nil
+	return &ingestQueue{forwarder: forwarder, bus: bus, client: client}, nil
 }
 
-// Close drains the consumer, then closes the client. Safe on a nil queue.
+// Close drains the consumer, if any, then closes the client. Safe on a nil
+// queue.
 func (q *ingestQueue) Close(ctx context.Context) error {
 	if q == nil {
 		return nil
 	}
-	return errors.Join(q.bus.Close(ctx), q.client.Close())
+	var busErr error
+	if q.bus != nil {
+		busErr = q.bus.Close(ctx)
+	}
+	return errors.Join(busErr, q.client.Close())
 }
 
 // applyQueued stores one record taken from the ingest queue. Geo enrichment is

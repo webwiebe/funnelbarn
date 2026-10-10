@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -118,6 +119,36 @@ type Config struct {
 	// RecordingsQueueMaxLen (FUNNELBARN_RECORDINGS_QUEUE_MAX_LEN) is the
 	// backlog at which chunks are applied on the request again.
 	RecordingsQueueMaxLen int64
+
+	// Mode (FUNNELBARN_MODE) is the process role: ModeStandalone (default),
+	// ModeReader or ModeWriter. Spec 012 has the design.
+	Mode string
+}
+
+// Process roles for FUNNELBARN_MODE.
+const (
+	// ModeStandalone does everything in one process, as before the split.
+	ModeStandalone = "standalone"
+	// ModeReader opens the database read-only, serves queries, ingest and
+	// evaluate, and publishes every write to Valkey.
+	ModeReader = "reader"
+	// ModeWriter holds the only write connection and consumes every queue.
+	ModeWriter = "writer"
+)
+
+// ValidateMode checks FUNNELBARN_MODE and what the mode needs.
+func (c Config) ValidateMode() error {
+	switch c.Mode {
+	case ModeStandalone:
+		return nil
+	case ModeReader, ModeWriter:
+		if c.RedisQueueURL == "" {
+			return fmt.Errorf("FUNNELBARN_MODE=%s needs FUNNELBARN_REDIS_QUEUE_URL", c.Mode)
+		}
+		return nil
+	default:
+		return fmt.Errorf("FUNNELBARN_MODE=%q: want %s, %s or %s", c.Mode, ModeStandalone, ModeReader, ModeWriter)
+	}
 }
 
 // Load reads config from config files and environment variables.
@@ -259,6 +290,7 @@ func Load() Config {
 	cfg.IngestQueueMaxLen = int64(envPositiveInt("FUNNELBARN_INGEST_QUEUE_MAX_LEN", 10000))
 	cfg.RecordingsViaQueue = os.Getenv("FUNNELBARN_RECORDINGS_VIA_QUEUE") == "true"
 	cfg.RecordingsQueueMaxLen = int64(envPositiveInt("FUNNELBARN_RECORDINGS_QUEUE_MAX_LEN", 5000))
+	cfg.Mode = strings.ToLower(strings.TrimSpace(getenv("FUNNELBARN_MODE", ModeStandalone)))
 
 	cfg.SetupRatePerMinute = 10
 	cfg.SetupRateBurst = 5

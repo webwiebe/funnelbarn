@@ -33,7 +33,10 @@ func newCommandBus(ctx context.Context, cfg config.Config, deps command.Deps, lo
 		return nil, err
 	}
 	// The URL may carry a password, so only the queue name is logged.
-	logger.Info("command bus: redis", "queue", bookkeepingQueue)
+	logger.Info("command bus: redis", "queue", bookkeepingQueue, "consume", !isReader(cfg))
+	if isReader(cfg) {
+		return newReaderCommandBus(ctx, cfg, client, logger)
+	}
 	bus := command.NewRedisBus(command.RedisOptions{
 		Queue:    queue.NewRedisList(client, bookkeepingQueue),
 		Deps:     deps,
@@ -64,4 +67,45 @@ func (b *redisClosingBus) Start(ctx context.Context) {
 // Close drains the bus, then closes the client.
 func (b *redisClosingBus) Close(ctx context.Context) error {
 	return errors.Join(b.Bus.Close(ctx), b.client.Close())
+}
+
+// bookkeepingFallbackName names a reader's on-disk buffer of bookkeeping
+// commands in its spool directory.
+const bookkeepingFallbackName = "bookkeeping-fallback"
+
+// readerCommandBus publishes bookkeeping commands and consumes none. A reader
+// has no write connection, so a command whose publish fails goes to a file in
+// the spool directory, and the reader's worker publishes it later.
+type readerCommandBus struct {
+	*command.RedisBus
+	fallback *fallbackForwarder
+	client   *redis.Client
+}
+
+func newReaderCommandBus(ctx context.Context, cfg config.Config, client *redis.Client, logger *slog.Logger) (*readerCommandBus, error) {
+	fallback, err := command.NewSpoolFallback(cfg.SpoolDir, bookkeepingFallbackName, 0, logger)
+	if err != nil {
+		_ = client.Close()
+		return nil, err
+	}
+	list := queue.NewRedisList(client, bookkeepingQueue)
+	bus := command.NewRedisBus(command.RedisOptions{
+		Queue:    list,
+		Fallback: fallback,
+		Logger:   logger,
+	})
+	bus.Start(ctx)
+	return &readerCommandBus{
+		RedisBus: bus,
+		fallback: &fallbackForwarder{name: "bookkeeping", fallback: fallback, list: list},
+		client:   client,
+	}, nil
+}
+
+// Flush is a no-op: the writer applies what a reader publishes.
+func (b *readerCommandBus) Flush(context.Context) error { return nil }
+
+// Close stops publishing, closes the fallback file, then the client.
+func (b *readerCommandBus) Close(ctx context.Context) error {
+	return errors.Join(b.RedisBus.Close(ctx), b.client.Close())
 }

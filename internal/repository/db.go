@@ -163,9 +163,43 @@ func Open(path string) (*Store, error) {
 
 // openReadPool opens the read-only pool on the same file as the write pool.
 func (s *Store) openReadPool(path string) error {
+	rdb, reg, err := openReadOnlyPool(path)
+	if err != nil {
+		return err
+	}
+	s.rdb = rdb
+	s.rq = sqlcgen.New(rdb)
+	s.readStatsReg = reg
+	return nil
+}
+
+// OpenReadOnly opens the database at path for a reader process: one read-only
+// pool, no migrations and no backfill. The returned Store uses that pool on its
+// write side too, so every command method fails with SQLITE_READONLY instead
+// of writing. The writer process migrates the file; a reader compares
+// SchemaVersion with EmbeddedSchemaVersion before it serves traffic.
+func OpenReadOnly(path string) (*Store, error) {
+	if !isFileDB(path) {
+		return nil, fmt.Errorf("read-only open needs a database file, got %q", path)
+	}
+	rdb, reg, err := openReadOnlyPool(path)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{
+		ReadStore:    &ReadStore{rdb: rdb, rq: sqlcgen.New(rdb)},
+		db:           rdb,
+		q:            sqlcgen.New(rdb),
+		readStatsReg: reg,
+	}, nil
+}
+
+// openReadOnlyPool opens a read-only pool on the database file at path and
+// checks that it refuses writes.
+func openReadOnlyPool(path string) (*sql.DB, metric.Registration, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return fmt.Errorf("resolve db path: %w", err)
+		return nil, nil, fmt.Errorf("resolve db path: %w", err)
 	}
 	rdb, err := otelsql.Open("sqlite", readOnlyDSN(abs),
 		otelsql.WithAttributes(semconv.DBSystemSqlite, poolAttr("read")),
@@ -177,7 +211,7 @@ func (s *Store) openReadPool(path string) error {
 		}),
 	)
 	if err != nil {
-		return fmt.Errorf("open sqlite read pool: %w", err)
+		return nil, nil, fmt.Errorf("open sqlite read pool: %w", err)
 	}
 	rdb.SetMaxOpenConns(4)
 	rdb.SetMaxIdleConns(4)
@@ -188,25 +222,21 @@ func (s *Store) openReadPool(path string) error {
 		otelsql.WithAttributes(semconv.DBSystemSqlite, poolAttr("read")))
 	if err != nil {
 		_ = rdb.Close()
-		return fmt.Errorf("register read pool db stats metrics: %w", err)
+		return nil, nil, fmt.Errorf("register read pool db stats metrics: %w", err)
 	}
 
 	var qo int
 	if err := rdb.QueryRow("PRAGMA query_only").Scan(&qo); err != nil {
 		_ = reg.Unregister()
 		_ = rdb.Close()
-		return fmt.Errorf("check query_only pragma: %w", err)
+		return nil, nil, fmt.Errorf("check query_only pragma: %w", err)
 	}
 	if qo != 1 {
 		_ = reg.Unregister()
 		_ = rdb.Close()
-		return fmt.Errorf("read pool is writable (PRAGMA query_only=%d)", qo)
+		return nil, nil, fmt.Errorf("read pool is writable (PRAGMA query_only=%d)", qo)
 	}
-
-	s.rdb = rdb
-	s.rq = sqlcgen.New(rdb)
-	s.readStatsReg = reg
-	return nil
+	return rdb, reg, nil
 }
 
 // ensureColumns adds any columns that may be missing on databases older than
@@ -259,6 +289,10 @@ func (s *Store) Close() error {
 			_ = s.readStatsReg.Unregister()
 		}
 		rerr = s.rdb.Close()
+	}
+	if s.rdb == s.db && s.readStatsReg != nil {
+		// OpenReadOnly: the one pool is the read pool.
+		_ = s.readStatsReg.Unregister()
 	}
 	if s.statsReg != nil {
 		s.statsReg.Unregister()

@@ -105,7 +105,11 @@ Exactly one process consumes a queue: `Recover` requeues the whole processing li
 
 ### Durability while the writer or Redis is down
 
-Readers keep writing ingest to the existing on-disk spool and advance its cursor only after a successful `LPUSH`. With the writer down, items wait in Redis and land when it is back. With Redis down, the spool backs up and drains later. Bookkeeping commands that cannot reach Redis go to the reader's spool as well, so an outage delays them and loses none. As in phase 1, nothing is dropped until evaluate latency measurements call for it.
+Readers keep writing ingest to the existing on-disk spool and advance its cursor only after a successful `LPUSH`. With the writer down, items wait in Redis and land when it is back. With Redis down, the spool backs up and drains later. Bookkeeping commands and recording chunk metadata that cannot reach Redis go to files next to the reader's spool (`bookkeeping-fallback.ndjson`, `recordings-fallback.ndjson`, each with a cursor file). The reader's worker publishes them once a second and advances the cursor after each published batch, so an outage delays them and loses none. Each file is capped at 64 MiB; past the cap a command is dropped with an Error log. A reader has no write connection, so it never applies a command itself.
+
+Project health marks (`setup_called`, `events_received`, `recordings_received`) travel as one `mark_project_health` command naming the field.
+
+A reader serves `GET /api/v1/ready` with 503 until the database's goose version reaches the binary's newest migration. During a rollout the new readers wait for the new writer to migrate; `/api/v1/health` stays a liveness check.
 
 ### How readers see the database
 

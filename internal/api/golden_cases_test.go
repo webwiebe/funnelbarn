@@ -94,6 +94,7 @@ func goldenGETCases(s *goldenSeed) []goldenCase {
 
 	// Public.
 	add("health", "/api/v1/health", authNone, "")
+	add("ready", "/api/v1/ready", authNone, "")
 	add("client_config", "/api/v1/client-config", authNone, "")
 	add("theme_manifest", themeManifestPath, authNone, "")
 	cs = append(cs, goldenCase{Name: "setup_guide", Method: "GET", Path: "/api/v1/setup/" + s.SlugA, Auth: authNone, Phase: phaseGETWrites})
