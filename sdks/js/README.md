@@ -5,8 +5,13 @@ Browser + Node.js SDK for [FunnelBarn](https://github.com/wiebe-xyz/funnelbarn) 
 ## Installation
 
 ```bash
-npm install @funnelbarn/js
+npm install https://github.com/webwiebe/funnelbarn/releases/download/funnelbarn-js-v1.1.0/funnelbarn-js-1.1.0.tgz
 ```
+
+The package is not on the npm registry. Each version is released as a
+tarball on a GitHub release tagged `funnelbarn-js-vX.Y.Z`; swap the version
+in the URL for a newer one from the
+[releases page](https://github.com/webwiebe/funnelbarn/releases).
 
 Or load the CDN script tag — auto-tracks page views on init, no install step:
 

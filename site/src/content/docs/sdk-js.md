@@ -25,11 +25,14 @@ The SDK auto-initialises from `data-api-key`, infers the endpoint from the scrip
 
 ### npm / yarn / pnpm
 
-> **The package is not on the public npm registry yet.** `npm install
-> @funnelbarn/js` 404s today — the publish job in `binary-release.yml` is
-> skipped while the `NPM_TOKEN` secret is unset. Until it is published, load
-> the SDK from your instance's built-in path (below), which serves the same
-> build. In a bundler project you can also vendor `sdks/js` directly.
+```bash
+npm install https://github.com/webwiebe/funnelbarn/releases/download/funnelbarn-js-v1.1.0/funnelbarn-js-1.1.0.tgz
+```
+
+The package is not on the npm registry. Each version is released as a
+tarball on a GitHub release tagged `funnelbarn-js-vX.Y.Z`; swap the version
+in the URL for a newer one from the
+[releases page](https://github.com/webwiebe/funnelbarn/releases).
 
 
 ## Usage with a bundler

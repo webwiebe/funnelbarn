@@ -11,12 +11,13 @@ The same `@funnelbarn/js` package works server-side in Node.js. It buffers event
 ## Installation
 
 ```bash
-npm install @funnelbarn/js
+npm install https://github.com/webwiebe/funnelbarn/releases/download/funnelbarn-js-v1.1.0/funnelbarn-js-1.1.0.tgz
 ```
 
-> **The package is not on the public npm registry yet** — the publish job in
-> `binary-release.yml` is skipped while the `NPM_TOKEN` secret is unset, so this
-> command 404s today. Vendor `sdks/js` from the repo in the meantime.
+The package is not on the npm registry. Each version is released as a
+tarball on a GitHub release tagged `funnelbarn-js-vX.Y.Z`; swap the version
+in the URL for a newer one from the
+[releases page](https://github.com/webwiebe/funnelbarn/releases).
 
 ## Basic setup
 

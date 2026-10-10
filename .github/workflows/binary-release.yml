@@ -81,36 +81,55 @@ jobs:
           git tag -a "${GO_TAG}" -m "Go SDK ${NEW_VERSION}"
           git push origin "${NEW_VERSION}" "${GO_TAG}"
 
-  publish-npm:
+  release-js-sdk:
+    # @funnelbarn/js is not on npm (#326). It has its own semver, the version
+    # in sdks/js/package.json, and each version is released once as a tarball
+    # on a GitHub release tagged funnelbarn-js-vX.Y.Z. Consumers install it with
+    #   npm install https://github.com/webwiebe/funnelbarn/releases/download/funnelbarn-js-vX.Y.Z/funnelbarn-js-X.Y.Z.tgz
+    # A push that does not change the version finds the release and stops.
     needs: [tag]
     runs-on: ubuntu-latest
     env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-    defaults:
-      run:
-        working-directory: sdks/js
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v6
+      - name: Check whether this SDK version is released
+        id: sdk
+        run: |
+          VERSION=$(node -p "require('./sdks/js/package.json').version")
+          TAG="funnelbarn-js-v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          if gh release view "${TAG}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "${TAG} is already released"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: pnpm/action-setup@v6
+        if: steps.sdk.outputs.exists == 'false'
       - uses: actions/setup-node@v6
+        if: steps.sdk.outputs.exists == 'false'
         with:
           node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
-      - name: Sync package version to release tag
-        # Keeps package.json's version in sync with the git tag we just cut, so
-        # `npm publish` doesn't 409 with "version already exists" on the second
-        # run. --no-git-tag-version because the tag step already handles tagging.
-        run: npm version "${{ needs.tag.outputs.version_num }}" --no-git-tag-version --allow-same-version
-      - run: pnpm install --frozen-lockfile --filter @funnelbarn/js
-      - run: pnpm build
-      - name: Publish to npm
-        # The version step above edits package.json in place and leaves the
-        # workspace tree dirty; pnpm publish refuses a dirty tree by default,
-        # so --no-git-checks is required here.
-        if: env.NPM_TOKEN != ''
-        run: pnpm publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Build and pack
+        if: steps.sdk.outputs.exists == 'false'
+        # pnpm pack, so the catalog: spec in devDependencies is resolved in the
+        # packed package.json.
+        run: |
+          pnpm install --frozen-lockfile --filter @funnelbarn/js
+          pnpm --filter @funnelbarn/js build
+          pnpm --dir sdks/js pack --pack-destination "$RUNNER_TEMP"
+      - name: Create the GitHub release
+        if: steps.sdk.outputs.exists == 'false'
+        # --latest=false keeps the server release as the repo's latest.
+        run: |
+          gh release create "${{ steps.sdk.outputs.tag }}" \
+            "$RUNNER_TEMP/funnelbarn-js-${{ steps.sdk.outputs.version }}.tgz" \
+            --target "${GITHUB_SHA}" \
+            --title "@funnelbarn/js ${{ steps.sdk.outputs.version }}" \
+            --notes "Install: \`npm install https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ steps.sdk.outputs.tag }}/funnelbarn-js-${{ steps.sdk.outputs.version }}.tgz\`" \
+            --latest=false
 
   publish-pypi:
     needs: [tag]
