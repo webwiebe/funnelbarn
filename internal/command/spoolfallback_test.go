@@ -108,7 +108,7 @@ func TestSpoolFallbackSurvivesARestart(t *testing.T) {
 
 func TestSpoolFallbackStopsAtItsCap(t *testing.T) {
 	ctx := context.Background()
-	f, err := command.NewSpoolFallback(t.TempDir(), "fb", 100, nil)
+	f, err := command.NewSpoolFallback(t.TempDir(), "fb", 250, nil)
 	require.NoError(t, err)
 	defer f.Close(ctx)
 	for range 10 {
@@ -121,7 +121,7 @@ func TestSpoolFallbackStopsAtItsCap(t *testing.T) {
 	require.Less(t, n, 10)
 
 	// Drained, the file takes commands again.
-	f.Submit(ctx, command.TouchAPIKey{KeyHash: "again"})
+	f.Submit(ctx, command.TouchAPIKey{KeyHash: "k"})
 	n, err = f.Forward(ctx, pub.publish)
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
@@ -177,6 +177,38 @@ func TestSpoolFallbackCursorFile(t *testing.T) {
 	_, err = f.Forward(ctx, pub.publish)
 	require.ErrorContains(t, err, "fb.cursor")
 	require.Len(t, pub.got, 1)
+}
+
+func TestSpoolFallbackReportsFileErrors(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	f, err := command.NewSpoolFallback(dir, "fb", 0, nil)
+	require.NoError(t, err)
+	defer f.Close(ctx)
+	f.Submit(ctx, command.TouchAPIKey{KeyHash: "k1"})
+	pub := &recordingPublisher{}
+
+	// The cursor cannot be written: the publish happened, and Forward says
+	// the cursor did not move, so the command is sent again next time.
+	tmp := filepath.Join(dir, "fb.cursor.tmp")
+	require.NoError(t, os.Mkdir(tmp, 0o700))
+	n, err := f.Forward(ctx, pub.publish)
+	require.Error(t, err)
+	require.Zero(t, n)
+	require.Len(t, pub.got, 1)
+	require.NoError(t, os.Remove(tmp))
+
+	// The cursor cannot be read.
+	cursor := filepath.Join(dir, "fb.cursor")
+	require.NoError(t, os.Mkdir(cursor, 0o700))
+	_, err = f.Forward(ctx, pub.publish)
+	require.Error(t, err)
+	require.NoError(t, os.Remove(cursor))
+
+	// The file is gone.
+	require.NoError(t, os.Remove(filepath.Join(dir, "fb.ndjson")))
+	_, err = f.Forward(ctx, pub.publish)
+	require.Error(t, err)
 }
 
 func TestSpoolFallbackNeedsAWritableDir(t *testing.T) {
