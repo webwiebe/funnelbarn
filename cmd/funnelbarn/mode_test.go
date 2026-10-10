@@ -199,6 +199,29 @@ func TestMarkProjectHealthRejectsAnUnknownField(t *testing.T) {
 	require.True(t, healthField(t, store.DB(), "recordings_received", p.ID))
 }
 
+func TestStartWorkerByMode(t *testing.T) {
+	pair := newReaderWriterPair(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sp, err := spool.New(t.TempDir())
+	require.NoError(t, err)
+	defer sp.Close()
+
+	readerCfg := config.Config{Mode: config.ModeReader, SpoolDir: t.TempDir()}
+	ready, err := startWorker(ctx, readerCfg, pair.readerStore, sp, nil, nil, nil, nil, pair.reader)
+	require.NoError(t, err)
+	require.NotNil(t, ready, "a reader gates readiness on the schema")
+	require.NoError(t, ready(ctx))
+
+	// The full worker returns once its context ends.
+	stopped, stop := context.WithCancel(context.Background())
+	stop()
+	runBackgroundWorker(stopped, config.Config{SpoolDir: t.TempDir()}, pair.writerStore, sp, &ingestApplier{}, nil, nil)
+	ready, err = startWorker(stopped, config.Config{SpoolDir: t.TempDir()}, pair.writerStore, sp, &ingestApplier{}, nil, nil, nil, pair.writer)
+	require.NoError(t, err)
+	require.Nil(t, ready)
+}
+
 func TestReaderWorkerForwardsTheSpool(t *testing.T) {
 	mr := miniredis.RunT(t)
 	cfg := config.Config{Mode: config.ModeReader, RedisQueueURL: "redis://" + mr.Addr() + "/0", SpoolDir: t.TempDir(), IngestQueueMaxLen: 10}
