@@ -84,19 +84,25 @@ funnelbarn user create --username admin --password yourpassword
 
 ## JavaScript SDK
 
+Load it from your FunnelBarn instance. The script sends a page view on load
+and exposes a global `funnelbarn`:
+
 ```html
-<script type="module">
-  import { FunnelBarnClient } from 'https://cdn.jsdelivr.net/npm/@funnelbarn/js';
-
-  const analytics = new FunnelBarnClient({
-    apiKey: 'your-ingest-key',
-    endpoint: 'https://funnelbarn.yourdomain.com',
-    projectName: 'my-website',
-  });
-
-  analytics.page(); // auto-detect URL + referrer
-  analytics.track('signup', { plan: 'pro' });
+<script src="https://funnelbarn.yourdomain.com/sdk.js"
+  data-api-key="your-ingest-key"
+  data-project-name="my-website"
+  defer></script>
+<script>
+  // after the SDK has loaded
+  funnelbarn.track('signup', { plan: 'pro' });
 </script>
+```
+
+With a bundler or in Node.js, install `@funnelbarn/js` from its GitHub release
+(see [sdks/js](sdks/js/README.md)):
+
+```bash
+npm install https://github.com/webwiebe/funnelbarn/releases/download/funnelbarn-js-v1.1.0/funnelbarn-js-1.1.0.tgz
 ```
 
 ## Naming events

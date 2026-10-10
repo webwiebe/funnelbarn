@@ -102,7 +102,7 @@ FunnelBarn replaces Mixpanel, Amplitude, and Fathom for product teams who value 
 **Scenario**: I'm adding analytics to a static marketing site.
 
 **Acceptance criteria**:
-- `@funnelbarn/js` is installable via npm or usable via CDN script tag
+- `@funnelbarn/js` is installable from its GitHub release tarball (#326) or usable via the `/sdk.js` script tag
 - `FunnelBarnClient.page()` auto-detects URL and referrer from `window.location` and `document.referrer`
 - Session IDs are persisted in localStorage with a 30-minute idle timeout
 - Events are batched and flushed every 5 seconds or on `beforeunload`

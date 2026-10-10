@@ -1,13 +1,34 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 )
+
+// The setup guide installs the JS SDK from the GitHub release of the version
+// in sdks/js/package.json. The release job tags it from that file, so a bump
+// there without a bump here would point every new install at the old tarball.
+func TestJSSDKVersionMatchesPackageJSON(t *testing.T) {
+	raw, err := os.ReadFile("../../sdks/js/package.json")
+	if err != nil {
+		t.Fatalf("read package.json: %v", err)
+	}
+	var pkg struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &pkg); err != nil {
+		t.Fatalf("parse package.json: %v", err)
+	}
+	if pkg.Version != jsSDKVersion {
+		t.Errorf("jsSDKVersion = %q, sdks/js/package.json has %q; update the constant in setup_doc.go", jsSDKVersion, pkg.Version)
+	}
+}
 
 // Make sure the display name we ship in the setup doc matches the wire
 // constant the auth layer reads. HTTP headers are case-insensitive, but if
@@ -39,20 +60,20 @@ func TestSetupDoc_UsesCorrectHeaders(t *testing.T) {
 
 	// Must mention the correct headers, class names, and option keys.
 	for _, want := range []string{
-		"X-FunnelBarn-Api-Key",       // auth header
-		"X-FunnelBarn-Project",       // project routing header
-		"loadtest-project",           // the slug we requested
-		"FunnelBarnClient",           // correct TS class name (not the alias FunnelBarn)
-		"projectName:",               // correct FunnelBarnOptions field (not project:)
-		"data-project-name",          // IIFE script tag attribute for project routing
-		"NOT `event`",                // body schema must call out the wrong field name
-		"`properties`",               // the main extension point
-		"`utm_source`",               // explicit UTM override fields
-		"UTM params",                 // auto-extraction call-out
-		"Hashed server-side",         // privacy property of user_id
-		"`user_agent`",               // server-side ingest UA override
-		"npm install @funnelbarn/js", // JS SDK install command
-		"pip install funnelbarn",     // Python SDK install command
+		"X-FunnelBarn-Api-Key",           // auth header
+		"X-FunnelBarn-Project",           // project routing header
+		"loadtest-project",               // the slug we requested
+		"FunnelBarnClient",               // correct TS class name (not the alias FunnelBarn)
+		"projectName:",                   // correct FunnelBarnOptions field (not project:)
+		"data-project-name",              // IIFE script tag attribute for project routing
+		"NOT `event`",                    // body schema must call out the wrong field name
+		"`properties`",                   // the main extension point
+		"`utm_source`",                   // explicit UTM override fields
+		"UTM params",                     // auto-extraction call-out
+		"Hashed server-side",             // privacy property of user_id
+		"`user_agent`",                   // server-side ingest UA override
+		"npm install " + jsSDKInstallURL, // JS SDK install command
+		"pip install funnelbarn",         // Python SDK install command
 		"go get github.com/webwiebe/funnelbarn/sdks/go", // Go SDK install command
 	} {
 		if !strings.Contains(body, want) {

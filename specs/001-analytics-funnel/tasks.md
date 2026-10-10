@@ -205,7 +205,7 @@
 - [ ] T-158: Write unit tests for event batching — flush on timer, flush on beforeunload
 - [ ] T-159: Write unit tests for Node.js HTTP fallback transport
 - [ ] T-160: Build ESM + CJS outputs and verify dist/ structure
-- [ ] T-161: Publish to npm as `@funnelbarn/js`
+- [x] ~~T-161: Publish to npm as `@funnelbarn/js`~~: replaced by GitHub release tarballs, not npm (#326, #328)
 - [ ] T-162: Create IIFE bundle for CDN script-tag usage
 
 ---
@@ -373,8 +373,8 @@
 - [ ] T-605: Write vitest tests for event batching and flush
 - [ ] T-606: Write vitest tests for Node.js HTTP fallback transport
 - [ ] T-607: Bundle IIFE version (`dist/iife/index.js`) for CDN `<script>` usage
-- [ ] T-608: Publish `@funnelbarn/js` to npm
-- [ ] T-609: Set up jsDelivr CDN link in README
+- [x] ~~T-608: Publish `@funnelbarn/js` to npm~~: replaced by GitHub release tarballs, not npm (#326, #328)
+- [x] ~~T-609: Set up jsDelivr CDN link in README~~: the README uses the `/sdk.js` script tag
 
 ### Go SDK Completion
 

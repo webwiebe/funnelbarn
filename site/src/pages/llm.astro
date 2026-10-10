@@ -141,44 +141,47 @@ funnelbarn.identify('user-123');
 
 ## JavaScript SDK — Node.js (server-side)
 
-\`\`\`javascript
-import { FunnelBarn } from '@funnelbarn/node';
+Install \`@funnelbarn/js\` from its GitHub release (it is not on the npm registry; newer versions are tagged \`funnelbarn-js-vX.Y.Z\`):
 
-const fb = new FunnelBarn({
-  host: 'https://your-funnelbarn-host.example.com',
-  apiKey: 'your-api-key',
+\`\`\`bash
+npm install https://github.com/webwiebe/funnelbarn/releases/download/funnelbarn-js-v1.1.0/funnelbarn-js-1.1.0.tgz
+\`\`\`
+
+\`\`\`typescript
+import { FunnelBarnClient } from '@funnelbarn/js';
+
+const fb = new FunnelBarnClient({
+  apiKey: 'your-ingest-api-key',
+  endpoint: 'https://your-funnelbarn-host.example.com',
+  projectName: 'my-app',
 });
 
-// Track a page view
-await fb.page({ url: 'https://example.com/dashboard', userId: 'user-123' });
-
-// Track a custom event
-await fb.track('purchase', {
-  userId: 'user-123',
-  properties: { amount: 49.99, plan: 'pro' },
-});
+fb.identify('user-123');
+fb.track('purchase', { amount: 49.99, plan: 'pro' });
+await fb.flush();
 \`\`\`
 
 The Node.js SDK buffers events and flushes them in the background, so tracking calls are non-blocking.
 
 ## Python SDK
 
-\`\`\`python
-from funnelbarn import FunnelBarn
+\`\`\`bash
+pip install funnelbarn
+\`\`\`
 
-fb = FunnelBarn(
-    host="https://your-funnelbarn-host.example.com",
-    api_key="your-api-key",
+\`\`\`python
+from funnelbarn import FunnelBarnClient
+
+fb = FunnelBarnClient(
+    api_key="your-ingest-api-key",
+    endpoint="https://your-funnelbarn-host.example.com",
+    project_name="my-app",
 )
 
-# Track a page view
-fb.page(url="https://example.com/dashboard", user_id="user-123")
-
-# Track a custom event
-fb.track("purchase", user_id="user-123", properties={"amount": 49.99, "plan": "pro"})
-
-# Identify a user
-fb.identify("user-123", traits={"email": "user@example.com"})
+fb.page("https://example.com/pricing", referrer="https://google.com")
+fb.identify("user-123")
+fb.track("purchase", {"amount": 49.99, "plan": "pro"})
+fb.shutdown()  # flush + stop background worker
 \`\`\`
 
 The Python SDK uses an async background worker to flush events, so calls return immediately.

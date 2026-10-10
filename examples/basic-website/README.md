@@ -18,21 +18,17 @@ This example shows how to add FunnelBarn analytics to a static website.
 <!DOCTYPE html>
 <html>
 <head>
-  <script type="module">
-    import { FunnelBarnClient } from 'https://cdn.jsdelivr.net/npm/@funnelbarn/js/dist/esm/index.js';
-
-    const analytics = new FunnelBarnClient({
-      apiKey: 'YOUR_INGEST_API_KEY',
-      endpoint: 'https://funnelbarn.yourdomain.com',
-      projectName: 'my-website',
-    });
-
-    // Auto-track page view on load
-    analytics.page();
-
+  <!-- Sends a page view on load and exposes a global `funnelbarn`. -->
+  <script src="https://funnelbarn.yourdomain.com/sdk.js"
+    data-api-key="YOUR_INGEST_API_KEY"
+    data-project-name="my-website"
+    defer></script>
+  <script>
     // Track custom events
-    document.querySelector('#cta-button')?.addEventListener('click', () => {
-      analytics.track('cta_click', { location: 'hero' });
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelector('#cta-button')?.addEventListener('click', () => {
+        funnelbarn.track('cta_click', { location: 'hero' });
+      });
     });
   </script>
 </head>
@@ -64,14 +60,13 @@ curl -X POST https://funnelbarn.yourdomain.com/api/v1/projects/PROJECT_ID/funnel
 Then track the events:
 
 ```javascript
-// Landing page
-analytics.page();
+// Landing page: the script tag already sent the page_view on load.
 
 // When user clicks signup button
 signupBtn.addEventListener('click', () => {
-  analytics.track('signup_click');
+  funnelbarn.track('signup_click');
 });
 
 // After successful signup
-analytics.track('signup_complete', { plan: 'free' });
+funnelbarn.track('signup_complete', { plan: 'free' });
 ```
