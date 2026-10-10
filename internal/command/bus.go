@@ -37,6 +37,8 @@ type Deps struct {
 	// MarkFlagsEvaluated is the project health service's marker, which caches
 	// the first success so later marks skip the write.
 	MarkFlagsEvaluated func(ctx context.Context, projectID string) error
+	// MarkProjectHealth sets one project_health field (a Health* constant).
+	MarkProjectHealth func(ctx context.Context, projectID, field string) error
 	// ApplyIngest stores one ingest record. Set only on the consumer of the
 	// ingest queue.
 	ApplyIngest func(ctx context.Context, rec spool.Record) error

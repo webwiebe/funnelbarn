@@ -57,6 +57,8 @@ func Decode(b []byte) (Command, Envelope, error) {
 		c, err = decodeAs[MarkFlagsEvaluated](env.Payload)
 	case KindEnsureAutoFlag:
 		c, err = decodeAs[EnsureAutoFlag](env.Payload)
+	case KindMarkProjectHealth:
+		c, err = decodeAs[MarkProjectHealth](env.Payload)
 	case KindIngestRecord:
 		c, err = decodeAs[IngestRecord](env.Payload)
 	case KindApplyRecordingChunk:

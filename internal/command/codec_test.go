@@ -83,6 +83,7 @@ func TestCodecRoundTripsEveryKind(t *testing.T) {
 		command.TouchFlagEvaluated{ProjectID: "proj-1", FlagKey: "new-checkout"},
 		command.MarkFlagsEvaluated{ProjectID: "proj-1"},
 		command.EnsureAutoFlag{Flag: fullFlag(), Max: 50},
+		command.MarkProjectHealth{ProjectID: "proj-1", Field: command.HealthEventsReceived},
 		command.IngestRecord{Record: spool.Record{
 			IngestID:      "ing-1",
 			ReceivedAt:    time.Date(2026, 10, 7, 8, 59, 0, 0, time.UTC),

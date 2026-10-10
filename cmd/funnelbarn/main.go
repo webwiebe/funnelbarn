@@ -12,8 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
-
 	selfsdk "github.com/webwiebe/funnelbarn/sdks/go"
 	bb "github.com/wiebe-xyz/bugbarn-go"
 
@@ -25,7 +23,6 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
-	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
@@ -138,6 +135,10 @@ func run() error {
 		}
 	}
 
+	if err := cfg.ValidateMode(); err != nil {
+		return err
+	}
+
 	// A configured session secret must be strong. An empty secret is tolerated
 	// for local dev (a random per-process secret is generated) but refused for a
 	// weak explicit one — a short secret is worse than none because it looks
@@ -243,18 +244,26 @@ func run() error {
 		slog.Info("spanbarn telemetry enabled", "endpoint", cfg.SpanBarnEndpoint, "signals", "traces,metrics,logs,browser-spans")
 	}
 
-	store, err := repository.Open(cfg.DBPath)
+	slog.Info("process mode", "mode", cfg.Mode)
+	store, err := openStore(cfg)
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)
 	}
 	defer store.Close()
 
 	healthSvc := service.NewProjectHealthService(store)
-	commands, err := newCommandBus(ctx, cfg, command.Deps{Store: store, MarkFlagsEvaluated: healthSvc.MarkFlagsEvaluated}, slog.Default())
+	commands, err := newCommandBus(ctx, cfg, command.Deps{
+		Store:              store,
+		MarkFlagsEvaluated: healthSvc.MarkFlagsEvaluated,
+		MarkProjectHealth:  markProjectHealth(healthSvc),
+	}, slog.Default())
 	if err != nil {
 		return fmt.Errorf("command bus: %w", err)
 	}
 	defer drainCommands(commands) // deferred LIFO: drains before store.Close
+	if isReader(cfg) {
+		healthSvc = service.NewProjectHealthService(healthViaCommands{ProjectHealthRepo: store, bus: commands})
+	}
 
 	// Wire services.
 	projectsSvc := service.NewProjectService(store)
@@ -303,9 +312,10 @@ func run() error {
 	}
 	defer drainQueue("ingest queue", ingestQ) // deferred LIFO: drains before store.Close
 
-	bblog.Go("background-worker", func() {
-		runBackgroundWorker(ctx, cfg, store, eventSpool, applier, ingestQ, recordingsSvc)
-	})
+	ready, err := startWorker(ctx, cfg, store, eventSpool, applier, ingestQ, recordingsQ, recordingsSvc, commands)
+	if err != nil {
+		return err
+	}
 
 	apiAuthorizer, err := newAPIAuthorizer(cfg, store, commands)
 	if err != nil {
@@ -319,10 +329,12 @@ func run() error {
 	// an opaque handle, so a logout/revocation is simply a row deletion —
 	// durable by construction, no separate revocation list needed.
 	sessionManager := auth.NewSessionManager(cfg.SessionSecret, cfg.SessionTTL)
-	if n, err := store.DeleteExpiredWebSessions(ctx, time.Now().UTC()); err != nil {
-		slog.Warn("prune expired web sessions", "err", err)
-	} else if n > 0 {
-		slog.Info("pruned expired web sessions", "count", n)
+	if !isReader(cfg) { // a reader cannot write; the writer prunes
+		if n, err := store.DeleteExpiredWebSessions(ctx, time.Now().UTC()); err != nil {
+			slog.Warn("prune expired web sessions", "err", err)
+		} else if n > 0 {
+			slog.Info("pruned expired web sessions", "count", n)
+		}
 	}
 	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.MaxBodyBytes)
 	handler.OnEventsReceived = func(ctx context.Context, projectID string) {
@@ -420,6 +432,7 @@ func run() error {
 		FlagAutoRegisterMax:   cfg.AutoRegisterMaxFlags,
 		Commands:              commands,
 		ReadPoolWait:          func() time.Duration { return store.ReadDB().Stats().WaitDuration },
+		Ready:                 ready,
 		SpanRelay:             spanRelay,
 		MCPResourceURL:        cfg.MCPResourceURL,
 	})
@@ -465,65 +478,4 @@ func resolveEventProject(ctx context.Context, store *repository.Store, slug stri
 		return "", err
 	}
 	return proj.ID, nil
-}
-
-func runBackgroundWorker(ctx context.Context, cfg config.Config, store *repository.Store, eventSpool *spool.Spool, applier *ingestApplier, ingestQ *ingestQueue, recordings service.Recordings) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	purgeTicker := time.NewTicker(24 * time.Hour)
-	defer purgeTicker.Stop()
-
-	// A restart must not postpone maintenance indefinitely; see
-	// startupMaintenanceDelay.
-	startupMaintenance := time.NewTimer(startupMaintenanceDelay)
-	defer startupMaintenance.Stop()
-
-	offset, err := spool.ReadCursor(cfg.SpoolDir)
-	if err != nil {
-		slog.Warn("worker: failed to read cursor, starting from 0", "err", err)
-		offset = 0
-	}
-
-	// Surface silent failure modes (stalled consumer, geo resolving nothing) as
-	// BugBarn issues via slog.Error.
-	health := applier.health
-
-	retryCounts := make(map[string]int)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-startupMaintenance.C:
-			runMaintenance(ctx, cfg, store, recordings)
-		case <-purgeTicker.C:
-			runMaintenance(ctx, cfg, store, recordings)
-		case <-ticker.C:
-			tickCtx, tickSpan := tracing.StartSpan(ctx, "worker.tick",
-				attribute.Int64("spool.offset", offset),
-			)
-
-			entries, err := spool.ReadRecordsFrom(spool.Path(cfg.SpoolDir), offset)
-			if err != nil {
-				tracing.RecordError(tickSpan, err)
-				tickSpan.End()
-				slog.Error("worker read spool", "err", err)
-				checkSpoolProgress(health, cfg.SpoolDir, offset)
-				continue
-			}
-			tickSpan.SetAttributes(attribute.Int("spool.entries", len(entries)))
-			metrics.SpoolQueueDepth.Set(float64(len(entries)))
-			checkSpoolProgress(health, cfg.SpoolDir, offset)
-
-			if ingestQ != nil {
-				offset = ingestQ.forwarder.forward(tickCtx, entries, offset)
-			} else {
-				offset = applier.applyEntries(tickCtx, cfg.SpoolDir, entries, offset, retryCounts)
-			}
-
-			rotateSpool(tickCtx, eventSpool, tickSpan)
-			tickSpan.End()
-		}
-	}
 }
