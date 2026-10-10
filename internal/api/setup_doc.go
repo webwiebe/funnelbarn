@@ -8,6 +8,15 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
+// jsSDKVersion is the @funnelbarn/js release the setup guide installs.
+// TestJSSDKVersionMatchesPackageJSON keeps it equal to sdks/js/package.json,
+// so a version bump that forgets this constant fails CI.
+const jsSDKVersion = "1.1.0"
+
+// jsSDKInstallURL is the tarball the release-js-sdk job attaches to the
+// funnelbarn-js-v<version> GitHub release (#326).
+const jsSDKInstallURL = "https://github.com/webwiebe/funnelbarn/releases/download/funnelbarn-js-v" + jsSDKVersion + "/funnelbarn-js-" + jsSDKVersion + ".tgz"
+
 // buildSetupMarkdown renders the setup guide's content. It is pure: every
 // value the document depends on (the derived ingest key, the base URL, the
 // auto-register cap, whether MCP is enabled) is passed in, so it needs
@@ -93,10 +102,8 @@ func buildSetupMarkdown(project repository.Project, apiKey, publicURL string, fl
 	fmt.Fprintf(b, "```\n\n")
 	fmt.Fprintf(b, "> Remove `data-recording=\"true\"` to disable session recording. The SDK fetches server-side config regardless, so an admin can also toggle recording without a code deploy.\n\n")
 	fmt.Fprintf(b, "**Module-based projects**:\n\n")
-	fmt.Fprintf(b, "> `@funnelbarn/js` is not on the public npm registry yet, so\n")
-	fmt.Fprintf(b, "> `npm install @funnelbarn/js` 404s. The script tag above is the supported\n")
-	fmt.Fprintf(b, "> path today and works in bundled apps too; vendor `sdks/js` if you need\n")
-	fmt.Fprintf(b, "> the module build. The API below is what the package exposes.\n\n")
+	fmt.Fprintf(b, "```bash\nnpm install %s\n```\n\n", jsSDKInstallURL)
+	fmt.Fprintf(b, "> `@funnelbarn/js` is not on the npm registry. Each version is a tarball on a GitHub release tagged `funnelbarn-js-vX.Y.Z`; swap the version in the URL for a newer one from https://github.com/webwiebe/funnelbarn/releases.\n\n")
 	fmt.Fprintf(b, "```typescript\n")
 	fmt.Fprintf(b, "import { FunnelBarnClient } from '@funnelbarn/js'\n\n")
 	fmt.Fprintf(b, "const fb = new FunnelBarnClient({\n")

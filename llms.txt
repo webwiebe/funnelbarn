@@ -106,25 +106,36 @@ Config is read from environment variables and optionally from `/etc/funnelbarn/f
 
 ## JavaScript SDK
 
-```bash
-npm install @funnelbarn/js
-```
+Script tag, served by your FunnelBarn instance. It sends a page view on load
+and exposes a global `funnelbarn` with `track()`, `page()` and `identify()`:
 
 ```html
-<script type="module">
-  import { FunnelBarnClient } from '@funnelbarn/js';
+<script src="https://funnelbarn.yourdomain.com/sdk.js"
+  data-api-key="your-ingest-key"
+  data-project-name="my-website"
+  defer></script>
+```
 
-  const analytics = new FunnelBarnClient({
-    apiKey: 'your-ingest-key',
-    endpoint: 'https://funnelbarn.yourdomain.com',
-    projectName: 'my-website',
-  });
+With a bundler or in Node.js, install the package from its GitHub release
+(it is not on the npm registry; newer versions are tagged `funnelbarn-js-vX.Y.Z`):
 
-  analytics.page();                           // auto-detect URL + referrer
-  analytics.track('signup', { plan: 'pro' }); // custom event
-  analytics.identify('user_123');             // associate events with a user
-  await analytics.flush();                    // force-send queued events
-</script>
+```bash
+npm install https://github.com/webwiebe/funnelbarn/releases/download/funnelbarn-js-v1.1.0/funnelbarn-js-1.1.0.tgz
+```
+
+```typescript
+import { FunnelBarnClient } from '@funnelbarn/js';
+
+const analytics = new FunnelBarnClient({
+  apiKey: 'your-ingest-key',
+  endpoint: 'https://funnelbarn.yourdomain.com',
+  projectName: 'my-website',
+});
+
+analytics.page();                           // auto-detect URL + referrer
+analytics.track('signup', { plan: 'pro' }); // custom event
+analytics.identify('user_123');             // associate events with a user
+await analytics.flush();                    // force-send queued events
 ```
 
 **Options:** `apiKey` (required), `endpoint` (required), `projectName`, `flushInterval` (ms, default 5000), `sessionTimeout` (ms, default 1 800 000).

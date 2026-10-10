@@ -248,8 +248,8 @@ All work in this phase is complete unless marked TODO.
 - [x] Node < 18 HTTP fallback (no `fetch`)
 - [ ] Build pipeline (ESM + CJS outputs via `tsc`)
 - [ ] Unit tests: session ID generation, UTM extraction, event batching, flush on unload
-- [ ] Publish to npm as `@funnelbarn/js`
-- [ ] CDN IIFE bundle for script-tag usage (`<script src="https://cdn.jsdelivr.net/npm/@funnelbarn/js">`)
+- [x] ~~Publish to npm as `@funnelbarn/js`~~: replaced by GitHub release tarballs, not npm (#326, #328)
+- [x] ~~CDN IIFE bundle via jsDelivr~~: each instance serves the IIFE at `/sdk.js`
 
 ### Go SDK (`github.com/wiebe-xyz/funnelbarn-go`)
 
