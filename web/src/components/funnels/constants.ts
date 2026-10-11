@@ -1,5 +1,16 @@
 import { SegmentRule } from '../../lib/api'
 
+// ─── Conversion window ────────────────────────────────────────────────────────
+
+export const DAY_SECONDS = 24 * 3600
+/** The window the server applies to a user funnel that has none set. */
+export const DEFAULT_WINDOW_DAYS = 30
+
+/** windowDaysFromSeconds turns a stored window into the days the editor shows. */
+export function windowDaysFromSeconds(seconds?: number): number {
+  return seconds && seconds > 0 ? seconds / DAY_SECONDS : DEFAULT_WINDOW_DAYS
+}
+
 // ─── Funnel templates ─────────────────────────────────────────────────────────
 
 export interface FunnelTemplate {

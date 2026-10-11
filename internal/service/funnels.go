@@ -40,6 +40,19 @@ func validateFunnel(f repository.Funnel) error {
 			return &domain.ValidationError{Field: fmt.Sprintf("steps[%d].event_name", i), Message: "required"}
 		}
 	}
+	switch f.Scope {
+	case "", repository.FunnelScopeSession, repository.FunnelScopePageView, repository.FunnelScopeUser:
+	default:
+		return &domain.ValidationError{Field: "scope", Message: "must be session, page_view or user"}
+	}
+	if f.ConversionWindowSeconds != nil {
+		if f.Scope != repository.FunnelScopeUser {
+			return &domain.ValidationError{Field: "conversion_window_seconds", Message: "only applies to scope user"}
+		}
+		if *f.ConversionWindowSeconds <= 0 {
+			return &domain.ValidationError{Field: "conversion_window_seconds", Message: "must be positive"}
+		}
+	}
 	return nil
 }
 
@@ -66,8 +79,8 @@ func (svc *FunnelService) GetFunnel(ctx context.Context, id string) (repository.
 }
 
 // UpdateFunnel validates like CreateFunnel and, when Scope is left empty,
-// keeps the funnel's existing scope, because the caller may be updating name
-// or steps without meaning to touch scope.
+// keeps the funnel's existing scope and conversion window, because the caller
+// may be updating name or steps without meaning to touch either.
 func (svc *FunnelService) UpdateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error) {
 	if f.Scope == "" {
 		existing, err := svc.GetFunnel(ctx, f.ID)
@@ -75,6 +88,9 @@ func (svc *FunnelService) UpdateFunnel(ctx context.Context, f repository.Funnel)
 			return repository.Funnel{}, err
 		}
 		f.Scope = existing.Scope
+		if f.ConversionWindowSeconds == nil {
+			f.ConversionWindowSeconds = existing.ConversionWindowSeconds
+		}
 	}
 	if err := validateFunnel(f); err != nil {
 		return repository.Funnel{}, err

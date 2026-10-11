@@ -37,6 +37,8 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 		Description string                  `json:"description"`
 		Scope       string                  `json:"scope"`
 		Steps       []repository.FunnelStep `json:"steps"`
+
+		ConversionWindowSeconds *int64 `json:"conversion_window_seconds"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -53,6 +55,8 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 		Description: body.Description,
 		Scope:       body.Scope,
 		Steps:       body.Steps,
+
+		ConversionWindowSeconds: body.ConversionWindowSeconds,
 	}
 
 	ctx, span := tracing.StartSpan(r.Context(), "funnels.update",
@@ -134,6 +138,8 @@ func (s *Server) handleCreateFunnel(w http.ResponseWriter, r *http.Request) {
 		Description string                  `json:"description"`
 		Scope       string                  `json:"scope"`
 		Steps       []repository.FunnelStep `json:"steps"`
+
+		ConversionWindowSeconds *int64 `json:"conversion_window_seconds"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -149,6 +155,8 @@ func (s *Server) handleCreateFunnel(w http.ResponseWriter, r *http.Request) {
 		Description: body.Description,
 		Scope:       body.Scope,
 		Steps:       body.Steps,
+
+		ConversionWindowSeconds: body.ConversionWindowSeconds,
 	}
 
 	ctx, span := tracing.StartSpan(r.Context(), "funnels.create",

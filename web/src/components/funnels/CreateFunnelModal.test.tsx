@@ -118,6 +118,50 @@ describe('CreateFunnelModal', () => {
     })
   })
 
+  it('sends the conversion window in seconds for a user funnel', async () => {
+    renderModal()
+    fireEvent.change(screen.getByPlaceholderText(/signup flow/i), {
+      target: { value: 'Issue to merge' },
+    })
+    const stepInputs = screen.getAllByPlaceholderText(/event name/i)
+    fireEvent.change(stepInputs[0], { target: { value: 'issue_opened' } })
+    fireEvent.change(stepInputs[1], { target: { value: 'pr_merged' } })
+    fireEvent.click(screen.getByRole('button', { name: 'User' }))
+    const windowInput = screen.getByLabelText(/conversion window/i)
+    expect(windowInput).toHaveValue(30)
+    fireEvent.change(windowInput, { target: { value: '7' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }))
+
+    await waitFor(() => expect(mockApi.createFunnel).toHaveBeenCalledTimes(1))
+    expect(mockApi.createFunnel).toHaveBeenCalledWith(
+      'p1',
+      'Issue to merge',
+      [{ event_name: 'issue_opened' }, { event_name: 'pr_merged' }],
+      'user',
+      7 * 24 * 3600,
+    )
+  })
+
+  it('rejects a conversion window below one day', async () => {
+    renderModal()
+    fireEvent.change(screen.getByPlaceholderText(/signup flow/i), {
+      target: { value: 'Issue to merge' },
+    })
+    const stepInputs = screen.getAllByPlaceholderText(/event name/i)
+    fireEvent.change(stepInputs[0], { target: { value: 'issue_opened' } })
+    fireEvent.change(stepInputs[1], { target: { value: 'pr_merged' } })
+    fireEvent.click(screen.getByRole('button', { name: 'User' }))
+    fireEvent.change(screen.getByLabelText(/conversion window/i), { target: { value: '0' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }))
+
+    await waitFor(() =>
+      expect(screen.getByText(/conversion window must be at least one day/i)).toBeInTheDocument(),
+    )
+    expect(mockApi.createFunnel).not.toHaveBeenCalled()
+  })
+
   it('shows an error banner when the API call fails', async () => {
     mockApi.createFunnel.mockRejectedValue(new Error('boom'))
     const { onCreated } = renderModal()

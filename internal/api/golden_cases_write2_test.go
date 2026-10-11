@@ -19,6 +19,13 @@ func goldenFunnelMutations(b *mutBuilder, s *goldenSeed) {
 	b.read("funnels_a_after_update", pa+"/funnels")
 	b.read("funnel_analysis_new_after_update", s.window(pa+"/funnels/$newFunnel/analysis"))
 	b.write("funnel_delete", "DELETE", pa+"/funnels/$newFunnel", nil, http.StatusNoContent, nil)
+	b.write("funnel_create_user_scope", "POST", pa+"/funnels", map[string]any{"name": "Golden user funnel", "scope": "user",
+		"conversion_window_seconds": 7 * 24 * 3600, "steps": []any{step("page_view"), step("purchase")}},
+		http.StatusCreated, map[string]string{"newUserFunnel": "id"})
+	b.write("funnel_create_window_on_session", "POST", pa+"/funnels", map[string]any{"name": "Windowed session", "scope": "session",
+		"conversion_window_seconds": 3600, "steps": []any{step("page_view")}}, http.StatusUnprocessableEntity, nil)
+	b.read("funnel_analysis_user_scope", s.window(pa+"/funnels/$newUserFunnel/analysis"))
+	b.write("funnel_delete_user_scope", "DELETE", pa+"/funnels/$newUserFunnel", nil, http.StatusNoContent, nil)
 	b.read("funnels_a_after_delete", pa+"/funnels")
 }
 

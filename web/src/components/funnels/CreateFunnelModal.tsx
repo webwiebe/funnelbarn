@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import { api, Funnel, FunnelStepInput } from '../../lib/api'
+import { api, Funnel, FunnelScope, FunnelStepInput } from '../../lib/api'
 import { trackEvent } from '../../lib/analytics'
-import { FunnelTemplate } from './constants'
+import { DAY_SECONDS, DEFAULT_WINDOW_DAYS, FunnelTemplate } from './constants'
 import { StepFilterEditor, StepWithFilters } from './StepFilterEditor'
 import { ScopeToggle } from './ScopeToggle'
 
@@ -29,7 +29,8 @@ export function CreateFunnelModal({
   initialTemplate?: FunnelTemplate
 }) {
   const [name, setName] = useState(initialTemplate?.name ?? '')
-  const [scope, setScope] = useState<'session' | 'page_view'>(initialTemplate?.scope ?? 'session')
+  const [scope, setScope] = useState<FunnelScope>(initialTemplate?.scope ?? 'session')
+  const [windowDays, setWindowDays] = useState(DEFAULT_WINDOW_DAYS)
   const [steps, setSteps] = useState<StepWithFilters[]>(
     initialTemplate
       ? initialTemplate.steps.map((s) => ({ event_name: s, filters: [] }))
@@ -41,6 +42,7 @@ export function CreateFunnelModal({
   const handleCreate = async () => {
     if (!name.trim()) { setError('Name is required'); return }
     if (steps.some((s) => !s.event_name.trim())) { setError('All steps need an event name'); return }
+    if (scope === 'user' && !(windowDays > 0)) { setError('The conversion window must be at least one day'); return }
     setSaving(true)
     setError(null)
     try {
@@ -48,7 +50,9 @@ export function CreateFunnelModal({
         event_name: s.event_name,
         ...(s.filters.length > 0 ? { filters: s.filters.filter((f) => f.property && f.value) } : {}),
       }))
-      const f = await api.createFunnel(projectId, name, apiSteps, scope)
+      const f = scope === 'user'
+        ? await api.createFunnel(projectId, name, apiSteps, scope, Math.round(windowDays * DAY_SECONDS))
+        : await api.createFunnel(projectId, name, apiSteps, scope)
       trackEvent('funnel_created', { funnel_name: name, step_count: steps.length })
       onCreated(f)
     } catch (e) {
@@ -123,7 +127,7 @@ export function CreateFunnelModal({
           />
         </div>
 
-        <ScopeToggle value={scope} onChange={setScope} />
+        <ScopeToggle value={scope} onChange={setScope} windowDays={windowDays} onWindowDaysChange={setWindowDays} />
 
         <StepFilterEditor
           projectId={projectId}

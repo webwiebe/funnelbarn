@@ -108,6 +108,34 @@ describe('EditFunnelModal', () => {
     await waitFor(() => expect(onUpdated).toHaveBeenCalled())
   })
 
+  it('keeps the window of a user funnel and sends it in seconds', async () => {
+    renderModal({ funnel: { ...existingFunnel, scope: 'user', conversion_window_seconds: 14 * 24 * 3600 } })
+    expect(screen.getByLabelText(/conversion window/i)).toHaveValue(14)
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() => expect(mockApi.updateFunnel).toHaveBeenCalledTimes(1))
+    expect(mockApi.updateFunnel).toHaveBeenCalledWith('p1', 'f1', {
+      name: 'Checkout',
+      steps: [{ event_name: 'page_view' }, { event_name: 'purchase' }],
+      scope: 'user',
+      conversion_window_seconds: 14 * 24 * 3600,
+    })
+  })
+
+  it('drops the window when a user funnel switches to session scope', async () => {
+    renderModal({ funnel: { ...existingFunnel, scope: 'user', conversion_window_seconds: 3 * 24 * 3600 } })
+    fireEvent.click(screen.getByRole('button', { name: 'Session' }))
+    expect(screen.queryByLabelText(/conversion window/i)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() => expect(mockApi.updateFunnel).toHaveBeenCalledTimes(1))
+    expect(mockApi.updateFunnel.mock.calls[0][2]).toEqual({
+      name: 'Checkout',
+      steps: [{ event_name: 'page_view' }, { event_name: 'purchase' }],
+      scope: 'session',
+    })
+  })
+
   it('shows an error banner when the API call fails', async () => {
     mockApi.updateFunnel.mockRejectedValue(new Error('update failed'))
     const { onUpdated } = renderModal()

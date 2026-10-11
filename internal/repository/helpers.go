@@ -38,3 +38,17 @@ func nullStr(s string) interface{} {
 	}
 	return s
 }
+
+func nullInt64(v *int64) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
+func int64Ptr(v sql.NullInt64) *int64 {
+	if !v.Valid {
+		return nil
+	}
+	return &v.Int64
+}

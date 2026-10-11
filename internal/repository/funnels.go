@@ -2,10 +2,12 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -13,15 +15,36 @@ import (
 // validPropertyName matches only alphanumeric and underscore characters.
 var validPropertyName = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 
+// Funnel scopes: what one funnel entry is keyed on.
+const (
+	// FunnelScopeSession counts distinct sessions per step (the default).
+	FunnelScopeSession = "session"
+	// FunnelScopePageView counts distinct page views per step.
+	FunnelScopePageView = "page_view"
+	// FunnelScopeUser counts distinct users (user_id_hash) through ordered
+	// steps: a user reaches step N only by firing it at or after their step
+	// N-1, and within the funnel's conversion window of their step 1.
+	FunnelScopeUser = "user"
+)
+
+// DefaultConversionWindow is the window of a user-scoped funnel whose
+// ConversionWindowSeconds is unset.
+const DefaultConversionWindow = 30 * 24 * time.Hour
+
 // Funnel is a multi-step conversion funnel.
 type Funnel struct {
 	ID          string       `json:"id"`
 	ProjectID   string       `json:"project_id"`
 	Name        string       `json:"name"`
 	Description string       `json:"description"`
-	Scope       string       `json:"scope"` // "session" (default) or "page_view"
+	Scope       string       `json:"scope"` // "session" (default), "page_view" or "user"
 	Steps       []FunnelStep `json:"steps"`
 	CreatedAt   time.Time    `json:"created_at"`
+
+	// ConversionWindowSeconds bounds a "user" funnel: every later step must
+	// happen within this many seconds of step 1. Nil means
+	// DefaultConversionWindow. The other scopes ignore it.
+	ConversionWindowSeconds *int64 `json:"conversion_window_seconds,omitempty"`
 
 	// UnmatchedSteps lists the step event names this project has never emitted.
 	// A funnel whose steps reference names the project does not send can never
@@ -29,6 +52,14 @@ type Funnel struct {
 	// rather than as misconfiguration — 20 of 37 funnels in production are in
 	// that state. Read-only: computed on load, never persisted, ignored on write.
 	UnmatchedSteps []string `json:"unmatched_steps,omitempty"`
+}
+
+// ConversionWindow returns the window of a user-scoped funnel.
+func (f Funnel) ConversionWindow() time.Duration {
+	if f.ConversionWindowSeconds == nil {
+		return DefaultConversionWindow
+	}
+	return time.Duration(*f.ConversionWindowSeconds) * time.Second
 }
 
 // FunnelStep is one step in a funnel.
@@ -71,8 +102,8 @@ func (s *Store) CreateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
 	if f.Scope == "" {
 		f.Scope = "session"
 	}
-	const qf = `INSERT INTO funnels (id, project_id, name, description, scope) VALUES (?, ?, ?, ?, ?)`
-	if _, err := tx.ExecContext(ctx, qf, f.ID, f.ProjectID, f.Name, nullStr(f.Description), f.Scope); err != nil {
+	const qf = `INSERT INTO funnels (id, project_id, name, description, scope, conversion_window_seconds) VALUES (?, ?, ?, ?, ?, ?)`
+	if _, err := tx.ExecContext(ctx, qf, f.ID, f.ProjectID, f.Name, nullStr(f.Description), f.Scope, nullInt64(f.ConversionWindowSeconds)); err != nil {
 		return Funnel{}, fmt.Errorf("insert funnel: %w", err)
 	}
 
@@ -111,11 +142,13 @@ func (s *ReadStore) FunnelByID(ctx context.Context, id string) (Funnel, error) {
 
 // funnelByID reads a funnel through db, so write paths can read back on the write pool.
 func (s *ReadStore) funnelByID(ctx context.Context, db querier, id string) (Funnel, error) {
-	const qf = `SELECT id, project_id, name, COALESCE(description,''), COALESCE(scope,'session'), created_at FROM funnels WHERE id = ?`
+	const qf = `SELECT id, project_id, name, COALESCE(description,''), COALESCE(scope,'session'), created_at, conversion_window_seconds FROM funnels WHERE id = ?`
 	var f Funnel
-	if err := db.QueryRowContext(ctx, qf, id).Scan(&f.ID, &f.ProjectID, &f.Name, &f.Description, &f.Scope, &f.CreatedAt); err != nil {
+	var window sql.NullInt64
+	if err := db.QueryRowContext(ctx, qf, id).Scan(&f.ID, &f.ProjectID, &f.Name, &f.Description, &f.Scope, &f.CreatedAt, &window); err != nil {
 		return Funnel{}, err
 	}
+	f.ConversionWindowSeconds = int64Ptr(window)
 
 	steps, err := s.funnelSteps(ctx, db, id)
 	if err != nil {
@@ -132,7 +165,7 @@ func (s *ReadStore) funnelByID(ctx context.Context, db querier, id string) (Funn
 
 // ListFunnels returns all funnels for a project.
 func (s *ReadStore) ListFunnels(ctx context.Context, projectID string) ([]Funnel, error) {
-	const q = `SELECT id, project_id, name, COALESCE(description,''), COALESCE(scope,'session'), created_at FROM funnels WHERE project_id = ? ORDER BY created_at`
+	const q = `SELECT id, project_id, name, COALESCE(description,''), COALESCE(scope,'session'), created_at, conversion_window_seconds FROM funnels WHERE project_id = ? ORDER BY created_at`
 	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, err
@@ -142,9 +175,11 @@ func (s *ReadStore) ListFunnels(ctx context.Context, projectID string) ([]Funnel
 	var funnels []Funnel
 	for rows.Next() {
 		var f Funnel
-		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Name, &f.Description, &f.Scope, &f.CreatedAt); err != nil {
+		var window sql.NullInt64
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Name, &f.Description, &f.Scope, &f.CreatedAt, &window); err != nil {
 			return nil, err
 		}
+		f.ConversionWindowSeconds = int64Ptr(window)
 		funnels = append(funnels, f)
 	}
 	if err := rows.Err(); err != nil {
@@ -177,7 +212,7 @@ func (s *Store) UpdateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
 	if f.Scope == "" {
 		f.Scope = "session"
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE funnels SET name=?, description=?, scope=? WHERE id=?`, f.Name, nullStr(f.Description), f.Scope, f.ID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE funnels SET name=?, description=?, scope=?, conversion_window_seconds=? WHERE id=?`, f.Name, nullStr(f.Description), f.Scope, nullInt64(f.ConversionWindowSeconds), f.ID); err != nil {
 		return Funnel{}, fmt.Errorf("update funnel: %w", err)
 	}
 
@@ -302,7 +337,8 @@ func (s *ReadStore) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.T
 	if scope == "" {
 		scope = "session"
 	}
-	pageViewScope := scope == "page_view"
+	pageViewScope := scope == FunnelScopePageView
+	userScope := scope == FunnelScopeUser
 
 	// Build WHERE clause from preset segment filter.
 	presetClause, presetArg, needJoin := segmentParam(seg)
@@ -327,10 +363,21 @@ func (s *ReadStore) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.T
 	if pageViewScope {
 		extraClauses = append(extraClauses, "e.page_view_id IS NOT NULL")
 	}
+	if userScope {
+		extraClauses = append(extraClauses, "e.user_id_hash IS NOT NULL AND e.user_id_hash != ''")
+	}
 
 	extraWhere := ""
 	if len(extraClauses) > 0 {
 		extraWhere = " AND " + strings.Join(extraClauses, " AND ")
+	}
+
+	if userScope {
+		counts, err := s.orderedUserStepCounts(ctx, f, from, to, extraWhere, extraArgs, needJoin)
+		if err != nil {
+			return nil, err
+		}
+		return funnelResults(f, counts), nil
 	}
 
 	// Choose the distinct column based on scope.
@@ -362,20 +409,18 @@ func (s *ReadStore) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.T
 		args = append([]any{f.ProjectID, step.EventName, from, to}, extraArgs...)
 
 		// Step-level property filters.
-		for _, filter := range step.Filters {
-			if !validPropertyName.MatchString(filter.Property) {
-				continue
-			}
-			q += fmt.Sprintf(" AND json_extract(e.properties, '$.%s') = ?", filter.Property)
-			args = append(args, filter.Value)
-		}
+		q, args = stepFilterClause(q, args, step)
 
 		if err := s.rdb.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
 			return nil, fmt.Errorf("analyze step %d: %w", i, err)
 		}
 		stepCounts[i] = n
 	}
+	return funnelResults(f, stepCounts), nil
+}
 
+// funnelResults turns per-step counts into conversion and drop-off rates.
+func funnelResults(f Funnel, stepCounts []int64) []FunnelStepResult {
 	results := make([]FunnelStepResult, len(f.Steps))
 	entry := stepCounts[0]
 	for i, step := range f.Steps {
@@ -388,7 +433,99 @@ func (s *ReadStore) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.T
 		}
 		results[i] = r
 	}
-	return results, nil
+	return results
+}
+
+// stepFilterClause appends a step's property filters to a step query.
+func stepFilterClause(q string, args []any, step FunnelStep) (string, []any) {
+	for _, filter := range step.Filters {
+		if !validPropertyName.MatchString(filter.Property) {
+			continue
+		}
+		q += fmt.Sprintf(" AND json_extract(e.properties, '$.%s') = ?", filter.Property)
+		args = append(args, filter.Value)
+	}
+	return q, args
+}
+
+// orderedUserStepCounts counts, per step, the users who reached it in order:
+// step 1 in [from, to], and each later step in [from, to], at or after the
+// user's previous step and within the conversion window of their step 1. A
+// user with several step-1 events counts at the furthest step any of them
+// reaches.
+func (s *ReadStore) orderedUserStepCounts(ctx context.Context, f Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool) ([]int64, error) {
+	join := ""
+	if needJoin {
+		join = " JOIN sessions s ON s.id = e.session_id AND s.project_id = e.project_id"
+	}
+	window := f.ConversionWindow()
+
+	// times[k][user] holds the user's step-k event times, ascending.
+	times := make([]map[string][]time.Time, len(f.Steps))
+	for i, step := range f.Steps {
+		q := fmt.Sprintf(`
+			SELECT e.user_id_hash, e.occurred_at
+			FROM events e%s
+			WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?%s`,
+			join, extraWhere)
+		args := append([]any{f.ProjectID, step.EventName, from, to}, extraArgs...)
+		q, args = stepFilterClause(q, args, step)
+		q += " ORDER BY e.occurred_at"
+
+		byUser, err := s.userEventTimes(ctx, q, args, times, i)
+		if err != nil {
+			return nil, fmt.Errorf("analyze step %d: %w", i, err)
+		}
+		times[i] = byUser
+	}
+
+	counts := make([]int64, len(f.Steps))
+	for user, starts := range times[0] {
+		best := 1
+		for _, start := range starts {
+			deadline := start.Add(window)
+			depth, prev := 1, start
+			for k := 1; k < len(f.Steps); k++ {
+				ts := times[k][user]
+				j := sort.Search(len(ts), func(n int) bool { return !ts[n].Before(prev) })
+				if j == len(ts) || ts[j].After(deadline) {
+					break
+				}
+				depth, prev = depth+1, ts[j]
+			}
+			best = max(best, depth)
+			if best == len(f.Steps) {
+				break
+			}
+		}
+		for k := 0; k < best; k++ {
+			counts[k]++
+		}
+	}
+	return counts, nil
+}
+
+// userEventTimes runs one step query of orderedUserStepCounts. Past step 1 it
+// keeps only users who have a step 1, since nobody else can reach the step.
+func (s *ReadStore) userEventTimes(ctx context.Context, q string, args []any, times []map[string][]time.Time, step int) (map[string][]time.Time, error) {
+	rows, err := s.rdb.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	byUser := map[string][]time.Time{}
+	for rows.Next() {
+		var user string
+		var at time.Time
+		if err := rows.Scan(&user, &at); err != nil {
+			return nil, err
+		}
+		if step > 0 && times[0][user] == nil {
+			continue
+		}
+		byUser[user] = append(byUser[user], at)
+	}
+	return byUser, rows.Err()
 }
 
 // SessionsAtStep returns distinct session IDs that completed step stepOrder

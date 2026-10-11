@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import { api, Funnel, FunnelStepInput } from '../../lib/api'
+import { api, Funnel, FunnelScope, FunnelStepInput } from '../../lib/api'
 import { StepFilterEditor, StepWithFilters } from './StepFilterEditor'
 import { ScopeToggle } from './ScopeToggle'
+import { DAY_SECONDS, windowDaysFromSeconds } from './constants'
 
 const C = {
   bg: '#0f1117',
@@ -27,7 +28,8 @@ export function EditFunnelModal({
   onUpdated: (f: Funnel) => void
 }) {
   const [name, setName] = useState(funnel.name)
-  const [scope, setScope] = useState<'session' | 'page_view'>(funnel.scope ?? 'session')
+  const [scope, setScope] = useState<FunnelScope>(funnel.scope ?? 'session')
+  const [windowDays, setWindowDays] = useState(windowDaysFromSeconds(funnel.conversion_window_seconds))
   const [steps, setSteps] = useState<StepWithFilters[]>(
     funnel.steps?.length > 0
       ? funnel.steps.map((s) => ({ event_name: s.event_name, filters: s.filters || [] }))
@@ -39,6 +41,7 @@ export function EditFunnelModal({
   const handleSave = async () => {
     if (!name.trim()) { setError('Name is required'); return }
     if (steps.some((s) => !s.event_name.trim())) { setError('All steps need an event name'); return }
+    if (scope === 'user' && !(windowDays > 0)) { setError('The conversion window must be at least one day'); return }
     setSaving(true)
     setError(null)
     try {
@@ -46,7 +49,12 @@ export function EditFunnelModal({
         event_name: s.event_name,
         ...(s.filters.length > 0 ? { filters: s.filters.filter((f) => f.property && f.value) } : {}),
       }))
-      const updated = await api.updateFunnel(projectId, funnel.id, { name, steps: apiSteps, scope })
+      const updated = await api.updateFunnel(projectId, funnel.id, {
+        name,
+        steps: apiSteps,
+        scope,
+        ...(scope === 'user' ? { conversion_window_seconds: Math.round(windowDays * DAY_SECONDS) } : {}),
+      })
       onUpdated(updated)
     } catch (e) {
       setError(String(e))
@@ -120,7 +128,7 @@ export function EditFunnelModal({
           />
         </div>
 
-        <ScopeToggle value={scope} onChange={setScope} />
+        <ScopeToggle value={scope} onChange={setScope} windowDays={windowDays} onWindowDaysChange={setWindowDays} />
 
         <StepFilterEditor
           projectId={projectId}

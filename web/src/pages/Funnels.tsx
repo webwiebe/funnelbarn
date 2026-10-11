@@ -173,7 +173,7 @@ function FunnelDetail({ analysis, activeSegment, apiKey, onWatchRecordings }: { 
       </p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1.25rem', flexWrap: 'wrap' }}>
         <span style={{ color: C.muted, fontSize: 13 }}>
-          {entryCount.toLocaleString()} {analysis.funnel?.scope === 'page_view' ? 'page views' : 'sessions'}
+          {entryCount.toLocaleString()} {analysis.funnel?.scope === 'page_view' ? 'page views' : analysis.funnel?.scope === 'user' ? 'users' : 'sessions'}
         </span>
         {activeSegment !== 'all' && (
           <span style={{
@@ -612,7 +612,7 @@ export default function Funnels() {
                       fontSize: 10,
                       fontWeight: 600,
                     }}>
-                      page view
+                      {f.scope === 'user' ? 'user' : 'page view'}
                     </span>
                   )}
                 </div>

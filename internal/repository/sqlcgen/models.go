@@ -129,12 +129,13 @@ type FlagEvaluation struct {
 }
 
 type Funnel struct {
-	ID          string         `json:"id"`
-	ProjectID   string         `json:"project_id"`
-	Name        string         `json:"name"`
-	Description sql.NullString `json:"description"`
-	CreatedAt   time.Time      `json:"created_at"`
-	Scope       string         `json:"scope"`
+	ID                      string         `json:"id"`
+	ProjectID               string         `json:"project_id"`
+	Name                    string         `json:"name"`
+	Description             sql.NullString `json:"description"`
+	CreatedAt               time.Time      `json:"created_at"`
+	Scope                   string         `json:"scope"`
+	ConversionWindowSeconds sql.NullInt64  `json:"conversion_window_seconds"`
 }
 
 type FunnelStep struct {

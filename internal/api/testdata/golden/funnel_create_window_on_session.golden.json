@@ -1,0 +1,9 @@
+{
+  "body": {
+    "error": "conversion_window_seconds: only applies to scope user"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 422
+}

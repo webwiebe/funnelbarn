@@ -37,7 +37,8 @@ func registerFunnelTools(s *mcp.Server, d *Deps) {
 	addTool(s, d, &mcp.Tool{
 		Name: "create_funnel",
 		Description: "Create a funnel (handleCreateFunnel): a name, an optional description, " +
-			"and an ordered list of steps, each an event name plus optional property filters. " +
+			"an ordered list of steps, each an event name plus optional property filters, and " +
+			"optionally a scope (session, page_view or user) with a conversion window for user. " +
 			"Call list_event_names first: a step whose event_name the project never actually " +
 			"sends can never show a conversion.",
 		Annotations: &mcp.ToolAnnotations{OpenWorldHint: ptr(false)},
@@ -46,8 +47,8 @@ func registerFunnelTools(s *mcp.Server, d *Deps) {
 	addTool(s, d, &mcp.Tool{
 		Name: "update_funnel",
 		Description: "Replace a funnel's name, description and steps (handleUpdateFunnel), " +
-			"validated the same way as create_funnel. The funnel's scope (session or page_view) " +
-			"is left as is; there is no argument for it here.",
+			"validated the same way as create_funnel. Omit scope to keep the funnel's scope and " +
+			"conversion window as they are.",
 		Annotations: &mcp.ToolAnnotations{OpenWorldHint: ptr(false)},
 	}, scopeWrite, updateFunnel)
 
@@ -180,6 +181,9 @@ type createFunnelIn struct {
 	Name        string         `json:"name" jsonschema:"Funnel name."`
 	Description string         `json:"description,omitempty" jsonschema:"Optional description."`
 	Steps       []funnelStepIn `json:"steps" jsonschema:"Ordered funnel steps; at least one is required. Call list_event_names first so event_name matches a real event."`
+
+	Scope                   string `json:"scope,omitempty" jsonschema:"What one funnel entry is: session (default), page_view, or user. A user funnel counts distinct users (the user_id events carry) through the steps in order, within conversion_window_seconds of step 1."`
+	ConversionWindowSeconds *int64 `json:"conversion_window_seconds,omitempty" jsonschema:"For scope user only: every later step must happen within this many seconds of step 1. Defaults to 30 days."`
 }
 
 type createFunnelOut struct {
@@ -196,6 +200,9 @@ func createFunnel(ctx context.Context, c *Call, in createFunnelIn) (createFunnel
 		Name:        in.Name,
 		Description: in.Description,
 		Steps:       toFunnelSteps(in.Steps),
+
+		Scope:                   in.Scope,
+		ConversionWindowSeconds: in.ConversionWindowSeconds,
 	})
 	if err != nil {
 		return createFunnelOut{}, err
@@ -211,6 +218,9 @@ type updateFunnelIn struct {
 	Name        string         `json:"name" jsonschema:"Funnel name."`
 	Description string         `json:"description,omitempty" jsonschema:"Optional description."`
 	Steps       []funnelStepIn `json:"steps" jsonschema:"Ordered funnel steps, replacing the existing ones; at least one is required. Call list_event_names first so event_name matches a real event."`
+
+	Scope                   string `json:"scope,omitempty" jsonschema:"What one funnel entry is: omit to keep the funnel's scope and window; else session, page_view, or user. A user funnel counts distinct users (the user_id events carry) through the steps in order, within conversion_window_seconds of step 1."`
+	ConversionWindowSeconds *int64 `json:"conversion_window_seconds,omitempty" jsonschema:"For scope user only: every later step must happen within this many seconds of step 1. Defaults to 30 days when scope is given."`
 }
 
 type updateFunnelOut struct {
@@ -234,6 +244,9 @@ func updateFunnel(ctx context.Context, c *Call, in updateFunnelIn) (updateFunnel
 		Name:        in.Name,
 		Description: in.Description,
 		Steps:       toFunnelSteps(in.Steps),
+
+		Scope:                   in.Scope,
+		ConversionWindowSeconds: in.ConversionWindowSeconds,
 	})
 	if err != nil {
 		return updateFunnelOut{}, err

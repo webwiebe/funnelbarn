@@ -1,3 +1,6 @@
+import type { FunnelScope } from '../../lib/api'
+import { DEFAULT_WINDOW_DAYS } from './constants'
+
 const C = {
   bg: '#0f1117',
   surface: '#1a1d27',
@@ -9,12 +12,22 @@ const C = {
   error: '#ef4444',
 }
 
+const OPTIONS: { value: FunnelScope; label: string }[] = [
+  { value: 'session', label: 'Session' },
+  { value: 'page_view', label: 'Page view' },
+  { value: 'user', label: 'User' },
+]
+
 export function ScopeToggle({
   value,
   onChange,
+  windowDays,
+  onWindowDaysChange,
 }: {
-  value: 'session' | 'page_view'
-  onChange: (v: 'session' | 'page_view') => void
+  value: FunnelScope
+  onChange: (v: FunnelScope) => void
+  windowDays?: number
+  onWindowDaysChange?: (days: number) => void
 }) {
   return (
     <div style={{ marginBottom: '1.25rem' }}>
@@ -26,12 +39,12 @@ export function ScopeToggle({
         borderRadius: 8,
         overflow: 'hidden',
       }}>
-        {(['session', 'page_view'] as const).map((opt) => {
-          const active = value === opt
+        {OPTIONS.map((opt, i) => {
+          const active = value === opt.value
           return (
             <button
-              key={opt}
-              onClick={() => onChange(opt)}
+              key={opt.value}
+              onClick={() => onChange(opt.value)}
               style={{
                 padding: '0.45rem 1rem',
                 border: 'none',
@@ -40,15 +53,45 @@ export function ScopeToggle({
                 fontWeight: active ? 700 : 400,
                 fontSize: 13,
                 cursor: 'pointer',
-                borderRight: opt === 'session' ? `1px solid ${C.border}` : 'none',
+                borderRight: i < OPTIONS.length - 1 ? `1px solid ${C.border}` : 'none',
                 transition: 'all 0.15s',
               }}
             >
-              {opt === 'session' ? 'Session' : 'Page view'}
+              {opt.label}
             </button>
           )
         })}
       </div>
+      {value === 'user' && (
+        <p style={{ fontSize: 12, color: C.muted, margin: '6px 0 0' }}>
+          Follows each user through the steps in order. Events without a user ID are left out.
+        </p>
+      )}
+      {value === 'user' && onWindowDaysChange && (
+        <div style={{ marginTop: 10 }}>
+          <label htmlFor="funnel-window-days" style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 6 }}>
+            Conversion window (days)
+          </label>
+          <input
+            id="funnel-window-days"
+            type="number"
+            min={1}
+            value={windowDays ?? DEFAULT_WINDOW_DAYS}
+            onChange={(e) => onWindowDaysChange(Number(e.target.value))}
+            style={{
+              width: 100,
+              background: C.bg,
+              border: `1px solid ${C.border}`,
+              borderRadius: 8,
+              padding: '0.45rem 0.75rem',
+              color: C.text,
+              fontSize: 14,
+              boxSizing: 'border-box',
+              outline: 'none',
+            }}
+          />
+        </div>
+      )}
     </div>
   )
 }

@@ -142,10 +142,10 @@ export const api = {
   listFunnels: (projectId: string) =>
     request<{ funnels: Funnel[] }>(`/api/v1/projects/${projectId}/funnels`),
 
-  createFunnel: (projectId: string, name: string, steps: FunnelStepInput[], scope?: 'session' | 'page_view') =>
+  createFunnel: (projectId: string, name: string, steps: FunnelStepInput[], scope?: FunnelScope, conversionWindowSeconds?: number) =>
     request<Funnel>(`/api/v1/projects/${projectId}/funnels`, {
       method: 'POST',
-      body: JSON.stringify({ name, steps, scope: scope ?? 'session' }),
+      body: JSON.stringify({ name, steps, scope: scope ?? 'session', conversion_window_seconds: conversionWindowSeconds }),
     }),
 
   getFunnelAnalysis: (projectId: string, funnelId: string, segment?: string, segmentId?: string) => {
@@ -159,7 +159,7 @@ export const api = {
   getFunnelSegments: (projectId: string, funnelId: string) =>
     request<FunnelSegments>(`/api/v1/projects/${projectId}/funnels/${funnelId}/segments`),
 
-  updateFunnel: (projectId: string, funnelId: string, data: { name: string; description?: string; scope?: string; steps: FunnelStepInput[] }) =>
+  updateFunnel: (projectId: string, funnelId: string, data: { name: string; description?: string; scope?: FunnelScope; conversion_window_seconds?: number; steps: FunnelStepInput[] }) =>
     request<Funnel>(`/api/v1/projects/${projectId}/funnels/${funnelId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -514,11 +514,20 @@ export interface FunnelStepInput {
   filters?: { property: string; value: string }[]
 }
 
+/**
+ * What one funnel entry is. A user funnel follows one user (the user_id
+ * events carry) through the steps in order, within the conversion window of
+ * step 1; session and page_view funnels count each step on its own.
+ */
+export type FunnelScope = 'session' | 'page_view' | 'user'
+
 export interface Funnel {
   id: string
   name: string
   description?: string
-  scope: 'session' | 'page_view'
+  scope: FunnelScope
+  /** Scope user only; the server uses 30 days when it is unset. */
+  conversion_window_seconds?: number
   steps: FunnelStep[]
   /**
    * Step event names this project has never emitted. A funnel that references
