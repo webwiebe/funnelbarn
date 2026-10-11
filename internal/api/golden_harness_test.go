@@ -28,6 +28,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
+	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
@@ -78,12 +79,31 @@ const goldenSessionUser = "golden-admin"
 // admin so dashboard routes require a real session cookie.
 func defaultGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 	t.Helper()
-	store := deps.Store
+	commands := newTestDispatcher(t, deps.Store)
+	srv := newGoldenServer(t, deps.Store, deps.Store, deps.Recordings, commands, ServerConfig{})
+	cookie := sessionCookieFor(t, srv, goldenSessionUser)
+	spare := sessionCookieFor(t, srv, goldenSessionUser)
+	return goldenTarget{
+		Handler: srv, Session: cookie, CSRF: srv.sessionManager.CSRFToken(cookie.Value),
+		Spare: spare, SpareCSRF: srv.sessionManager.CSRFToken(spare.Value),
+		Flush: commands.Flush,
+	}
+}
+
+// newGoldenServer wires a server over store the way cmd/funnelbarn does.
+// health is the project health port: the store itself, or a reader's
+// service.HealthViaCommands. split carries a reader's or writer's WriterURL,
+// InternalToken and, when set, its recording service.
+func newGoldenServer(t *testing.T, store *repository.Store, health ports.ProjectHealthRepo, recordings service.RecordingStorage, commands command.Bus, split ServerConfig) *Server {
+	t.Helper()
 	sp := newTestSpool(t)
-	commands := newTestDispatcher(t, store)
 	authz := auth.New("").WithDBLookup(store.ValidAPIKeySHA256, dispatcherTouch(commands))
 	ingestHandler := ingest.NewHandler(authz, sp, 0)
-	healthSvc := service.NewProjectHealthService(store)
+	healthSvc := service.NewProjectHealthService(health)
+	recordingsSvc := split.Recordings
+	if recordingsSvc == nil {
+		recordingsSvc = service.NewRecordingService(store, store, store, recordings)
+	}
 	// Same wiring as cmd/funnelbarn: an accepted ingest request flips the
 	// project's events_received health flag, off the request goroutine.
 	ingestHandler.OnEventsReceived = func(ctx context.Context, projectID string) {
@@ -92,7 +112,7 @@ func defaultGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 	sm := auth.NewSessionManager("test-secret", time.Hour)
 	userAuth, _ := auth.NewUserAuthenticator("admin", "password", "")
 
-	srv := NewServer(ServerConfig{
+	return NewServer(ServerConfig{
 		Ingest:              ingestHandler,
 		Projects:            service.NewProjectService(store),
 		Funnels:             service.NewFunnelService(store),
@@ -106,7 +126,7 @@ func defaultGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 		APIKeys:             service.NewAPIKeyService(store),
 		Widgets:             service.NewWidgetService(store),
 		Segments:            service.NewSegmentService(store),
-		Recordings:          service.NewRecordingService(store, store, store, deps.Recordings),
+		Recordings:          recordingsSvc,
 		ProjectHealth:       healthSvc,
 		InstanceSettings:    store,
 		GeoAnonymizer:       store,
@@ -129,14 +149,9 @@ func defaultGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 		FlagAutoRegisterMax: 5,
 		DB:                  store,
 		Version:             "golden",
+		WriterURL:           split.WriterURL,
+		InternalToken:       split.InternalToken,
 	})
-	cookie := sessionCookieFor(t, srv, goldenSessionUser)
-	spare := sessionCookieFor(t, srv, goldenSessionUser)
-	return goldenTarget{
-		Handler: srv, Session: cookie, CSRF: srv.sessionManager.CSRFToken(cookie.Value),
-		Spare: spare, SpareCSRF: srv.sessionManager.CSRFToken(spare.Value),
-		Flush: commands.Flush,
-	}
 }
 
 // newTestDispatcher starts a command dispatcher on store the way
@@ -144,9 +159,11 @@ func defaultGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 // first-out, so it drains before the store's own Close cleanup.
 func newTestDispatcher(t *testing.T, store *repository.Store) *command.Dispatcher {
 	t.Helper()
+	health := service.NewProjectHealthService(store)
 	d := command.New(command.Options{Deps: command.Deps{
 		Store:              store,
-		MarkFlagsEvaluated: service.NewProjectHealthService(store).MarkFlagsEvaluated,
+		MarkFlagsEvaluated: health.MarkFlagsEvaluated,
+		MarkProjectHealth:  service.ApplyHealthMark(health),
 	}})
 	d.Start(context.Background())
 	t.Cleanup(func() {

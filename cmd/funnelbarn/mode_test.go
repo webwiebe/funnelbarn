@@ -42,7 +42,7 @@ func newReaderWriterPair(t *testing.T) *readerWriterPair {
 	writer, err := newCommandBus(ctx, config.Config{Mode: config.ModeWriter, RedisQueueURL: url}, command.Deps{
 		Store:              writerStore,
 		MarkFlagsEvaluated: health.MarkFlagsEvaluated,
-		MarkProjectHealth:  markProjectHealth(health),
+		MarkProjectHealth:  service.ApplyHealthMark(health),
 	}, logger)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = writer.Close(context.Background()) })
@@ -84,7 +84,7 @@ func TestReaderPublishesAndTheWriterApplies(t *testing.T) {
 	pair.reader.Submit(ctx, command.RecordEvaluation{Eval: repository.FlagEvaluation{
 		FlagID: pair.flag.ID, ProjectID: pair.project.ID, Variant: "on",
 	}})
-	readerHealth := service.NewProjectHealthService(healthViaCommands{ProjectHealthRepo: pair.readerStore, bus: pair.reader})
+	readerHealth := service.NewProjectHealthService(service.HealthViaCommands{ProjectHealthRepo: pair.readerStore, Bus: pair.reader})
 	first, err := readerHealth.MarkEventsReceived(ctx, pair.project.ID)
 	require.NoError(t, err)
 	require.True(t, first)
@@ -192,7 +192,7 @@ func TestSchemaGateWaitsForTheWriter(t *testing.T) {
 
 func TestMarkProjectHealthRejectsAnUnknownField(t *testing.T) {
 	store, p, _ := newCommandTestStore(t)
-	mark := markProjectHealth(service.NewProjectHealthService(store))
+	mark := service.ApplyHealthMark(service.NewProjectHealthService(store))
 	err := mark(context.Background(), p.ID, "no_such_field")
 	require.ErrorIs(t, err, command.ErrPermanent)
 	require.NoError(t, mark(context.Background(), p.ID, command.HealthRecordingsReceived))

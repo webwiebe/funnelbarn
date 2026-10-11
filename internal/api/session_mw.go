@@ -59,6 +59,14 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		now := time.Now()
+		// Pruning an expired session and storing refreshed tokens both write
+		// the row, so a reader lets the writer serve such a request whole. A
+		// reader that refreshed itself would burn the single-use refresh token
+		// and then fail to store its successor.
+		if s.forwarder != nil && (ws.AbsoluteExpiresAt <= now.Unix() || s.needsRefresh(ws, now)) {
+			s.forward(w, r)
+			return
+		}
 		if ws.AbsoluteExpiresAt <= now.Unix() {
 			_ = s.webSessions.DeleteWebSession(r.Context(), idHash)
 			jsonError(w, "session expired", http.StatusUnauthorized)
@@ -67,7 +75,7 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 
 		// OIDC sessions are refresh-gated: session validity tracks the ~15m
 		// access token, so central revocation bites at the next refresh.
-		if ws.AuthMethod == "oidc" && s.oidc != nil && accessTokenExpired(ws, now) {
+		if s.needsRefresh(ws, now) {
 			ws, err = s.refreshSession(r.Context(), idHash)
 			if err != nil {
 				jsonError(w, "session expired", http.StatusUnauthorized)
@@ -93,6 +101,11 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 		slog.Debug("session valid", "username", ws.Username)
 		next(w, r.WithContext(withSessionUser(r.Context(), ws.Username)))
 	}
+}
+
+// needsRefresh reports whether serving ws first runs the refresh_token grant.
+func (s *Server) needsRefresh(ws repository.WebSession, now time.Time) bool {
+	return ws.AuthMethod == "oidc" && s.oidc != nil && accessTokenExpired(ws, now)
 }
 
 // accessTokenExpired reports whether the session's access token is past (or

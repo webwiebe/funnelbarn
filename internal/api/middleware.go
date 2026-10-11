@@ -177,24 +177,12 @@ func (rl *rateLimiter) startCleanup(ctx context.Context) {
 // direct connection comes from one of those IPs. When no trusted proxies are
 // configured, X-Forwarded-For is trusted unconditionally (backwards compatible).
 func (s *Server) clientIP(r *http.Request) string {
-	remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		remoteIP = r.RemoteAddr
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" && s.trustsForwardedHeaders(r) {
+		if hop := firstXFF(xff); hop != "" {
+			return hop
+		}
 	}
-
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff == "" {
-		return remoteIP
-	}
-
-	if len(s.trustedProxies) > 0 && !s.isTrustedProxy(remoteIP) {
-		return remoteIP
-	}
-
-	if hop := firstXFF(xff); hop != "" {
-		return hop
-	}
-	return remoteIP
+	return remoteIP(r)
 }
 
 func (s *Server) isTrustedProxy(ip string) bool {
@@ -209,16 +197,13 @@ func (s *Server) isTrustedProxy(ip string) bool {
 // trustsForwardedHeaders reports whether X-Forwarded-* headers on r may be
 // believed: unconditionally when no trusted proxies are configured (backwards
 // compatible, mirrors clientIP), otherwise only when the direct peer is a
-// configured trusted proxy.
+// configured trusted proxy. A request a reader forwarded to the writer is
+// believed too: the reader resolved the headers under the same rule.
 func (s *Server) trustsForwardedHeaders(r *http.Request) bool {
-	if len(s.trustedProxies) == 0 {
+	if len(s.trustedProxies) == 0 || s.fromReader(r) {
 		return true
 	}
-	remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		remoteIP = r.RemoteAddr
-	}
-	return s.isTrustedProxy(remoteIP)
+	return s.isTrustedProxy(remoteIP(r))
 }
 
 // isSecureRequest decides whether cookies set on this response get the Secure

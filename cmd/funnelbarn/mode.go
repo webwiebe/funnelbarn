@@ -12,9 +12,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
-	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
-	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 	"github.com/wiebe-xyz/funnelbarn/internal/workerhealth"
@@ -35,57 +33,21 @@ func isSplit(cfg config.Config) bool {
 	return cfg.Mode == config.ModeReader || cfg.Mode == config.ModeWriter
 }
 
+// forwardTarget is where this process forwards the requests that write the
+// database: the writer for a reader, nowhere otherwise.
+func forwardTarget(cfg config.Config) string {
+	if isReader(cfg) {
+		return cfg.WriterURL
+	}
+	return ""
+}
+
 // openStore opens the database for this process's role.
 func openStore(cfg config.Config) (*repository.Store, error) {
 	if isReader(cfg) {
 		return repository.OpenReadOnly(cfg.DBPath)
 	}
 	return repository.Open(cfg.DBPath)
-}
-
-// markProjectHealth applies a MarkProjectHealth command through the health
-// service, which skips the write once a field is known to be set.
-func markProjectHealth(h service.ProjectHealth) func(ctx context.Context, projectID, field string) error {
-	return func(ctx context.Context, projectID, field string) error {
-		switch field {
-		case command.HealthSetupCalled:
-			return h.MarkSetupCalled(ctx, projectID)
-		case command.HealthEventsReceived:
-			_, err := h.MarkEventsReceived(ctx, projectID)
-			return err
-		case command.HealthRecordingsReceived:
-			return h.MarkRecordingsReceived(ctx, projectID)
-		default:
-			return fmt.Errorf("%w: unknown project health field %q", command.ErrPermanent, field)
-		}
-	}
-}
-
-// healthViaCommands is a reader's project health port. Reads go to the
-// read-only database; each mark becomes a command for the writer.
-type healthViaCommands struct {
-	ports.ProjectHealthRepo
-	bus command.Bus
-}
-
-func (h healthViaCommands) MarkProjectHealthSetupCalled(ctx context.Context, projectID string) error {
-	h.bus.Submit(ctx, command.MarkProjectHealth{ProjectID: projectID, Field: command.HealthSetupCalled})
-	return nil
-}
-
-func (h healthViaCommands) MarkProjectHealthEventsReceived(ctx context.Context, projectID string) error {
-	h.bus.Submit(ctx, command.MarkProjectHealth{ProjectID: projectID, Field: command.HealthEventsReceived})
-	return nil
-}
-
-func (h healthViaCommands) MarkProjectHealthRecordingsReceived(ctx context.Context, projectID string) error {
-	h.bus.Submit(ctx, command.MarkProjectHealth{ProjectID: projectID, Field: command.HealthRecordingsReceived})
-	return nil
-}
-
-func (h healthViaCommands) MarkProjectHealthFlagsEvaluated(ctx context.Context, projectID string) error {
-	h.bus.Submit(ctx, command.MarkFlagsEvaluated{ProjectID: projectID})
-	return nil
 }
 
 // schemaGate keeps a reader out of the Service until the writer has migrated

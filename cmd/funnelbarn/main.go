@@ -255,14 +255,14 @@ func run() error {
 	commands, err := newCommandBus(ctx, cfg, command.Deps{
 		Store:              store,
 		MarkFlagsEvaluated: healthSvc.MarkFlagsEvaluated,
-		MarkProjectHealth:  markProjectHealth(healthSvc),
+		MarkProjectHealth:  service.ApplyHealthMark(healthSvc),
 	}, slog.Default())
 	if err != nil {
 		return fmt.Errorf("command bus: %w", err)
 	}
 	defer drainCommands(commands) // deferred LIFO: drains before store.Close
 	if isReader(cfg) {
-		healthSvc = service.NewProjectHealthService(healthViaCommands{ProjectHealthRepo: store, bus: commands})
+		healthSvc = service.NewProjectHealthService(service.HealthViaCommands{ProjectHealthRepo: store, Bus: commands})
 	}
 
 	// Wire services.
@@ -433,6 +433,8 @@ func run() error {
 		Commands:              commands,
 		ReadPoolWait:          func() time.Duration { return store.ReadDB().Stats().WaitDuration },
 		Ready:                 ready,
+		WriterURL:             forwardTarget(cfg),
+		InternalToken:         cfg.InternalToken,
 		SpanRelay:             spanRelay,
 		MCPResourceURL:        cfg.MCPResourceURL,
 	})

@@ -109,6 +109,19 @@ Readers keep writing ingest to the existing on-disk spool and advance its cursor
 
 Project health marks (`setup_called`, `events_received`, `recordings_received`) travel as one `mark_project_health` command naming the field.
 
+### Forwarding to the writer
+
+A reader with `FUNNELBARN_WRITER_URL` set hands every request that writes the database to the writer over HTTP and copies the answer back:
+
+- every non-GET request except `POST /api/v1/events`, `/recordings/chunk` and `/evaluate`, which publish to the queues, and `/telemetry` and `/client-errors`, which write nothing;
+- `GET /api/v1/oidc/callback` (creates a session), `GET /api/v1/auth/oidc/logged-out` (deletes one) and `GET /api/v1/setup/{slug}` (creates a pending project and upserts its ingest key);
+- the MCP endpoint in every method, because its Streamable HTTP sessions live in one process and its setup tool writes;
+- any session-authenticated request whose session row needs a write: past its absolute expiry (the row is deleted) or due for an OIDC refresh (the rotated tokens are stored). A reader that refreshed itself would burn the single-use refresh token and then fail to store the new one.
+
+The reader sends the client address, scheme and host it resolved as `X-Forwarded-For`, `-Proto` and `-Host`, plus `X-Funnelbarn-Internal-Token` set to `FUNNELBARN_INTERNAL_TOKEN`. The writer believes those headers only when the token matches, so its rate limiters and Secure cookies see the real client. Redirects are passed back to the browser unfollowed, and the reader keeps its own CORS headers. A writer that cannot be reached answers 502. Reader and writer modes both refuse to start without the token, and a reader refuses to start without the writer URL.
+
+`TestGoldenReaderMode` runs every golden case against a reader on a read-only store in front of a writer and compares with the same files as the standalone run. Any write left on a reader path fails it with a read-only database error.
+
 A reader serves `GET /api/v1/ready` with 503 until the database's goose version reaches the binary's newest migration. During a rollout the new readers wait for the new writer to migrate; `/api/v1/health` stays a liveness check.
 
 ### How readers see the database

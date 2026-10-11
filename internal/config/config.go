@@ -123,6 +123,14 @@ type Config struct {
 	// Mode (FUNNELBARN_MODE) is the process role: ModeStandalone (default),
 	// ModeReader or ModeWriter. Spec 012 has the design.
 	Mode string
+
+	// WriterURL (FUNNELBARN_WRITER_URL) is the writer's internal base URL. A
+	// reader forwards every dashboard mutation to it.
+	WriterURL string
+	// InternalToken (FUNNELBARN_INTERNAL_TOKEN) is shared by the readers and
+	// the writer. A reader sends it on every forwarded request, and the writer
+	// believes the client address and scheme a request carries only with it.
+	InternalToken string
 }
 
 // Process roles for FUNNELBARN_MODE.
@@ -144,6 +152,12 @@ func (c Config) ValidateMode() error {
 	case ModeReader, ModeWriter:
 		if c.RedisQueueURL == "" {
 			return fmt.Errorf("FUNNELBARN_MODE=%s needs FUNNELBARN_REDIS_QUEUE_URL", c.Mode)
+		}
+		if c.InternalToken == "" {
+			return fmt.Errorf("FUNNELBARN_MODE=%s needs FUNNELBARN_INTERNAL_TOKEN", c.Mode)
+		}
+		if c.Mode == ModeReader && c.WriterURL == "" {
+			return fmt.Errorf("FUNNELBARN_MODE=%s needs FUNNELBARN_WRITER_URL", c.Mode)
 		}
 		return nil
 	default:
@@ -291,6 +305,8 @@ func Load() Config {
 	cfg.RecordingsViaQueue = os.Getenv("FUNNELBARN_RECORDINGS_VIA_QUEUE") == "true"
 	cfg.RecordingsQueueMaxLen = int64(envPositiveInt("FUNNELBARN_RECORDINGS_QUEUE_MAX_LEN", 5000))
 	cfg.Mode = strings.ToLower(strings.TrimSpace(getenv("FUNNELBARN_MODE", ModeStandalone)))
+	cfg.WriterURL = strings.TrimRight(os.Getenv("FUNNELBARN_WRITER_URL"), "/")
+	cfg.InternalToken = os.Getenv("FUNNELBARN_INTERNAL_TOKEN")
 
 	cfg.SetupRatePerMinute = 10
 	cfg.SetupRateBurst = 5
