@@ -1,0 +1,15 @@
+# Headless Service the reader StatefulSet requires for its pod identities.
+# Public traffic reaches the readers through service.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: funnelbarn-reader
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: funnelbarn-reader
+    app.kubernetes.io/environment: production
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

@@ -6,7 +6,10 @@ resources:
   - pvc.yaml
   - deployment.yaml
   - web-deployment.yaml
+  - reader-statefulset.yaml
   - service.yaml
+  - writer-service.yaml
+  - reader-service.yaml
   - web-service.yaml
   - ingress.yaml
   - ingressroute-f-wildcard.yaml

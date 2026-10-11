@@ -1,0 +1,218 @@
+# FunnelBarn readers (spec 012, #302). They serve the public Service: reads,
+# ingest and evaluate. Every write goes to Valkey or is forwarded to the
+# writer (deployment.yaml). Readers open the writer's database read-only on
+# the same volume, so they run on the writer's node.
+#
+# A StatefulSet gives each reader a stable name, and with it a stable spool
+# directory: a reader that restarts forwards whatever it had not forwarded yet.
+# Scaling down leaves the removed readers' spools behind, see deploy/RUNBOOK.md.
+#
+# The env list mirrors deployment.yaml without the writer-only parts (geoip,
+# Litestream). Keep the two in step.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: funnelbarn-reader
+spec:
+  serviceName: funnelbarn-reader
+  replicas: 2
+  revisionHistoryLimit: 2
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: funnelbarn-reader
+      app.kubernetes.io/environment: testing
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: funnelbarn-reader
+        app.kubernetes.io/environment: testing
+    spec:
+      imagePullSecrets:
+      - name: ghcr-secret
+      containers:
+      - name: funnelbarn
+        image: funnelbarn/service
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: FUNNELBARN_MODE
+          value: reader
+        - name: FUNNELBARN_WRITER_URL
+          value: http://funnelbarn-writer:8080
+        - name: FUNNELBARN_INTERNAL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_INTERNAL_TOKEN
+        - name: FUNNELBARN_VERSION
+          value: unreleased # set by the deploy workflow
+        - name: FUNNELBARN_SPOOL_DIR
+          value: /var/lib/funnelbarn/readers/$(POD_NAME)/spool
+        - name: FUNNELBARN_ADDR
+          value: :8080
+        - name: FUNNELBARN_PUBLIC_URL
+          value: https://funnelbarn.test.wiebe.xyz
+        - name: FUNNELBARN_LOGIN_RATE_PER_MINUTE
+          value: '1000'
+        - name: FUNNELBARN_LOGIN_RATE_BURST
+          value: '1000'
+        - name: FUNNELBARN_DB_PATH
+          value: /var/lib/funnelbarn/funnelbarn.db
+        - name: FUNNELBARN_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_API_KEY
+        - name: FUNNELBARN_ADMIN_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_ADMIN_USERNAME
+              optional: true
+        - name: FUNNELBARN_ADMIN_PASSWORD_BCRYPT
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_ADMIN_PASSWORD_BCRYPT
+              optional: true
+        - name: FUNNELBARN_SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_SESSION_SECRET
+              optional: true
+        - name: FUNNELBARN_SELF_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_SELF_ENDPOINT
+              optional: true
+        - name: FUNNELBARN_SELF_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_SELF_API_KEY
+              optional: true
+        - name: FUNNELBARN_ENVIRONMENT
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_ENVIRONMENT
+              optional: true
+        - name: FUNNELBARN_SPANBARN_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_SPANBARN_ENDPOINT
+              optional: true
+        - name: FUNNELBARN_SPANBARN_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_SPANBARN_API_KEY
+              optional: true
+        - name: FUNNELBARN_DOGFOOD_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_DOGFOOD_API_KEY
+              optional: true
+        - name: FUNNELBARN_DOGFOOD_PROJECT
+          value: funnelbarn
+        - name: FUNNELBARN_R2_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_R2_ENDPOINT
+              optional: true
+        - name: FUNNELBARN_R2_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_R2_ACCESS_KEY_ID
+              optional: true
+        - name: FUNNELBARN_R2_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_R2_SECRET_ACCESS_KEY
+              optional: true
+        - name: FUNNELBARN_R2_BUCKET
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_R2_BUCKET
+              optional: true
+        - name: FUNNELBARN_REDIS_QUEUE_URL
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_REDIS_QUEUE_URL
+              optional: true
+        - name: FUNNELBARN_OIDC_ISSUER
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_OIDC_ISSUER
+              optional: true
+        - name: FUNNELBARN_OIDC_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_OIDC_CLIENT_ID
+              optional: true
+        - name: FUNNELBARN_OIDC_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_OIDC_CLIENT_SECRET
+              optional: true
+        - name: FUNNELBARN_OIDC_REDIRECT_URL
+          valueFrom:
+            secretKeyRef:
+              name: funnelbarn-secrets
+              key: FUNNELBARN_OIDC_REDIRECT_URL
+              optional: true
+        - name: FUNNELBARN_MCP_RESOURCE_URL
+          value: https://funnelbarn.test.wiebe.xyz/api/v1/mcp
+        - name: FUNNELBARN_OIDC_REFRESH_GRACE_SECONDS
+          value: '3600'
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 128Mi
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1/ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: funnelbarn-data
+          mountPath: /var/lib/funnelbarn
+      volumes:
+      - name: funnelbarn-data
+        persistentVolumeClaim:
+          claimName: funnelbarn-data

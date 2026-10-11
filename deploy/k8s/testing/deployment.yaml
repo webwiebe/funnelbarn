@@ -59,6 +59,18 @@ spec:
           env:
             - name: FUNNELBARN_ADDR
               value: :8080
+            # The writer: the only process with a write connection. It drains
+            # the Valkey queues, runs maintenance and Litestream, and serves
+            # the writes the readers (reader-statefulset.yaml) forward to it.
+            - name: FUNNELBARN_MODE
+              value: writer
+            - name: FUNNELBARN_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_INTERNAL_TOKEN
+            - name: FUNNELBARN_VERSION
+              value: unreleased # set by the deploy workflow
             - name: FUNNELBARN_PUBLIC_URL
               value: https://funnelbarn.test.wiebe.xyz
             - name: FUNNELBARN_LOGIN_RATE_PER_MINUTE

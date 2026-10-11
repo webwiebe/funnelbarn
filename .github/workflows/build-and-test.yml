@@ -118,6 +118,9 @@ jobs:
         with:
           ref: ${{ needs.build.outputs.sha }}
 
+      - name: Pin manifests to this release
+        run: deploy/pin-release.sh testing "${IMAGE_TAG}" "${IMAGE_TAG}"
+
       - name: Transfer manifests
         run: |
           set -euo pipefail
@@ -159,13 +162,8 @@ jobs:
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
             set -euo pipefail
             kubectl apply -k /tmp/funnelbarn-deploy/deploy/k8s/testing
-            kubectl -n ${NAMESPACE} set image deployment/funnelbarn \
-              funnelbarn=${SERVICE_IMAGE}:${IMAGE_TAG}
-            kubectl -n ${NAMESPACE} set env deployment/funnelbarn \
-              FUNNELBARN_VERSION=${IMAGE_TAG}
-            kubectl -n ${NAMESPACE} set image deployment/funnelbarn-web \
-              funnelbarn-web=${WEB_IMAGE}:${IMAGE_TAG}
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=360s
+            kubectl -n ${NAMESPACE} rollout status statefulset/funnelbarn-reader --timeout=360s
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=360s
           "
 
@@ -298,6 +296,9 @@ jobs:
         with:
           ref: ${{ needs.build.outputs.sha }}
 
+      - name: Pin manifests to this release
+        run: deploy/pin-release.sh staging "${IMAGE_TAG}" "${IMAGE_TAG}"
+
       - name: Transfer manifests
         run: |
           set -euo pipefail
@@ -354,13 +355,8 @@ jobs:
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
             set -euo pipefail
             kubectl apply -k /tmp/funnelbarn-deploy-staging/deploy/k8s/staging
-            kubectl -n ${NAMESPACE} set image deployment/funnelbarn \
-              funnelbarn=${SERVICE_IMAGE}:${IMAGE_TAG}
-            kubectl -n ${NAMESPACE} set env deployment/funnelbarn \
-              FUNNELBARN_VERSION=${IMAGE_TAG}
-            kubectl -n ${NAMESPACE} set image deployment/funnelbarn-web \
-              funnelbarn-web=${WEB_IMAGE}:${IMAGE_TAG}
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=360s
+            kubectl -n ${NAMESPACE} rollout status statefulset/funnelbarn-reader --timeout=360s
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=360s
           "
 

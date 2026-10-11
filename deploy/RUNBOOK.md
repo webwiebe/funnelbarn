@@ -129,8 +129,8 @@ gh workflow run deploy-production.yml \
 The workflow will:
 - Verify the images exist in GHCR.
 - Transfer K8s manifests to the cluster host via SSH.
-- Apply the kustomization and update both deployment images.
-- Wait for rollout (`--timeout=180s`). If the rollout fails, it automatically triggers a rollback (see Section 3).
+- Pin the manifests to the release (`deploy/pin-release.sh`: image tag and `FUNNELBARN_VERSION`) and apply the kustomization.
+- Wait for the writer, the readers and the web rollout (`--timeout=180s` each). If the rollout fails, it automatically triggers a rollback (see Section 3).
 - Post a release marker to BugBarn.
 
 ### Manual equivalent (emergency use only)
@@ -260,7 +260,12 @@ The `deploy-production.yml` workflow has an automatic rollback step (`if: failur
 ```sh
 kubectl -n funnelbarn-production rollout undo deployment/funnelbarn
 kubectl -n funnelbarn-production rollout undo deployment/funnelbarn-web
+kubectl -n funnelbarn-production rollout undo statefulset/funnelbarn-reader
 ```
+
+It skips the rollback when the release carries a migration (see the step's log).
+On the release that introduced the readers the StatefulSet has no earlier
+revision, so its undo fails. Follow "Back to a single process" below.
 
 ### Manual rollback
 
@@ -293,6 +298,58 @@ kubectl -n funnelbarn-production rollout undo deployment/funnelbarn --to-revisio
 ```
 
 Note: `revisionHistoryLimit: 2` is set on all deployments, so only the two most recent ReplicaSets are kept.
+
+### Readers and writer (spec 012)
+
+The service runs as two workloads:
+
+- `deployment/funnelbarn`, the writer (1 replica, `FUNNELBARN_MODE=writer`). It owns the
+  write connection, drains the Valkey queues, runs maintenance and Litestream, and is
+  reached through the `funnelbarn-writer` Service.
+- `statefulset/funnelbarn-reader`, the readers (2 replicas). The public `funnelbarn`
+  Service, and with it the ingress and the `f.<domain>` routes, selects the readers.
+
+Roll the readers back with:
+
+```sh
+kubectl -n funnelbarn-production rollout undo statefulset/funnelbarn-reader
+kubectl -n funnelbarn-production rollout status statefulset/funnelbarn-reader
+```
+
+Readers keep serving while the writer is down: ingest, recordings and evaluations
+queue in Valkey and land when the writer is back. Dashboard edits fail with 502
+(`writer unavailable`) until then.
+
+### Back to a single process
+
+When the readers themselves are the problem, send all traffic to the writer. A
+writer serves every route itself and keeps draining the queues.
+
+```sh
+NS=funnelbarn-production
+kubectl -n $NS patch service funnelbarn --type merge \
+  -p '{"spec":{"selector":{"app.kubernetes.io/name":"funnelbarn"}}}'
+kubectl -n $NS scale statefulset/funnelbarn-reader --replicas=0
+kubectl -n $NS get endpoints funnelbarn
+```
+
+The next deploy restores the split. Revert the reader change in git first if it
+should stay off.
+
+### Reader spools after scaling down
+
+Each reader buffers to `/var/lib/funnelbarn/readers/<pod>/spool` while Valkey is
+unreachable, and forwards that spool once Valkey is back. A reader removed by a scale
+down (or by the steps above) leaves its spool behind. Before scaling down, check that
+the spools are empty:
+
+```sh
+kubectl -n funnelbarn-production exec deploy/funnelbarn -c funnelbarn -- \
+  sh -c 'ls -la /var/lib/funnelbarn/readers/*/spool'
+```
+
+A spool left behind is picked up again when a reader with that pod name returns, so
+scaling back up recovers it.
 
 ---
 
@@ -438,6 +495,7 @@ Scale all deployments in a namespace to zero replicas. This stops all traffic im
 ssh deployer@layer7.wiebe.xyz
 
 kubectl -n funnelbarn-production scale deployment/funnelbarn --replicas=0
+kubectl -n funnelbarn-production scale statefulset/funnelbarn-reader --replicas=0
 kubectl -n funnelbarn-production scale deployment/funnelbarn-web --replicas=0
 
 # Confirm pods are terminated:
@@ -448,6 +506,7 @@ kubectl -n funnelbarn-production get pods
 
 ```sh
 kubectl -n funnelbarn-production scale deployment/funnelbarn --replicas=1
+kubectl -n funnelbarn-production scale statefulset/funnelbarn-reader --replicas=2
 kubectl -n funnelbarn-production scale deployment/funnelbarn-web --replicas=1
 
 kubectl -n funnelbarn-production rollout status deployment/funnelbarn
@@ -460,6 +519,7 @@ kubectl -n funnelbarn-production rollout status deployment/funnelbarn-web
 NAMESPACE=funnelbarn-staging  # or funnelbarn-testing
 
 kubectl -n $NAMESPACE scale deployment/funnelbarn --replicas=0
+kubectl -n $NAMESPACE scale statefulset/funnelbarn-reader --replicas=0
 kubectl -n $NAMESPACE scale deployment/funnelbarn-web --replicas=0
 ```
 
