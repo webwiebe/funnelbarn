@@ -14,6 +14,7 @@ internal/domain	100
 internal/enrich	91
 internal/environment	100
 internal/geoip	50
+internal/ghwebhook	93
 internal/ingest	72
 internal/mcp	87
 internal/middleware	100
