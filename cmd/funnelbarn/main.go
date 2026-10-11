@@ -429,6 +429,7 @@ func run() error {
 		Recordings:            recordingsSvc,
 		RecordingSettings:     store,
 		ProjectHealth:         healthSvc,
+		Agents:                service.NewAgentService(store),
 		FlagAutoRegisterMax:   cfg.AutoRegisterMaxFlags,
 		Commands:              commands,
 		ReadPoolWait:          func() time.Duration { return store.ReadDB().Stats().WaitDuration },

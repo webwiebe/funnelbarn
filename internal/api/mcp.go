@@ -55,6 +55,7 @@ func (s *Server) registerMCPRoutes() {
 		Segments:      s.segments,
 		Flags:         s.flags,
 		ProjectHealth: s.projectHealth,
+		Agents:        s.agents,
 		SetupDoc:      s.SetupDoc,
 		Allow:         func(sub string) bool { return s.mcpLimiter.allow("mcp:" + sub) },
 		Logger:        slog.Default(),

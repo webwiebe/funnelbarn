@@ -134,6 +134,7 @@ func redisGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 		Sessions:            service.NewSessionService(store),
 		APIKeys:             service.NewAPIKeyService(store),
 		Widgets:             service.NewWidgetService(store),
+		Agents:              service.NewAgentService(store),
 		Segments:            service.NewSegmentService(store),
 		Recordings:          service.NewRecordingService(store, store, store, deps.Recordings),
 		ProjectHealth:       healthSvc,

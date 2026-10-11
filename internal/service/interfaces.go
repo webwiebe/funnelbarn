@@ -186,3 +186,10 @@ type APIKeys interface {
 	ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (projectID string, scope string, found bool, err error)
 	TouchAPIKey(ctx context.Context, keySHA256 string) error
 }
+
+// Agents reports the agent fleet's delivery lead times and scoreboard from
+// the agents project (#331).
+type Agents interface {
+	LeadTimes(ctx context.Context, projectID string, from, to time.Time, repo string) (AgentLeadTimes, error)
+	Scoreboard(ctx context.Context, projectID string, from, to time.Time, session string) (AgentScoreboard, error)
+}

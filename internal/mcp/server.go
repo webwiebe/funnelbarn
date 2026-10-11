@@ -56,6 +56,10 @@ type Deps struct {
 	Flags         service.Flags
 	ProjectHealth service.ProjectHealth
 
+	// Agents serves agents_scoreboard and agents_lead_times. Nil makes both
+	// tools return an error.
+	Agents service.Agents
+
 	// SetupDoc renders a project's setup guide, the document served at
 	// GET /api/v1/setup/{slug}. Nil makes get_setup_guide return an error.
 	SetupDoc func(ctx context.Context, project repository.Project) (string, error)
@@ -83,6 +87,7 @@ func NewServer(deps Deps) *mcp.Server {
 	registerSegmentTools(s, d)
 	registerFlagTools(s, d)
 	registerSetupTools(s, d)
+	registerAgentTools(s, d)
 	return s
 }
 

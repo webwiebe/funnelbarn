@@ -199,6 +199,15 @@ func goldenGETCases(s *goldenSeed) []goldenCase {
 
 	// Project health.
 	sess("project_health_a", p(A, "/health"))
+
+	// Agents delivery report (#331). The seed has no agents events, so these
+	// pin the response shape and the parameter handling; the scoring itself
+	// and the error answers are covered in internal/service/agents_test.go and
+	// agents_test.go here.
+	sess("agents_lead_times_a", w(p(A, "/agents/lead-times")))
+	add("agents_lead_times_a_token", w(p(A, "/agents/lead-times?repo=webwiebe/funnelbarn")), authKey, s.KeyAAnalytics)
+	sess("agents_scoreboard_a_week", p(A, "/agents/scoreboard?week=2026-W10"))
+	sess("agents_scoreboard_a_window", w(p(A, "/agents/scoreboard?session=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
 	return cs
 }
 

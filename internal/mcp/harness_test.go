@@ -53,6 +53,7 @@ func newTestEnv(t *testing.T, mutate func(*Deps)) *testEnv {
 		Segments:      service.NewSegmentService(store),
 		Flags:         service.NewFlagService(store),
 		ProjectHealth: service.NewProjectHealthService(store),
+		Agents:        service.NewAgentService(store),
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	if mutate != nil {

@@ -13,7 +13,6 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
-	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
@@ -99,6 +98,7 @@ type ServerConfig struct {
 	Recordings        service.Recordings
 	RecordingSettings ProjectRecordingSettingsRepo
 	ProjectHealth     service.ProjectHealth
+	Agents            service.Agents
 
 	// SpanRelay forwards the dashboard's own browser spans to SpanBarn. Nil when
 	// telemetry export is not configured; the endpoint then accepts and drops.
@@ -134,20 +134,6 @@ type ServerConfig struct {
 	// subject). Zero means 120/min with a burst of 30.
 	MCPRatePerMinute float64
 	MCPRateBurst     float64
-}
-
-// DistributionRepo provides session field distribution data.
-type DistributionRepo interface {
-	SessionDistributions(ctx context.Context, projectID string) (map[string][]repository.DistributionEntry, error)
-}
-
-// InstanceSettingsRepo is the narrow interface for reading/writing instance-level settings.
-type InstanceSettingsRepo = ports.InstanceSettingsRepo
-
-// GeoAnonymizer can zero out geo fields on sessions.
-type GeoAnonymizer interface {
-	AnonymizeSessionGeo(ctx context.Context, sessionID string) error
-	AnonymizeSessionsByIP(ctx context.Context, ip string) (int64, error)
 }
 
 // Server is the main HTTP API server.
@@ -192,6 +178,7 @@ type Server struct {
 	recordings          service.Recordings
 	recordingSettings   ProjectRecordingSettingsRepo
 	projectHealth       service.ProjectHealth
+	agents              service.Agents
 	flagAutoRegisterMax int
 	commands            command.Bus
 	readPoolWait        func() time.Duration
@@ -278,6 +265,7 @@ func NewServer(cfg ServerConfig) *Server {
 		recordings:          cfg.Recordings,
 		recordingSettings:   cfg.RecordingSettings,
 		projectHealth:       cfg.ProjectHealth,
+		agents:              cfg.Agents,
 		flagAutoRegisterMax: cfg.FlagAutoRegisterMax,
 		commands:            cfg.Commands,
 		readPoolWait:        cfg.ReadPoolWait,
@@ -463,6 +451,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/sessions", s.requireSession(s.handleListSessions))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/sessions/active", s.requireSession(s.handleActiveSessionCount))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/session-distributions", s.requireSession(s.handleSessionDistributions))
+	s.registerAgentRoutes()
 
 	// Recordings
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/recordings", s.requireSession(s.handleListRecordings))

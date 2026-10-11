@@ -233,6 +233,12 @@ type APIKeyRepo interface {
 	APIKeyCommands
 }
 
+// AgentQueries is the read side of the agents delivery scoring (#331). It
+// has no command side: the events arrive through ingest.
+type AgentQueries interface {
+	AgentEvents(ctx context.Context, projectID string, names []string, from, to time.Time) ([]repository.AgentEvent, error)
+}
+
 // WidgetQueries is the read side of the dashboard widget port.
 type WidgetQueries interface {
 	WidgetByID(ctx context.Context, id string) (repository.DashboardWidget, error)

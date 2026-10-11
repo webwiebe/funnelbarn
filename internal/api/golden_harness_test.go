@@ -128,6 +128,7 @@ func newGoldenServer(t *testing.T, store *repository.Store, health ports.Project
 		Segments:            service.NewSegmentService(store),
 		Recordings:          recordingsSvc,
 		ProjectHealth:       healthSvc,
+		Agents:              service.NewAgentService(store),
 		InstanceSettings:    store,
 		GeoAnonymizer:       store,
 		Distributions:       store,
