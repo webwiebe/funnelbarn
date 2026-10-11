@@ -1,0 +1,38 @@
+{
+  "action": "unlabeled",
+  "issue": {
+    "closed_at": null,
+    "created_at": "2026-10-10T20:31:15Z",
+    "html_url": "https://github.com/webwiebe/funnelbarn/issues/331",
+    "labels": [
+      {
+        "name": "enhancement"
+      }
+    ],
+    "number": 331,
+    "state": "open",
+    "title": "Agents: delivery funnels, GitHub webhook receiver, scoreboard dashboard and MCP",
+    "updated_at": "2026-10-11T15:43:07Z",
+    "user": {
+      "login": "webwiebe"
+    }
+  },
+  "label": {
+    "name": "needs-refining"
+  },
+  "repository": {
+    "default_branch": "main",
+    "full_name": "webwiebe/funnelbarn",
+    "html_url": "https://github.com/webwiebe/funnelbarn",
+    "id": 1223488417,
+    "name": "funnelbarn",
+    "owner": {
+      "login": "webwiebe"
+    },
+    "private": false
+  },
+  "sender": {
+    "login": "webwiebe",
+    "type": "User"
+  }
+}

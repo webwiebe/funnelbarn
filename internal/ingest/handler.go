@@ -292,6 +292,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ErrQueueFull is returned by Enqueue when the in-memory queue has no room.
+var ErrQueueFull = errors.New("ingest in-memory queue is full")
+
+// Enqueue hands a prepared record to the same queue POST /api/v1/events
+// uses, so it reaches the spool (and, on a reader, the command queue) the
+// same way. It never blocks. Integrations that build their own event bodies
+// call it after authenticating the request themselves.
+func (h *Handler) Enqueue(record spool.Record) error {
+	select {
+	case h.queue <- record:
+		metrics.EventsIngested.Inc()
+		return nil
+	default:
+		return ErrQueueFull
+	}
+}
+
 func jsonErr(w http.ResponseWriter, msg string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

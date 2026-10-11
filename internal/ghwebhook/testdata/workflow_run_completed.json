@@ -1,0 +1,33 @@
+{
+  "action": "completed",
+  "repository": {
+    "default_branch": "main",
+    "full_name": "webwiebe/funnelbarn",
+    "html_url": "https://github.com/webwiebe/funnelbarn",
+    "id": 1223488417,
+    "name": "funnelbarn",
+    "owner": {
+      "login": "webwiebe"
+    },
+    "private": false
+  },
+  "sender": {
+    "login": "webwiebe",
+    "type": "User"
+  },
+  "workflow_run": {
+    "conclusion": "success",
+    "created_at": "2026-10-11T15:35:03Z",
+    "event": "workflow_dispatch",
+    "head_branch": "main",
+    "head_sha": "c3fceb88e3436d9e64325310bc9635dad4dc5a99",
+    "html_url": "https://github.com/webwiebe/funnelbarn/actions/runs/38151879265",
+    "id": 38151879265,
+    "name": "Deploy Production",
+    "pull_requests": [],
+    "run_attempt": 1,
+    "run_number": 129,
+    "status": "completed",
+    "updated_at": "2026-10-11T15:36:40Z"
+  }
+}

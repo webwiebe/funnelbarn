@@ -31,6 +31,7 @@ var readerPOSTs = map[string]bool{
 	"/api/v1/evaluate":         true,
 	"/api/v1/telemetry":        true,
 	"/api/v1/client-errors":    true,
+	githubWebhookPath:          true,
 }
 
 // writingGETs are GET routes that write sessions: the OIDC callback creates

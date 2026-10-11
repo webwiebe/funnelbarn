@@ -79,6 +79,7 @@ var goldenSkips = map[string]string{
 	"GET /api/v1/auth/oidc/logged-out":                   "Revokes the session cookie every other session-authed case runs under, then redirects; its 302 is fixed code, covered by oidc_test.go.",
 	"* /api/v1/mcp":                                      "Only mounted when OIDC is configured (s.mcpEnabled) and then needs an IAMBarn-signed bearer token; the harness server has neither. Covered end to end by TestMCP_* in mcp_test.go (fake IdP, initialize, tool list, rate limit, 401s) and by the tool tests in internal/mcp.",
 	"* /.well-known/oauth-protected-resource/api/v1/mcp": "Mounted together with the MCP endpoint, so absent without OIDC. Covered by TestMCP_ProtectedResourceMetadata and TestMCP_NotServedWithoutOIDC in mcp_test.go.",
+	"POST /api/v1/integrations/github":                   "Only mounted when a webhook secret is set (SetGitHubWebhook), and a delivery needs an HMAC signature over the raw body plus GitHub headers the harness cannot send. Covered end to end by TestGitHubWebhook_* in github_webhook_test.go (stored events, redelivery dedupe, forged signatures, bad requests, 404 without a secret).",
 }
 
 // goldenGETCases returns one or more cases per GET route.

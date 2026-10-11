@@ -1,0 +1,33 @@
+{
+  "action": "created",
+  "deployment": {
+    "created_at": "2026-10-10T09:10:52Z",
+    "environment": "github-pages",
+    "id": 6978713571,
+    "ref": "main",
+    "sha": "f98f7d3fcddf384cc379fdbc39879a1a1d1d4c1f",
+    "task": "deploy"
+  },
+  "deployment_status": {
+    "created_at": "2026-10-10T09:11:05Z",
+    "description": "",
+    "environment": "github-pages",
+    "id": 19560529213,
+    "state": "success"
+  },
+  "repository": {
+    "default_branch": "main",
+    "full_name": "webwiebe/funnelbarn",
+    "html_url": "https://github.com/webwiebe/funnelbarn",
+    "id": 1223488417,
+    "name": "funnelbarn",
+    "owner": {
+      "login": "webwiebe"
+    },
+    "private": false
+  },
+  "sender": {
+    "login": "webwiebe",
+    "type": "User"
+  }
+}

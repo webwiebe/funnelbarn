@@ -1,0 +1,28 @@
+{
+  "action": "published",
+  "release": {
+    "created_at": "2026-10-11T14:58:58Z",
+    "draft": false,
+    "html_url": "https://github.com/webwiebe/funnelbarn/releases/tag/v0.6.84",
+    "id": 409736476,
+    "name": "v0.6.84",
+    "prerelease": false,
+    "published_at": "2026-10-11T15:02:42Z",
+    "tag_name": "v0.6.84"
+  },
+  "repository": {
+    "default_branch": "main",
+    "full_name": "webwiebe/funnelbarn",
+    "html_url": "https://github.com/webwiebe/funnelbarn",
+    "id": 1223488417,
+    "name": "funnelbarn",
+    "owner": {
+      "login": "webwiebe"
+    },
+    "private": false
+  },
+  "sender": {
+    "login": "webwiebe",
+    "type": "User"
+  }
+}

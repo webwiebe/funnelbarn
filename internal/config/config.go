@@ -131,6 +131,13 @@ type Config struct {
 	// the writer. A reader sends it on every forwarded request, and the writer
 	// believes the client address and scheme a request carries only with it.
 	InternalToken string
+
+	// GitHubWebhookSecret (FUNNELBARN_GITHUB_WEBHOOK_SECRET) signs GitHub
+	// webhook deliveries. Unset leaves POST /api/v1/integrations/github off.
+	GitHubWebhookSecret string
+	// GitHubWebhookProject (FUNNELBARN_GITHUB_WEBHOOK_PROJECT, default agents)
+	// is the slug of the project the webhook files its events into.
+	GitHubWebhookProject string
 }
 
 // Process roles for FUNNELBARN_MODE.
@@ -307,6 +314,8 @@ func Load() Config {
 	cfg.Mode = strings.ToLower(strings.TrimSpace(getenv("FUNNELBARN_MODE", ModeStandalone)))
 	cfg.WriterURL = strings.TrimRight(os.Getenv("FUNNELBARN_WRITER_URL"), "/")
 	cfg.InternalToken = os.Getenv("FUNNELBARN_INTERNAL_TOKEN")
+	cfg.GitHubWebhookSecret = os.Getenv("FUNNELBARN_GITHUB_WEBHOOK_SECRET")
+	cfg.GitHubWebhookProject = getenv("FUNNELBARN_GITHUB_WEBHOOK_PROJECT", "agents")
 
 	cfg.SetupRatePerMinute = 10
 	cfg.SetupRateBurst = 5

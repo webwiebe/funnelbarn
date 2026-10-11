@@ -438,6 +438,7 @@ func run() error {
 		SpanRelay:             spanRelay,
 		MCPResourceURL:        cfg.MCPResourceURL,
 	})
+	apiServer.SetGitHubWebhook(cfg.GitHubWebhookSecret, cfg.GitHubWebhookProject)
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)
 	} else {

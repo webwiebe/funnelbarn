@@ -1,0 +1,41 @@
+{
+  "action": "closed",
+  "number": 339,
+  "pull_request": {
+    "base": {
+      "ref": "main"
+    },
+    "body": "## Summary\n\nFirst of three PRs for #331. The agents delivery funnels need a funnel that follows one issue (the `user_id` the GitHub events will carry) across days, so this adds a third funnel scope, `user`.\n\n- A user funnel counts distinct `user_id_hash` values. Step N counts when it happens at or after step N-1 and within the conversion window of step 1. A user with several step-1 events counts at the furthest step any of them reaches.\n- `conversion_window_seconds` is stored per funnel (migration 00040, nullable column) and defaults to 30 days. The service rejects a window on a session or page_view funnel, and any window that is not positive.\n- Events without a user ID are left out of user funnels.\n- An update that omits `scope` keeps the funnel's scope and window, so existing callers that only send name and steps change nothing.\n- REST create/update, the MCP `create_funnel` / `update_funnel` tools and the funnel editor (a third \"User\" option plus a window in days) all accept the new fields.\n\n## Testing\n\n- Repository tests: ordering, the window, a restart after an expired step 1, equal timestamps, anonymous events, property filters and the default window.\n- Service test for the validation and the keep-on-update behaviour.\n- New API goldens for creating, analysing and deleting a user funnel, plus a 422 for a window on a session funnel. Existing goldens are unchanged.\n- Vitest for the toggle and both modals.\n- `go test ./...`, `make lint`, `make build`, `make regress`, tsc, eslint and vitest all pass locally.\n\nPart of #331\n",
+    "created_at": "2026-10-11T14:26:10Z",
+    "head": {
+      "ref": "issue-331/user-funnels",
+      "sha": "be2627b1f34a0ee4a054a2ad196b1f3908b1308c"
+    },
+    "html_url": "https://github.com/webwiebe/funnelbarn/pull/339",
+    "merge_commit_sha": "c3fceb88e3436d9e64325310bc9635dad4dc5a99",
+    "merged": false,
+    "merged_at": null,
+    "number": 339,
+    "state": "closed",
+    "title": "feat: user-scoped funnels with a conversion window (#331 PR A)",
+    "updated_at": "2026-10-11T14:58:53Z",
+    "user": {
+      "login": "webwiebe"
+    }
+  },
+  "repository": {
+    "default_branch": "main",
+    "full_name": "webwiebe/funnelbarn",
+    "html_url": "https://github.com/webwiebe/funnelbarn",
+    "id": 1223488417,
+    "name": "funnelbarn",
+    "owner": {
+      "login": "webwiebe"
+    },
+    "private": false
+  },
+  "sender": {
+    "login": "webwiebe",
+    "type": "User"
+  }
+}
