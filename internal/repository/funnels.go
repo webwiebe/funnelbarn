@@ -512,7 +512,7 @@ func (s *ReadStore) userEventTimes(ctx context.Context, q string, args []any, ti
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	byUser := map[string][]time.Time{}
 	for rows.Next() {
 		var user string
