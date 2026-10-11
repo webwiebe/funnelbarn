@@ -19,7 +19,7 @@ help:
 		'  lint         run linters' \
 		'  soak         run the report-only quality soaks against their baselines' \
 		'  gate-test    run the tests for the gate scripts themselves' \
-		'  regress      run the regression harness (golden API, state snapshot, purge retention, architecture rules)' \
+		'  regress      run the regression harness (golden API, state snapshot, purge retention, reader/writer durability, architecture rules)' \
 		'  dev          start docker compose stack' \
 		'  docker-build build Docker images locally' \
 		'  clean        remove build artifacts'
@@ -60,6 +60,7 @@ lint:
 regress:
 	go test -race ./internal/api -run 'TestGolden|TestStateSnapshot' -count=1
 	go test -race ./internal/repository -run TestPurgeRetention -count=1
+	go test -race ./cmd/funnelbarn -run TestReaderTrafficSurvivesAStoppedWriter -count=1
 	go test -race ./internal/archtest/... -count=1
 
 # Report-only soaks. Each compares the current measurement against a committed
