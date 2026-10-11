@@ -7,29 +7,12 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 )
 
 // validPropertyName matches only alphanumeric and underscore characters.
 var validPropertyName = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
-
-// Funnel scopes: what one funnel entry is keyed on.
-const (
-	// FunnelScopeSession counts distinct sessions per step (the default).
-	FunnelScopeSession = "session"
-	// FunnelScopePageView counts distinct page views per step.
-	FunnelScopePageView = "page_view"
-	// FunnelScopeUser counts distinct users (user_id_hash) through ordered
-	// steps: a user reaches step N only by firing it at or after their step
-	// N-1, and within the funnel's conversion window of their step 1.
-	FunnelScopeUser = "user"
-)
-
-// DefaultConversionWindow is the window of a user-scoped funnel whose
-// ConversionWindowSeconds is unset.
-const DefaultConversionWindow = 30 * 24 * time.Hour
 
 // Funnel is a multi-step conversion funnel.
 type Funnel struct {
@@ -52,14 +35,6 @@ type Funnel struct {
 	// rather than as misconfiguration — 20 of 37 funnels in production are in
 	// that state. Read-only: computed on load, never persisted, ignored on write.
 	UnmatchedSteps []string `json:"unmatched_steps,omitempty"`
-}
-
-// ConversionWindow returns the window of a user-scoped funnel.
-func (f Funnel) ConversionWindow() time.Duration {
-	if f.ConversionWindowSeconds == nil {
-		return DefaultConversionWindow
-	}
-	return time.Duration(*f.ConversionWindowSeconds) * time.Second
 }
 
 // FunnelStep is one step in a funnel.
@@ -275,57 +250,6 @@ func (s *ReadStore) funnelSteps(ctx context.Context, db querier, funnelID string
 	return steps, rows.Err()
 }
 
-// SegmentFilter filters funnel analysis by a field condition on the events (or joined sessions) table.
-type SegmentFilter struct {
-	// Field is the column to filter on: "device_type", "user_id_hash", "browser",
-	// "country_code", or the special value "session_returning".
-	Field string
-	// Op is the comparison operator: "eq", "neq", "is_null", "is_not_null".
-	Op string
-	// Value is the right-hand side for "eq" / "neq" operators.
-	Value string
-}
-
-// segmentParam returns a SQL WHERE fragment with a placeholder and the value to bind,
-// plus whether a sessions JOIN is needed.
-// arg is nil when no bind parameter is needed for the clause (e.g. IS NULL checks).
-func segmentParam(seg *SegmentFilter) (clause string, arg any, needSessionJoin bool) {
-	if seg == nil {
-		return "", nil, false
-	}
-	if seg.Field == "session_returning" {
-		if seg.Value == "true" {
-			return "s.event_count > 1", nil, true
-		}
-		return "s.event_count = 1", nil, true
-	}
-
-	// Whitelist allowed field names to prevent column injection.
-	allowedFields := map[string]bool{
-		"device_type":  true,
-		"browser":      true,
-		"os":           true,
-		"country_code": true,
-		"user_id_hash": true,
-	}
-	if !allowedFields[seg.Field] {
-		return "", nil, false // silently ignore unknown fields
-	}
-
-	col := "e." + seg.Field
-	switch seg.Op {
-	case "eq":
-		return col + " = ?", seg.Value, false
-	case "neq":
-		return col + " != ?", seg.Value, false
-	case "is_null":
-		return fmt.Sprintf("(%s IS NULL OR %s = '')", col, col), nil, false
-	case "is_not_null":
-		return fmt.Sprintf("(%s IS NOT NULL AND %s != '')", col, col), nil, false
-	}
-	return "", nil, false
-}
-
 // AnalyzeFunnel computes conversion rates for each step of a funnel over a time range.
 // seg is the legacy preset filter; rules are additional stored segment conditions (ANDed together).
 func (s *ReadStore) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time, seg *SegmentFilter, rules ...SegmentRule) ([]FunnelStepResult, error) {
@@ -448,86 +372,6 @@ func stepFilterClause(q string, args []any, step FunnelStep) (string, []any) {
 	return q, args
 }
 
-// orderedUserStepCounts counts, per step, the users who reached it in order:
-// step 1 in [from, to], and each later step in [from, to], at or after the
-// user's previous step and within the conversion window of their step 1. A
-// user with several step-1 events counts at the furthest step any of them
-// reaches.
-func (s *ReadStore) orderedUserStepCounts(ctx context.Context, f Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool) ([]int64, error) {
-	join := ""
-	if needJoin {
-		join = " JOIN sessions s ON s.id = e.session_id AND s.project_id = e.project_id"
-	}
-	window := f.ConversionWindow()
-
-	// times[k][user] holds the user's step-k event times, ascending.
-	times := make([]map[string][]time.Time, len(f.Steps))
-	for i, step := range f.Steps {
-		q := fmt.Sprintf(`
-			SELECT e.user_id_hash, e.occurred_at
-			FROM events e%s
-			WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?%s`,
-			join, extraWhere)
-		args := append([]any{f.ProjectID, step.EventName, from, to}, extraArgs...)
-		q, args = stepFilterClause(q, args, step)
-		q += " ORDER BY e.occurred_at"
-
-		byUser, err := s.userEventTimes(ctx, q, args, times, i)
-		if err != nil {
-			return nil, fmt.Errorf("analyze step %d: %w", i, err)
-		}
-		times[i] = byUser
-	}
-
-	counts := make([]int64, len(f.Steps))
-	for user, starts := range times[0] {
-		best := 1
-		for _, start := range starts {
-			deadline := start.Add(window)
-			depth, prev := 1, start
-			for k := 1; k < len(f.Steps); k++ {
-				ts := times[k][user]
-				j := sort.Search(len(ts), func(n int) bool { return !ts[n].Before(prev) })
-				if j == len(ts) || ts[j].After(deadline) {
-					break
-				}
-				depth, prev = depth+1, ts[j]
-			}
-			best = max(best, depth)
-			if best == len(f.Steps) {
-				break
-			}
-		}
-		for k := 0; k < best; k++ {
-			counts[k]++
-		}
-	}
-	return counts, nil
-}
-
-// userEventTimes runs one step query of orderedUserStepCounts. Past step 1 it
-// keeps only users who have a step 1, since nobody else can reach the step.
-func (s *ReadStore) userEventTimes(ctx context.Context, q string, args []any, times []map[string][]time.Time, step int) (map[string][]time.Time, error) {
-	rows, err := s.rdb.QueryContext(ctx, q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	byUser := map[string][]time.Time{}
-	for rows.Next() {
-		var user string
-		var at time.Time
-		if err := rows.Scan(&user, &at); err != nil {
-			return nil, err
-		}
-		if step > 0 && times[0][user] == nil {
-			continue
-		}
-		byUser[user] = append(byUser[user], at)
-	}
-	return byUser, rows.Err()
-}
-
 // SessionsAtStep returns distinct session IDs that completed step stepOrder
 // (1-based) but did NOT complete step stepOrder+1. If stepOrder equals the
 // total number of steps, it returns sessions that completed all steps (converters).
@@ -616,96 +460,6 @@ func (s *ReadStore) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int,
 		if len(out) >= limit {
 			break
 		}
-	}
-	return out, nil
-}
-
-// buildSegmentRuleClause converts stored segment rules into a SQL WHERE fragment.
-func buildSegmentRuleClause(rules []SegmentRule) (clause string, args []any, needJoin bool) {
-	if len(rules) == 0 {
-		return "", nil, false
-	}
-	var parts []string
-	for _, rule := range rules {
-		tableAlias, ok := AllowedSegmentFields[rule.Field]
-		if !ok {
-			continue
-		}
-		if tableAlias == "s" {
-			needJoin = true
-		}
-		col := tableAlias + "." + rule.Field
-		switch rule.Operator {
-		case "eq":
-			parts = append(parts, col+" = ?")
-			args = append(args, rule.Value)
-		case "neq":
-			parts = append(parts, col+" != ?")
-			args = append(args, rule.Value)
-		case "contains":
-			parts = append(parts, col+" LIKE ?")
-			args = append(args, "%"+rule.Value+"%")
-		case "not_contains":
-			parts = append(parts, col+" NOT LIKE ?")
-			args = append(args, "%"+rule.Value+"%")
-		case "is_null":
-			parts = append(parts, fmt.Sprintf("(%s IS NULL OR %s = '')", col, col))
-		case "is_not_null":
-			parts = append(parts, fmt.Sprintf("(%s IS NOT NULL AND %s != '')", col, col))
-		}
-	}
-	if len(parts) == 0 {
-		return "", nil, false
-	}
-	return strings.Join(parts, " AND "), args, needJoin
-}
-
-// FunnelSegments holds distinct values available for dynamic segment filtering.
-type FunnelSegments struct {
-	DeviceTypes []string `json:"device_types"`
-	Browsers    []string `json:"browsers"`
-	Countries   []string `json:"countries"`
-}
-
-// FunnelSegmentData returns distinct field values present in the events for a project.
-func (s *ReadStore) FunnelSegmentData(ctx context.Context, projectID string) (FunnelSegments, error) {
-	var out FunnelSegments
-
-	// Column names are interpolated into SQL, so guard against any caller ever
-	// passing an unvetted value: only an explicit allowlist of event columns is
-	// permitted. Callers below pass literals; this is defence-in-depth.
-	allowedDistinctCols := map[string]bool{"device_type": true, "browser": true, "country_code": true}
-
-	fetchDistinct := func(col string) ([]string, error) {
-		if !allowedDistinctCols[col] {
-			return nil, fmt.Errorf("FunnelSegmentData: disallowed column %q", col)
-		}
-		q := fmt.Sprintf(`SELECT DISTINCT %s FROM events WHERE project_id = ? AND %s IS NOT NULL AND %s != '' ORDER BY %s`, col, col, col, col)
-		rows, err := s.rdb.QueryContext(ctx, q, projectID)
-		if err != nil {
-			return nil, err
-		}
-		defer rows.Close()
-		var vals []string
-		for rows.Next() {
-			var v string
-			if err := rows.Scan(&v); err != nil {
-				return nil, err
-			}
-			vals = append(vals, v)
-		}
-		return vals, rows.Err()
-	}
-
-	var err error
-	if out.DeviceTypes, err = fetchDistinct("device_type"); err != nil {
-		return out, err
-	}
-	if out.Browsers, err = fetchDistinct("browser"); err != nil {
-		return out, err
-	}
-	if out.Countries, err = fetchDistinct("country_code"); err != nil {
-		return out, err
 	}
 	return out, nil
 }
