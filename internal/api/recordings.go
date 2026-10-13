@@ -26,9 +26,6 @@ import (
 // first_chunk_index >= 1 (snapshot lost forever).
 const maxRecordingChunkBytes = 10 << 20 // 10 MiB
 
-// recordingIngestTimeout bounds storing one chunk once its body has been read.
-const recordingIngestTimeout = 30 * time.Second
-
 func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Request) {
 	if s.recordings == nil {
 		jsonError(w, "session recording not configured (R2 credentials missing)", http.StatusServiceUnavailable)
@@ -153,13 +150,7 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 		attribute.Int("chunk.events.count", len(chunk.Events)),
 	)
 
-	// The body is read in full, so the chunk is stored even when the client has
-	// gone. Browsers abort the request when the tab closes or the page
-	// navigates, which cancels r.Context() mid-upload; inheriting that
-	// cancellation lost the chunk and answered 500 (FUN-40, FUN-32).
-	ingestCtx, cancelIngest := context.WithTimeout(context.WithoutCancel(ctx), recordingIngestTimeout)
-	defer cancelIngest()
-	if err := s.recordings.IngestChunk(ingestCtx, chunk); err != nil {
+	if err := s.ingestChunkDetached(ctx, chunk); err != nil {
 		tracing.RecordError(span, err)
 		slog.ErrorContext(ctx, "ingest recording chunk failed",
 			"error", err.Error(), "handled", false,
@@ -291,7 +282,7 @@ func (s *Server) handleGetRecordingChunk(w http.ResponseWriter, r *http.Request)
 		}
 		tracing.RecordError(span, err)
 		slog.ErrorContext(ctx, "fetch recording chunk failed",
-			"error", err, "handled", false,
+			"error", err.Error(), "handled", false,
 			"recording_id", recordingID,
 			"project_id", projectID,
 			"chunk_index", index,
@@ -333,7 +324,7 @@ func (s *Server) handleDeleteRecording(w http.ResponseWriter, r *http.Request) {
 		}
 		tracing.RecordError(span, err)
 		slog.ErrorContext(ctx, "delete recording failed",
-			"error", err, "handled", false,
+			"error", err.Error(), "handled", false,
 			"recording_id", recordingID,
 			"project_id", projectID,
 			"request_id", RequestIDFromContext(ctx),
@@ -482,7 +473,7 @@ func (s *Server) handleGetRecordingChunkByKey(w http.ResponseWriter, r *http.Req
 		}
 		tracing.RecordError(span, err)
 		slog.ErrorContext(ctx, "fetch recording chunk (api key) failed",
-			"error", err, "handled", false,
+			"error", err.Error(), "handled", false,
 			"recording_id", recordingID, "project_id", projectID, "chunk_index", index,
 			"request_id", RequestIDFromContext(ctx),
 		)
