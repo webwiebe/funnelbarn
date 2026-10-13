@@ -58,6 +58,13 @@ func (s *memStorage) Delete(_ context.Context, key string) error {
 // DB-backed API key authorizer (so a key can be bound to a real project).
 func newRecordingServer(t *testing.T, staticKey ...string) (*Server, *repository.Store) {
 	t.Helper()
+	return newRecordingServerWithStorage(t, newMemStorage(), staticKey...)
+}
+
+// newRecordingServerWithStorage is newRecordingServer with a caller-supplied
+// object store, for tests that need the store to misbehave.
+func newRecordingServerWithStorage(t *testing.T, storage service.RecordingStorage, staticKey ...string) (*Server, *repository.Store) {
+	t.Helper()
 	store := openMemoryStore(t)
 	sp := newTestSpool(t)
 	global := ""
@@ -68,7 +75,7 @@ func newRecordingServer(t *testing.T, staticKey ...string) (*Server, *repository
 	ingestHandler := ingest.NewHandler(authz, sp, 0)
 	sm := auth.NewSessionManager("test-secret", time.Hour)
 	userAuth, _ := auth.NewUserAuthenticator("", "", "")
-	recSvc := service.NewRecordingService(store, store, store, newMemStorage())
+	recSvc := service.NewRecordingService(store, store, store, storage)
 
 	srv := NewServer(ServerConfig{
 		Ingest:              ingestHandler,

@@ -66,7 +66,13 @@ func (h *Handler) capture(_ context.Context, record slog.Record) {
 				capErr = e
 			}
 		}
-		attrs[a.Key] = a.Value.Any()
+		v := a.Value.Any()
+		// An error value marshals to {} in the SDK's JSON payload, which hides
+		// the cause. Send its text instead.
+		if e, ok := v.(error); ok {
+			v = e.Error()
+		}
+		attrs[a.Key] = v
 		return true
 	})
 

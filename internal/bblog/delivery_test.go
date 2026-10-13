@@ -174,6 +174,32 @@ func TestHandler_ForwardsErrorAttributeAsException(t *testing.T) {
 	}
 }
 
+// An error value in any attribute reaches BugBarn as its text. The SDK
+// serialises attributes as JSON, and an error value marshals to {}, so
+// "error", err used to arrive as an empty object and hid the cause of every
+// issue logged that way (FUN-40, FUN-32).
+func TestHandler_ForwardsErrorValuedAttributeAsText(t *testing.T) {
+	f := newFakeBugBarn(t)
+	logger := initSDK(t, f)
+
+	logger.Error("ingest recording chunk failed", "error", errors.New("r2 put: connection reset"), "chunk_index", 1)
+
+	if !bb.Shutdown(5 * time.Second) {
+		t.Fatal("SDK did not drain within 5s")
+	}
+	got := f.captured()
+	if len(got) != 1 {
+		t.Fatalf("want 1 envelope forwarded, got %d: %v", len(got), got)
+	}
+	attrs, ok := got[0]["attributes"].(map[string]any)
+	if !ok {
+		t.Fatalf("attributes missing or not an object: %v", got[0]["attributes"])
+	}
+	if attrs["error"] != "r2 put: connection reset" {
+		t.Errorf("error attribute = %#v, want the error text", attrs["error"])
+	}
+}
+
 // Every record still reaches the wrapped handler, whatever its level — dropping
 // warnings from BugBarn must not drop them from the logs.
 func TestHandler_PassesAllLevelsToBaseHandler(t *testing.T) {
