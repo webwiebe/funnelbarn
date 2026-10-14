@@ -136,6 +136,23 @@ func (h *Handler) Start(ctx context.Context) {
 	}
 }
 
+// StartBackground runs Start on its own goroutine and returns a stop function
+// that cancels it and waits until the final flush has finished. Call stop
+// before closing the spool: a flush that runs after Close fails with "file
+// already closed" and loses the records still in the queue.
+func (h *Handler) StartBackground(ctx context.Context) (stop func()) {
+	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.Start(runCtx)
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
+}
+
 // ValidAPIKey validates the API key on the request.
 func (h *Handler) ValidAPIKey(r *http.Request) bool {
 	_, _, ok := h.APIKeyProjectScope(r)

@@ -356,7 +356,9 @@ func run() error {
 			})
 		}
 	}
-	go handler.Start(ctx)
+	// Deferred after eventSpool.Close, so it runs first: the handler's final
+	// flush must reach the spool before the file closes.
+	defer handler.StartBackground(ctx)()
 
 	oidcClient := buildOIDCClient(cfg)
 

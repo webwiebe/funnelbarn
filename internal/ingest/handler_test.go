@@ -35,6 +35,37 @@ func newTestSpool(t *testing.T) *spool.Spool {
 }
 
 // ---------------------------------------------------------------------------
+// StartBackground
+// ---------------------------------------------------------------------------
+
+func TestStartBackground_StopWaitsForTheFinalFlush(t *testing.T) {
+	sp := newTestSpool(t)
+	h := NewHandler(auth.New("key"), sp, 0)
+	stop := h.StartBackground(context.Background())
+
+	const records = 10
+	for i := 0; i < records; i++ {
+		if err := h.Enqueue(spool.Record{IngestID: "id"}); err != nil {
+			t.Fatalf("Enqueue: %v", err)
+		}
+	}
+	stop()
+	// Shutdown closes the spool right after stop returns. Anything still in
+	// the queue must be on disk by then, and a write after Close would fail.
+	if err := sp.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	got, err := spool.ReadRecords(sp.Path())
+	if err != nil {
+		t.Fatalf("ReadRecords: %v", err)
+	}
+	if len(got) != records {
+		t.Fatalf("spool holds %d records after stop, want %d", len(got), records)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // NewHandler
 // ---------------------------------------------------------------------------
 
