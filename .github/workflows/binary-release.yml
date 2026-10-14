@@ -170,14 +170,11 @@ jobs:
             rm -rf "$c" 2>/dev/null || true
           done
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
       - name: Sync pyproject.toml version to release tag
         # Same reason as the npm job: PyPI rejects re-uploads of an existing
         # version, so we rewrite the version line before building.
         run: |
-          python -c "
+          python3 -c "
           import re, pathlib
           p = pathlib.Path('pyproject.toml')
           text = p.read_text()
@@ -185,11 +182,15 @@ jobs:
           p.write_text(new)
           print(new[:200])
           "
-      - run: pip install build twine
-      - run: python -m build
+      - name: Create the build venv
+        # The macOS host's Python is externally managed, so pip needs a venv.
+        run: |
+          python3 -m venv "$RUNNER_TEMP/pyvenv"
+          "$RUNNER_TEMP/pyvenv/bin/python" -m pip install --quiet build twine
+      - run: '"$RUNNER_TEMP/pyvenv/bin/python" -m build'
       - name: Publish to PyPI
         if: env.PYPI_TOKEN != ''
-        run: twine upload dist/*
+        run: '"$RUNNER_TEMP/pyvenv/bin/twine" upload dist/*'
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
@@ -489,7 +490,9 @@ jobs:
             fi
           done
 
-          pip install awscli
+          python3 -m venv "$RUNNER_TEMP/awsvenv"
+          "$RUNNER_TEMP/awsvenv/bin/python" -m pip install --quiet awscli
+          export PATH="$RUNNER_TEMP/awsvenv/bin:$PATH"
 
           # Upload per-file with `cp` rather than `s3 sync brew-repo/`: sync
           # LISTs the whole destination prefix to compute its delta, and brew/

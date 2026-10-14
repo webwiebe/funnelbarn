@@ -63,3 +63,4 @@ web/coverage/
 .spanbarn.json
 
 .tools/
+.ci-venv/
