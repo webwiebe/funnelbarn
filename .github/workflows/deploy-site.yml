@@ -23,6 +23,14 @@ jobs:
     name: Build Astro site
     runs-on: [self-hosted, build]
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - name: Checkout
         uses: actions/checkout@v6
 

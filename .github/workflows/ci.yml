@@ -17,6 +17,14 @@ jobs:
   go-quality:
     runs-on: [self-hosted, build]
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
@@ -101,6 +109,14 @@ jobs:
   go-test:
     runs-on: [self-hosted, build]
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
@@ -129,6 +145,14 @@ jobs:
   go-sdk:
     runs-on: [self-hosted, build]
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
@@ -158,6 +182,14 @@ jobs:
   frontend-lint:
     runs-on: [self-hosted, build]
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - uses: actions/checkout@v6
       - name: Set up pnpm
         shell: bash
@@ -194,6 +226,14 @@ jobs:
   frontend-test:
     runs-on: [self-hosted, build]
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - uses: actions/checkout@v6
       - name: Set up pnpm
         shell: bash

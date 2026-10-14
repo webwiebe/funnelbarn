@@ -38,6 +38,14 @@ jobs:
       version: ${{ steps.next_version.outputs.version }}
       version_num: ${{ steps.next_version.outputs.version_num }}
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -92,6 +100,14 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - uses: actions/checkout@v6
       - name: Check whether this SDK version is released
         id: sdk
@@ -145,6 +161,14 @@ jobs:
       run:
         working-directory: sdks/python
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
@@ -175,6 +199,14 @@ jobs:
     runs-on: [self-hosted, build]
     needs: tag
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - uses: actions/checkout@v6
       - name: Set up pnpm
         shell: bash
@@ -229,6 +261,14 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - uses: actions/checkout@v6
 
       - name: Set up Go
@@ -279,6 +319,14 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
+            [ -d "$c" ] || continue
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          done
       - uses: actions/checkout@v6
 
       - name: Set up Go
