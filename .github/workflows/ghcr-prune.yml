@@ -93,7 +93,7 @@ jobs:
 
   prune:
     needs: protected-tags
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     timeout-minutes: 30
     permissions:
       packages: write

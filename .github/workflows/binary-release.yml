@@ -33,7 +33,7 @@ permissions:
 jobs:
   tag:
     name: Create Release Tag
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     outputs:
       version: ${{ steps.next_version.outputs.version }}
       version_num: ${{ steps.next_version.outputs.version_num }}
@@ -88,7 +88,7 @@ jobs:
     #   npm install https://github.com/webwiebe/funnelbarn/releases/download/funnelbarn-js-vX.Y.Z/funnelbarn-js-X.Y.Z.tgz
     # A push that does not change the version finds the release and stops.
     needs: [tag]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -133,7 +133,7 @@ jobs:
 
   publish-pypi:
     needs: [tag]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     env:
       PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
     defaults:
@@ -167,7 +167,7 @@ jobs:
 
   upload-source-maps:
     name: Build Web UI and Upload Source Maps to BugBarn
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     needs: tag
     steps:
       - uses: actions/checkout@v6
@@ -213,7 +213,7 @@ jobs:
 
   build-debs:
     name: Build .deb Packages (${{ matrix.arch }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     needs: tag
     strategy:
       matrix:
@@ -263,7 +263,7 @@ jobs:
 
   build-darwin-tarballs:
     name: Build macOS Tarballs (${{ matrix.arch }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     needs: tag
     strategy:
       matrix:
@@ -305,7 +305,7 @@ jobs:
 
   attach-debs-to-release:
     name: Attach .deb to Release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     needs: [tag, build-debs]
     steps:
       - name: Download all .deb artifacts
@@ -340,7 +340,7 @@ jobs:
 
   attach-tarballs-to-release:
     name: Attach macOS Tarballs to Release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     needs: [tag, build-darwin-tarballs]
     steps:
       - name: Download all darwin artifacts
@@ -365,7 +365,7 @@ jobs:
 
   update-brew-repo:
     name: Update Homebrew Tap (R2)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     needs: [tag, build-darwin-tarballs]
     steps:
       - name: Download all darwin artifacts
@@ -480,7 +480,7 @@ jobs:
 
   update-homebrew-tap:
     name: Update GitHub Tap Repository
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, build]
     needs: [tag, update-brew-repo]
     steps:
       - name: Download darwin artifacts for checksums
