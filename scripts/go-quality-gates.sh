@@ -21,7 +21,9 @@ GB="$(go env GOPATH)/bin"
 fail=0
 
 # First-party, non-test, non-generated Go files.
-mapfile -t SRC < <(find internal cmd -name '*.go' \
+# Portable read loop: the self-hosted macOS runners ship bash 3.2, which has no mapfile.
+SRC=()
+while IFS= read -r f; do SRC+=("$f"); done < <(find internal cmd -name '*.go' \
   -not -name '*_test.go' -not -path '*/sqlcgen/*' -not -path '*/mock/*' | sort)
 
 echo "==> cyclomatic complexity (gocyclo, max ${MAX_CYCLO})"
