@@ -11,6 +11,7 @@ import { ImplementationSnippet } from '../components/funnels/ImplementationSnipp
 import { CreateFunnelModal } from '../components/funnels/CreateFunnelModal'
 import { EditFunnelModal } from '../components/funnels/EditFunnelModal'
 import { SegmentManager } from '../components/funnels/SegmentManager'
+import { EnvironmentSwitch } from '../components/funnels/EnvironmentSwitch'
 import {
   FUNNEL_TEMPLATES,
   FunnelTemplate,
@@ -327,7 +328,7 @@ function FunnelDetail({ analysis, activeSegment, apiKey, onWatchRecordings }: { 
 
 export default function Funnels() {
   const { projectId } = useParams<{ projectId?: string }>()
-  const { projects } = useProjects()
+  const { projects, selectedEnvironment, setSelectedEnvironment } = useProjects()
   const navigate = useNavigate()
   const [funnels, setFunnels] = useState<Funnel[]>([])
   const [segments, setSegments] = useState<Segment[]>([])
@@ -379,13 +380,13 @@ export default function Funnels() {
     setAnalysis(null)
     setAnalysisError(null)
     setAnalysisLoading(true)
-    api.getFunnelAnalysis(projectId, selected.id, activeSegmentId ? undefined : activeSegment, activeSegmentId)
+    api.getFunnelAnalysis(projectId, selected.id, activeSegmentId ? undefined : activeSegment, activeSegmentId, selectedEnvironment)
       .then((a) => {
         setAnalysis(a)
         trackEvent('funnel_analyzed', {
           funnel_name: selected.name,
           scope: selected.scope,
-          segment: activeSegmentId ? 'stored' : (activeSegment !== 'all' ? activeSegment : undefined),
+          segment: activeSegmentId ? 'stored' : (activeSegment !== 'all' ? activeSegment : undefined), environment: selectedEnvironment || undefined,
         })
       })
       .catch((e) => {
@@ -398,7 +399,7 @@ export default function Funnels() {
         setAnalysisError(String(e))
       })
       .finally(() => setAnalysisLoading(false))
-  }, [selected, projectId, activeSegment, activeSegmentId])
+  }, [selected, projectId, activeSegment, activeSegmentId, selectedEnvironment])
 
   const loadAnalysis = (funnel: Funnel) => {
     if (!projectId) return
@@ -768,6 +769,7 @@ export default function Funnels() {
               )}
             </div>
           )}
+          <EnvironmentSwitch projectId={projectId} value={selectedEnvironment} onChange={setSelectedEnvironment} />
           {analysisLoading && (
             <div style={{ color: C.muted, padding: '2rem' }}>Loading analysis…</div>
           )}
@@ -775,10 +777,7 @@ export default function Funnels() {
             <div style={{
               background: 'rgba(239,68,68,0.1)',
               border: `1px solid rgba(239,68,68,0.3)`,
-              borderRadius: 8,
-              padding: '1rem 1.25rem',
-              color: C.error,
-              fontSize: 14,
+              borderRadius: 8, padding: '1rem 1.25rem', color: C.error, fontSize: 14,
             }}>
               Failed to load analysis: {analysisError}
             </div>
@@ -796,7 +795,6 @@ export default function Funnels() {
         </div>
       </div>
 
-      {/* Segment manager */}
       {projectId && (
         <SegmentManager
           projectId={projectId}

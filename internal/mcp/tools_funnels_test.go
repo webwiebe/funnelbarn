@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
@@ -376,6 +377,41 @@ func TestAnalyzeFunnelTool_WithSegment(t *testing.T) {
 	callOK(t, cs, "analyze_funnel", map[string]any{"funnel_id": f.ID, "segment_id": seg.ID}, &out)
 	if len(out.Results) != 1 {
 		t.Fatalf("got %d results, want 1: %+v", len(out.Results), out.Results)
+	}
+}
+
+func TestAnalyzeFunnelTool_WithEnvironment(t *testing.T) {
+	env := newTestEnv(t, nil)
+	a := env.createProject(t, "Alpha", "alpha")
+	ctx := context.Background()
+	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
+		ProjectID: a.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "ev"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateFunnel: %v", err)
+	}
+	at := time.Now().UTC().Add(-time.Hour)
+	for i, e := range []string{"production", "staging", "staging"} {
+		id := string(rune('a' + i))
+		if err := env.Store.InsertEvent(ctx, repository.Event{
+			ID: "ev-" + id, ProjectID: a.ID, SessionID: "s-" + id, Name: "ev",
+			Properties: "{}", IngestID: "ing-" + id, OccurredAt: at, Environment: e,
+		}); err != nil {
+			t.Fatalf("InsertEvent: %v", err)
+		}
+	}
+	cs := env.connect(t, tokenRead, a.Slug)
+
+	for args, want := range map[string]int64{"": 3, "production": 1, "stg": 2} {
+		in := map[string]any{"funnel_id": f.ID}
+		if args != "" {
+			in["environment"] = args
+		}
+		var out analyzeFunnelOut
+		callOK(t, cs, "analyze_funnel", in, &out)
+		if len(out.Results) != 1 || out.Results[0].Count != want {
+			t.Errorf("environment %q: results = %+v, want count %d", args, out.Results, want)
+		}
 	}
 }
 

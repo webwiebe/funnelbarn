@@ -115,11 +115,12 @@ func listFunnels(ctx context.Context, c *Call, in listFunnelsIn) (listFunnelsOut
 // --- analyze_funnel ---
 
 type analyzeFunnelIn struct {
-	Project   string `json:"project,omitempty" jsonschema:"Project slug or ID; defaults to the repository's project from the x-funnelbarn-project header."`
-	FunnelID  string `json:"funnel_id" jsonschema:"Funnel to analyze; see list_funnels."`
-	From      string `json:"from,omitempty" jsonschema:"Start of the range, RFC 3339 or YYYY-MM-DD. Defaults to 7 days before to."`
-	To        string `json:"to,omitempty" jsonschema:"End of the range, RFC 3339 or YYYY-MM-DD. Defaults to now."`
-	SegmentID string `json:"segment_id,omitempty" jsonschema:"Restrict to sessions matching this saved segment's rules; see list_segments. Omit to analyze every session."`
+	Project     string `json:"project,omitempty" jsonschema:"Project slug or ID; defaults to the repository's project from the x-funnelbarn-project header."`
+	FunnelID    string `json:"funnel_id" jsonschema:"Funnel to analyze; see list_funnels."`
+	From        string `json:"from,omitempty" jsonschema:"Start of the range, RFC 3339 or YYYY-MM-DD. Defaults to 7 days before to."`
+	To          string `json:"to,omitempty" jsonschema:"End of the range, RFC 3339 or YYYY-MM-DD. Defaults to now."`
+	SegmentID   string `json:"segment_id,omitempty" jsonschema:"Restrict to sessions matching this saved segment's rules; see list_segments. Omit to analyze every session."`
+	Environment string `json:"environment,omitempty" jsonschema:"Only count events from this environment (production, staging, test, development; aliases such as prod are accepted). Omit for all environments. Events recorded without an environment are only in the all-environments view."`
 }
 
 type analyzeFunnelOut struct {
@@ -160,6 +161,7 @@ func analyzeFunnel(ctx context.Context, c *Call, in analyzeFunnelIn) (analyzeFun
 		}
 		rules = seg.Rules
 	}
+	rules = append(rules, repository.EnvironmentRule(in.Environment)...)
 
 	results, err := c.Deps.Funnels.AnalyzeFunnel(ctx, funnel, from, to, nil, rules...)
 	if err != nil {

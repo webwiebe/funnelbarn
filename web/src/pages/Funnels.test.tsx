@@ -222,7 +222,7 @@ describe('Funnels', () => {
     fireEvent.click(screen.getByText('Signup flow'))
 
     await waitFor(() =>
-      expect(mockApi.getFunnelAnalysis).toHaveBeenCalledWith('p1', 'f1', 'all', undefined),
+      expect(mockApi.getFunnelAnalysis).toHaveBeenCalledWith('p1', 'f1', 'all', undefined, ''),
     )
     // The step event names from the analysis results render in the detail panel.
     await waitFor(() => expect(screen.getByText('signup_completed')).toBeInTheDocument())
@@ -251,7 +251,7 @@ describe('Funnels', () => {
     fireEvent.click(mobilePill)
 
     await waitFor(() =>
-      expect(mockApi.getFunnelAnalysis).toHaveBeenCalledWith('p1', 'f1', 'mobile', undefined),
+      expect(mockApi.getFunnelAnalysis).toHaveBeenCalledWith('p1', 'f1', 'mobile', undefined, ''),
     )
   })
 
@@ -368,7 +368,7 @@ describe('Funnels', () => {
     fireEvent.click(detailPill)
 
     await waitFor(() =>
-      expect(mockApi.getFunnelAnalysis).toHaveBeenCalledWith('p1', 'f1', undefined, 's1'),
+      expect(mockApi.getFunnelAnalysis).toHaveBeenCalledWith('p1', 'f1', undefined, 's1', ''),
     )
   })
 
@@ -377,7 +377,7 @@ describe('Funnels', () => {
     await waitFor(() => expect(screen.getByText('Signup flow')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Checkout'))
     await waitFor(() =>
-      expect(mockApi.getFunnelAnalysis).toHaveBeenCalledWith('p1', 'f2', 'all', undefined),
+      expect(mockApi.getFunnelAnalysis).toHaveBeenCalledWith('p1', 'f2', 'all', undefined, ''),
     )
   })
 })

@@ -150,14 +150,14 @@ export const api = {
       body: JSON.stringify({ name, steps, scope: scope ?? 'session', conversion_window_seconds: conversionWindowSeconds }),
     }),
 
-  getFunnelAnalysis: (projectId: string, funnelId: string, segment?: string, segmentId?: string) => {
+  getFunnelAnalysis: (projectId: string, funnelId: string, segment?: string, segmentId?: string, environment?: string) => {
     const params = new URLSearchParams()
     if (segment && segment !== 'all') params.set('segment', segment)
     if (segmentId) params.set('segment_id', segmentId)
+    if (environment) params.set('environment', environment)
     const qs = params.toString()
     return request<FunnelAnalysis>(`/api/v1/projects/${projectId}/funnels/${funnelId}/analysis${qs ? `?${qs}` : ''}`)
   },
-
   getFunnelSegments: (projectId: string, funnelId: string) =>
     request<FunnelSegments>(`/api/v1/projects/${projectId}/funnels/${funnelId}/segments`),
 

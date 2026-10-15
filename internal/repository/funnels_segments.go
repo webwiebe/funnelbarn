@@ -4,7 +4,25 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 )
+
+// environmentField is the events column the funnel environment argument filters
+// on. It is deliberately absent from AllowedSegmentFields so a stored segment
+// cannot name it; only EnvironmentRule produces a rule for it.
+const environmentField = "environment"
+
+// EnvironmentRule narrows a funnel analysis to one environment. env goes through
+// the same normalisation as ingest ("prod" is "production"); an empty env means
+// all environments and returns no rules. Events are matched by equality, like
+// the event-count filters.
+func EnvironmentRule(env string) []SegmentRule {
+	if strings.TrimSpace(env) == "" {
+		return nil
+	}
+	return []SegmentRule{{Field: environmentField, Operator: "eq", Value: environment.Normalize(env)}}
+}
 
 // SegmentFilter filters funnel analysis by a field condition on the events (or joined sessions) table.
 type SegmentFilter struct {
@@ -65,6 +83,9 @@ func buildSegmentRuleClause(rules []SegmentRule) (clause string, args []any, nee
 	var parts []string
 	for _, rule := range rules {
 		tableAlias, ok := AllowedSegmentFields[rule.Field]
+		if rule.Field == environmentField {
+			tableAlias, ok = "e", true
+		}
 		if !ok {
 			continue
 		}

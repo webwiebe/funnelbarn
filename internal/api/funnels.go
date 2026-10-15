@@ -251,11 +251,16 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Optional environment: empty keeps every environment.
+	env := r.URL.Query().Get("environment")
+	segRules = append(segRules, repository.EnvironmentRule(env)...)
+
 	ctx, span := tracing.StartSpan(r.Context(), "funnels.analyze",
 		attribute.String("project.id", projectID),
 		attribute.String("funnel.id", funnelID),
 		attribute.Int("funnel.step_count", len(funnel.Steps)),
 		attribute.String("funnel.segment", r.URL.Query().Get("segment")),
+		attribute.String("environment", env),
 	)
 	defer span.End()
 
