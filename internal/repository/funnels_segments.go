@@ -75,6 +75,17 @@ func segmentParam(seg *SegmentFilter) (clause string, arg any, needSessionJoin b
 	return "", nil, false
 }
 
+// ruleTableAlias maps a rule field to its table alias. The environment field is
+// only reachable through EnvironmentRule, so it is resolved here and not listed
+// in AllowedSegmentFields.
+func ruleTableAlias(field string) (string, bool) {
+	if field == environmentField {
+		return "e", true
+	}
+	alias, ok := AllowedSegmentFields[field]
+	return alias, ok
+}
+
 // buildSegmentRuleClause converts stored segment rules into a SQL WHERE fragment.
 func buildSegmentRuleClause(rules []SegmentRule) (clause string, args []any, needJoin bool) {
 	if len(rules) == 0 {
@@ -82,10 +93,7 @@ func buildSegmentRuleClause(rules []SegmentRule) (clause string, args []any, nee
 	}
 	var parts []string
 	for _, rule := range rules {
-		tableAlias, ok := AllowedSegmentFields[rule.Field]
-		if rule.Field == environmentField {
-			tableAlias, ok = "e", true
-		}
+		tableAlias, ok := ruleTableAlias(rule.Field)
 		if !ok {
 			continue
 		}
