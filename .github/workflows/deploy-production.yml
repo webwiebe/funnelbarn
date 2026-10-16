@@ -1,6 +1,22 @@
 name: Deploy Production
 
+# Two entry points:
+#   - workflow_call from promote-production.yml, after the commit passed testing,
+#     E2E, the staging rollout and the staging smoke check. This is the normal path.
+#   - workflow_dispatch, kept for a manual rollback or redeploy of a known version.
+# `production_version` is a version tag or a commit SHA; both resolve to the SHA
+# the images are tagged with.
 on:
+  workflow_call:
+    inputs:
+      production_version:
+        description: 'Version tag or commit SHA to deploy'
+        required: true
+        type: string
+      confirmed:
+        description: 'The caller has verified the version on staging'
+        required: true
+        type: boolean
   workflow_dispatch:
     inputs:
       production_version:
@@ -40,7 +56,7 @@ jobs:
     steps:
       - name: Require confirmation
         run: |
-          if [ "${{ github.event.inputs.confirmed }}" != "true" ]; then
+          if [ "${{ inputs.confirmed }}" != "true" ]; then
             echo "ERROR: Set 'confirmed' to true to proceed with production deploy"
             exit 1
           fi
@@ -53,7 +69,7 @@ jobs:
         id: resolve
         run: |
           set -euo pipefail
-          VERSION="${{ github.event.inputs.production_version }}"
+          VERSION="${{ inputs.production_version }}"
           # Resolve version tag to the commit SHA (images are tagged by SHA in testing CI)
           SHA=$(git rev-list -n1 "${VERSION}" 2>/dev/null) || \
             { echo "ERROR: Tag ${VERSION} not found in repo"; exit 1; }
@@ -82,7 +98,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Pin manifests to this release
-        run: deploy/pin-release.sh production "${{ needs.preflight.outputs.sha }}" "${{ github.event.inputs.production_version }}"
+        run: deploy/pin-release.sh production "${{ needs.preflight.outputs.sha }}" "${{ inputs.production_version }}"
 
       - name: Transfer manifests
         run: |
@@ -196,6 +212,11 @@ jobs:
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=180s
           "
 
+      # Must stay above the rollback step: a failed smoke check fails the job and
+      # so triggers the rollback below.
+      - name: Smoke check production
+        run: scripts/smoke.sh https://funnelbarn.wiebe.xyz "${{ inputs.production_version }}"
+
       # NOTE: no blanket `|| true`. A rollback that silently fails is worse
       # than one that reports, because it leaves the impression the deploy was
       # recovered when it was not.
@@ -243,10 +264,10 @@ jobs:
             -H "X-BugBarn-Api-Key: ${BUGBARN_API_KEY}" \
             -H "X-BugBarn-Project: funnelbarn" \
             -d "{
-              \"name\": \"${{ github.event.inputs.production_version }}\",
+              \"name\": \"${{ inputs.production_version }}\",
               \"environment\": \"production\",
-              \"version\": \"${{ github.event.inputs.production_version }}\",
-              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${{ github.event.inputs.production_version }}\",
+              \"version\": \"${{ inputs.production_version }}\",
+              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${{ inputs.production_version }}\",
               \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
             }" || echo "BugBarn release marker skipped"
 
@@ -256,7 +277,7 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| | |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Version | \`${{ github.event.inputs.production_version }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version | \`${{ inputs.production_version }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| URL | https://funnelbarn.wiebe.xyz |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Namespace | \`${NAMESPACE}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Cluster | \`${K3S_HOST}\` |" >> "$GITHUB_STEP_SUMMARY"

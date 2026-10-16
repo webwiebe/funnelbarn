@@ -26,9 +26,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# A run that reaches the promote job deploys production, and cancelling it
+# midway would leave a half-rolled release. A newer push therefore waits for the
+# running one; GitHub keeps only the newest waiting run, so releases stay in order.
 concurrency:
   group: deploy-testing
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -377,3 +380,32 @@ jobs:
               \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${IMAGE_TAG}\",
               \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
             }" || echo "BugBarn release marker skipped"
+
+  smoke-staging:
+    # The gate between staging and production: staging must report ready on the
+    # exact version just rolled out. See scripts/smoke.sh and scripts/test_smoke.py.
+    needs: [build, deploy-staging]
+    runs-on: [self-hosted, build]
+    timeout-minutes: 5
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+
+      - name: Smoke check staging
+        run: scripts/smoke.sh https://funnelbarn.staging.wiebe.xyz "${{ needs.build.outputs.sha }}"
+
+  promote:
+    # Production ships on green gates: CI, testing, E2E, the staging rollout and
+    # the staging smoke check all passed for this exact commit. The called
+    # workflow runs preflight (images in GHCR), deploys by SHA tag, smoke checks
+    # production and rolls back on failure.
+    needs: [build, deploy-staging, smoke-staging]
+    uses: ./.github/workflows/deploy-production.yml
+    with:
+      production_version: ${{ needs.build.outputs.sha }}
+      confirmed: true
+    secrets: inherit
