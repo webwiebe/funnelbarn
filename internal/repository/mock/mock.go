@@ -358,6 +358,10 @@ func (s *Store) AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to
 	return []repository.FunnelStepResult{}, nil
 }
 
+func (s *Store) AnalyzeFunnelBreakdown(_ context.Context, _ repository.Funnel, _, _ time.Time, _ *repository.SegmentFilter, _ string, _ ...repository.SegmentRule) ([]repository.FunnelBreakdownGroup, error) {
+	return []repository.FunnelBreakdownGroup{}, nil
+}
+
 func (s *Store) FunnelSegmentData(ctx context.Context, projectID string) (repository.FunnelSegments, error) {
 	return repository.FunnelSegments{}, nil
 }

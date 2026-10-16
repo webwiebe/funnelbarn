@@ -275,12 +275,23 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 
 	span.SetAttributes(attribute.Int("funnel.result_count", len(results)))
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	body := map[string]any{
 		"funnel":  funnel,
 		"results": results,
 		"from":    from.Format(time.RFC3339),
 		"to":      to.Format(time.RFC3339),
-	})
+	}
+	if property := r.URL.Query().Get("breakdown"); property != "" {
+		span.SetAttributes(attribute.String("funnel.breakdown", property))
+		groups, err := s.funnels.AnalyzeFunnelBreakdown(ctx, funnel, from, to, seg, property, segRules...)
+		if err != nil {
+			tracing.RecordError(span, err)
+			mapServiceError(w, err, "handleFunnelAnalysis.breakdown")
+			return
+		}
+		body["breakdown"] = map[string]any{"property": property, "groups": groups}
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 // handleFunnelSegments returns available segment values for a funnel's project data.

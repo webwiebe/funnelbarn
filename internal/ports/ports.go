@@ -45,6 +45,7 @@ type FunnelQueries interface {
 	FunnelByID(ctx context.Context, id string) (repository.Funnel, error)
 	ListFunnels(ctx context.Context, projectID string) ([]repository.Funnel, error)
 	AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, rules ...repository.SegmentRule) ([]repository.FunnelStepResult, error)
+	AnalyzeFunnelBreakdown(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, property string, rules ...repository.SegmentRule) ([]repository.FunnelBreakdownGroup, error)
 	FunnelSegmentData(ctx context.Context, projectID string) (repository.FunnelSegments, error)
 	SessionsAtStep(ctx context.Context, f repository.Funnel, stepOrder int, from, to time.Time, limit int) ([]string, error)
 }

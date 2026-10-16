@@ -304,6 +304,22 @@ Run funnel analysis. Returns conversion rates for each step. Accepts a session o
 | `from` | RFC3339 start time (default: 30 days ago) |
 | `to` | RFC3339 end time (default: now) |
 | `segment` | Preset segment: `all`, `mobile`, `desktop`, `tablet`, `logged_in`, `not_logged_in`, `new_visitor`, `returning` |
+| `environment` | Restrict to one environment |
+| `breakdown` | Event property name (letters, digits, underscore). Adds a `breakdown` object that splits the funnel by the value this property has on each entry's first step event |
+
+With `breakdown=signup_surface` the response gains:
+
+```json
+"breakdown": {
+  "property": "signup_surface",
+  "groups": [
+    { "value": "wordpress-plugin", "label": "wordpress-plugin", "entries": 40, "results": [ ... ] },
+    { "value": "", "label": "(none)", "entries": 12, "results": [ ... ] }
+  ]
+}
+```
+
+Groups are ordered by entries, largest first. Entries without the property form the `(none)` group. At most 20 groups are returned; the rest collapse into one `(other)` group with `"other": true`. Every entry is in exactly one group, so the groups add up to the unbroken funnel. An invalid property name returns 422.
 
 ### `GET /api/v1/projects/:id/funnels/:fid/segments`
 

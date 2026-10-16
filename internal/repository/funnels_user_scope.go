@@ -37,6 +37,22 @@ func (f Funnel) ConversionWindow() time.Duration {
 // user with several step-1 events counts at the furthest step any of them
 // reaches.
 func (s *ReadStore) orderedUserStepCounts(ctx context.Context, f Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool) ([]int64, error) {
+	depths, err := s.orderedUserDepths(ctx, f, from, to, extraWhere, extraArgs, needJoin)
+	if err != nil {
+		return nil, err
+	}
+	counts := make([]int64, len(f.Steps))
+	for _, depth := range depths {
+		for k := 0; k < depth; k++ {
+			counts[k]++
+		}
+	}
+	return counts, nil
+}
+
+// orderedUserDepths returns, per user with a step 1, how many steps they
+// reached in order.
+func (s *ReadStore) orderedUserDepths(ctx context.Context, f Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool) (map[string]int, error) {
 	join := ""
 	if needJoin {
 		join = " JOIN sessions s ON s.id = e.session_id AND s.project_id = e.project_id"
@@ -62,7 +78,7 @@ func (s *ReadStore) orderedUserStepCounts(ctx context.Context, f Funnel, from, t
 		times[i] = byUser
 	}
 
-	counts := make([]int64, len(f.Steps))
+	depths := make(map[string]int, len(times[0]))
 	for user, starts := range times[0] {
 		best := 1
 		for _, start := range starts {
@@ -81,11 +97,9 @@ func (s *ReadStore) orderedUserStepCounts(ctx context.Context, f Funnel, from, t
 				break
 			}
 		}
-		for k := 0; k < best; k++ {
-			counts[k]++
-		}
+		depths[user] = best
 	}
-	return counts, nil
+	return depths, nil
 }
 
 // userEventTimes runs one step query of orderedUserStepCounts. Past step 1 it

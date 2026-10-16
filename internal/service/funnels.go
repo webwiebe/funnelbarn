@@ -106,6 +106,15 @@ func (svc *FunnelService) AnalyzeFunnel(ctx context.Context, f repository.Funnel
 	return svc.store.AnalyzeFunnel(ctx, f, from, to, seg, rules...)
 }
 
+// AnalyzeFunnelBreakdown splits the funnel by the value property has on each
+// entry's first step event. An invalid property name is a validation error.
+func (svc *FunnelService) AnalyzeFunnelBreakdown(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, property string, rules ...repository.SegmentRule) ([]repository.FunnelBreakdownGroup, error) {
+	if !repository.ValidBreakdownProperty(property) {
+		return nil, &domain.ValidationError{Field: "breakdown", Message: "only letters, digits and underscore are allowed"}
+	}
+	return svc.store.AnalyzeFunnelBreakdown(ctx, f, from, to, seg, property, rules...)
+}
+
 func (svc *FunnelService) FunnelSegmentData(ctx context.Context, projectID string) (repository.FunnelSegments, error) {
 	return svc.store.FunnelSegmentData(ctx, projectID)
 }

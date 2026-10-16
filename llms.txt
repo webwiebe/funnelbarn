@@ -188,7 +188,7 @@ Tools (write tools need `mcp:write`):
 
 - **Projects**: `list_projects`, `get_project`
 - **Analytics**: `get_stats`, `list_event_names`, `get_event_counts`, `list_events`, `list_event_properties`, `list_event_property_values`, `list_environments`
-- **Funnels**: `list_funnels`, `analyze_funnel`; write: `create_funnel`, `update_funnel`, `delete_funnel`
+- **Funnels**: `list_funnels`, `analyze_funnel` (optional `environment`, `segment_id`, and `breakdown` to split the funnel by an event property of its first step); write: `create_funnel`, `update_funnel`, `delete_funnel`
 - **Segments**: `list_segments`; write: `create_segment`, `update_segment`, `delete_segment`
 - **Feature flags**: `list_flags`, `get_flag`, `analyze_flag`, `list_flag_context_keys`, `flag_usage` (recorded evaluations per flag over 30 days, with a stale marker for flags that had none), `evaluate_flag` (a dry run: never creates a flag or records an evaluation); write: `create_flag`, `update_flag`, `delete_flag`
 - **Setup**: `get_setup_guide` returns the same document as `GET /api/v1/setup/{slug}`
@@ -259,7 +259,7 @@ All endpoints are under `/api/v1`. Events ingest uses an API key header; dashboa
 | `POST` | `/api/v1/projects/{id}/funnels` | Session | Create funnel |
 | `PUT` | `/api/v1/projects/{id}/funnels/{fid}` | Session | Update funnel |
 | `DELETE` | `/api/v1/projects/{id}/funnels/{fid}` | Session | Delete funnel |
-| `GET` | `/api/v1/projects/{id}/funnels/{fid}/analysis` | Session | Funnel conversion analysis |
+| `GET` | `/api/v1/projects/{id}/funnels/{fid}/analysis` | Session | Funnel conversion analysis (`?breakdown=<property>` splits it by a first step property) |
 | `GET` | `/api/v1/projects/{id}/funnels/{fid}/segments` | Session | Funnel segment breakdown |
 
 ### A/B Tests

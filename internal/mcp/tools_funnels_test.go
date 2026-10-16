@@ -415,6 +415,50 @@ func TestAnalyzeFunnelTool_WithEnvironment(t *testing.T) {
 	}
 }
 
+func TestAnalyzeFunnelTool_Breakdown(t *testing.T) {
+	env := newTestEnv(t, nil)
+	a := env.createProject(t, "Alpha", "alpha")
+	ctx := context.Background()
+	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
+		ProjectID: a.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "ev"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateFunnel: %v", err)
+	}
+	at := time.Now().UTC().Add(-time.Hour)
+	for i, surface := range []string{"wordpress", "wordpress", "lightroom"} {
+		id := string(rune('a' + i))
+		if err := env.Store.InsertEvent(ctx, repository.Event{
+			ID: "ev-" + id, ProjectID: a.ID, SessionID: "s-" + id, Name: "ev",
+			Properties: `{"surface":"` + surface + `"}`, IngestID: "ing-" + id, OccurredAt: at,
+			Environment: "production",
+		}); err != nil {
+			t.Fatalf("InsertEvent: %v", err)
+		}
+	}
+	cs := env.connect(t, tokenRead, a.Slug)
+
+	var plain analyzeFunnelOut
+	callOK(t, cs, "analyze_funnel", map[string]any{"funnel_id": f.ID}, &plain)
+	if plain.Breakdown != nil {
+		t.Errorf("breakdown = %+v without the argument", plain.Breakdown)
+	}
+
+	var out analyzeFunnelOut
+	callOK(t, cs, "analyze_funnel", map[string]any{"funnel_id": f.ID, "breakdown": "surface"}, &out)
+	if out.Breakdown == nil || out.Breakdown.Property != "surface" || len(out.Breakdown.Groups) != 2 {
+		t.Fatalf("breakdown = %+v", out.Breakdown)
+	}
+	if g := out.Breakdown.Groups[0]; g.Value != "wordpress" || g.Entries != 2 {
+		t.Errorf("first group = %+v, want wordpress with 2 entries", g)
+	}
+
+	msg := callErr(t, cs, "analyze_funnel", map[string]any{"funnel_id": f.ID, "breakdown": "a b"})
+	if msg == "" {
+		t.Errorf("bad property accepted")
+	}
+}
+
 func TestAnalyzeFunnelTool_CrossProjectSegmentNotFound(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")

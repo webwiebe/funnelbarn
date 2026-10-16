@@ -257,44 +257,9 @@ func (s *ReadStore) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.T
 		return nil, nil
 	}
 
-	scope := f.Scope
-	if scope == "" {
-		scope = "session"
-	}
-	pageViewScope := scope == FunnelScopePageView
-	userScope := scope == FunnelScopeUser
-
-	// Build WHERE clause from preset segment filter.
-	presetClause, presetArg, needJoin := segmentParam(seg)
-
-	// Build WHERE clause from stored segment rules.
-	ruleClause, ruleArgs, rulesNeedJoin := buildSegmentRuleClause(rules)
-	needJoin = needJoin || rulesNeedJoin
-
-	// Combine clauses.
-	var extraClauses []string
-	var extraArgs []any
-	if presetClause != "" {
-		extraClauses = append(extraClauses, presetClause)
-		if presetArg != nil {
-			extraArgs = append(extraArgs, presetArg)
-		}
-	}
-	if ruleClause != "" {
-		extraClauses = append(extraClauses, ruleClause)
-		extraArgs = append(extraArgs, ruleArgs...)
-	}
-	if pageViewScope {
-		extraClauses = append(extraClauses, "e.page_view_id IS NOT NULL")
-	}
-	if userScope {
-		extraClauses = append(extraClauses, "e.user_id_hash IS NOT NULL AND e.user_id_hash != ''")
-	}
-
-	extraWhere := ""
-	if len(extraClauses) > 0 {
-		extraWhere = " AND " + strings.Join(extraClauses, " AND ")
-	}
+	pageViewScope := f.Scope == FunnelScopePageView
+	userScope := f.Scope == FunnelScopeUser
+	extraWhere, extraArgs, needJoin := funnelExtraWhere(f, seg, rules)
 
 	if userScope {
 		counts, err := s.orderedUserStepCounts(ctx, f, from, to, extraWhere, extraArgs, needJoin)

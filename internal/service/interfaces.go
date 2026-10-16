@@ -49,6 +49,7 @@ type Funnels interface {
 	UpdateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error)
 	DeleteFunnel(ctx context.Context, id string) error
 	AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, rules ...repository.SegmentRule) ([]repository.FunnelStepResult, error)
+	AnalyzeFunnelBreakdown(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, property string, rules ...repository.SegmentRule) ([]repository.FunnelBreakdownGroup, error)
 	FunnelSegmentData(ctx context.Context, projectID string) (repository.FunnelSegments, error)
 }
 

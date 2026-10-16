@@ -121,14 +121,21 @@ type analyzeFunnelIn struct {
 	To          string `json:"to,omitempty" jsonschema:"End of the range, RFC 3339 or YYYY-MM-DD. Defaults to now."`
 	SegmentID   string `json:"segment_id,omitempty" jsonschema:"Restrict to sessions matching this saved segment's rules; see list_segments. Omit to analyze every session."`
 	Environment string `json:"environment,omitempty" jsonschema:"Only count events from this environment (production, staging, test, development; aliases such as prod are accepted). Omit for all environments. Events recorded without an environment are only in the all-environments view."`
+	Breakdown   string `json:"breakdown,omitempty" jsonschema:"Event property name (letters, digits, underscore) to split the funnel by, read from each entry's first step event, for example signup_surface. Returns one group per value (at most 20, then one other group); entries without the property are the (none) group. Omit for the plain funnel."`
 }
 
 type analyzeFunnelOut struct {
-	Project string                        `json:"project" jsonschema:"Slug of the project this analysis is for."`
-	Funnel  repository.Funnel             `json:"funnel" jsonschema:"The analyzed funnel."`
-	From    time.Time                     `json:"from" jsonschema:"Start of the range (inclusive)."`
-	To      time.Time                     `json:"to" jsonschema:"End of the range (inclusive)."`
-	Results []repository.FunnelStepResult `json:"results" jsonschema:"Per-step count, conversion and drop-off, in step order."`
+	Project   string                        `json:"project" jsonschema:"Slug of the project this analysis is for."`
+	Funnel    repository.Funnel             `json:"funnel" jsonschema:"The analyzed funnel."`
+	From      time.Time                     `json:"from" jsonschema:"Start of the range (inclusive)."`
+	To        time.Time                     `json:"to" jsonschema:"End of the range (inclusive)."`
+	Results   []repository.FunnelStepResult `json:"results" jsonschema:"Per-step count, conversion and drop-off, in step order."`
+	Breakdown *analyzeFunnelBreakdown       `json:"breakdown,omitempty" jsonschema:"Present when breakdown was requested: the funnel split by the property's value, largest group first. The groups' counts add up to results."`
+}
+
+type analyzeFunnelBreakdown struct {
+	Property string                            `json:"property" jsonschema:"The property the funnel is split by."`
+	Groups   []repository.FunnelBreakdownGroup `json:"groups" jsonschema:"One group per property value with its own per-step results."`
 }
 
 func analyzeFunnel(ctx context.Context, c *Call, in analyzeFunnelIn) (analyzeFunnelOut, error) {
@@ -167,13 +174,21 @@ func analyzeFunnel(ctx context.Context, c *Call, in analyzeFunnelIn) (analyzeFun
 	if err != nil {
 		return analyzeFunnelOut{}, err
 	}
-	return analyzeFunnelOut{
+	out := analyzeFunnelOut{
 		Project: p.Slug,
 		Funnel:  funnel,
 		From:    from,
 		To:      to,
 		Results: nonNil(results),
-	}, nil
+	}
+	if in.Breakdown != "" {
+		groups, err := c.Deps.Funnels.AnalyzeFunnelBreakdown(ctx, funnel, from, to, nil, in.Breakdown, rules...)
+		if err != nil {
+			return analyzeFunnelOut{}, err
+		}
+		out.Breakdown = &analyzeFunnelBreakdown{Property: in.Breakdown, Groups: nonNil(groups)}
+	}
+	return out, nil
 }
 
 // --- create_funnel ---
