@@ -15,11 +15,11 @@
     ],
     "nodes": [
       {
-        "depth": -1,
-        "id": "https://acme.example/|-1",
-        "label": "https://acme.example/",
+        "depth": 1,
+        "id": "exit|1",
+        "label": "(drop-off)",
         "sessions": 20,
-        "type": "page"
+        "type": "exit"
       },
       {
         "depth": 0,
@@ -29,11 +29,11 @@
         "type": "page"
       },
       {
-        "depth": 1,
-        "id": "exit|1",
-        "label": "(drop-off)",
+        "depth": -1,
+        "id": "https://acme.example/|-1",
+        "label": "https://acme.example/",
         "sessions": 20,
-        "type": "exit"
+        "type": "page"
       }
     ],
     "total_sessions": 20

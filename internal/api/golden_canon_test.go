@@ -147,17 +147,6 @@ func (m goldenMasker) maskTimestamp(s string, shifts ...time.Duration) (string, 
 	return s, false
 }
 
-// unordered reports whether the array under key has no stable element order (rule 9).
-func (m goldenMasker) unordered(key string) bool {
-	switch key {
-	case "session_ids":
-		return true
-	case "links", "nodes":
-		return strings.HasSuffix(m.path, "/flows")
-	}
-	return false
-}
-
 func sortByJSON(items []any) {
 	keyed := make([]struct {
 		k string
@@ -205,9 +194,6 @@ func (m goldenMasker) maskValue(key string, v any) any {
 	case []any:
 		for i, child := range x {
 			x[i] = m.maskValue("", child)
-		}
-		if m.unordered(key) {
-			sortByJSON(x)
 		}
 		sortCreatedRuns(x)
 		return x

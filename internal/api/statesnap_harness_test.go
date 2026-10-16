@@ -125,28 +125,10 @@ type tableSpec struct {
 	mask []string
 	// presence lists columns reduced to <set>/<unset>.
 	presence []string
-	// sortJSONArray lists text columns holding a JSON string array whose order
-	// is not deterministic in production (map iteration); they are sorted.
-	sortJSONArray []string
-}
-
-// sortedJSONArray re-marshals a JSON string array with its elements sorted.
-// Values that are not a JSON string array are returned unchanged.
-func sortedJSONArray(v any) any {
-	str, ok := v.(string)
-	if !ok {
-		return v
-	}
-	var arr []string
-	if err := json.Unmarshal([]byte(str), &arr); err != nil {
-		return v
-	}
-	sort.Strings(arr)
-	return marshalSorted(arr)
 }
 
 var snapTables = []tableSpec{
-	{table: "flag_evaluations", drop: []string{"id", "created_at"}, sortJSONArray: []string{"context_keys"}},
+	{table: "flag_evaluations", drop: []string{"id", "created_at"}},
 	{table: "feature_flags", drop: []string{"id", "created_at"}, presence: []string{"last_evaluated_at"}},
 	{table: "api_keys", drop: []string{"id", "key_hash", "created_at"}, presence: []string{"last_used_at"}},
 	{table: "project_health", drop: []string{"updated_at"}},
@@ -194,8 +176,6 @@ func dumpTable(t *testing.T, db *sql.DB, spec tableSpec, labels map[string]strin
 				continue
 			case contains(spec.mask, c):
 				v = maskedValue
-			case contains(spec.sortJSONArray, c):
-				v = sortedJSONArray(v)
 			case contains(spec.presence, c):
 				v = unsetValue
 				if vals[i] != nil {

@@ -136,6 +136,7 @@ func contextKeyNames(ctx map[string]any) []string {
 	for k := range ctx {
 		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 	return keys
 }
 

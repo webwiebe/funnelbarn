@@ -754,7 +754,7 @@ func (s *ReadStore) SessionsForPage(ctx context.Context, projectID, page string,
 		SELECT DISTINCT session_id
 		FROM events
 		WHERE project_id = ? AND url = ? AND occurred_at >= ? AND occurred_at <= ?
-		LIMIT ?`
+		ORDER BY session_id LIMIT ?`
 	rows, err := s.rdb.QueryContext(ctx, q, projectID, page, from, to, limit)
 	if err != nil {
 		return nil, err

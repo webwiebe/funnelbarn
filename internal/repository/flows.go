@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -325,6 +326,21 @@ func buildFlowResult(page string, totalSessions, exitCount int64, transitions []
 	for _, n := range nodeMap {
 		nodes = append(nodes, n)
 	}
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].Sessions != nodes[j].Sessions {
+			return nodes[i].Sessions > nodes[j].Sessions
+		}
+		return nodes[i].ID < nodes[j].ID
+	})
+	sort.Slice(links, func(i, j int) bool {
+		if links[i].Value != links[j].Value {
+			return links[i].Value > links[j].Value
+		}
+		if links[i].Source != links[j].Source {
+			return links[i].Source < links[j].Source
+		}
+		return links[i].Target < links[j].Target
+	})
 
 	if links == nil {
 		links = []FlowLink{}

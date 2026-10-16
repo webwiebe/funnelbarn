@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -416,14 +417,7 @@ func (s *ReadStore) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int,
 
 	// If this is the last step, return all converters.
 	if stepOrder == len(f.Steps) {
-		out := make([]string, 0, len(reached))
-		for id := range reached {
-			out = append(out, id)
-			if len(out) >= limit {
-				break
-			}
-		}
-		return out, nil
+		return sortedSessionIDs(reached, limit), nil
 	}
 
 	// Otherwise subtract sessions that also reached the next step.
@@ -454,12 +448,19 @@ func (s *ReadStore) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int,
 		return nil, err
 	}
 
-	out := make([]string, 0, len(reached))
-	for id := range reached {
+	return sortedSessionIDs(reached, limit), nil
+}
+
+// sortedSessionIDs returns up to limit session ids in ascending order, so the
+// same data gives the same list on every call.
+func sortedSessionIDs(ids map[string]bool, limit int) []string {
+	out := make([]string, 0, len(ids))
+	for id := range ids {
 		out = append(out, id)
-		if len(out) >= limit {
-			break
-		}
 	}
-	return out, nil
+	sort.Strings(out)
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
 }
