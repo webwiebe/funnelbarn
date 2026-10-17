@@ -57,11 +57,12 @@ jobs:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
         # Only this job's own checkout: never another runner's work directory.
+        # No `|| true`: if the cache cannot be cleared, checkout fails next anyway, so fail here with the cause.
         run: |
           c="${GITHUB_WORKSPACE:?}/.cache"
           if [ -d "$c" ]; then
-            chmod -R u+w "$c" 2>/dev/null || true
-            rm -rf "$c" 2>/dev/null || true
+            chmod -R u+w "$c"
+            rm -rf "$c"
           fi
       - uses: actions/checkout@v6
         with:
@@ -128,11 +129,12 @@ jobs:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
         # Only this job's own checkout: never another runner's work directory.
+        # No `|| true`: if the cache cannot be cleared, checkout fails next anyway, so fail here with the cause.
         run: |
           c="${GITHUB_WORKSPACE:?}/.cache"
           if [ -d "$c" ]; then
-            chmod -R u+w "$c" 2>/dev/null || true
-            rm -rf "$c" 2>/dev/null || true
+            chmod -R u+w "$c"
+            rm -rf "$c"
           fi
       - uses: actions/checkout@v6
         with:
@@ -219,11 +221,12 @@ jobs:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
         # Only this job's own checkout: never another runner's work directory.
+        # No `|| true`: if the cache cannot be cleared, checkout fails next anyway, so fail here with the cause.
         run: |
           c="${GITHUB_WORKSPACE:?}/.cache"
           if [ -d "$c" ]; then
-            chmod -R u+w "$c" 2>/dev/null || true
-            rm -rf "$c" 2>/dev/null || true
+            chmod -R u+w "$c"
+            rm -rf "$c"
           fi
       - uses: actions/checkout@v6
         with:
@@ -284,11 +287,12 @@ jobs:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
         # Only this job's own checkout: never another runner's work directory.
+        # No `|| true`: if the cache cannot be cleared, checkout fails next anyway, so fail here with the cause.
         run: |
           c="${GITHUB_WORKSPACE:?}/.cache"
           if [ -d "$c" ]; then
-            chmod -R u+w "$c" 2>/dev/null || true
-            rm -rf "$c" 2>/dev/null || true
+            chmod -R u+w "$c"
+            rm -rf "$c"
           fi
       - uses: actions/checkout@v6
         if: steps.creds.outputs.enabled == 'true'
@@ -336,11 +340,12 @@ jobs:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
         # Only this job's own checkout: never another runner's work directory.
+        # No `|| true`: if the cache cannot be cleared, checkout fails next anyway, so fail here with the cause.
         run: |
           c="${GITHUB_WORKSPACE:?}/.cache"
           if [ -d "$c" ]; then
-            chmod -R u+w "$c" 2>/dev/null || true
-            rm -rf "$c" 2>/dev/null || true
+            chmod -R u+w "$c"
+            rm -rf "$c"
           fi
       - uses: actions/checkout@v6
         with:
