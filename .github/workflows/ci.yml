@@ -289,3 +289,30 @@ jobs:
       - name: Duplication ratchet (jscpd)
         working-directory: web
         run: pnpm gate:duplication
+
+  secret-scan:
+    runs-on: [self-hosted, build]
+    timeout-minutes: 10
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/Applications/Docker.app/Contents/Resources/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      # Report-only until 2026-10-31: findings are annotated and the job passes.
+      # Flip to `enforce` then. A scan that cannot run fails in both modes (exit 2).
+      SECRET_SCAN_MODE: report
+      SECRET_SCAN_MIN_COMMITS: '250'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Full history: the scan reads every commit and the PR base.
+          fetch-depth: 0
+      - name: Gate self-test (planted secret)
+        shell: bash
+        run: bash scripts/tests/secret-scan.test.sh
+      - name: Secret scan
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            bash scripts/secret-scan.sh diff "origin/${{ github.base_ref }}"
+          else
+            bash scripts/secret-scan.sh history
+          fi
