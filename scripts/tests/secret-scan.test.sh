@@ -38,7 +38,7 @@ new_repo() {
   local d="$T/$1"
   mkdir -p "$d"
   (
-    cd "$d" && git init -q . && git config user.email t@example.invalid && git config user.name t
+    cd "$d" && git init -q . && git config user.email t@example.invalid && git config user.name t && git config gc.auto 0 && git config maintenance.auto false
     cp "$CONFIG" .gitleaks.toml
     echo base > a.txt
     git add a.txt .gitleaks.toml && git commit -q -m base
