@@ -15,7 +15,7 @@ A failure of `crypto/rand` must not crash the server. UUID generation returns an
 - **FR-001**: The system MUST NOT call `panic()` in a UUID generator. `generateUUID` in `internal/repository/helpers.go` and `generateUUIDLocal` in `internal/worker/uuid.go` return `(string, error)`. Issues: none. [inferred]
 - **FR-002**: The worker MUST wrap a UUID failure and return it to its caller instead of continuing (`internal/worker/worker.go`). Issues: none. [inferred]
 - **FR-003**: The ingest handler MUST keep accepting events when `crypto/rand` fails, using a timestamp ID and an error-level log (`generateIngestID` in `internal/ingest/handler.go`). Issues: none. [inferred]
-- **FR-004**: The repository MUST return the UUID error from every create call (users, API keys, projects) so the HTTP handler answers 500. Issues: none. [inferred] [gap] The five create paths call `newUUID()`, which discards the error; no issue exists yet.
+- **FR-004**: The repository MUST return the UUID error from every create call (users, API keys, projects) so the HTTP handler answers 500. Issues: [#376](https://github.com/webwiebe/funnelbarn/issues/376). [gap] The five create paths call `newUUID()`, which discards the error.
 
 ## Drift
 
