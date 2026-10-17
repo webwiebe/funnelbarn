@@ -20,7 +20,7 @@ interface McpSettingsProps {
 // buildMcpJSON returns the pretty-printed .mcp.json snippet, so the tests can
 // check its shape without re-parsing the rendered DOM. It carries no project
 // header: one server covers every project, and tools take a project argument.
-export function buildMcpJSON(mcpURL: string): string {
+function buildMcpJSON(mcpURL: string): string {
   return JSON.stringify(
     {
       mcpServers: {

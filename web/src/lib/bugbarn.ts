@@ -38,7 +38,7 @@ async function loadConfig(): Promise<void> {
 
 loadConfig()
 
-export interface BugBarnPayload {
+interface BugBarnPayload {
   name: string
   properties: Record<string, unknown>
 }
@@ -65,7 +65,7 @@ function sendToBugBarn(payload: BugBarnPayload): void {
   }
 }
 
-export function reportToBugBarn(payload: BugBarnPayload): void {
+function reportToBugBarn(payload: BugBarnPayload): void {
   if (!configReady) {
     pendingQueue.push(payload)
     return

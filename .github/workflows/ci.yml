@@ -223,6 +223,14 @@ jobs:
         working-directory: web
         run: pnpm lint:eslint
 
+      - name: Dead code (knip ratchet)
+        # Ratchet test blocks. The gate itself is report-only while it soaks;
+        # baseline is 0, so dropping --report-only enforces it.
+        working-directory: web
+        run: |
+          pnpm lint:knip-test
+          pnpm lint:knip -- --report-only
+
       - name: Soak, web cyclomatic complexity at the estate target
         # REPORT-ONLY at complexity 12 via web/eslint.soak.config.js, while the
         # blocking limit in web/eslint.config.js stays at 55.

@@ -26,8 +26,8 @@ const FLUSH_AT_SPANS = 25
 /** Hard ceiling so a long-lived page can't grow the buffer without bound. */
 const MAX_BUFFERED_SPANS = 100
 
-export type SpanKind = 'INTERNAL' | 'CLIENT' | 'SERVER'
-export type SpanStatus = 'OK' | 'ERROR'
+type SpanKind = 'INTERNAL' | 'CLIENT' | 'SERVER'
+type SpanStatus = 'OK' | 'ERROR'
 
 export interface SpanPayload {
   traceId: string
@@ -180,7 +180,7 @@ function flushSpans(): void {
  * Reports a failure the browser saw, tagged with the current trace so the
  * BugBarn issue and the SpanBarn trace point at each other.
  */
-export function reportClientError(error: Error, extra?: Record<string, string>): void {
+function reportClientError(error: Error, extra?: Record<string, string>): void {
   markTraceError()
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   const csrf = getCookie('funnelbarn_csrf')

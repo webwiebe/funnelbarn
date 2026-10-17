@@ -14,7 +14,9 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "gate:coverage-perfile": "node scripts/coverage-perfile-gate.mjs",
-    "gate:duplication": "jscpd"
+    "gate:duplication": "jscpd",
+    "lint:knip": "node scripts/knip-ratchet.mjs",
+    "lint:knip-test": "node --test scripts/knip-ratchet.test.mjs"
   },
   "dependencies": {
     "@funnelbarn/js": "workspace:*",
@@ -31,7 +33,6 @@
     "@eslint/js": "^10.0.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.1",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
     "@typescript-eslint/eslint-plugin": "^8.59.1",
@@ -45,6 +46,7 @@
     "globals": "^17.5.0",
     "jscpd": "^4.2.5",
     "jsdom": "^29.1.0",
+    "knip": "6.34.0",
     "typescript": "catalog:",
     "vite": "^6.4.2",
     "vite-plugin-pwa": "^1.2.0",

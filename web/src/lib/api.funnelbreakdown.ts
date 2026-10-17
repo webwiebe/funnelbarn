@@ -3,7 +3,7 @@
 import { request } from './api'
 import type { StepResult } from './funnel-types'
 
-export interface FunnelBreakdownGroup {
+interface FunnelBreakdownGroup {
   /** The property value; empty for entries without the property. */
   value: string
   /** What to show: the value, "(none)" or "(other)". */
