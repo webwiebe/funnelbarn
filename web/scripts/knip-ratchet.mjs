@@ -21,6 +21,12 @@ import { fileURLToPath } from "node:url";
 
 export const BASELINE_FILE = "knip-baseline.json";
 
+// knip exits 0 with nothing to report when it cannot read the sources (a TypeScript
+// major it does not support, a project glob that matches no file). A run that
+// analysed fewer files than this is an error in every mode, report-only included.
+// The tree analyses 136 today.
+export const MIN_FILES = 100;
+
 // The issue types knip reports that mean "this is unused". `duplicates` and
 // `enumMembers` are left out on purpose: they are style findings, not dead code.
 export const ITEM_TYPES = [
@@ -80,6 +86,33 @@ export function compare(baselineItems, currentItems) {
   };
 }
 
+/** Files knip parsed, from the `getImportsAndExports` row of its --performance table. */
+export function analysedFiles(performanceOutput) {
+  const row = performanceOutput.split("\n").find((l) => l.trimStart().startsWith("getImportsAndExports"));
+  const count = row ? Number(row.trim().split(/\s+/)[1]) : 0;
+  return Number.isInteger(count) ? count : 0;
+}
+
+/** The floor's verdict: an error message, or null when knip saw enough files. */
+export function checkFloor(performanceOutput, minFiles = MIN_FILES) {
+  const analysed = analysedFiles(performanceOutput);
+  return analysed < minFiles
+    ? `knip analysed ${analysed} file(s), expected at least ${minFiles}: nothing was measured`
+    : null;
+}
+
+export function runKnipPerformance(webDir) {
+  try {
+    return execFileSync("npx", ["knip", "--performance", "--no-exit-code"], {
+      cwd: webDir,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  } catch (err) {
+    return err.stdout ?? "";
+  }
+}
+
 export function runKnip(webDir) {
   let raw = "";
   try {
@@ -100,6 +133,12 @@ function main() {
   const baselinePath = path.join(webDir, BASELINE_FILE);
   const write = process.argv.includes("--write");
   const reportOnly = process.argv.includes("--report-only");
+
+  const floorProblem = checkFloor(runKnipPerformance(webDir));
+  if (floorProblem) {
+    console.error(`knip ratchet FAILED: ${floorProblem}`);
+    process.exit(1);
+  }
 
   const items = flatten(runKnip(webDir));
 

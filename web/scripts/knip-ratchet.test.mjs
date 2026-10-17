@@ -5,7 +5,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compare, flatten, refreshCommand, ITEM_TYPES } from "./knip-ratchet.mjs";
+import { analysedFiles, checkFloor, compare, flatten, refreshCommand, ITEM_TYPES, MIN_FILES } from "./knip-ratchet.mjs";
 
 test("a clean tree against an empty baseline passes", () => {
   const res = compare([], []);
@@ -87,4 +87,21 @@ test("every dead-code issue type is covered", () => {
 
 test("the refresh command names the script", () => {
   assert.match(refreshCommand(), /knip-ratchet\.mjs --write/);
+});
+
+const TABLE = [
+  "Function                    Count  Min     Max     Median  Sum     %",
+  "getImportsAndExports          136  0.01    6.38    0.30   83.38  10%",
+].join("\n");
+
+test("the analysed file count is read from the performance table", () => {
+  assert.equal(analysedFiles(TABLE), 136);
+  assert.equal(analysedFiles(""), 0);
+  assert.equal(analysedFiles("Total running time: 3ms"), 0);
+});
+
+test("a run that analysed fewer files than the floor is an error", () => {
+  assert.equal(checkFloor(TABLE, 136), null);
+  assert.match(checkFloor(TABLE, 137), /analysed 136 file\(s\), expected at least 137/);
+  assert.match(checkFloor("", MIN_FILES), /nothing was measured/);
 });
