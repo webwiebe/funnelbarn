@@ -89,6 +89,7 @@ jobs:
           python3 -m venv .ci-venv
           .ci-venv/bin/python -m pip install --quiet --disable-pip-version-check pyyaml
           .ci-venv/bin/python -m unittest discover -s scripts -p 'test_*.py' -v
+          sh scripts/diff-coverage.test.sh
 
       - name: Install pinned lint tooling
         # Pinned, not @latest: a gate whose tool version can change without a
@@ -130,6 +131,9 @@ jobs:
             rm -rf "$c" 2>/dev/null || true
           fi
       - uses: actions/checkout@v6
+        with:
+          # Full history, so diff coverage can find the merge base with the PR's base branch.
+          fetch-depth: 0
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
@@ -146,6 +150,30 @@ jobs:
         # its committed floor, or if global coverage drops. Floors are pinned at
         # current in scripts/coverage-baseline.txt (raise, never lower).
         run: python3 scripts/coverage-gate.py
+
+      # Changed-line coverage, report only until 2026-10-31 (then add --enforce).
+      # 40% of the coverable Go lines a PR adds must be executed by a test;
+      # diffs under 10 coverable lines are exempt. Every nested module (sdks/go,
+      # sdks/go-bugbarn) is profiled into a copy of coverage.out, so the ratchet
+      # above keeps its numbers and a change in an SDK is measured too.
+      # A measurement that cannot be made fails the job in report mode as well:
+      # a missing or empty profile, an unknown base, a profile listing fewer than
+      # 165 repository files, and 10 or more changed lines in files that add a
+      # function but have no block in the profile.
+      - name: Diff coverage (report only)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          PR_BASE: origin/${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          cp coverage.out "${RUNNER_TEMP}/diff.profile"
+          for gomod in $(git ls-files -- '*/go.mod'); do
+            dir=$(dirname "$gomod")
+            (cd "$dir" && go test -count=1 -covermode=atomic -coverprofile="${RUNNER_TEMP}/module.profile" ./...)
+            cat "${RUNNER_TEMP}/module.profile" >> "${RUNNER_TEMP}/diff.profile"
+          done
+          sh scripts/diff-coverage.sh "${RUNNER_TEMP}/diff.profile" "$PR_BASE"
 
       - name: Upload coverage report
         if: github.event_name == 'push'

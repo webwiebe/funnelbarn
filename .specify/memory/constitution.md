@@ -115,6 +115,7 @@ Sources:
 - `scripts/go-quality-gates.sh`, `scripts/coverage-gate.py`, `scripts/coverage-baseline.txt`, run in the `go-quality` and `go-test` jobs of `.github/workflows/ci.yml`
 - `web/vite.config.ts` (coverage thresholds), `pnpm gate:coverage-perfile`, `pnpm gate:duplication`, `pnpm lint:knip-test`, run in the `frontend-lint` and `frontend-test` jobs
 - `scripts/quality-soak.py` against `scripts/soak-baselines/`, tested by `scripts/test_quality_soak.py`
+- `scripts/diff-coverage.sh`, tested by `scripts/diff-coverage.test.sh`, in the `go-test` job on pull requests: changed-line coverage, report only until 2026-10-31, with input floors that fail in both modes (issue [#379](https://github.com/webwiebe/funnelbarn/issues/379))
 - `python3 -m unittest discover -s scripts -p 'test_*.py'` ("Gate script tests" step of `ci.yml`)
 - Issue [#196](https://github.com/webwiebe/funnelbarn/issues/196)
 
