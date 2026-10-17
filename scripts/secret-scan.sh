@@ -124,6 +124,9 @@ cat "$log" >&2
 if grep -q '\[git\] fatal' "$log"; then
   { echo "--- diag pwd=$PWD git=$(command -v git) $(git --version)"; env | grep '^GIT_' | sed 's/=.*/=<set>/'
     git log --oneline -3 HEAD 2>&1 | head -3; git rev-parse --git-dir --show-toplevel HEAD 2>&1
+    echo "head-file: $(cat .git/HEAD 2>&1)"; git for-each-ref 2>&1 | head -3; ls .git 2>&1 | tr '\n' ' '; echo
+    /usr/bin/git --version; /usr/bin/git -C . rev-parse HEAD 2>&1; /usr/bin/git -C . log -1 --format=%h HEAD 2>&1
+    git config --show-origin -l 2>&1 | grep -iE 'extensions|refstorage|objectformat|defaultbranch' | head
     run_gitleaks --no-banner --redact --log-level debug --config .gitleaks.toml --log-opts="$range" . 2>&1 | grep -iE 'git|cmd|args' | head -20
   } >&2
   die "gitleaks hit a git error twice"
