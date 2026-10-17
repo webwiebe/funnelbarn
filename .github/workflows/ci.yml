@@ -301,6 +301,15 @@ jobs:
       SECRET_SCAN_MODE: report
       SECRET_SCAN_MIN_COMMITS: '250'
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        # Only this job's own checkout: never another runner's work directory.
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          fi
       - uses: actions/checkout@v6
         with:
           # Full history: the scan reads every commit and the PR base.
