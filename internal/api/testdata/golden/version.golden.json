@@ -1,0 +1,11 @@
+{
+  "body": {
+    "built": "",
+    "commit": "",
+    "version": "golden"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}
