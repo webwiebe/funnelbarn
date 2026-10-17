@@ -40,12 +40,13 @@ jobs:
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
+        # Only this job's own checkout: never another runner's work directory.
         run: |
-          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
-            [ -d "$c" ] || continue
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
             chmod -R u+w "$c" 2>/dev/null || true
             rm -rf "$c" 2>/dev/null || true
-          done
+          fi
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -102,12 +103,13 @@ jobs:
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
+        # Only this job's own checkout: never another runner's work directory.
         run: |
-          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
-            [ -d "$c" ] || continue
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
             chmod -R u+w "$c" 2>/dev/null || true
             rm -rf "$c" 2>/dev/null || true
-          done
+          fi
       - uses: actions/checkout@v6
       - name: Check whether this SDK version is released
         id: sdk
@@ -163,12 +165,13 @@ jobs:
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
+        # Only this job's own checkout: never another runner's work directory.
         run: |
-          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
-            [ -d "$c" ] || continue
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
             chmod -R u+w "$c" 2>/dev/null || true
             rm -rf "$c" 2>/dev/null || true
-          done
+          fi
       - uses: actions/checkout@v6
       - name: Sync pyproject.toml version to release tag
         # Same reason as the npm job: PyPI rejects re-uploads of an existing
@@ -202,12 +205,13 @@ jobs:
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
+        # Only this job's own checkout: never another runner's work directory.
         run: |
-          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
-            [ -d "$c" ] || continue
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
             chmod -R u+w "$c" 2>/dev/null || true
             rm -rf "$c" 2>/dev/null || true
-          done
+          fi
       - uses: actions/checkout@v6
       - name: Set up pnpm
         shell: bash
@@ -264,12 +268,13 @@ jobs:
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
+        # Only this job's own checkout: never another runner's work directory.
         run: |
-          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
-            [ -d "$c" ] || continue
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
             chmod -R u+w "$c" 2>/dev/null || true
             rm -rf "$c" 2>/dev/null || true
-          done
+          fi
       - uses: actions/checkout@v6
 
       - name: Set up Go
@@ -322,12 +327,13 @@ jobs:
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
+        # Only this job's own checkout: never another runner's work directory.
         run: |
-          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
-            [ -d "$c" ] || continue
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
             chmod -R u+w "$c" 2>/dev/null || true
             rm -rf "$c" 2>/dev/null || true
-          done
+          fi
       - uses: actions/checkout@v6
 
       - name: Set up Go
