@@ -45,6 +45,16 @@ jobs:
             exit 1
           fi
 
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        # Only this job's own checkout: never another runner's work directory.
+        # No `|| true`: if the cache cannot be cleared, checkout fails next anyway, so fail here with the cause.
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c"
+            rm -rf "$c"
+          fi
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -79,6 +89,16 @@ jobs:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        # Only this job's own checkout: never another runner's work directory.
+        # No `|| true`: if the cache cannot be cleared, checkout fails next anyway, so fail here with the cause.
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c"
+            rm -rf "$c"
+          fi
       - uses: actions/checkout@v6
 
       - name: Pin manifests to this release

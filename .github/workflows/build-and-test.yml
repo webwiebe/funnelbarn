@@ -54,6 +54,16 @@ jobs:
     outputs:
       sha: ${{ steps.commit.outputs.sha }}
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        # Only this job's own checkout: never another runner's work directory.
+        # No `|| true`: if the cache cannot be cleared, checkout fails next anyway, so fail here with the cause.
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c"
+            rm -rf "$c"
+          fi
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -116,6 +126,16 @@ jobs:
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
       IMAGE_TAG: ${{ needs.build.outputs.sha }}
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        # Only this job's own checkout: never another runner's work directory.
+        # No `|| true`: if the cache cannot be cleared, checkout fails next anyway, so fail here with the cause.
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c"
+            rm -rf "$c"
+          fi
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.build.outputs.sha }}
@@ -198,6 +218,16 @@ jobs:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        # Only this job's own checkout: never another runner's work directory.
+        # No `|| true`: if the cache cannot be cleared, checkout fails next anyway, so fail here with the cause.
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c"
+            rm -rf "$c"
+          fi
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.build.outputs.sha }}
@@ -254,6 +284,16 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        # Only this job's own checkout: never another runner's work directory.
+        # No `|| true`: if the cache cannot be cleared, checkout fails next anyway, so fail here with the cause.
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c"
+            rm -rf "$c"
+          fi
       - uses: actions/checkout@v6
         if: steps.creds.outputs.enabled == 'true'
         with:
@@ -297,6 +337,16 @@ jobs:
       NAMESPACE: funnelbarn-staging
       IMAGE_TAG: ${{ needs.build.outputs.sha }}
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        # Only this job's own checkout: never another runner's work directory.
+        # No `|| true`: if the cache cannot be cleared, checkout fails next anyway, so fail here with the cause.
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c"
+            rm -rf "$c"
+          fi
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.build.outputs.sha }}
