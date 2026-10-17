@@ -111,17 +111,18 @@ fi
 log=$(mktemp)
 trap 'rm -f "$log"; [ -z "${DOCKER_CONFIG_DIR:-}" ] || rm -rf "$DOCKER_CONFIG_DIR"' EXIT
 # gitleaks can exit 0 with "0 commits scanned" after one of its own git calls failed
-# ("[git] fatal: ..."), which the CI runner showed under load. One retry covers that;
-# a second failure falls through to the checks below and is exit 2.
-for attempt in 1 2; do
+# ("[git] fatal: ..."), which the CI runner showed under load. Up to four attempts, a second apart, cover that;
+# the last failure falls through to the checks below and is exit 2.
+for attempt in 1 2 3 4; do
   run_gitleaks --no-banner --redact --exit-code "$LEAK_RC" \
     --config .gitleaks.toml --log-opts="$range" . 2>"$log"
   rc=$?
   grep -q '\[git\] fatal' "$log" || break
-  [ "$attempt" = 1 ] && echo "secret-scan: gitleaks reported a git error, retrying once" >&2
+  echo "secret-scan: gitleaks reported a git error (attempt $attempt), retrying" >&2
+  sleep "$attempt"
 done
 cat "$log" >&2
-grep -q '\[git\] fatal' "$log" && die "gitleaks hit a git error twice"
+grep -q '\[git\] fatal' "$log" && die "gitleaks hit a git error on every attempt"
 
 case "$rc" in
   0 | "$LEAK_RC") ;;
