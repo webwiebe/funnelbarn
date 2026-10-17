@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"net/http"
-	"net/url"
 	"time"
 
 	"golang.org/x/sync/singleflight"
@@ -301,19 +300,6 @@ type WebSessionStore interface {
 	DeleteWebSession(ctx context.Context, idHash string) error
 	DeleteWebSessionsByIdpSid(ctx context.Context, sid string) (int64, error)
 	DeleteWebSessionsByIdpSub(ctx context.Context, sub string) (int64, error)
-}
-
-// originOf returns the scheme://host origin of a URL, or "" if it can't be
-// parsed. Used to whitelist the IAMBarn issuer origin in the CSP.
-func originOf(rawURL string) string {
-	if rawURL == "" {
-		return ""
-	}
-	u, err := url.Parse(rawURL)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return ""
-	}
-	return u.Scheme + "://" + u.Host
 }
 
 // StartCleanup begins periodic rate limiter cleanup goroutines.
