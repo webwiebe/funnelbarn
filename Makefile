@@ -55,6 +55,7 @@ test:
 lint:
 	gofmt -l $$(find . $(FIND_PRUNE) -name '*.go' -print) | { read f; [ -z "$$f" ] || { echo "Unformatted files: $$f"; exit 1; }; }
 	go vet ./...
+	python3 scripts/staticcheck-gate.py
 	pnpm --filter @funnelbarn/web lint && pnpm --filter @funnelbarn/web lint:eslint
 
 regress:

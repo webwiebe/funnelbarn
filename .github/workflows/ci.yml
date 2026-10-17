@@ -50,8 +50,14 @@ jobs:
       - name: Regression harness (make regress)
         run: make regress
 
-      - name: staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@latest && staticcheck ./...
+      - name: staticcheck (U1000 is the Go dead-code gate)
+        # Pinned: a new staticcheck release would otherwise change what CI
+        # enforces with no commit. Every check blocks at zero findings. The gate
+        # also fails when U1000 analysed fewer packages than its floor, so a
+        # toolchain staticcheck cannot load turns this step red.
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
+          python3 scripts/staticcheck-gate.py
 
       - name: sqlc generate is up to date
         # sqlc reads every file in internal/repository/migrations as its schema,
@@ -230,8 +236,10 @@ jobs:
         run: pnpm lint:eslint
 
       - name: Dead code (knip ratchet)
-        # Ratchet test blocks. The gate itself is report-only while it soaks;
-        # baseline is 0, so dropping --report-only enforces it.
+        # Ratchet test blocks; it runs the real knip over throwaway packages.
+        # The gate itself is report-only while it soaks, until 2026-10-31: on
+        # that date drop --report-only (baseline 0) to enforce. The file floor
+        # fails the step in both modes.
         working-directory: web
         run: |
           pnpm lint:knip-test
