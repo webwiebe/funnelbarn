@@ -58,6 +58,29 @@ class DeployProductionTest(unittest.TestCase):
         self.assertIn("https://funnelbarn.wiebe.xyz", smoke["run"])
         self.assertIn("inputs.production_version", smoke["run"])
 
+    def test_preflight_resolves_digests_and_deploy_pins_them(self):
+        outputs = self.jobs["preflight"]["outputs"]
+        self.assertIn("service_digest", outputs)
+        self.assertIn("web_digest", outputs)
+        pin = self.steps[self._index("Pin manifests to this release")]["run"]
+        self.assertIn("needs.preflight.outputs.service_digest", pin)
+        self.assertIn("needs.preflight.outputs.web_digest", pin)
+
+    def test_rollback_reads_the_sha_from_the_annotation_not_the_image_string(self):
+        pre = self.steps[self._index("Record restore point and detect migrations")]["run"]
+        self.assertIn("deploy/deployed-sha.sh", pre)
+        self.assertIn("annotations.funnelbarn", pre)
+        self.assertIn("release-sha", pre)
+        self.assertNotIn("sed 's/.*://'", pre)
+
+    def test_release_sha_is_recorded_after_the_smoke_check(self):
+        self.assertLess(
+            self._index("Smoke check production"), self._index("Record released SHA")
+        )
+        self.assertLess(
+            self._index("Record released SHA"), self._index("Rollback on failure")
+        )
+
     def test_rollback_runs_on_failure(self):
         self.assertEqual(self.steps[self._index("Rollback on failure")]["if"], "failure()")
 

@@ -1,7 +1,7 @@
 name: Deploy Production
 
 # Two entry points:
-#   - workflow_call from promote-production.yml, after the commit passed testing,
+#   - workflow_call from the promote job in build-and-test.yml, after the commit passed testing,
 #     E2E, the staging rollout and the staging smoke check. This is the normal path.
 #   - workflow_dispatch, kept for a manual rollback or redeploy of a known version.
 # `production_version` is a version tag or a commit SHA; both resolve to the SHA
@@ -50,6 +50,8 @@ jobs:
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.resolve.outputs.sha }}
+      service_digest: ${{ steps.resolve.outputs.service_digest }}
+      web_digest: ${{ steps.resolve.outputs.web_digest }}
     env:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -85,7 +87,21 @@ jobs:
           docker manifest inspect "${WEB_IMAGE}:${SHA}" > /dev/null || \
             { echo "ERROR: ${WEB_IMAGE}:${SHA} not found in GHCR (for ${VERSION})"; exit 1; }
           echo "Images verified for ${VERSION} (${SHA})"
-          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          # Resolve each tag to its digest now; the deploy uses image@digest, so a
+          # tag that is moved after this point cannot change what ships.
+          SERVICE_DIGEST=$(docker buildx imagetools inspect "${SERVICE_IMAGE}:${SHA}" --format '{{.Manifest.Digest}}')
+          WEB_DIGEST=$(docker buildx imagetools inspect "${WEB_IMAGE}:${SHA}" --format '{{.Manifest.Digest}}')
+          case "${SERVICE_DIGEST}${WEB_DIGEST}" in
+            sha256:*sha256:*) ;;
+            *) echo "ERROR: could not resolve image digests (service='${SERVICE_DIGEST}' web='${WEB_DIGEST}')"; exit 1 ;;
+          esac
+          echo "service ${SERVICE_DIGEST}"
+          echo "web     ${WEB_DIGEST}"
+          {
+            echo "sha=${SHA}"
+            echo "service_digest=${SERVICE_DIGEST}"
+            echo "web_digest=${WEB_DIGEST}"
+          } >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: preflight
@@ -98,7 +114,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Pin manifests to this release
-        run: deploy/pin-release.sh production "${{ needs.preflight.outputs.sha }}" "${{ inputs.production_version }}"
+        run: |
+          deploy/pin-release.sh production "${{ needs.preflight.outputs.sha }}" "${{ inputs.production_version }}" \
+            "${{ needs.preflight.outputs.service_digest }}" "${{ needs.preflight.outputs.web_digest }}"
 
       - name: Transfer manifests
         run: |
@@ -146,9 +164,14 @@ jobs:
         run: |
           set -uo pipefail
           SHA="${{ needs.preflight.outputs.sha }}"
-          CURRENT=$(ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
-            "kubectl -n ${NAMESPACE} get deployment funnelbarn -o jsonpath='{.spec.template.spec.containers[0].image}'" \
-            | sed 's/.*://')
+          # The SHA comes from the release annotation written after the last
+          # good deploy; the image string is only a fallback for a deployment
+          # that predates it (a digest-form image carries no SHA).
+          ANNOTATION=$(ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl -n ${NAMESPACE} get deployment funnelbarn -o jsonpath='{.metadata.annotations.funnelbarn\.wiebe\.xyz/release-sha}'" || true)
+          IMAGE=$(ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl -n ${NAMESPACE} get deployment funnelbarn -o jsonpath='{.spec.template.spec.containers[0].image}'" || true)
+          CURRENT=$(deploy/deployed-sha.sh "${ANNOTATION}" "${IMAGE}")
           echo "currently deployed: ${CURRENT:-<none>}"
 
           # Default to "assume migrations" — refusing a safe rollback costs a
@@ -216,6 +239,16 @@ jobs:
       # so triggers the rollback below.
       - name: Smoke check production
         run: scripts/smoke.sh https://funnelbarn.wiebe.xyz "${{ inputs.production_version }}"
+
+      # Written only after the smoke check passed, so a release that was rolled
+      # back never leaves its SHA behind. The next deploy reads it to decide
+      # whether its rollback is safe. Annotating the Deployment metadata does not
+      # touch the pod template, so no rollout follows.
+      - name: Record released SHA
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl -n ${NAMESPACE} annotate deployment/funnelbarn funnelbarn.wiebe.xyz/release-sha=${{ needs.preflight.outputs.sha }} --overwrite"
 
       # NOTE: no blanket `|| true`. A rollback that silently fails is worse
       # than one that reports, because it leaves the impression the deploy was
