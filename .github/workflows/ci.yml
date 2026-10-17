@@ -30,7 +30,10 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
-          cache: true
+          # Host Go caches are ~25 GB and shared by every runner. cache: true tars
+          # them and uploads on each key miss (20+ min in Post Set up Go); the host
+          # keeps them warm, so the action does not cache.
+          cache: false
 
       - name: go fmt
         run: |
@@ -124,7 +127,10 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
-          cache: true
+          # Host Go caches are ~25 GB and shared by every runner. cache: true tars
+          # them and uploads on each key miss (20+ min in Post Set up Go); the host
+          # keeps them warm, so the action does not cache.
+          cache: false
 
       - name: Go tests with race detector
         run: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
