@@ -42,6 +42,8 @@ type ServerConfig struct {
 	PublicURL      string
 	DB             Pinger
 	Version        string
+	Commit         string
+	BuildTime      string
 	TrustedProxies []string
 
 	LoginRatePerMinute  float64
@@ -157,6 +159,8 @@ type Server struct {
 	publicURL           string
 	metricsToken        string
 	version             string
+	commit              string
+	buildTime           string
 	bugbarnEndpoint     string
 	bugbarnIngestKey    string
 	bugbarnProject      string
@@ -224,6 +228,8 @@ func NewServer(cfg ServerConfig) *Server {
 		mux:                 http.NewServeMux(),
 		db:                  cfg.DB,
 		version:             cfg.Version,
+		commit:              cfg.Commit,
+		buildTime:           cfg.BuildTime,
 		projects:            cfg.Projects,
 		funnels:             cfg.Funnels,
 		abtests:             cfg.ABTests,
@@ -327,6 +333,7 @@ func (s *Server) registerRoutes() {
 	// Public
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/v1/ready", s.handleReady)
+	s.mux.HandleFunc("GET /api/v1/version", s.handleVersion)
 	s.mux.Handle("GET /api/v1/setup/{slug}", s.limit(s.setupLimiter, http.HandlerFunc(s.handleSetup)))
 	s.mux.Handle("GET /api/v1/client-config", s.limit(s.eventsLimiter, http.HandlerFunc(s.handleClientConfig)))
 	s.mux.HandleFunc("GET "+themeManifestPath, s.handleThemeManifest)

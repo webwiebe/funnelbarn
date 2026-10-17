@@ -48,6 +48,35 @@ paths:
                     format: date-time
                     example: "2026-04-28T10:00:00Z"
 
+  /api/v1/version:
+    get:
+      summary: Running version
+      description: |
+        Returns the release the server is running. `version` is the release tag
+        the deploy stated (FUNNELBARN_VERSION), `commit` and `built` are baked
+        into the binary at build time. Deploy smokes compare it with what they
+        rolled out. No authentication required.
+      operationId: getVersion
+      security: []
+      tags: [System]
+      responses:
+        "200":
+          description: The running version
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    example: v0.42.0
+                  commit:
+                    type: string
+                    example: 0123456789abcdef0123456789abcdef01234567
+                  built:
+                    type: string
+                    example: "2026-10-17T12:00:00Z"
+
   /api/v1/events:
     post:
       summary: Ingest an analytics event

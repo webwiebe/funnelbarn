@@ -95,6 +95,8 @@ jobs:
           docker buildx build \
             --platform linux/amd64 \
             --push \
+            --build-arg COMMIT="${IMAGE_TAG}" \
+            --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             -f deploy/docker/service.Dockerfile \
             -t "${SERVICE_IMAGE}:${IMAGE_TAG}" \
             .
@@ -165,6 +167,9 @@ jobs:
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=360s
             kubectl -n ${NAMESPACE} rollout status statefulset/funnelbarn-reader --timeout=360s
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=360s
+            # Smoke: the writer and the first reader report the version and commit that were deployed.
+            sh /tmp/funnelbarn-deploy/deploy/assert-version.sh ${NAMESPACE} deploy/funnelbarn funnelbarn ${IMAGE_TAG} ${IMAGE_TAG}
+            sh /tmp/funnelbarn-deploy/deploy/assert-version.sh ${NAMESPACE} pod/funnelbarn-reader-0 funnelbarn ${IMAGE_TAG} ${IMAGE_TAG}
           "
 
       - name: Post release marker to BugBarn
@@ -358,6 +363,9 @@ jobs:
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=360s
             kubectl -n ${NAMESPACE} rollout status statefulset/funnelbarn-reader --timeout=360s
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=360s
+            # Smoke: the writer and the first reader report the version and commit that were deployed.
+            sh /tmp/funnelbarn-deploy-staging/deploy/assert-version.sh ${NAMESPACE} deploy/funnelbarn funnelbarn ${IMAGE_TAG} ${IMAGE_TAG}
+            sh /tmp/funnelbarn-deploy-staging/deploy/assert-version.sh ${NAMESPACE} pod/funnelbarn-reader-0 funnelbarn ${IMAGE_TAG} ${IMAGE_TAG}
           "
 
       - name: Post release marker to BugBarn

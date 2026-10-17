@@ -194,6 +194,9 @@ jobs:
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=180s
             kubectl -n ${NAMESPACE} rollout status statefulset/funnelbarn-reader --timeout=180s
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=180s
+            # Smoke: the release tag at the tag's commit. A failure runs the rollback step.
+            sh /tmp/funnelbarn-deploy/deploy/assert-version.sh ${NAMESPACE} deploy/funnelbarn funnelbarn ${{ github.event.inputs.production_version }} ${{ needs.preflight.outputs.sha }}
+            sh /tmp/funnelbarn-deploy/deploy/assert-version.sh ${NAMESPACE} pod/funnelbarn-reader-0 funnelbarn ${{ github.event.inputs.production_version }} ${{ needs.preflight.outputs.sha }}
           "
 
       # NOTE: no blanket `|| true`. A rollback that silently fails is worse
