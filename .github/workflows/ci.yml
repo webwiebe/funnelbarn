@@ -95,7 +95,7 @@ jobs:
         # REPORT-ONLY against scripts/soak-baselines/golangci.txt. .golangci.yml
         # sat in this repo unread for months while README.md and the engineering
         # standards spec both listed `golangci-lint run ./...` as required; it
-        # did not even load. 120 findings across 57 files are baselined and do
+        # did not even load. 116 findings across 57 files are baselined and do
         # not block. A new finding, a worsened file, or a baseline that has
         # become beatable does block. Exit criterion in scripts/quality-soak.py.
         run: python3 scripts/quality-soak.py golangci

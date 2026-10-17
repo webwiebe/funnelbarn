@@ -1,51 +1,36 @@
 # Spec 004: Replace Panics with Proper Error Propagation
 
-## Goal
-`generateUUID()` and `generateUUIDLocal()` both call `panic()` on rand failure. Crypto/rand failure is extremely rare but crashing the server is never acceptable. Return errors instead.
+**Spec**: `specs/004-panic-to-error/`
+**Status**: Partial
+**Last verified against the tree**: 2026-10-17 at `ea1b0e6`
+**Issues**: none found
+**Principles touched**: VI
 
-## Files to modify
-- `internal/storage/helpers.go` — change `generateUUID()` signature to `(string, error)`
-- `internal/worker/uuid.go` — change `generateUUIDLocal()` signature to `(string, error)`
-- `internal/worker/worker.go` — update callers of `generateUUIDLocal()`
-- `internal/ingest/handler.go` — update `generateIngestID()` if it calls these
-- `internal/storage/` — update any callers of `generateUUID()` in `db.go`, `events.go`, `sessions.go`, `abtests.go`, `funnels.go`
+## Purpose
 
-## Current code (internal/storage/helpers.go)
-```go
-func generateUUID() string {
-    b := make([]byte, 16)
-    if _, err := rand.Read(b); err != nil {
-        panic(err)
-    }
-    // RFC4122 version 4
-    b[6] = (b[6] & 0x0f) | 0x40
-    b[8] = (b[8] & 0x3f) | 0x80
-    return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", ...)
-}
-```
+A failure of `crypto/rand` must not crash the server. UUID generation returns an error, and callers pass it up instead of calling `panic()`.
 
-## Target signature
-```go
-func generateUUID() (string, error)
-func generateUUIDLocal() (string, error)
-```
+## Functional Requirements
 
-## Caller update pattern
-Each caller currently does:
-```go
-id := generateUUID()
-```
-Should become:
-```go
-id, err := generateUUID()
-if err != nil {
-    return fmt.Errorf("generate uuid: %w", err)
-}
-```
+- **FR-001**: The system MUST NOT call `panic()` in a UUID generator. `generateUUID` in `internal/repository/helpers.go` and `generateUUIDLocal` in `internal/worker/uuid.go` return `(string, error)`. Issues: none. [inferred]
+- **FR-002**: The worker MUST wrap a UUID failure and return it to its caller instead of continuing (`internal/worker/worker.go`). Issues: none. [inferred]
+- **FR-003**: The ingest handler MUST keep accepting events when `crypto/rand` fails, using a timestamp ID and an error-level log (`generateIngestID` in `internal/ingest/handler.go`). Issues: none. [inferred]
+- **FR-004**: The repository MUST return the UUID error from every create call (users, API keys, projects) so the HTTP handler answers 500. Issues: none. [inferred] [gap] The five create paths call `newUUID()`, which discards the error; no issue exists yet.
 
-Propagate errors up to HTTP handlers which return 500.
+## Drift
 
-## Acceptance criteria
-- No `panic()` calls remain in either UUID function
-- All callers updated — `go build ./...` passes with no errors
-- `go test ./...` passes
+| Claim | Source | Tree |
+|---|---|---|
+| The storage layer lives in `internal/storage/` with `helpers.go`, `db.go`, `events.go`, `sessions.go`, `abtests.go`, `funnels.go` | Original task | The package is `internal/repository/` |
+| Each caller handles the error and returns `fmt.Errorf("generate uuid: %w", err)` | Original task, "Caller update pattern" | `newUUID()` in `internal/repository/helpers.go` ignores the error and returns an empty string; it is called from `users.go`, `apikeys.go` and `projects.go` |
+| No `panic()` calls remain in either UUID function | Acceptance criteria | Holds; no non-test `panic(` call exists under `internal/` or `cmd/` |
+
+## Proof contract
+
+- [ ] `grep -rn 'panic(' internal cmd` over non-test Go files returns nothing.
+- [ ] A create call whose UUID generation fails returns an error (no test exists; see FR-004).
+
+## Sources
+
+- `internal/repository/helpers.go`, `internal/worker/uuid.go`, `internal/worker/worker.go`, `internal/ingest/handler.go`
+- The original task text of this spec, replaced by this version on 2026-10-17
