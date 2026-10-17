@@ -296,3 +296,19 @@ describe('api — transient 5xx retry', () => {
     await expect(api.me()).rejects.toMatchObject({ status: 0 })
   })
 })
+
+describe('api.getFunnelStepSessions', () => {
+  it('sends the environment so the drill-down matches the funnel', async () => {
+    mockFetch(200, { session_ids: [] })
+    await api.getFunnelStepSessions('p1', 'f1', 2, { environment: 'production' })
+    const url = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
+    expect(url).toBe('/api/v1/projects/p1/funnels/f1/steps/2/sessions?environment=production')
+  })
+
+  it('omits the environment for All', async () => {
+    mockFetch(200, { session_ids: [] })
+    await api.getFunnelStepSessions('p1', 'f1', 2)
+    const url = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
+    expect(url).toBe('/api/v1/projects/p1/funnels/f1/steps/2/sessions')
+  })
+})

@@ -47,7 +47,7 @@ type FunnelQueries interface {
 	AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, rules ...repository.SegmentRule) ([]repository.FunnelStepResult, error)
 	AnalyzeFunnelBreakdown(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, property string, rules ...repository.SegmentRule) ([]repository.FunnelBreakdownGroup, error)
 	FunnelSegmentData(ctx context.Context, projectID string) (repository.FunnelSegments, error)
-	SessionsAtStep(ctx context.Context, f repository.Funnel, stepOrder int, from, to time.Time, limit int) ([]string, error)
+	SessionsAtStep(ctx context.Context, f repository.Funnel, stepOrder int, from, to time.Time, limit int, rules ...repository.SegmentRule) ([]string, error)
 }
 
 // FunnelCommands is the write side of the funnel port.

@@ -454,10 +454,9 @@ export const api = {
       body: JSON.stringify(settings),
     }),
 
-  getFunnelStepSessions: (projectId: string, funnelId: string, step: number, params: { from?: string; to?: string } = {}) => {
+  getFunnelStepSessions: (projectId: string, funnelId: string, step: number, params: { from?: string; to?: string; environment?: string } = {}) => {
     const qs = new URLSearchParams()
-    if (params.from) qs.set('from', params.from)
-    if (params.to) qs.set('to', params.to)
+    for (const [key, value] of Object.entries(params)) if (value) qs.set(key, value)
     const q = qs.toString()
     return request<{ session_ids: string[] }>(
       `/api/v1/projects/${projectId}/funnels/${funnelId}/steps/${step}/sessions${q ? `?${q}` : ''}`

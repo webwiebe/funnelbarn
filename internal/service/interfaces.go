@@ -168,7 +168,7 @@ type Recordings interface {
 	GetChunk(ctx context.Context, projectID, recordingID string, index int) ([]byte, error)
 	GetRecordingSessionID(ctx context.Context, projectID, recordingID string) (string, error)
 	FlagEvaluationsForSession(ctx context.Context, projectID, sessionID string) ([]repository.FlagEvaluationEntry, error)
-	SessionsAtStep(ctx context.Context, funnelID, projectID string, stepOrder int, from, to time.Time) ([]string, error)
+	SessionsAtStep(ctx context.Context, funnelID, projectID string, stepOrder int, from, to time.Time, environment string) ([]string, error)
 	SessionsForPage(ctx context.Context, projectID, page string, from, to time.Time) ([]string, error)
 	PurgeOldRecordings(ctx context.Context, retentionDays int) error
 	PurgeBrokenRecordings(ctx context.Context) (int, error)

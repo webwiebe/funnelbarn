@@ -13,11 +13,7 @@ import { EditFunnelModal } from '../components/funnels/EditFunnelModal'
 import { SegmentManager } from '../components/funnels/SegmentManager'
 import { EnvironmentSwitch } from '../components/funnels/EnvironmentSwitch'
 import { BreakdownPanel } from '../components/funnels/BreakdownPanel'
-import {
-  FUNNEL_TEMPLATES,
-  FunnelTemplate,
-  PRESET_SEGMENTS,
-} from '../components/funnels/constants'
+import { FUNNEL_TEMPLATES, FunnelTemplate, PRESET_SEGMENTS, watchRecordingsPath } from '../components/funnels/constants'
 
 function conversionColor(pct: number) {
   if (pct >= 0.6) return C.success
@@ -788,7 +784,7 @@ export default function Funnels() {
               analysis={analysis}
               activeSegment={activeSegmentLabel}
               apiKey={ingestKey}
-              onWatchRecordings={(step) => projectId && analysis?.funnel?.id && navigate(`/sessions/${projectId}?funnel=${analysis.funnel.id}&step=${step}`)}
+              onWatchRecordings={(step) => projectId && analysis?.funnel?.id && navigate(watchRecordingsPath(projectId, analysis.funnel.id, step, selectedEnvironment))}
             />
           )}
           {projectId && analysis && !analysisLoading && !analysisError && <BreakdownPanel projectId={projectId} funnel={analysis.funnel} environment={selectedEnvironment} segment={activeSegmentId ? undefined : activeSegment} segmentId={activeSegmentId} />}

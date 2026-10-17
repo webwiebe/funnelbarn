@@ -110,3 +110,16 @@ export const PRESET_SEGMENTS = [
   { id: 'new_visitor', label: 'New visitors', tip: 'First-time sessions (1 event only). Tracked automatically via the SDK session in localStorage.' },
   { id: 'returning', label: 'Returning', tip: 'Sessions with more than one event. Tracked automatically via the SDK session in localStorage.' },
 ]
+
+// ─── Drill-down links ─────────────────────────────────────────────────────────
+
+/**
+ * watchRecordingsPath links a funnel step to the Sessions page. A selected
+ * environment travels along, so the drill-down lists the sessions the funnel
+ * counted.
+ */
+export function watchRecordingsPath(projectId: string, funnelId: string, step: number, environment?: string): string {
+  const qs = new URLSearchParams({ funnel: funnelId, step: String(step) })
+  if (environment) qs.set('environment', environment)
+  return `/sessions/${projectId}?${qs.toString()}`
+}

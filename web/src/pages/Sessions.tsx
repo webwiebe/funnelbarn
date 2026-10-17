@@ -82,7 +82,7 @@ export default function Sessions() {
     traffic: 'human',
     device: 'all',
     pageUrl: '',
-    environment: '',
+    environment: searchParams.get('environment') ?? '',
   })
   const [pageUrlInput, setPageUrlInput] = useState('')
 
@@ -99,7 +99,7 @@ export default function Sessions() {
       if (funnelId && stepParam) {
         const step = parseInt(stepParam, 10)
         if (!isNaN(step)) {
-          const r = await api.getFunnelStepSessions(projectId, funnelId, step)
+          const r = await api.getFunnelStepSessions(projectId, funnelId, step, { environment: f.environment || undefined })
           sessionIds = r.session_ids
         }
       } else if (pageParam) {

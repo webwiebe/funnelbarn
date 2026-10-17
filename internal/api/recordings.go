@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 
@@ -542,27 +541,19 @@ func (s *Server) handleFunnelStepSessions(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	from := time.Now().AddDate(0, 0, -30)
-	to := time.Now()
-	if v := r.URL.Query().Get("from"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			from = t
-		}
-	}
-	if v := r.URL.Query().Get("to"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			to = t
-		}
-	}
+	// Same range and environment parameters as funnel analysis; an empty
+	// environment keeps every environment.
+	from, to, env := parseOverviewRange(r)
 
 	ctx, span := tracing.StartSpan(r.Context(), "recordings.funnel_step_sessions",
 		attribute.String("project.id", projectID),
 		attribute.String("funnel.id", funnelID),
 		attribute.Int("funnel.step", step),
+		attribute.String("environment", env),
 	)
 	defer span.End()
 
-	sessionIDs, err := s.recordings.SessionsAtStep(ctx, funnelID, projectID, step, from, to)
+	sessionIDs, err := s.recordings.SessionsAtStep(ctx, funnelID, projectID, step, from, to, env)
 	if err != nil {
 		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleFunnelStepSessions")
@@ -591,18 +582,7 @@ func (s *Server) handleFlowPageSessions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	from := time.Now().AddDate(0, 0, -30)
-	to := time.Now()
-	if v := r.URL.Query().Get("from"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			from = t
-		}
-	}
-	if v := r.URL.Query().Get("to"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			to = t
-		}
-	}
+	from, to, _ := parseOverviewRange(r)
 
 	ctx, span := tracing.StartSpan(r.Context(), "recordings.flow_page_sessions",
 		attribute.String("project.id", projectID),
