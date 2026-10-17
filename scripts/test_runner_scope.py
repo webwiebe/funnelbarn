@@ -15,6 +15,13 @@ Each assertion fails if the corresponding half of the fix is removed:
   - a reclaim step names a path of its own        -> test_reclaim_steps_use_their_own_workspace
   - the reclaim script deletes outside its own
     workspace, or leaves read-only files behind   -> test_reclaim_script_clears_only_its_own_cache
+  - a self-hosted job checks out without
+    reclaiming first                              -> test_every_self_hosted_checkout_reclaims_first
+
+The last one exists because #367 added the step to ci.yml, binary-release.yml
+and deploy-site.yml only. Every workflow of the repo shares one workspace per
+runner, so Build and Deploy Testing run 39041515084 (2026-10-17) failed in
+actions/checkout on runner-9 with EACCES on a read-only .cache/go-mod file.
 
 Run with:  python3 -m unittest discover -s scripts -p 'test_*.py'
 """
@@ -103,6 +110,25 @@ class RunnerScopeTest(unittest.TestCase):
                 )
                 for dirpath, _, _ in os.walk(other):
                     Path(dirpath).chmod(stat.S_IRWXU)
+
+    def test_every_self_hosted_checkout_reclaims_first(self):
+        for path in WORKFLOWS:
+            data = yaml.safe_load(path.read_text())
+            for job_name, job in (data.get("jobs") or {}).items():
+                if "self-hosted" not in str(job.get("runs-on", "")):
+                    continue
+                steps = job.get("steps") or []
+                checkout = next(
+                    (i for i, step in enumerate(steps) if str(step.get("uses", "")).startswith("actions/checkout")),
+                    None,
+                )
+                if checkout is None:
+                    continue
+                reclaim = [i for i, step in enumerate(steps[:checkout]) if str(step.get("name", "")).startswith(RECLAIM_STEP)]
+                self.assertTrue(
+                    reclaim,
+                    f"{path.name} job {job_name}: self-hosted checkout without a '{RECLAIM_STEP}' step before it",
+                )
 
     def test_reclaim_script_refuses_an_unset_workspace(self):
         for workflow, job, step in reclaim_steps():
