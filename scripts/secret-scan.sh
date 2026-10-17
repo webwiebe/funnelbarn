@@ -121,7 +121,13 @@ for attempt in 1 2; do
   [ "$attempt" = 1 ] && echo "secret-scan: gitleaks reported a git error, retrying once" >&2
 done
 cat "$log" >&2
-grep -q '\[git\] fatal' "$log" && die "gitleaks hit a git error twice"
+if grep -q '\[git\] fatal' "$log"; then
+  { echo "--- diag pwd=$PWD git=$(command -v git) $(git --version)"; env | grep '^GIT_' | sed 's/=.*/=<set>/'
+    git log --oneline -3 HEAD 2>&1 | head -3; git rev-parse --git-dir --show-toplevel HEAD 2>&1
+    run_gitleaks --no-banner --redact --log-level debug --config .gitleaks.toml --log-opts="$range" . 2>&1 | grep -iE 'git|cmd|args' | head -20
+  } >&2
+  die "gitleaks hit a git error twice"
+fi
 
 case "$rc" in
   0 | "$LEAK_RC") ;;
