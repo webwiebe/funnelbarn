@@ -318,7 +318,9 @@ jobs:
         with:
           name: debs-${{ matrix.arch }}
           path: debs/*.deb
-          retention-days: 1
+          # The attach and brew jobs download this. Re-running them the next day
+          # needs the artifact to still exist, and a full re-run bumps the tag.
+          retention-days: 7
 
   build-darwin-tarballs:
     name: Build macOS Tarballs (${{ matrix.arch }})
@@ -372,7 +374,9 @@ jobs:
         with:
           name: darwin-${{ matrix.arch }}
           path: dist/*.tar.gz*
-          retention-days: 1
+          # The attach and brew jobs download this. Re-running them the next day
+          # needs the artifact to still exist, and a full re-run bumps the tag.
+          retention-days: 7
 
   attach-debs-to-release:
     name: Attach .deb to Release
