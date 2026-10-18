@@ -12,7 +12,8 @@ RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 
-RUN CGO_ENABLED=1 go build -o /out/funnelbarn ./cmd/funnelbarn
+ARG COMMIT=unknown BUILD_TIME=unknown
+RUN CGO_ENABLED=1 go build -ldflags "-X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME}" -o /out/funnelbarn ./cmd/funnelbarn
 
 FROM alpine:3.20 AS litestream
 ARG LITESTREAM_VERSION=0.3.13

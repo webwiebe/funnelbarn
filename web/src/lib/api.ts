@@ -4,7 +4,7 @@ import { ApiError } from './api-error'
 import type { IambarnConfig } from './iambarn-config'
 import type { LogoutResponse } from './auth-types'
 import type { Funnel, FunnelAnalysis, FunnelScope, FunnelSegments, FunnelStepInput, StepResult } from './funnel-types'
-export type { Funnel, FunnelAnalysis, FunnelScope, FunnelSegments, FunnelStep, FunnelStepInput, StepResult } from './funnel-types'
+export type { Funnel, FunnelAnalysis, FunnelScope, FunnelSegments, FunnelStepInput, StepResult } from './funnel-types'
 
 export { ApiError }
 
@@ -454,10 +454,9 @@ export const api = {
       body: JSON.stringify(settings),
     }),
 
-  getFunnelStepSessions: (projectId: string, funnelId: string, step: number, params: { from?: string; to?: string } = {}) => {
+  getFunnelStepSessions: (projectId: string, funnelId: string, step: number, params: { from?: string; to?: string; environment?: string } = {}) => {
     const qs = new URLSearchParams()
-    if (params.from) qs.set('from', params.from)
-    if (params.to) qs.set('to', params.to)
+    for (const [key, value] of Object.entries(params)) if (value) qs.set(key, value)
     const q = qs.toString()
     return request<{ session_ids: string[] }>(
       `/api/v1/projects/${projectId}/funnels/${funnelId}/steps/${step}/sessions${q ? `?${q}` : ''}`
@@ -548,10 +547,8 @@ import type {
 
 export type {
   TargetingOperator,
-  TargetingCondition,
   TargetingRule,
   FeatureFlag,
-  FlagAnalysisVariant,
   FlagAnalysis,
   FlagEvaluationResult,
   FlagEvaluationEntry,
@@ -663,7 +660,7 @@ export interface ClientConfig {
 
 // ---- Cross-project overview types ----
 
-export interface ProjectRollup {
+interface ProjectRollup {
   project_id: string
   events: number
   unique_sessions: number
@@ -718,7 +715,7 @@ export interface MappingSuggestion {
   suggested_key: string
 }
 
-export interface CanonicalFunnelStep {
+interface CanonicalFunnelStep {
   step_order?: number
   canonical_key: string
   label?: string
@@ -744,19 +741,19 @@ export interface CanonicalFunnelInput {
   steps: { canonical_key: string }[]
 }
 
-export interface ProjectFunnelBreakdown {
+interface ProjectFunnelBreakdown {
   project_id: string
   project_name: string
   steps: StepResult[]
 }
 
-export interface ExcludedProject {
+interface ExcludedProject {
   project_id: string
   project_name: string
   reason: string
 }
 
-export interface CanonicalFunnelResult {
+interface CanonicalFunnelResult {
   steps: StepResult[]
   by_project: ProjectFunnelBreakdown[]
   excluded_projects: ExcludedProject[]

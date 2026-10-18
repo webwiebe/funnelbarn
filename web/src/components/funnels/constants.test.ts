@@ -6,6 +6,7 @@ import {
   SEGMENT_OPERATORS,
   SEGMENT_TEMPLATES,
   PRESET_SEGMENTS,
+  watchRecordingsPath,
 } from './constants'
 
 describe('FUNNEL_TEMPLATES', () => {
@@ -119,5 +120,15 @@ describe('PRESET_SEGMENTS', () => {
     expect(ids).toEqual(
       expect.arrayContaining(['mobile', 'desktop', 'tablet', 'logged_in', 'returning']),
     )
+  })
+})
+
+describe('watchRecordingsPath', () => {
+  it('links to the step without an environment when All is selected', () => {
+    expect(watchRecordingsPath('p1', 'f1', 2, '')).toBe('/sessions/p1?funnel=f1&step=2')
+  })
+
+  it('carries the selected environment', () => {
+    expect(watchRecordingsPath('p1', 'f1', 1, 'production')).toBe('/sessions/p1?funnel=f1&step=1&environment=production')
   })
 })

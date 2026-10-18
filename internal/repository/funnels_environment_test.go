@@ -93,3 +93,44 @@ func TestAnalyzeFunnel_EnvironmentArgument(t *testing.T) {
 		require.Equal(t, []int64{2, 1}, stepCounts(chromeProd), "%s: segment and environment are ANDed", scope)
 	}
 }
+
+// The step drill-down must list the sessions behind the environment-filtered
+// counts, so a Production funnel never drills into staging sessions.
+func TestSessionsAtStep_EnvironmentArgument(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	p, err := s.CreateProject(ctx, "EnvDrill", "env-drill")
+	require.NoError(t, err)
+
+	at := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	envEvent(t, s, p.ID, "prod-1", "", "production", "page_view", "Chrome", at)
+	envEvent(t, s, p.ID, "prod-1", "", "production", "booking", "Chrome", at.Add(time.Minute))
+	envEvent(t, s, p.ID, "prod-2", "", "production", "page_view", "Chrome", at)
+	envEvent(t, s, p.ID, "stg-1", "", "staging", "page_view", "Chrome", at)
+	envEvent(t, s, p.ID, "stg-1", "", "staging", "booking", "Chrome", at.Add(time.Minute))
+	envEvent(t, s, p.ID, "stg-2", "", "staging", "page_view", "Chrome", at)
+	envEvent(t, s, p.ID, "old-1", "", "", "page_view", "Chrome", at)
+
+	f, err := s.CreateFunnel(ctx, repository.Funnel{ProjectID: p.ID, Name: "Booking",
+		Steps: []repository.FunnelStep{{EventName: "page_view"}, {EventName: "booking"}}})
+	require.NoError(t, err)
+	from, to := at.Add(-time.Hour), at.Add(time.Hour)
+
+	for _, tc := range []struct {
+		env     string
+		step    int
+		want    []string
+		message string
+	}{
+		{"", 1, []string{"old-1", "prod-2", "stg-2"}, "no environment keeps every drop-off"},
+		{"", 2, []string{"prod-1", "stg-1"}, "no environment keeps every converter"},
+		{"production", 1, []string{"prod-2"}, "production drop-offs only"},
+		{"prod", 2, []string{"prod-1"}, "alias is normalised"},
+		{"staging", 1, []string{"stg-2"}, "staging drop-offs only"},
+		{"development", 2, []string{}, "an environment without events has no sessions"},
+	} {
+		got, err := s.SessionsAtStep(ctx, f, tc.step, from, to, 100, repository.EnvironmentRule(tc.env)...)
+		require.NoError(t, err)
+		require.ElementsMatch(t, tc.want, got, "%s (env %q, step %d)", tc.message, tc.env, tc.step)
+	}
+}

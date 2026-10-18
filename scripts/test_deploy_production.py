@@ -9,6 +9,8 @@ safeguard is removed:
   - moving the smoke check below the rollback  -> test_smoke_runs_before_the_rollback
   - the rollback losing its failure condition  -> test_rollback_runs_on_failure
   - a deploy that skips the GHCR preflight     -> test_deploy_needs_preflight
+  - reading github.event.inputs, which is empty
+    when the promote job calls the workflow    -> test_no_step_reads_dispatch_only_inputs
 
 Run with:  python3 -m unittest discover -s scripts -p 'test_*.py'
 """
@@ -79,6 +81,21 @@ class DeployProductionTest(unittest.TestCase):
         )
         self.assertLess(
             self._index("Record released SHA"), self._index("Rollback on failure")
+        )
+
+    def test_no_step_reads_dispatch_only_inputs(self):
+        # Under workflow_call github.event is the caller's workflow_run event,
+        # so github.event.inputs.* expands to an empty string there.
+        self.assertFalse(
+            "github.event.inputs" in WORKFLOW.read_text(),
+            "use inputs.* here; github.event.inputs.* is empty under workflow_call",
+        )
+
+    def test_rollout_asserts_version_and_commit_in_the_pods(self):
+        rollout = self.steps[self._index("Apply manifests and roll out")]["run"]
+        self.assertEqual(rollout.count("deploy/assert-version.sh"), 2)
+        self.assertLess(
+            self._index("Apply manifests and roll out"), self._index("Rollback on failure")
         )
 
     def test_rollback_runs_on_failure(self):

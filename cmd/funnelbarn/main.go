@@ -30,9 +30,12 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/workerhealth"
 )
 
-// Version and BuildTime are injected at build time via -ldflags.
+// Version, Commit and BuildTime are injected at build time via -ldflags.
+// Version is overridden at run time by FUNNELBARN_VERSION (see run); Commit and
+// BuildTime are facts about the binary and are served as built.
 var (
 	Version   = "dev"
+	Commit    = "unknown"
 	BuildTime = "unknown"
 )
 
@@ -419,6 +422,8 @@ func run() error {
 		SetupRateBurst:        cfg.SetupRateBurst,
 		DB:                    store,
 		Version:               version,
+		Commit:                Commit,
+		BuildTime:             BuildTime,
 		TrustedProxies:        cfg.TrustedProxies,
 		BugbarnEndpoint:       cfg.SelfEndpoint,
 		BugbarnIngestKey:      cfg.SelfAPIKey,

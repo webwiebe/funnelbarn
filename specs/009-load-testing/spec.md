@@ -1,153 +1,40 @@
 # Spec 009: Load Testing
 
-## Goal
-Create k6 load test scripts that validate the system can handle expected traffic, confirm rate limiting fires correctly, and give a baseline for performance regression detection.
+**Spec**: `specs/009-load-testing/`
+**Status**: Shipped
+**Last verified against the tree**: 2026-10-17 at `ea1b0e6`
+**Issues**: none found
+**Principles touched**: II, V
 
-## Directory structure to create
-```
-loadtest/
-  README.md
-  config.js          — shared config (base URL, default API key)
-  scenarios/
-    ingest.js        — event ingest throughput test
-    rate-limit.js    — confirm 429 fires on login + ingest
-    analysis.js      — funnel analysis query under concurrent load
-```
+## Purpose
 
-## loadtest/config.js
-```js
-export const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
-export const API_KEY  = __ENV.API_KEY  || 'test-api-key';
-export const PROJECT_ID = __ENV.PROJECT_ID || '';
-```
+`loadtest/` holds k6 scripts that check ingest throughput, rate limiting and funnel analysis under concurrent load. The scripts run by hand; no CI job runs them and no gate fails on a latency number. The 2026-04-30 run is recorded in [docs/load-tests/2026-04-30-results.md](../../docs/load-tests/2026-04-30-results.md).
 
-## loadtest/scenarios/ingest.js
+## Functional Requirements
 
-Test that event ingest can sustain 200 RPS for 30s without errors.
+- **FR-001**: `loadtest/config.js` MUST export `BASE_URL`, `API_KEY` and `PROJECT_ID` from the `BASE_URL`, `API_KEY` and `PROJECT_ID` environment variables. Issues: none. [inferred]
+- **FR-002**: `loadtest/scenarios/ingest.js` MUST post `page_view` events at a constant 200 per second for 30 seconds with thresholds of under 1 percent failures and p95 under 200 ms. Issues: none. [inferred]
+- **FR-003**: `loadtest/scenarios/rate-limit.js` MUST send 30 login attempts from 10 virtual users and check that a share of them answer 429. Issues: none. [inferred]
+- **FR-004**: `loadtest/scenarios/analysis.js` MUST request the funnel analysis endpoint with 20 virtual users for 30 seconds with p95 under 2000 ms. Issues: none. [inferred]
+- **FR-005**: `loadtest/README.md` MUST cover prerequisites, the three scenarios, how to read results and a baseline table. Issues: none. [inferred]
 
-```js
-import http from 'k6/http';
-import { check, sleep } from 'k6';
-import { BASE_URL, API_KEY, PROJECT_ID } from '../config.js';
+## Drift
 
-export const options = {
-  scenarios: {
-    ingest_load: {
-      executor: 'constant-arrival-rate',
-      rate: 200,           // 200 RPS
-      timeUnit: '1s',
-      duration: '30s',
-      preAllocatedVUs: 50,
-      maxVUs: 100,
-    },
-  },
-  thresholds: {
-    http_req_failed:   ['rate<0.01'],   // <1% error rate
-    http_req_duration: ['p(95)<200'],   // 95th pct under 200ms
-  },
-};
+| Claim | Source | Tree |
+|---|---|---|
+| The ingest script sends `X-FunnelBarn-Project` and references `PROJECT_SLUG` | Original task | The script sends only `x-funnelbarn-api-key` and imports `PROJECT_ID` without using it |
+| The README baseline table gets a row per release | Original task | The table holds only a placeholder row; results live in `docs/load-tests/2026-04-30-results.md` |
+| The login test expects 429 after the burst | Original task | The default login limit is 20 per minute with burst 20 (`internal/config/config.go`); 30 iterations exceed it only when no earlier request used the bucket |
+| Scripts are checked for syntax | Acceptance criteria | No CI step or test runs `k6` or parses `loadtest/` (not established whether a hook does) |
+| The results file lives at `specs/010-load-test-results/results.md` | Previous index | Moved to `docs/load-tests/2026-04-30-results.md` on 2026-10-17; the number 010 is retired |
 
-const payload = JSON.stringify({
-  name: 'page_view',
-  url: 'https://example.com/pricing',
-  referrer: 'https://google.com',
-  properties: { plan: 'pro' },
-});
+## Proof contract
 
-export default function () {
-  const res = http.post(`${BASE_URL}/api/v1/events`, payload, {
-    headers: {
-      'Content-Type': 'application/json',
-      'X-FunnelBarn-Api-Key': API_KEY,
-      'X-FunnelBarn-Project': PROJECT_SLUG,
-    },
-  });
-  check(res, { '202 accepted': (r) => r.status === 202 });
-}
-```
+- [ ] `k6 run loadtest/scenarios/ingest.js` against a local server exits 0 with the two thresholds met.
+- [ ] `k6 run loadtest/scenarios/rate-limit.js` records 429 responses.
+- [ ] `loadtest/README.md` has the six sections the original task listed.
 
-## loadtest/scenarios/rate-limit.js
+## Sources
 
-Confirm the rate limiter fires 429 on the login endpoint after burst.
-This is a correctness test, not a throughput test — it should produce 429s intentionally.
-
-```js
-import http from 'k6/http';
-import { check } from 'k6';
-import { BASE_URL } from '../config.js';
-
-export const options = {
-  scenarios: {
-    hammer_login: {
-      executor: 'shared-iterations',
-      vus: 10,
-      iterations: 30,   // 30 rapid login attempts — should trigger 429
-    },
-  },
-  // We EXPECT some 429s here — do not fail on them
-  thresholds: {
-    'checks{expect_rate_limit}': ['rate>0.3'],  // at least 30% should be rate-limited
-  },
-};
-
-const payload = JSON.stringify({ username: 'notauser', password: 'notapassword' });
-
-export default function () {
-  const res = http.post(`${BASE_URL}/api/v1/login`, payload, {
-    headers: { 'Content-Type': 'application/json' },
-  });
-  check(res, {
-    'expect_rate_limit': (r) => r.status === 401 || r.status === 429,
-    'rate limited at least sometimes': (r) => r.status === 429,
-  }, { expect_rate_limit: true });
-}
-```
-
-## loadtest/scenarios/analysis.js
-
-Test funnel analysis endpoint under 20 concurrent users for 30s.
-Requires PROJECT_ID and FUNNEL_ID env vars to be set.
-
-```js
-import http from 'k6/http';
-import { check, sleep } from 'k6';
-import { BASE_URL } from '../config.js';
-
-export const options = {
-  vus: 20,
-  duration: '30s',
-  thresholds: {
-    http_req_failed:   ['rate<0.01'],
-    http_req_duration: ['p(95)<2000'],  // analysis queries can be slower
-  },
-};
-
-const SESSION_COOKIE = __ENV.SESSION_COOKIE || '';
-const PROJECT_ID     = __ENV.PROJECT_ID || '';
-const FUNNEL_ID      = __ENV.FUNNEL_ID  || '';
-
-export default function () {
-  const res = http.get(
-    `${BASE_URL}/api/v1/projects/${PROJECT_ID}/funnels/${FUNNEL_ID}/analysis`,
-    { headers: { Cookie: `funnelbarn_session=${SESSION_COOKIE}` } }
-  );
-  check(res, { '200 ok': (r) => r.status === 200 });
-  sleep(1);
-}
-```
-
-## loadtest/README.md
-
-Write a README covering:
-1. **Prerequisites** — how to install k6 (`brew install k6` / binary download)
-2. **Running ingest test** — `BASE_URL=... API_KEY=... k6 run loadtest/scenarios/ingest.js`
-3. **Running rate-limit validation** — `BASE_URL=... k6 run loadtest/scenarios/rate-limit.js`
-4. **Running analysis test** — env vars needed, how to get SESSION_COOKIE and FUNNEL_ID
-5. **Interpreting results** — what the thresholds mean, how to read k6 summary output
-6. **Baseline** — placeholder table for recording results per release (columns: date, version, p50, p95, p99, RPS, error_rate)
-
-## Acceptance criteria
-- `loadtest/` directory exists with all 4 files
-- k6 scripts are valid JavaScript (no syntax errors)
-- README is complete with all 6 sections
-- No changes to Go code or Go tests — this is scripts only
+- `loadtest/config.js`, `loadtest/README.md`, `loadtest/scenarios/*.js`
+- `docs/load-tests/2026-04-30-results.md`

@@ -366,7 +366,7 @@ func (s *Store) FunnelSegmentData(ctx context.Context, projectID string) (reposi
 	return repository.FunnelSegments{}, nil
 }
 
-func (s *Store) SessionsAtStep(_ context.Context, _ repository.Funnel, _ int, _, _ time.Time, _ int) ([]string, error) {
+func (s *Store) SessionsAtStep(_ context.Context, _ repository.Funnel, _ int, _, _ time.Time, _ int, _ ...repository.SegmentRule) ([]string, error) {
 	return nil, nil
 }
 

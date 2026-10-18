@@ -1,8 +1,15 @@
+import type { ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import FlagUsage from './FlagUsage'
 import type { FlagUsageReport } from '../lib/api.flagusage'
+
+// The page chrome has its own tests. Rendering it here put the first test's
+// cold render past the 5 s budget on a loaded CI host.
+vi.mock('../components/shell/Shell', () => ({
+  default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}))
 
 vi.mock('../lib/auth', () => ({
   useAuth: () => ({ user: { id: 'u1', username: 'admin' }, isLoading: false, logout: vi.fn() }),
@@ -63,7 +70,7 @@ describe('FlagUsage page', () => {
   it('shows the notes, the rows and the stale badge', async () => {
     mockUsage.getFlagUsage.mockResolvedValue(report)
     renderPage()
-    await waitFor(() => expect(screen.getByTestId('usage-row-checkout')).toBeTruthy())
+    expect(await screen.findByTestId('usage-row-checkout')).toBeTruthy()
     expect(mockUsage.getFlagUsage).toHaveBeenCalledWith('p1')
     expect(screen.getByText('Counts are recorded evaluations.')).toBeTruthy()
     expect(screen.getByText('Stale means no evaluations in the last 30 days.')).toBeTruthy()

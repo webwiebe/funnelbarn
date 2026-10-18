@@ -341,7 +341,9 @@ func stepFilterClause(q string, args []any, step FunnelStep) (string, []any) {
 // SessionsAtStep returns distinct session IDs that completed step stepOrder
 // (1-based) but did NOT complete step stepOrder+1. If stepOrder equals the
 // total number of steps, it returns sessions that completed all steps (converters).
-func (s *ReadStore) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int, from, to time.Time, limit int) ([]string, error) {
+// rules narrow both steps the same way funnel analysis does (for example the
+// EnvironmentRule), so a drill-down shows the sessions behind the counts.
+func (s *ReadStore) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int, from, to time.Time, limit int, rules ...SegmentRule) ([]string, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -357,12 +359,24 @@ func (s *ReadStore) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int,
 		}
 	}
 
+	ruleClause, ruleArgs, needJoin := buildSegmentRuleClause(rules)
+	stepQuery := `
+		SELECT DISTINCT e.session_id
+		FROM events e`
+	if needJoin {
+		stepQuery += " JOIN sessions s ON s.id = e.session_id AND s.project_id = e.project_id"
+	}
+	stepQuery += `
+		WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?`
+	if ruleClause != "" {
+		stepQuery += " AND " + ruleClause
+	}
+	stepArgs := func(eventName string) []any {
+		return append([]any{f.ProjectID, eventName, from, to}, ruleArgs...)
+	}
+
 	// Sessions that reached this step.
-	const reachedQ = `
-		SELECT DISTINCT session_id
-		FROM events
-		WHERE project_id = ? AND name = ? AND occurred_at >= ? AND occurred_at <= ?`
-	rows, err := s.rdb.QueryContext(ctx, reachedQ, f.ProjectID, targetStep.EventName, from, to)
+	rows, err := s.rdb.QueryContext(ctx, stepQuery, stepArgs(targetStep.EventName)...)
 	if err != nil {
 		return nil, fmt.Errorf("SessionsAtStep reached: %w", err)
 	}
@@ -393,11 +407,7 @@ func (s *ReadStore) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int,
 			break
 		}
 	}
-	const nextQ = `
-		SELECT DISTINCT session_id
-		FROM events
-		WHERE project_id = ? AND name = ? AND occurred_at >= ? AND occurred_at <= ?`
-	nextRows, err := s.rdb.QueryContext(ctx, nextQ, f.ProjectID, nextStep.EventName, from, to)
+	nextRows, err := s.rdb.QueryContext(ctx, stepQuery, stepArgs(nextStep.EventName)...)
 	if err != nil {
 		return nil, fmt.Errorf("SessionsAtStep next: %w", err)
 	}

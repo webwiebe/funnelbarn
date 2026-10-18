@@ -5,7 +5,7 @@ export type TargetingOperator =
   | 'eq' | 'neq' | 'contains' | 'not_contains' | 'starts_with'
   | 'ends_with' | 'in' | 'not_in' | 'present' | 'not_present'
 
-export interface TargetingCondition {
+interface TargetingCondition {
   context_key: string
   operator: TargetingOperator
   value: string
@@ -41,7 +41,7 @@ export interface FeatureFlag {
   flag_kind: string
 }
 
-export interface FlagAnalysisVariant {
+interface FlagAnalysisVariant {
   variant: string
   sample: number
   conversions: number

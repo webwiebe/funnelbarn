@@ -1,0 +1,18 @@
+# gitleaks ignore list: fingerprints only (commit:file:rule:line), never a secret value.
+# It may only shrink; scripts/secret-scan.sh fails a pull request that adds a line.
+# These are the findings in history when the gate was added (2026-10-17).
+0e4175f857dcb504176ff51017e1804ede6db36e:deploy/k8s/production/reader-statefulset.yaml:generic-api-key:143
+0e4175f857dcb504176ff51017e1804ede6db36e:deploy/k8s/staging/reader-statefulset.yaml:generic-api-key:139
+0e4175f857dcb504176ff51017e1804ede6db36e:deploy/k8s/testing/reader-statefulset.yaml:generic-api-key:153
+1ef227ec95253bfd085a16a40d35ed4f3e0222a1:README.md:curl-auth-header:57
+1ef227ec95253bfd085a16a40d35ed4f3e0222a1:examples/basic-website/README.md:curl-auth-header:51
+1ef227ec95253bfd085a16a40d35ed4f3e0222a1:site/src/pages/index.astro:curl-auth-header:76
+a083f9454b5d228a0c8a83197efcbdcb1e2d0a63:internal/api/testdata/golden/setup_guide.golden.json:curl-auth-header:270
+a083f9454b5d228a0c8a83197efcbdcb1e2d0a63:internal/api/testdata/golden/setup_guide.golden.json:curl-auth-header:449
+a083f9454b5d228a0c8a83197efcbdcb1e2d0a63:internal/api/testdata/golden/setup_guide.golden.json:generic-api-key:275
+a083f9454b5d228a0c8a83197efcbdcb1e2d0a63:internal/api/testdata/golden/setup_guide.golden.json:generic-api-key:454
+b1c609b653c373ddef18972f32537ceb62564545:site/src/layouts/BaseLayout.astro:generic-api-key:25
+c5ac0ea99d25020d812af7ef656acafb187ae682:deploy/k8s/production/deployment.yaml:generic-api-key:138
+c5ac0ea99d25020d812af7ef656acafb187ae682:deploy/k8s/staging/deployment.yaml:generic-api-key:132
+c5ac0ea99d25020d812af7ef656acafb187ae682:deploy/k8s/testing/deployment.yaml:generic-api-key:146
+d0e56597aa21f85322dd5fdc5536e3e22eb49d66:examples/basic-website/README.md:curl-auth-header:51

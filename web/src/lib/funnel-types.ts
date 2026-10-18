@@ -1,6 +1,6 @@
 // Funnel shapes of the REST API, re-exported from api.ts.
 
-export interface FunnelStep {
+interface FunnelStep {
   step_order: number
   event_name: string
   filters?: { property: string; value: string }[]

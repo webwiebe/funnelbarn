@@ -8,7 +8,7 @@ export XDG_CACHE_HOME := $(CURDIR)/.cache
 export GOCACHE := $(CURDIR)/.cache/go-build
 export GOMODCACHE := $(CURDIR)/.cache/go-mod
 
-.PHONY: help setup build test lint soak gate-test regress dev docker-build clean
+.PHONY: help setup build test lint soak gate-test secret-scan regress dev docker-build clean
 
 help:
 	@printf '%s\n' \
@@ -19,6 +19,7 @@ help:
 		'  lint         run linters' \
 		'  soak         run the report-only quality soaks against their baselines' \
 		'  gate-test    run the tests for the gate scripts themselves' \
+		'  secret-scan  scan git history for secrets (gitleaks, report-only until 2026-10-31)' \
 		'  regress      run the regression harness (golden API, state snapshot, purge retention, reader/writer durability, architecture rules)' \
 		'  dev          start docker compose stack' \
 		'  docker-build build Docker images locally' \
@@ -55,6 +56,7 @@ test:
 lint:
 	gofmt -l $$(find . $(FIND_PRUNE) -name '*.go' -print) | { read f; [ -z "$$f" ] || { echo "Unformatted files: $$f"; exit 1; }; }
 	go vet ./...
+	python3 scripts/staticcheck-gate.py
 	pnpm --filter @funnelbarn/web lint && pnpm --filter @funnelbarn/web lint:eslint
 
 regress:
@@ -72,6 +74,10 @@ soak:
 
 gate-test:
 	python3 -m unittest discover -s scripts -p 'test_*.py'
+	@bash scripts/tests/secret-scan.test.sh
+
+secret-scan:
+	@bash scripts/secret-scan.sh history
 
 dev:
 	@set -eu; \

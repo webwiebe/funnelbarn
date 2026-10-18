@@ -1,5 +1,6 @@
+import type { ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import Settings from './Settings'
 import type { ApiKey, Project } from '../lib/api'
@@ -32,6 +33,13 @@ vi.mock('../lib/projects', () => ({
     setSelectedEnvironment: vi.fn(),
   }),
   useEffectiveProjectId: () => SELECTED_PROJECT_ID,
+}))
+
+// The page chrome (nav, picker, tab bar, its stylesheet) has its own tests.
+// Rendering it here made every role query walk and style-resolve the whole
+// shell, which on a loaded CI host ran these tests past the 5 s budget.
+vi.mock('../components/shell/Shell', () => ({
+  default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }))
 
 vi.mock('../lib/auth', () => ({
@@ -85,6 +93,15 @@ function renderSettings() {
   )
 }
 
+// Renders the page and resolves once the key list has loaded, the state every
+// interaction starts from, so a click never races the listApiKeys render.
+// Returns queries scoped to the create row (name, project, scope, Create).
+async function renderWithKeys() {
+  renderSettings()
+  await screen.findAllByText('prod-key')
+  return within(screen.getByPlaceholderText(/key name/i).parentElement as HTMLElement)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -97,7 +114,7 @@ describe('Settings', () => {
   })
 
   it('renders the Settings heading', async () => {
-    renderSettings()
+    await renderWithKeys()
     expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument()
   })
 
@@ -123,13 +140,12 @@ describe('Settings', () => {
   })
 
   it('shows error when creating key with empty name', async () => {
-    renderSettings()
-    await waitFor(() => screen.getByText('API Keys'))
+    const createRow = await renderWithKeys()
 
-    fireEvent.click(screen.getByRole('button', { name: /create/i }))
-    await waitFor(() =>
-      expect(screen.getByText(/name is required/i)).toBeInTheDocument(),
-    )
+    // The handler sets the error synchronously, so it is on screen as soon
+    // as the click returns.
+    fireEvent.click(createRow.getByRole('button', { name: 'Create' }))
+    expect(screen.getByText(/name is required/i)).toBeInTheDocument()
     expect(mockApi.createApiKey).not.toHaveBeenCalled()
   })
 
@@ -138,16 +154,12 @@ describe('Settings', () => {
       api_key: { id: 'k2', project_id: SELECTED_PROJECT_ID, name: 'new-key', scope: 'ingest', created_at: '2024-06-01T00:00:00Z' },
       key: 'plaintext-value-here',
     })
-    renderSettings()
-    await waitFor(() => screen.getByText('API Keys'))
+    const createRow = await renderWithKeys()
 
-    const nameInput = screen.getByPlaceholderText(/key name/i)
-    fireEvent.change(nameInput, { target: { value: 'new-key' } })
-    fireEvent.click(screen.getByRole('button', { name: /create/i }))
+    fireEvent.change(createRow.getByPlaceholderText(/key name/i), { target: { value: 'new-key' } })
+    fireEvent.click(createRow.getByRole('button', { name: 'Create' }))
 
-    await waitFor(() =>
-      expect(screen.getByText('plaintext-value-here')).toBeInTheDocument(),
-    )
+    expect(await screen.findByText('plaintext-value-here')).toBeInTheDocument()
     expect(mockApi.createApiKey).toHaveBeenCalledWith('new-key', 'ingest', SELECTED_PROJECT_ID)
   })
 
@@ -174,12 +186,11 @@ describe('Settings', () => {
       api_key: { id: 'k3', project_id: 'p1', name: 'other-key', scope: 'ingest', created_at: '2024-06-01T00:00:00Z' },
       key: 'plaintext-for-p1',
     })
-    renderSettings()
-    await waitFor(() => screen.getByText('API Keys'))
+    const createRow = await renderWithKeys()
 
-    fireEvent.change(screen.getByPlaceholderText(/key name/i), { target: { value: 'other-key' } })
-    fireEvent.change(screen.getByLabelText(/project for the new api key/i), { target: { value: 'p1' } })
-    fireEvent.click(screen.getByRole('button', { name: /create/i }))
+    fireEvent.change(createRow.getByPlaceholderText(/key name/i), { target: { value: 'other-key' } })
+    fireEvent.change(createRow.getByLabelText(/project for the new api key/i), { target: { value: 'p1' } })
+    fireEvent.click(createRow.getByRole('button', { name: 'Create' }))
 
     await waitFor(() =>
       expect(mockApi.createApiKey).toHaveBeenCalledWith('other-key', 'ingest', 'p1'),
@@ -188,18 +199,18 @@ describe('Settings', () => {
 
   it('first delete click sets confirm state; second click deletes', async () => {
     mockApi.deleteApiKey.mockResolvedValue(undefined)
-    renderSettings()
-    await waitFor(() => expect(screen.getAllByText('prod-key').length).toBeGreaterThan(0))
+    await renderWithKeys()
 
-    // First click on the icon button (desktop table): asks for confirmation
-    const deleteBtns = screen.getAllByTitle(/delete key/i)
-    fireEvent.click(deleteBtns[0])
-    // Both desktop and mobile render confirm text — at least one should appear
-    await waitFor(() => expect(screen.getAllByText(/confirm\?/i).length).toBeGreaterThan(0))
+    // First click on the icon button (desktop table): asks for confirmation.
+    // The click sets the confirm state synchronously, so both desktop and
+    // mobile show it as soon as the click returns.
+    fireEvent.click(screen.getAllByTitle(/delete key/i)[0])
+    const confirms = screen.getAllByText(/confirm\?/i)
+    expect(confirms.length).toBeGreaterThan(0)
 
-    // Second click on the red Confirm/Delete button (first occurrence = desktop)
-    const confirmDeleteBtns = screen.getAllByRole('button', { name: /^delete$/i })
-    fireEvent.click(confirmDeleteBtns[0])
+    // Second click on the red Delete button beside the first (desktop) prompt
+    const confirmRow = within(confirms[0].parentElement as HTMLElement)
+    fireEvent.click(confirmRow.getByRole('button', { name: /^delete$/i }))
     await waitFor(() => expect(mockApi.deleteApiKey).toHaveBeenCalledWith('k1'))
   })
 

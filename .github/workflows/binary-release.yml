@@ -40,12 +40,13 @@ jobs:
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
+        # Only this job's own checkout: never another runner's work directory.
         run: |
-          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
-            [ -d "$c" ] || continue
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
             chmod -R u+w "$c" 2>/dev/null || true
             rm -rf "$c" 2>/dev/null || true
-          done
+          fi
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -102,12 +103,13 @@ jobs:
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
+        # Only this job's own checkout: never another runner's work directory.
         run: |
-          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
-            [ -d "$c" ] || continue
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
             chmod -R u+w "$c" 2>/dev/null || true
             rm -rf "$c" 2>/dev/null || true
-          done
+          fi
       - uses: actions/checkout@v6
       - name: Check whether this SDK version is released
         id: sdk
@@ -163,12 +165,13 @@ jobs:
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
+        # Only this job's own checkout: never another runner's work directory.
         run: |
-          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
-            [ -d "$c" ] || continue
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
             chmod -R u+w "$c" 2>/dev/null || true
             rm -rf "$c" 2>/dev/null || true
-          done
+          fi
       - uses: actions/checkout@v6
       - name: Sync pyproject.toml version to release tag
         # Same reason as the npm job: PyPI rejects re-uploads of an existing
@@ -202,12 +205,13 @@ jobs:
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
+        # Only this job's own checkout: never another runner's work directory.
         run: |
-          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
-            [ -d "$c" ] || continue
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
             chmod -R u+w "$c" 2>/dev/null || true
             rm -rf "$c" 2>/dev/null || true
-          done
+          fi
       - uses: actions/checkout@v6
       - name: Set up pnpm
         shell: bash
@@ -264,19 +268,23 @@ jobs:
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
+        # Only this job's own checkout: never another runner's work directory.
         run: |
-          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
-            [ -d "$c" ] || continue
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
             chmod -R u+w "$c" 2>/dev/null || true
             rm -rf "$c" 2>/dev/null || true
-          done
+          fi
       - uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version: '1.26'
-          cache: true
+          # Host Go caches are ~25 GB and shared by every runner. cache: true tars
+          # them and uploads on each key miss (20+ min in Post Set up Go); the host
+          # keeps them warm, so the action does not cache.
+          cache: false
 
       - name: Install nfpm
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
@@ -289,7 +297,7 @@ jobs:
           GOARCH="${{ matrix.arch }}"
           export GOARCH
           BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          LDFLAGS="-X main.Version=v${VERSION} -X main.BuildTime=${BUILD_TIME}"
+          LDFLAGS="-X main.Version=v${VERSION} -X main.Commit=${GITHUB_SHA} -X main.BuildTime=${BUILD_TIME}"
           mkdir -p dist
           go build -ldflags "${LDFLAGS}" -o dist/funnelbarn-linux-${GOARCH} ./cmd/funnelbarn
 
@@ -310,7 +318,9 @@ jobs:
         with:
           name: debs-${{ matrix.arch }}
           path: debs/*.deb
-          retention-days: 1
+          # The attach and brew jobs download this. Re-running them the next day
+          # needs the artifact to still exist, and a full re-run bumps the tag.
+          retention-days: 7
 
   build-darwin-tarballs:
     name: Build macOS Tarballs (${{ matrix.arch }})
@@ -322,19 +332,23 @@ jobs:
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
         shell: bash
+        # Only this job's own checkout: never another runner's work directory.
         run: |
-          for c in /Users/wiebe/github-runners/*/_work/funnelbarn/funnelbarn/.cache; do
-            [ -d "$c" ] || continue
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
             chmod -R u+w "$c" 2>/dev/null || true
             rm -rf "$c" 2>/dev/null || true
-          done
+          fi
       - uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version: '1.26'
-          cache: true
+          # Host Go caches are ~25 GB and shared by every runner. cache: true tars
+          # them and uploads on each key miss (20+ min in Post Set up Go); the host
+          # keeps them warm, so the action does not cache.
+          cache: false
 
       - name: Build macOS binary
         env:
@@ -343,7 +357,7 @@ jobs:
           VERSION: ${{ needs.tag.outputs.version_num }}
         run: |
           BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          LDFLAGS="-X main.Version=v${VERSION} -X main.BuildTime=${BUILD_TIME}"
+          LDFLAGS="-X main.Version=v${VERSION} -X main.Commit=${GITHUB_SHA} -X main.BuildTime=${BUILD_TIME}"
           mkdir -p dist
           go build -ldflags "${LDFLAGS}" -o dist/funnelbarn ./cmd/funnelbarn
           TARBALL="funnelbarn-darwin-${{ matrix.arch }}-${VERSION}.tar.gz"
@@ -360,7 +374,9 @@ jobs:
         with:
           name: darwin-${{ matrix.arch }}
           path: dist/*.tar.gz*
-          retention-days: 1
+          # The attach and brew jobs download this. Re-running them the next day
+          # needs the artifact to still exist, and a full re-run bumps the tag.
+          retention-days: 7
 
   attach-debs-to-release:
     name: Attach .deb to Release

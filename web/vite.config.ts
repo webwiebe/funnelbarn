@@ -2,6 +2,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { configDefaults } from 'vitest/config'
 
 export default defineConfig({
   plugins: [
@@ -88,6 +89,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
+    // scripts/*.test.mjs run under node --test (lint:knip-test), not vitest.
+    exclude: [...configDefaults.exclude, 'scripts/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary', 'json-summary', 'lcov'],
@@ -99,7 +102,6 @@ export default defineConfig({
       exclude: [
         'src/**/*.test.{ts,tsx}',
         'src/test-setup.ts',
-        'src/setupTests.ts',
         'src/vite-env.d.ts',
       ],
       // Coverage ratchet floors — PINNED AT CURRENT (whole percent, ~0.5pt

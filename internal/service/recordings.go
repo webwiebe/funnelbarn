@@ -378,7 +378,8 @@ func (svc *RecordingService) FlagEvaluationsForSession(ctx context.Context, proj
 }
 
 // SessionsAtStep returns session IDs that dropped off at the given funnel step.
-func (svc *RecordingService) SessionsAtStep(ctx context.Context, funnelID, projectID string, stepOrder int, from, to time.Time) ([]string, error) {
+// A non-empty environment limits them to that environment, like funnel analysis.
+func (svc *RecordingService) SessionsAtStep(ctx context.Context, funnelID, projectID string, stepOrder int, from, to time.Time, environment string) ([]string, error) {
 	f, err := svc.funnels.FunnelByID(ctx, funnelID)
 	if err != nil {
 		return nil, err
@@ -386,7 +387,7 @@ func (svc *RecordingService) SessionsAtStep(ctx context.Context, funnelID, proje
 	if f.ProjectID != projectID {
 		return nil, fmt.Errorf("recordings: funnel not found")
 	}
-	return svc.funnels.SessionsAtStep(ctx, f, stepOrder, from, to, 100)
+	return svc.funnels.SessionsAtStep(ctx, f, stepOrder, from, to, 100, repository.EnvironmentRule(environment)...)
 }
 
 // SessionsForPage returns session IDs that visited the given page URL.
