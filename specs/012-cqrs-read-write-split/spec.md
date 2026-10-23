@@ -34,6 +34,7 @@
 - **FR-021**: Each maintenance step MUST emit a child span under `maintenance.purge`. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `cmd/funnelbarn/maintenance_test.go::TestRunMaintenance_EmitsRootAndStepSpans`.
 - **FR-022**: The post-deploy check on testing MUST probe evaluate latency and look for a `maintenance.purge` span. Issues: [#307](https://github.com/webwiebe/funnelbarn/issues/307). Tests: `scripts/verify-testing.sh` (a script; no test file).
 - **FR-023**: The evaluate path MUST hand the evaluation row and the `last_evaluated_at` touch to a bounded worker pool (`command.Async`) and wait only for a buffer slot; a full buffer blocks and drops nothing, and shutdown hands the queue to the bus before the bus drains. `EnsureAutoFlag` stays on the bus, so a new flag is published before its touch is queued. Issues: [#337](https://github.com/webwiebe/funnelbarn/issues/337). Tests: `internal/command/async_test.go::TestAsyncSubmitDoesNotWaitForTheInnerBus`, `internal/command/async_test.go::TestAsyncBackpressureBlocksAndNeverDrops`, `internal/command/async_test.go::TestAsyncFlushWaitsForEveryWorker`, `internal/command/async_test.go::TestAsyncCloseDrainsAndLeavesTheInnerBusOpen`, `internal/service/flags_async_internal_test.go::TestEvaluate_BookkeepingGoesToTheBackgroundBus`.
+- **FR-024**: A failed Valkey publish or receive that a fallback absorbs MUST log at Warn when the run of failures starts and at Error once only when it has lasted `command.DefaultOutageAfter` (30s); recovery logs at Info with how long it lasted. The spool forwarder logs Warn only, because the spool stall check reports an outage that lasts. Shared Valkey stalls for a few seconds several times a day, and BugBarn opens an issue for every Error. Issues: [#346](https://github.com/webwiebe/funnelbarn/issues/346), [#347](https://github.com/webwiebe/funnelbarn/issues/347), [#384](https://github.com/webwiebe/funnelbarn/issues/384), [#389](https://github.com/webwiebe/funnelbarn/issues/389). Tests: `internal/command/outage_test.go::TestOutageLevels`, `internal/command/redisbus_test.go::TestRedisBusLastingPublishOutageLogsErrorOnce`, `internal/command/redisbus_faults_test.go::TestRedisBusReceiveErrorsBackOffAndRecover`, `cmd/funnelbarn/recordings_queue_test.go::TestRecordingsQueuePublishFailureLevels`, `cmd/funnelbarn/spool_forwarder_test.go::TestForwardPublishFailureLogsWarnOnce`.
 
 ---
 
@@ -186,7 +187,6 @@ Async commands are eventually consistent: an evaluation row, a touch or an inges
 ## Open Questions
 
 - [#337](https://github.com/webwiebe/funnelbarn/issues/337) Evaluate requests wait up to 740 ms on Valkey publishes in production.
-- [#346](https://github.com/webwiebe/funnelbarn/issues/346) The bus logs "command publish failed, using fallback" at error level in production.
 
 ## Drift
 

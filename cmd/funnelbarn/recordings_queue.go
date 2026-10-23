@@ -40,10 +40,10 @@ type recordingsQueue struct {
 	// the queue does not take is buffered on disk and published later.
 	fallback *fallbackForwarder
 
-	// Requests enqueue concurrently, so the once-per-episode log flags are
-	// atomic.
-	failing atomic.Bool
-	full    atomic.Bool
+	// Requests enqueue concurrently, so the once-per-episode log state is
+	// safe for concurrent use.
+	outage command.Outage
+	full   atomic.Bool
 }
 
 var _ service.ChunkQueue = (*recordingsQueue)(nil)
@@ -179,19 +179,16 @@ func (q *recordingsQueue) Enqueue(ctx context.Context, meta service.ChunkMeta) b
 		q.publishFailed(ctx, err)
 		return q.toFallback(ctx, chunk)
 	}
-	if q.failing.Swap(false) {
-		slog.InfoContext(ctx, "recordings queue publish recovered")
+	if lasted, ok := q.outage.Recover(); ok {
+		slog.InfoContext(ctx, "recordings queue publish recovered", "lasted", lasted.Round(time.Millisecond).String())
 	}
 	return true
 }
 
+// publishFailed logs at Warn for a short Valkey stall and at Error once when
+// the failures last; see command.Outage.
 func (q *recordingsQueue) publishFailed(ctx context.Context, err error) {
-	if !q.failing.Swap(true) {
-		slog.ErrorContext(ctx, "recordings queue publish failed, chunks bypass it (applied on the request, or buffered on disk in a reader)",
-			"err", err, "handled", true)
-		return
-	}
-	slog.DebugContext(ctx, "recordings queue publish failed, chunks bypass it (applied on the request, or buffered on disk in a reader)",
+	slog.Log(ctx, q.outage.Fail(), "recordings queue publish failed, chunks bypass it (applied on the request, or buffered on disk in a reader)",
 		"err", err, "handled", true)
 }
 

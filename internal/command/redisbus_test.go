@@ -282,8 +282,10 @@ func TestRedisBusPublishFailureUsesFallback(t *testing.T) {
 	}
 	require.NoError(t, e.fallback.Flush(ctx))
 	require.Equal(t, []string{"f0", "f1", "f2"}, e.fbStore.appliedKeys())
-	require.Equal(t, 1, e.logs.count("ERROR", "publish failed"))
-	require.Equal(t, 2, e.logs.count("WARN", "publish failed"))
+	// A short stall loses nothing, so it stays out of BugBarn.
+	require.Zero(t, e.logs.count("ERROR", "publish failed"))
+	require.Equal(t, 1, e.logs.count("WARN", "publish failed"))
+	require.Equal(t, 2, e.logs.count("DEBUG", "publish failed"))
 	require.Zero(t, e.logs.count("INFO", "publish recovered"))
 
 	e.queue.setFailPublish(false)
@@ -291,7 +293,42 @@ func TestRedisBusPublishFailureUsesFallback(t *testing.T) {
 	require.NoError(t, e.bus.Flush(ctx))
 	require.Equal(t, []string{"ok"}, e.store.appliedKeys())
 	require.Equal(t, 1, e.logs.count("INFO", "publish recovered"))
+	require.Zero(t, e.logs.count("ERROR", "publish failed"))
+}
+
+// A publish outage that lasts DefaultOutageAfter is logged at Error once; the
+// next run of failures starts at Warn again.
+func TestRedisBusLastingPublishOutageLogsErrorOnce(t *testing.T) {
+	e := newBusEnvCooldown(t, true, time.Nanosecond)
+	now := time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC)
+	command.SetOutageClock(e.bus, func() time.Time { return now })
+	ctx := testCtx(t)
+	e.bus.Start(ctx)
+
+	e.queue.setFailPublish(true)
+	submit := func(k string, after time.Duration) {
+		now = now.Add(after)
+		e.bus.Submit(ctx, command.TouchAPIKey{KeyHash: k})
+	}
+	submit("a", 0)
+	submit("b", command.DefaultOutageAfter-time.Second)
+	require.Zero(t, e.logs.count("ERROR", "publish failed"), "still under DefaultOutageAfter")
+	submit("c", time.Second)
+	submit("d", time.Minute)
 	require.Equal(t, 1, e.logs.count("ERROR", "publish failed"))
+	require.Equal(t, 1, e.logs.count("WARN", "publish failed"))
+
+	e.queue.setFailPublish(false)
+	submit("ok", time.Second)
+	require.Equal(t, 1, e.logs.count("INFO", "publish recovered"))
+
+	e.queue.setFailPublish(true)
+	submit("e", time.Second)
+	require.Equal(t, 2, e.logs.count("WARN", "publish failed"))
+	require.Equal(t, 1, e.logs.count("ERROR", "publish failed"))
+
+	require.NoError(t, e.fallback.Flush(ctx))
+	require.Equal(t, []string{"a", "b", "c", "d", "e"}, e.fbStore.appliedKeys())
 }
 
 // After a failed publish, commands skip Redis for the cooldown, so an outage
@@ -312,7 +349,7 @@ func TestRedisBusCooldownSkipsRedis(t *testing.T) {
 	e.queue.mu.Lock()
 	require.Equal(t, 1, e.queue.publishes)
 	e.queue.mu.Unlock()
-	require.Equal(t, 1, e.logs.count("ERROR", "publish failed"))
+	require.Equal(t, 1, e.logs.count("WARN", "publish failed"))
 }
 
 // An LPUSH that lands while its reply times out puts the command on both

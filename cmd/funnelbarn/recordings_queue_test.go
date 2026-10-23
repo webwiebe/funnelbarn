@@ -225,3 +225,68 @@ func TestDeadLetterChunkLogsAnUnhandledError(t *testing.T) {
 	require.Equal(t, "rec-9", line["recording_id"])
 	require.EqualValues(t, 4, line["chunk_index"])
 }
+
+// levelCounts swaps the default logger for the test and returns a function
+// that counts its lines by level whose message contains msg.
+func levelCounts(t *testing.T) func(level, msg string) int {
+	t.Helper()
+	var (
+		mu  sync.Mutex
+		buf bytes.Buffer
+	)
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(lockedWriter{&mu, &buf}, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return func(level, msg string) int {
+		mu.Lock()
+		defer mu.Unlock()
+		n := 0
+		for _, line := range bytes.Split(buf.Bytes(), []byte("\n")) {
+			var rec map[string]any
+			if json.Unmarshal(line, &rec) != nil {
+				continue
+			}
+			if m, _ := rec["msg"].(string); rec["level"] == level && bytes.Contains([]byte(m), []byte(msg)) {
+				n++
+			}
+		}
+		return n
+	}
+}
+
+type lockedWriter struct {
+	mu *sync.Mutex
+	w  *bytes.Buffer
+}
+
+func (l lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
+}
+
+// A short Valkey stall logs at Warn; only one that lasts reaches BugBarn.
+func TestRecordingsQueuePublishFailureLevels(t *testing.T) {
+	count := levelCounts(t)
+	ctx := context.Background()
+	now := time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC)
+	list := &flakyChunkList{failPublish: true}
+	q := &recordingsQueue{list: list, maxLen: 10}
+	q.outage.Now = func() time.Time { return now }
+	meta := service.ChunkMeta{Recording: repository.Recording{ID: "rec-1", ProjectID: "p"}}
+
+	q.Enqueue(ctx, meta)
+	now = now.Add(5 * time.Second)
+	q.Enqueue(ctx, meta)
+	require.Equal(t, 1, count("WARN", "recordings queue publish failed"))
+	require.Zero(t, count("ERROR", "recordings queue publish failed"))
+
+	now = now.Add(command.DefaultOutageAfter)
+	q.Enqueue(ctx, meta)
+	q.Enqueue(ctx, meta)
+	require.Equal(t, 1, count("ERROR", "recordings queue publish failed"))
+
+	list.failPublish = false
+	require.True(t, q.Enqueue(ctx, meta))
+	require.Equal(t, 1, count("INFO", "recordings queue publish recovered"))
+}

@@ -1,6 +1,16 @@
 package command
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
+
+// SetOutageClock gives b's publish and receive outage tracking a test clock.
+func SetOutageClock(b *RedisBus, now func() time.Time) {
+	b.publishOutage.Now = now
+	b.receiveOutage.Now = now
+}
 
 // AppliedCount reads funnelbarn_command_applied_total for one label pair from
 // the default registry.

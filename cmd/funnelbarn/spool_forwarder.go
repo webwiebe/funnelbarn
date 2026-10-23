@@ -28,7 +28,7 @@ type spoolForwarder struct {
 	spoolDir string
 	maxLen   int64
 
-	failing bool // last publish failed; logged at Error once per outage
+	failing bool // last publish failed; logged at Warn once per outage
 	full    bool // queue at its cap; logged once per episode
 }
 
@@ -143,14 +143,15 @@ func (b *forwardBatch) flush() bool {
 }
 
 func (f *spoolForwarder) publishFailed(ctx context.Context, err error) {
+	// The records stay in the spool, so a short Valkey stall loses nothing
+	// and logs at Warn. The worker ticks every second; the spool stall check
+	// reports an outage that lasts, at Error.
 	if !f.failing {
 		f.failing = true
-		slog.ErrorContext(ctx, "ingest queue publish failed, leaving records in the spool",
+		slog.WarnContext(ctx, "ingest queue publish failed, leaving records in the spool",
 			"err", err, "handled", true)
 		return
 	}
-	// The worker ticks every second; the spool stall check reports an outage
-	// that lasts.
 	slog.DebugContext(ctx, "ingest queue publish failed, leaving records in the spool",
 		"err", err, "handled", true)
 }
