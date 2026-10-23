@@ -100,6 +100,7 @@ func newRecordingServerWithStorage(t *testing.T, storage service.RecordingStorag
 		IngestRatePerMinute: 1000,
 		IngestRateBurst:     1000,
 		DB:                  store,
+		WebSessions:         store,
 		Version:             "test",
 	})
 	return srv, store

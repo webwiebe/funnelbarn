@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -167,15 +170,28 @@ func (svc *RecordingService) LookupTrace(ctx context.Context, projectID, traceID
 	return svc.store.LookupTrace(ctx, projectID, traceID)
 }
 
+// ownedRecording loads a recording and checks it belongs to projectID. A
+// missing recording and one in another project both wrap domain.ErrNotFound,
+// so the API answers 404 for either.
+func (svc *RecordingService) ownedRecording(ctx context.Context, projectID, recordingID string) (repository.Recording, error) {
+	rec, err := svc.store.GetRecording(ctx, recordingID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return repository.Recording{}, fmt.Errorf("%w: recording %s", domain.ErrNotFound, recordingID)
+	}
+	if err != nil {
+		return repository.Recording{}, fmt.Errorf("recordings: get recording: %w", err)
+	}
+	if rec.ProjectID != projectID {
+		return repository.Recording{}, fmt.Errorf("%w: recording %s", domain.ErrNotFound, recordingID)
+	}
+	return rec, nil
+}
+
 // TracesForRecording returns the ordered trace timeline for a recording, after
 // verifying it belongs to the given project.
 func (svc *RecordingService) TracesForRecording(ctx context.Context, projectID, recordingID string) ([]repository.TraceLink, error) {
-	rec, err := svc.store.GetRecording(ctx, recordingID)
-	if err != nil {
-		return nil, fmt.Errorf("recordings: get recording: %w", err)
-	}
-	if rec.ProjectID != projectID {
-		return nil, fmt.Errorf("recordings: not found")
+	if _, err := svc.ownedRecording(ctx, projectID, recordingID); err != nil {
+		return nil, err
 	}
 	return svc.store.TracesForRecording(ctx, recordingID)
 }
@@ -285,12 +301,9 @@ func (svc *RecordingService) PurgeProjectRecordings(ctx context.Context, project
 // DeleteRecording removes a single recording (R2 chunks + SQLite row) after
 // verifying it belongs to the given project.
 func (svc *RecordingService) DeleteRecording(ctx context.Context, projectID, recordingID string) error {
-	rec, err := svc.store.GetRecording(ctx, recordingID)
+	rec, err := svc.ownedRecording(ctx, projectID, recordingID)
 	if err != nil {
-		return fmt.Errorf("recordings: get recording: %w", err)
-	}
-	if rec.ProjectID != projectID {
-		return fmt.Errorf("recordings: not found")
+		return err
 	}
 	svc.deleteChunks(ctx, rec.ProjectID, rec.ID, rec.LastChunkIndex, rec.ChunkCount)
 	return svc.store.DeleteRecording(ctx, rec.ID)
@@ -344,12 +357,9 @@ func containsFullSnapshot(events json.RawMessage) bool {
 
 // GetChunk fetches, decompresses, and returns the raw JSON event array for one chunk.
 func (svc *RecordingService) GetChunk(ctx context.Context, projectID, recordingID string, index int) ([]byte, error) {
-	rec, err := svc.store.GetRecording(ctx, recordingID)
+	rec, err := svc.ownedRecording(ctx, projectID, recordingID)
 	if err != nil {
-		return nil, fmt.Errorf("recordings: get recording: %w", err)
-	}
-	if rec.ProjectID != projectID {
-		return nil, fmt.Errorf("recordings: not found")
+		return nil, err
 	}
 
 	key := chunkKey(rec.ProjectID, recordingID, index)
@@ -362,12 +372,9 @@ func (svc *RecordingService) GetChunk(ctx context.Context, projectID, recordingI
 
 // GetRecordingSessionID returns the session_id for a recording, verifying project ownership.
 func (svc *RecordingService) GetRecordingSessionID(ctx context.Context, projectID, recordingID string) (string, error) {
-	rec, err := svc.store.GetRecording(ctx, recordingID)
+	rec, err := svc.ownedRecording(ctx, projectID, recordingID)
 	if err != nil {
-		return "", fmt.Errorf("recordings: get recording: %w", err)
-	}
-	if rec.ProjectID != projectID {
-		return "", fmt.Errorf("recordings: not found")
+		return "", err
 	}
 	return rec.SessionID, nil
 }

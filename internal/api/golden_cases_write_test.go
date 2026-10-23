@@ -135,6 +135,10 @@ func goldenMiscMutations(b *mutBuilder, s *goldenSeed) {
 	b.read("sessions_a_after_anonymize", pa+"/sessions?limit=5")
 	b.write("recording_delete", "DELETE", pa+"/recordings/"+s.RecordingA2, nil, http.StatusNoContent, nil)
 	b.read("recordings_a_after_delete", pa+"/recordings")
+	// Deleting a recording that is gone is a 404 (#305). The other recording
+	// routes are covered by TestRecordingRoutes_MissingRecordingIs404, which
+	// keeps the reader-mode 2xx share of the goldens above its floor.
+	b.write("recording_delete_missing", "DELETE", pa+"/recordings/"+s.RecordingA2, nil, http.StatusNotFound, nil)
 	// No persisted effect an HTTP read can see: spans go to the SpanBarn relay
 	// and client errors to the error log. The status is the contract.
 	b.write("telemetry_empty_batch", "POST", "/api/v1/telemetry", map[string]any{"spans": []any{}}, http.StatusAccepted, nil)
