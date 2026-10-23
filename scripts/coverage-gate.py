@@ -38,6 +38,10 @@ import collections
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASELINE = os.path.join(ROOT, "scripts", "coverage-baseline.txt")
 PROFILE = os.path.join(ROOT, "coverage-gate.out")
+# Per-package limit for the measuring run. Under load the mac mini runners run
+# the big packages 2 to 3 times slower, which pushes internal/api past go
+# test's default 10m.
+TEST_TIMEOUT = "25m"
 LINE_RE = re.compile(r"^(.*\.go:\d+\.\d+,\d+\.\d+) (\d+) (\d+)$")
 
 # Noise band for the percentage floors (Rules 2 & 3), in percentage points.
@@ -60,7 +64,7 @@ def short(path: str) -> str:
 def measure():
     print("measuring cross-package coverage (go test -coverpkg=./... ./...) ...", flush=True)
     r = subprocess.run(
-        ["go", "test", "-coverpkg=./...", "-covermode=atomic",
+        ["go", "test", f"-timeout={TEST_TIMEOUT}", "-coverpkg=./...", "-covermode=atomic",
          f"-coverprofile={PROFILE}", "./..."],
         cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
     )

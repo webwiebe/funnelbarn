@@ -143,7 +143,9 @@ jobs:
           cache: false
 
       - name: Go tests with race detector
-        run: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
+        # internal/api takes about 400s under -race on an idle runner and over
+        # 600s when the mini is loaded, so go test's default 10m fails the gate.
+        run: go test -race -count=1 -timeout=25m -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Coverage ratchet (per-file / per-package / global)
         # Fails if ANY first-party file is 0% covered, if any package drops below
