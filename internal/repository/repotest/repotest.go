@@ -48,7 +48,7 @@ func Open(t testing.TB) *repository.Store {
 	if err != nil {
 		t.Fatalf("repotest: repository.Open(%s): %v", path, err)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 
@@ -57,12 +57,12 @@ func build() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	s, err := repository.Open(filepath.Join(dir, "migrated.db"))
 	if err != nil {
 		return nil, err
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	// VACUUM INTO writes one self-contained file with no WAL beside it, so
 	// the bytes are the whole database.
 	out := filepath.Join(dir, "template.db")

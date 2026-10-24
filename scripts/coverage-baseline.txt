@@ -20,7 +20,7 @@ internal/mcp	87
 internal/middleware	100
 internal/queue	100
 internal/repository	74
-internal/repository/repotest	59
+internal/repository/repotest	80
 internal/service	74
 internal/session	100
 internal/spool	75
