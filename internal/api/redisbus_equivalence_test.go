@@ -13,7 +13,6 @@ package api
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -24,6 +23,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/queue"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -182,7 +182,7 @@ func TestRedisBusGoldenAPI(t *testing.T) {
 // newRedisSnapStack is newSnapStack with a RedisBus as command bus.
 func newRedisSnapStack(t *testing.T) *snapStack {
 	t.Helper()
-	store, err := repository.Open(filepath.Join(t.TempDir(), "snap.db"))
+	store, err := repository.Open(repotest.Path(t, "snap.db"))
 	if err != nil {
 		t.Fatalf("repository.Open: %v", err)
 	}

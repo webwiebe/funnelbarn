@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"go.opentelemetry.io/otel"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -37,7 +37,7 @@ func captureSpans(t *testing.T) *tracetest.InMemoryExporter {
 // a slow pass shows which DELETE held the writer.
 func TestRunMaintenance_EmitsRootAndStepSpans(t *testing.T) {
 	exp := captureSpans(t)
-	store, err := repository.Open(filepath.Join(t.TempDir(), "maint-spans.db"))
+	store, err := repository.Open(repotest.Path(t, "maint-spans.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestRunMaintenance_EmitsRootAndStepSpans(t *testing.T) {
 // Steps that the config disables must not emit spans.
 func TestRunMaintenance_SkippedStepsEmitNoSpans(t *testing.T) {
 	exp := captureSpans(t)
-	store, err := repository.Open(filepath.Join(t.TempDir(), "maint-skip.db"))
+	store, err := repository.Open(repotest.Path(t, "maint-skip.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

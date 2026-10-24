@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,12 +13,13 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 )
 
 func newCommandTestStore(t *testing.T) (*repository.Store, repository.Project, repository.FeatureFlag) {
 	t.Helper()
 	ctx := context.Background()
-	store, err := repository.Open(filepath.Join(t.TempDir(), "cmd.db"))
+	store, err := repository.Open(repotest.Path(t, "cmd.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Close() })
 	p, err := store.CreateProject(ctx, "Cmd", "cmd")

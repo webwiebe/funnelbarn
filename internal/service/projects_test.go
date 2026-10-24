@@ -2,19 +2,19 @@ package service_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
 func newTestStore(t *testing.T) *repository.Store {
 	t.Helper()
-	s, err := repository.Open(filepath.Join(t.TempDir(), "test.db"))
+	s, err := repository.Open(repotest.Path(t, "test.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return s

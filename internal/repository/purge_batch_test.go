@@ -2,20 +2,20 @@ package repository_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 )
 
 // TestPurgeStopsOnCancelledContext checks that the batched purge honours ctx
 // between batches: a cancelled context deletes nothing and reports the error.
 func TestPurgeStopsOnCancelledContext(t *testing.T) {
 	ctx := context.Background()
-	s, err := repository.Open(filepath.Join(t.TempDir(), "purge-cancel.db"))
+	s, err := repository.Open(repotest.Path(t, "purge-cancel.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 

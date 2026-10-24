@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 )
 
 // updatePurge rewrites the golden file instead of comparing against it.
@@ -36,7 +37,7 @@ type purgeGolden struct {
 // SQL so the test does not depend on how RecordEvaluation writes.
 func TestPurgeRetention(t *testing.T) {
 	ctx := context.Background()
-	s, err := repository.Open(filepath.Join(t.TempDir(), "purge.db"))
+	s, err := repository.Open(repotest.Path(t, "purge.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 

@@ -14,6 +14,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 )
@@ -24,9 +25,9 @@ import (
 
 func openMemoryStore(t *testing.T) *repository.Store {
 	t.Helper()
-	s, err := repository.Open(":memory:")
+	s, err := repository.Open(repotest.Path(t, "test.db"))
 	if err != nil {
-		t.Fatalf("repository.Open(:memory:): %v", err)
+		t.Fatalf("repository.Open: %v", err)
 	}
 	t.Cleanup(func() { s.Close() })
 	return s
