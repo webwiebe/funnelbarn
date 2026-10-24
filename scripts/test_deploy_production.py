@@ -101,6 +101,26 @@ class DeployProductionTest(unittest.TestCase):
     def test_rollback_runs_on_failure(self):
         self.assertEqual(self.steps[self._index("Rollback on failure")]["if"], "failure()")
 
+    def test_rollback_restores_the_revisions_recorded_before_the_apply(self):
+        # Issue #396: a plain `rollout undo` steps past the running release
+        # when the apply never landed.
+        pre = self.steps[self._index("Record restore point and detect migrations")]["run"]
+        rollback = self.steps[self._index("Rollback on failure")]["run"]
+        self.assertLess(
+            self._index("Record restore point and detect migrations"),
+            self._index("Apply manifests and roll out"),
+        )
+        self.assertIn("restore-revision.sh record", pre)
+        self.assertIn('echo "${w%%:*}_revision=${REV}" >> "$GITHUB_OUTPUT"', pre)
+        for key, target in (
+            ("writer", "deployment/funnelbarn"),
+            ("web", "deployment/funnelbarn-web"),
+            ("reader", "statefulset/funnelbarn-reader"),
+        ):
+            self.assertIn(f"{key}:{target}", pre)
+            self.assertIn(f"restore ${{NAMESPACE}} {target} '${{{{ steps.pre.outputs.{key}_revision }}}}'", rollback)
+        self.assertNotIn("rollout undo", rollback)
+
     def test_release_marker_is_not_posted_after_a_failure(self):
         marker = self.steps[self._index("Post release marker to BugBarn")]
         self.assertNotIn("always()", marker["if"])

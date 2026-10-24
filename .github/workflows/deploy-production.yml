@@ -213,6 +213,15 @@ jobs:
           fi
           echo "carries_migrations=${CARRIES}" >> "$GITHUB_OUTPUT"
 
+          # The revision each workload runs now. The rollback puts exactly these
+          # back; a plain undo steps past them when the apply never landed.
+          for w in writer:deployment/funnelbarn web:deployment/funnelbarn-web reader:statefulset/funnelbarn-reader; do
+            REV=$(ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+              "sh /tmp/funnelbarn-deploy/deploy/restore-revision.sh record ${NAMESPACE} ${w#*:}" || true)
+            echo "${w%%:*}: ${w#*:} at revision ${REV:-<none>}"
+            echo "${w%%:*}_revision=${REV}" >> "$GITHUB_OUTPUT"
+          done
+
           RESTORE=$(ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
             "kubectl -n ${NAMESPACE} exec deploy/funnelbarn -c funnelbarn -- \
              litestream generations -config /etc/litestream.yml /var/lib/funnelbarn/funnelbarn.db" 2>/dev/null | tail -2)
@@ -298,15 +307,16 @@ jobs:
             echo "Then repair from /tmp/pre.db, or roll forward with a corrective migration."
             exit 1
           fi
-          echo "Release carries no migrations; rolling the image back."
+          echo "Release carries no migrations; putting back the revisions recorded before the deploy."
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
             set -eu
-            kubectl -n ${NAMESPACE} rollout undo deployment/funnelbarn
-            kubectl -n ${NAMESPACE} rollout undo deployment/funnelbarn-web
+            R=/tmp/funnelbarn-deploy/deploy/restore-revision.sh
+            sh \$R restore ${NAMESPACE} deployment/funnelbarn '${{ steps.pre.outputs.writer_revision }}'
+            sh \$R restore ${NAMESPACE} deployment/funnelbarn-web '${{ steps.pre.outputs.web_revision }}'
             # Last: on the release that introduces the readers the StatefulSet
-            # has no earlier revision and this fails. deploy/RUNBOOK.md has the
-            # steps to send traffic back to the writer in that case.
-            kubectl -n ${NAMESPACE} rollout undo statefulset/funnelbarn-reader
+            # had no revision to record and this fails. deploy/RUNBOOK.md has
+            # the steps to send traffic back to the writer in that case.
+            sh \$R restore ${NAMESPACE} statefulset/funnelbarn-reader '${{ steps.pre.outputs.reader_revision }}'
           "
 
       - name: Post release marker to BugBarn
