@@ -8,8 +8,9 @@
 // gate still green). The failure prints the refresh command.
 //
 // `--write` refreshes the baseline after a deliberate change.
-// `--report-only` prints the same report and always exits 0. CI runs this mode
-// while the gate soaks on real pull requests; drop the flag to enforce.
+// `--report-only` prints the same report and exits 0 when the tree and the
+// baseline disagree; a run below the file floor still exits 1. CI runs this mode
+// while the gate soaks, until 2026-10-31; drop the flag to enforce.
 //
 // Items are keyed `type:file:name`, without line numbers, so moving code inside
 // a file does not read as one finding gone and another new.
@@ -20,6 +21,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const BASELINE_FILE = "knip-baseline.json";
+
+// knip exits 0 with nothing to report when it cannot read the sources (a TypeScript
+// major it does not support, a project glob that matches no file). A run that
+// analysed fewer files than this is an error in every mode, report-only included.
+// The tree analyses 136 today.
+export const MIN_FILES = 100;
 
 // The issue types knip reports that mean "this is unused". `duplicates` and
 // `enumMembers` are left out on purpose: they are style findings, not dead code.
@@ -80,11 +87,43 @@ export function compare(baselineItems, currentItems) {
   };
 }
 
-export function runKnip(webDir) {
+/** Files knip parsed, from the `getImportsAndExports` row of its --performance table. */
+export function analysedFiles(performanceOutput) {
+  const row = performanceOutput.split("\n").find((l) => l.trimStart().startsWith("getImportsAndExports"));
+  const count = row ? Number(row.trim().split(/\s+/)[1]) : 0;
+  return Number.isInteger(count) ? count : 0;
+}
+
+/** The floor's verdict: an error message, or null when knip saw enough files. */
+export function checkFloor(performanceOutput, minFiles = MIN_FILES) {
+  const analysed = analysedFiles(performanceOutput);
+  return analysed < minFiles
+    ? `knip analysed ${analysed} file(s), expected at least ${minFiles}: nothing was measured`
+    : null;
+}
+
+// The web package's own knip, pinned in package.json. `npx knip` could fetch a
+// different version at run time.
+const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const KNIP_BIN = path.join(WEB_DIR, "node_modules", ".bin", "knip");
+
+export function runKnipPerformance(dir) {
+  try {
+    return execFileSync(KNIP_BIN, ["--performance", "--no-exit-code"], {
+      cwd: dir,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  } catch (err) {
+    return err.stdout ?? "";
+  }
+}
+
+export function runKnip(dir) {
   let raw = "";
   try {
-    raw = execFileSync("npx", ["knip", "--reporter", "json", "--no-exit-code"], {
-      cwd: webDir,
+    raw = execFileSync(KNIP_BIN, ["--reporter", "json", "--no-exit-code"], {
+      cwd: dir,
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
     });
@@ -95,18 +134,28 @@ export function runKnip(webDir) {
   return JSON.parse(raw);
 }
 
-function main() {
-  const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  const baselinePath = path.join(webDir, BASELINE_FILE);
-  const write = process.argv.includes("--write");
-  const reportOnly = process.argv.includes("--report-only");
+/**
+ * The gate over the package in `dir`; returns the exit code. The floor fails in
+ * every mode. `--report-only` turns a disagreement with the baseline into exit 0;
+ * it never touches the floor.
+ */
+export function run({ dir = WEB_DIR, args = [], minFiles = MIN_FILES, out = console.log, err = console.error } = {}) {
+  const baselinePath = path.join(dir, BASELINE_FILE);
+  const write = args.includes("--write");
+  const reportOnly = args.includes("--report-only");
 
-  const items = flatten(runKnip(webDir));
+  const floorProblem = checkFloor(runKnipPerformance(dir), minFiles);
+  if (floorProblem) {
+    err(`knip ratchet FAILED: ${floorProblem}`);
+    return 1;
+  }
+
+  const items = flatten(runKnip(dir));
 
   if (write) {
     fs.writeFileSync(baselinePath, `${JSON.stringify({ total: items.length, items }, null, 2)}\n`);
-    console.log(`knip baseline written: ${items.length} items`);
-    return;
+    out(`knip baseline written: ${items.length} items`);
+    return 0;
   }
 
   const baseline = fs.existsSync(baselinePath)
@@ -115,16 +164,16 @@ function main() {
   const res = compare(baseline.items, items);
 
   if (res.ok && res.total === 0) {
-    console.log("knip: clean");
-    return;
+    out("knip: clean");
+    return 0;
   }
-  console.log(`knip: ${res.total} items (baseline ${res.baselineTotal})`);
+  out(`knip: ${res.total} items (baseline ${res.baselineTotal})`);
   if (res.ok) {
-    console.log("knip: on the baseline, exactly.");
-    return;
+    out("knip: on the baseline, exactly.");
+    return 0;
   }
 
-  const say = reportOnly ? console.log : console.error;
+  const say = reportOnly ? out : err;
   say("");
   say(
     reportOnly
@@ -148,14 +197,15 @@ function main() {
   }
 
   if (reportOnly) {
-    console.log("");
-    console.log("knip ratchet: report-only run, not gating.");
-    return;
+    out("");
+    out("knip ratchet: report-only run, not gating.");
+    return 0;
   }
-  process.exit(1);
+  return 1;
 }
 
 // Only run when invoked directly, so the test can import the pure helpers.
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  main();
+  const code = run({ args: process.argv.slice(2) });
+  if (code !== 0) process.exit(code);
 }

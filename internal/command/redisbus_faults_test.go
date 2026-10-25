@@ -93,8 +93,10 @@ func TestRedisBusReceiveErrorsBackOffAndRecover(t *testing.T) {
 	require.NoError(t, bus.Flush(ctx))
 
 	require.Equal(t, []string{"k"}, store.appliedKeys())
-	require.Equal(t, 1, logs.count("ERROR", "receive failed"))
-	require.Equal(t, 2, logs.count("WARN", "receive failed"))
+	// Three failures in a row are a short stall: Warn once, never Error.
+	require.Zero(t, logs.count("ERROR", "receive failed"))
+	require.Equal(t, 1, logs.count("WARN", "receive failed"))
+	require.Equal(t, 2, logs.count("DEBUG", "receive failed"))
 	require.Equal(t, 1, logs.count("INFO", "receive recovered"))
 }
 
@@ -103,7 +105,7 @@ func TestRedisBusCloseDuringReceiveBackoff(t *testing.T) {
 	bus, _, logs := newFaultyBus(t, q, nil)
 	ctx := testCtx(t)
 	bus.Start(ctx)
-	require.Eventually(t, func() bool { return logs.count("ERROR", "receive failed") == 1 },
+	require.Eventually(t, func() bool { return logs.count("WARN", "receive failed") == 1 },
 		5*time.Second, 5*time.Millisecond)
 
 	require.NoError(t, bus.Close(ctx))

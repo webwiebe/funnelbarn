@@ -49,6 +49,15 @@ func newCommandBus(ctx context.Context, cfg config.Config, deps command.Deps, lo
 	return closing, nil
 }
 
+// newFlagBookkeeping puts a started command.Async in front of commands for the
+// flag evaluation row and last_evaluated_at touch, so an evaluate request does
+// not wait on their publish to Valkey (#337). Close it before commands.
+func newFlagBookkeeping(ctx context.Context, commands command.Bus, logger *slog.Logger) *command.Async {
+	a := command.NewAsync(commands, command.AsyncOptions{Logger: logger})
+	a.Start(ctx)
+	return a
+}
+
 // redisClosingBus starts the fallback dispatcher with the bus (RedisBus.Start
 // only launches the consumer) and closes the Redis client once the bus has
 // drained.

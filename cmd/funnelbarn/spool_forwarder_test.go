@@ -132,3 +132,26 @@ func equal(a, b []string) bool {
 	}
 	return true
 }
+
+// Records stay in the spool, so a failed publish logs at Warn; the spool stall
+// check is what reports an outage that lasts.
+func TestForwardPublishFailureLogsWarnOnce(t *testing.T) {
+	count := levelCounts(t)
+	dir := t.TempDir()
+	list := &fakeForwardList{failNext: true}
+	f := &spoolForwarder{list: list, spoolDir: dir, maxLen: 100}
+
+	f.forward(context.Background(), entries("a"), 0)
+	list.failNext = true
+	f.forward(context.Background(), entries("a"), 0)
+	if got := count("WARN", "ingest queue publish failed"); got != 1 {
+		t.Errorf("WARN lines = %d, want 1", got)
+	}
+	if got := count("ERROR", "ingest queue publish failed"); got != 0 {
+		t.Errorf("ERROR lines = %d, want 0", got)
+	}
+	f.forward(context.Background(), entries("a"), 0)
+	if got := count("INFO", "ingest queue publish recovered"); got != 1 {
+		t.Errorf("INFO lines = %d, want 1", got)
+	}
+}

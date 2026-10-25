@@ -1,6 +1,22 @@
 name: Deploy Production
 
+# Two entry points:
+#   - workflow_call from the promote job in build-and-test.yml, after the commit passed testing,
+#     E2E, the staging rollout and the staging smoke check. This is the normal path.
+#   - workflow_dispatch, kept for a manual rollback or redeploy of a known version.
+# `production_version` is a version tag or a commit SHA; both resolve to the SHA
+# the images are tagged with.
 on:
+  workflow_call:
+    inputs:
+      production_version:
+        description: 'Version tag or commit SHA to deploy'
+        required: true
+        type: string
+      confirmed:
+        description: 'The caller has verified the version on staging'
+        required: true
+        type: boolean
   workflow_dispatch:
     inputs:
       production_version:
@@ -34,17 +50,29 @@ jobs:
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.resolve.outputs.sha }}
+      service_digest: ${{ steps.resolve.outputs.service_digest }}
+      web_digest: ${{ steps.resolve.outputs.web_digest }}
     env:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
       - name: Require confirmation
         run: |
-          if [ "${{ github.event.inputs.confirmed }}" != "true" ]; then
+          if [ "${{ inputs.confirmed }}" != "true" ]; then
             echo "ERROR: Set 'confirmed' to true to proceed with production deploy"
             exit 1
           fi
 
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        # Only this job's own checkout: never another runner's work directory.
+        # No `|| true`: if the cache cannot be cleared, checkout fails next anyway, so fail here with the cause.
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c"
+            rm -rf "$c"
+          fi
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -53,7 +81,7 @@ jobs:
         id: resolve
         run: |
           set -euo pipefail
-          VERSION="${{ github.event.inputs.production_version }}"
+          VERSION="${{ inputs.production_version }}"
           # Resolve version tag to the commit SHA (images are tagged by SHA in testing CI)
           SHA=$(git rev-list -n1 "${VERSION}" 2>/dev/null) || \
             { echo "ERROR: Tag ${VERSION} not found in repo"; exit 1; }
@@ -69,7 +97,21 @@ jobs:
           docker manifest inspect "${WEB_IMAGE}:${SHA}" > /dev/null || \
             { echo "ERROR: ${WEB_IMAGE}:${SHA} not found in GHCR (for ${VERSION})"; exit 1; }
           echo "Images verified for ${VERSION} (${SHA})"
-          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          # Resolve each tag to its digest now; the deploy uses image@digest, so a
+          # tag that is moved after this point cannot change what ships.
+          SERVICE_DIGEST=$(docker buildx imagetools inspect "${SERVICE_IMAGE}:${SHA}" --format '{{.Manifest.Digest}}')
+          WEB_DIGEST=$(docker buildx imagetools inspect "${WEB_IMAGE}:${SHA}" --format '{{.Manifest.Digest}}')
+          case "${SERVICE_DIGEST}${WEB_DIGEST}" in
+            sha256:*sha256:*) ;;
+            *) echo "ERROR: could not resolve image digests (service='${SERVICE_DIGEST}' web='${WEB_DIGEST}')"; exit 1 ;;
+          esac
+          echo "service ${SERVICE_DIGEST}"
+          echo "web     ${WEB_DIGEST}"
+          {
+            echo "sha=${SHA}"
+            echo "service_digest=${SERVICE_DIGEST}"
+            echo "web_digest=${WEB_DIGEST}"
+          } >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: preflight
@@ -79,10 +121,22 @@ jobs:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        # Only this job's own checkout: never another runner's work directory.
+        # No `|| true`: if the cache cannot be cleared, checkout fails next anyway, so fail here with the cause.
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c"
+            rm -rf "$c"
+          fi
       - uses: actions/checkout@v6
 
       - name: Pin manifests to this release
-        run: deploy/pin-release.sh production "${{ needs.preflight.outputs.sha }}" "${{ github.event.inputs.production_version }}"
+        run: |
+          deploy/pin-release.sh production "${{ needs.preflight.outputs.sha }}" "${{ inputs.production_version }}" \
+            "${{ needs.preflight.outputs.service_digest }}" "${{ needs.preflight.outputs.web_digest }}"
 
       - name: Transfer manifests
         run: |
@@ -130,9 +184,14 @@ jobs:
         run: |
           set -uo pipefail
           SHA="${{ needs.preflight.outputs.sha }}"
-          CURRENT=$(ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
-            "kubectl -n ${NAMESPACE} get deployment funnelbarn -o jsonpath='{.spec.template.spec.containers[0].image}'" \
-            | sed 's/.*://')
+          # The SHA comes from the release annotation written after the last
+          # good deploy; the image string is only a fallback for a deployment
+          # that predates it (a digest-form image carries no SHA).
+          ANNOTATION=$(ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl -n ${NAMESPACE} get deployment funnelbarn -o jsonpath='{.metadata.annotations.funnelbarn\.wiebe\.xyz/release-sha}'" || true)
+          IMAGE=$(ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl -n ${NAMESPACE} get deployment funnelbarn -o jsonpath='{.spec.template.spec.containers[0].image}'" || true)
+          CURRENT=$(deploy/deployed-sha.sh "${ANNOTATION}" "${IMAGE}")
           echo "currently deployed: ${CURRENT:-<none>}"
 
           # Default to "assume migrations" — refusing a safe rollback costs a
@@ -153,6 +212,15 @@ jobs:
             fi
           fi
           echo "carries_migrations=${CARRIES}" >> "$GITHUB_OUTPUT"
+
+          # The revision each workload runs now. The rollback puts exactly these
+          # back; a plain undo steps past them when the apply never landed.
+          for w in writer:deployment/funnelbarn web:deployment/funnelbarn-web reader:statefulset/funnelbarn-reader; do
+            REV=$(ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+              "sh /tmp/funnelbarn-deploy/deploy/restore-revision.sh record ${NAMESPACE} ${w#*:}" || true)
+            echo "${w%%:*}: ${w#*:} at revision ${REV:-<none>}"
+            echo "${w%%:*}_revision=${REV}" >> "$GITHUB_OUTPUT"
+          done
 
           RESTORE=$(ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
             "kubectl -n ${NAMESPACE} exec deploy/funnelbarn -c funnelbarn -- \
@@ -194,7 +262,25 @@ jobs:
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn --timeout=180s
             kubectl -n ${NAMESPACE} rollout status statefulset/funnelbarn-reader --timeout=180s
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=180s
+            # Smoke: the stated version at the preflight commit. A failure runs the rollback step.
+            sh /tmp/funnelbarn-deploy/deploy/assert-version.sh ${NAMESPACE} deploy/funnelbarn funnelbarn ${{ inputs.production_version }} ${{ needs.preflight.outputs.sha }}
+            sh /tmp/funnelbarn-deploy/deploy/assert-version.sh ${NAMESPACE} pod/funnelbarn-reader-0 funnelbarn ${{ inputs.production_version }} ${{ needs.preflight.outputs.sha }}
           "
+
+      # Must stay above the rollback step: a failed smoke check fails the job and
+      # so triggers the rollback below.
+      - name: Smoke check production
+        run: scripts/smoke.sh https://funnelbarn.wiebe.xyz "${{ inputs.production_version }}"
+
+      # Written only after the smoke check passed, so a release that was rolled
+      # back never leaves its SHA behind. The next deploy reads it to decide
+      # whether its rollback is safe. Annotating the Deployment metadata does not
+      # touch the pod template, so no rollout follows.
+      - name: Record released SHA
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
+            "kubectl -n ${NAMESPACE} annotate deployment/funnelbarn funnelbarn.wiebe.xyz/release-sha=${{ needs.preflight.outputs.sha }} --overwrite"
 
       # NOTE: no blanket `|| true`. A rollback that silently fails is worse
       # than one that reports, because it leaves the impression the deploy was
@@ -221,15 +307,16 @@ jobs:
             echo "Then repair from /tmp/pre.db, or roll forward with a corrective migration."
             exit 1
           fi
-          echo "Release carries no migrations; rolling the image back."
+          echo "Release carries no migrations; putting back the revisions recorded before the deploy."
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
             set -eu
-            kubectl -n ${NAMESPACE} rollout undo deployment/funnelbarn
-            kubectl -n ${NAMESPACE} rollout undo deployment/funnelbarn-web
+            R=/tmp/funnelbarn-deploy/deploy/restore-revision.sh
+            sh \$R restore ${NAMESPACE} deployment/funnelbarn '${{ steps.pre.outputs.writer_revision }}'
+            sh \$R restore ${NAMESPACE} deployment/funnelbarn-web '${{ steps.pre.outputs.web_revision }}'
             # Last: on the release that introduces the readers the StatefulSet
-            # has no earlier revision and this fails. deploy/RUNBOOK.md has the
-            # steps to send traffic back to the writer in that case.
-            kubectl -n ${NAMESPACE} rollout undo statefulset/funnelbarn-reader
+            # had no revision to record and this fails. deploy/RUNBOOK.md has
+            # the steps to send traffic back to the writer in that case.
+            sh \$R restore ${NAMESPACE} statefulset/funnelbarn-reader '${{ steps.pre.outputs.reader_revision }}'
           "
 
       - name: Post release marker to BugBarn
@@ -243,10 +330,10 @@ jobs:
             -H "X-BugBarn-Api-Key: ${BUGBARN_API_KEY}" \
             -H "X-BugBarn-Project: funnelbarn" \
             -d "{
-              \"name\": \"${{ github.event.inputs.production_version }}\",
+              \"name\": \"${{ inputs.production_version }}\",
               \"environment\": \"production\",
-              \"version\": \"${{ github.event.inputs.production_version }}\",
-              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${{ github.event.inputs.production_version }}\",
+              \"version\": \"${{ inputs.production_version }}\",
+              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${{ inputs.production_version }}\",
               \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
             }" || echo "BugBarn release marker skipped"
 
@@ -256,7 +343,7 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| | |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Version | \`${{ github.event.inputs.production_version }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version | \`${{ inputs.production_version }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| URL | https://funnelbarn.wiebe.xyz |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Namespace | \`${NAMESPACE}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Cluster | \`${K3S_HOST}\` |" >> "$GITHUB_STEP_SUMMARY"

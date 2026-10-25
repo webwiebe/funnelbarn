@@ -7,6 +7,7 @@
  */
 
 import { record } from "rrweb";
+import { RECORDING_CHUNK_BUDGET_BYTES, sendInOrder, splitByBudget } from "./recording-chunks.js";
 
 export interface RecordingRule {
   pattern: string;
@@ -933,36 +934,35 @@ export class FunnelBarnClient {
     const events = this.rrwebBuffer.splice(0);
     if (!events.length) return;
     const traces = this.traceBuffer.splice(0);
-    const chunkIndex = this.recordingChunkIndex++;
-    try {
-      await fetch(`${this.endpoint}/api/v1/recordings/chunk`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-funnelbarn-api-key': this.apiKey,
-        },
-        body: JSON.stringify({
-          recording_id: this.recordingId,
-          session_id: this.getOrCreateSessionID(),
-          chunk_index: chunkIndex,
-          events,
-          started_at: this.recordingStartedAt,
-          duration_ms: Date.now() - this.recordingStartMs,
-          page_url: typeof window !== 'undefined' ? window.location.href : undefined,
-          traces: traces.length ? traces : undefined,
-        }),
-        // keepalive has a 64 KB body limit per the Fetch spec — rrweb full
-        // snapshots are 1-5 MB so we only use it for the final unload flush
-        // where the body is a small incremental tail.
-        keepalive: useKeepalive,
-      });
-    } catch {
-      // On failure, push events back to the front so the next flush retries
-      // them — most importantly this preserves the full snapshot (chunk 0).
-      this.rrwebBuffer.unshift(...events);
-      if (traces.length) this.traceBuffer.unshift(...traces);
-      this.recordingChunkIndex--;
-    }
+    const groups = splitByBudget(events, RECORDING_CHUNK_BUDGET_BYTES);
+    // Claim every index before the first await, so a flush that overlaps this
+    // one cannot slot its chunk between these.
+    const first = this.recordingChunkIndex;
+    this.recordingChunkIndex += groups.length;
+    const sent = await sendInOrder(groups, (chunk, g) => fetch(`${this.endpoint}/api/v1/recordings/chunk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-funnelbarn-api-key': this.apiKey },
+      body: JSON.stringify({
+        recording_id: this.recordingId,
+        session_id: this.getOrCreateSessionID(),
+        chunk_index: first + g,
+        events: chunk,
+        started_at: this.recordingStartedAt,
+        duration_ms: Date.now() - this.recordingStartMs,
+        page_url: typeof window !== 'undefined' ? window.location.href : undefined,
+        traces: g === 0 && traces.length ? traces : undefined,
+      }),
+      // keepalive has a 64 KB body limit per the Fetch spec — rrweb full
+      // snapshots are 1-5 MB so we only use it for the final unload flush
+      // where the body is a small incremental tail.
+      keepalive: useKeepalive,
+    }));
+    if (sent === groups.length) return;
+    // On failure, push the unsent events back to the front so the next flush
+    // retries them — most importantly this preserves the full snapshot (chunk 0).
+    this.rrwebBuffer.unshift(...groups.slice(sent).flat());
+    if (sent === 0 && traces.length) this.traceBuffer.unshift(...traces);
+    if (this.recordingChunkIndex === first + groups.length) this.recordingChunkIndex = first + sent;
   }
 
   private detectURL(): string | undefined {

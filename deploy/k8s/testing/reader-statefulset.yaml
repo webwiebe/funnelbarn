@@ -16,6 +16,9 @@ metadata:
 spec:
   serviceName: funnelbarn-reader
   replicas: 2
+  # A reader counts as available only after 10s ready, so the next one is not
+  # stopped before Traefik routes to its replacement.
+  minReadySeconds: 10
   revisionHistoryLimit: 2
   podManagementPolicy: Parallel
   updateStrategy:
@@ -201,6 +204,13 @@ spec:
           limits:
             cpu: 250m
             memory: 128Mi
+        # Keeps serving while Traefik drops this pod from its endpoints: without
+        # it a pod being replaced refuses connections for a moment, and Traefik
+        # answers 502 with no CORS headers (seen as CORS blocks on ingest).
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sleep", "5"]
         livenessProbe:
           httpGet:
             path: /api/v1/health

@@ -3,7 +3,6 @@ package command_test
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/queue"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -36,7 +36,7 @@ func newITEnv(t *testing.T) *itEnv {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = client.Close() })
 
-	store, err := repository.Open(filepath.Join(t.TempDir(), "bus.db"))
+	store, err := repository.Open(repotest.Path(t, "bus.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Close() })
 

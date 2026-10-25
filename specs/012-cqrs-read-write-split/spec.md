@@ -1,8 +1,40 @@
 # Feature Specification: CQRS Read/Write Split
 
-**Spec**: `012-cqrs-read-write-split`
+**Spec**: `specs/012-cqrs-read-write-split/`
+**Status**: Shipped
+**Last verified against the tree**: 2026-10-17 at `ea1b0e6`
+**Issues**: [#302](https://github.com/webwiebe/funnelbarn/issues/302), [#307](https://github.com/webwiebe/funnelbarn/issues/307), [#337](https://github.com/webwiebe/funnelbarn/issues/337), [#346](https://github.com/webwiebe/funnelbarn/issues/346)
+**Principles touched**: I, II, III, IX
 **Created**: 2026-10-07
-**Status**: In progress (issue #302)
+
+---
+
+## Functional Requirements
+
+- **FR-001**: A query adapter MUST open the database read-only, so a write routed to it fails. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/repository/readonly_test.go::TestOpenReadOnlyRefusesWrites`, `internal/repository/readpool_test.go::TestReadPool_RejectsWritesAndSeesCommits`.
+- **FR-002**: `*repository.ReadStore` MUST implement every query port and hold no write handle. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/ports/assert_test.go` (compile-time assertions).
+- **FR-003**: `internal/ports` MUST NOT import `internal/command`, and `internal/api`, `internal/service` and `internal/mcp` MUST NOT import `internal/repository/sqlcgen`. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/archtest/archtest_test.go::TestArchitecture`.
+- **FR-004**: The write pool MUST hold one connection and the read pool four; in-memory databases alias the two. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/repository/readpool_test.go::TestReadPool_AliasesWritePoolInMemory`.
+- **FR-005**: A full command buffer MUST block the submitter and never drop a command. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/command/dispatcher_test.go::TestBackpressureBlocksAndNeverDrops`.
+- **FR-006**: `Flush` MUST wait for every submitted command, and shutdown MUST drain with a timeout. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/command/dispatcher_test.go::TestFIFOAndFlush`, `internal/command/dispatcher_test.go::TestCloseDrainsAndTimesOut`.
+- **FR-007**: A failing or panicking command MUST NOT stop the consumer. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/command/dispatcher_test.go::TestApplyErrorAndPanicDoNotStopConsumer`.
+- **FR-008**: `EnsureAutoFlag` MUST re-check the auto-flag cap when the consumer applies it and be idempotent per key. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/command/dispatcher_test.go::TestEnsureAutoFlagRechecksCap`, `internal/repository/flags_autoregister_test.go::TestStore_EnsureAutoFlag_Idempotent`.
+- **FR-009**: The evaluate path MUST complete while the write connection is held, and every queued row MUST land after release. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/api/contention_test.go::TestContention`, `internal/api/contention_test.go::TestEvaluateWithWriterHeld`.
+- **FR-010**: Retention deletes MUST run in batches of 500 and stop on a cancelled context. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/repository/purge_batch_test.go::TestPurgeStopsOnCancelledContext`, `internal/repository/purge_golden_test.go::TestPurgeRetention`.
+- **FR-011**: `FUNNELBARN_MODE` MUST default to `standalone`, and reader and writer modes MUST refuse to start without the Redis queue URL and the internal token (a reader also without the writer URL). Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/config/mode_test.go::TestLoad_ModeDefaultsToStandalone`, `internal/config/mode_test.go::TestValidateMode`, `internal/config/mode_test.go::TestLoad_WriterURLAndInternalToken`.
+- **FR-012**: A reader MUST forward every write to the writer, carry the client address and the internal token, and answer 502 while the writer is down. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/api/forwarder_test.go::TestForwardsToWriter`, `internal/api/forwarder_test.go::TestForwardCarriesTheClientAndTheWritersAnswer`, `internal/api/forwarder_test.go::TestForwardAnswers502WhileTheWriterIsDown`, `internal/api/forwarder_test.go::TestReaderForwardsASessionThatNeedsAWrite`.
+- **FR-013**: The writer MUST believe the forwarded client headers only when the token matches. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/api/forwarder_test.go::TestWriterTrustsForwardedHeadersWithTheToken`.
+- **FR-014**: A reader MUST serve reads itself, and every golden case MUST give the same answer in reader mode as in standalone mode. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/api/forwarder_test.go::TestReaderServesReadsItself`, `internal/api/golden_modes_test.go::TestGoldenReaderMode`.
+- **FR-015**: `GET /api/v1/ready` MUST answer 503 with its reason until the database reaches the newest migration. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/api/ready_test.go::TestReady_GateFailsWithItsReason`, `internal/api/ready_test.go::TestReady_PassesThroughWhenTheGateHolds`.
+- **FR-016**: After a failed publish the bus MUST use the in-process fallback for a cooldown, and one evaluation MUST keep one ID across both paths. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/command/redisbus_test.go::TestRedisBusPublishFailureUsesFallback`, `internal/command/redisbus_test.go::TestRedisBusCooldownSkipsRedis`, `internal/command/redisbus_test.go::TestRedisBusAmbiguousPublishKeepsOneEvaluationID`.
+- **FR-017**: At start-up the consumer MUST requeue what its processing list holds, and a message that fails to decode MUST be acked and skipped. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/command/redisbus_test.go::TestRedisBusRecoverReappliesUnacked`, `internal/command/redisbus_test.go::TestRedisBusGarbagePayloadIsAckedAndSkipped`.
+- **FR-018**: Commands that cannot reach Redis MUST go to a file fallback that survives a restart, forwards after the outage and stops at a 64 MiB cap. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `internal/command/spoolfallback_test.go::TestSpoolFallbackForwardsAfterAnOutage`, `internal/command/spoolfallback_test.go::TestSpoolFallbackSurvivesARestart`, `internal/command/spoolfallback_test.go::TestSpoolFallbackStopsAtItsCap`.
+- **FR-019**: The reader worker MUST forward its spool in order, advance the cursor only after a publish, and keep records when a publish fails. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `cmd/funnelbarn/spool_forwarder_test.go::TestForwardPublishesInOrderAndMovesCursor`, `cmd/funnelbarn/spool_forwarder_test.go::TestForwardKeepsRecordsInSpoolWhenPublishFails`.
+- **FR-020**: Traffic sent to a reader while the writer is stopped MUST land exactly once after the writer returns, including after a Valkey outage and a crash between apply and ack. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `cmd/funnelbarn/durability_test.go::TestReaderTrafficSurvivesAStoppedWriter`.
+- **FR-021**: Each maintenance step MUST emit a child span under `maintenance.purge`. Issues: [#302](https://github.com/webwiebe/funnelbarn/issues/302). Tests: `cmd/funnelbarn/maintenance_test.go::TestRunMaintenance_EmitsRootAndStepSpans`.
+- **FR-022**: The post-deploy check on testing MUST probe evaluate latency and look for a `maintenance.purge` span. Issues: [#307](https://github.com/webwiebe/funnelbarn/issues/307). Tests: `scripts/verify-testing.sh` (a script; no test file).
+- **FR-023**: The evaluate path MUST hand the evaluation row and the `last_evaluated_at` touch to a bounded worker pool (`command.Async`) and wait only for a buffer slot; a full buffer blocks and drops nothing, and shutdown hands the queue to the bus before the bus drains. `EnsureAutoFlag` stays on the bus, so a new flag is published before its touch is queued. Issues: [#337](https://github.com/webwiebe/funnelbarn/issues/337). Tests: `internal/command/async_test.go::TestAsyncSubmitDoesNotWaitForTheInnerBus`, `internal/command/async_test.go::TestAsyncBackpressureBlocksAndNeverDrops`, `internal/command/async_test.go::TestAsyncFlushWaitsForEveryWorker`, `internal/command/async_test.go::TestAsyncCloseDrainsAndLeavesTheInnerBusOpen`, `internal/service/flags_async_internal_test.go::TestEvaluate_BookkeepingGoesToTheBackgroundBus`.
+- **FR-024**: A failed Valkey publish or receive that a fallback absorbs MUST log at Warn when the run of failures starts and at Error once only when it has lasted `command.DefaultOutageAfter` (30s); recovery logs at Info with how long it lasted. The spool forwarder logs Warn only, because the spool stall check reports an outage that lasts. Shared Valkey stalls for a few seconds several times a day, and BugBarn opens an issue for every Error. Issues: [#346](https://github.com/webwiebe/funnelbarn/issues/346), [#347](https://github.com/webwiebe/funnelbarn/issues/347), [#384](https://github.com/webwiebe/funnelbarn/issues/384), [#389](https://github.com/webwiebe/funnelbarn/issues/389). Tests: `internal/command/outage_test.go::TestOutageLevels`, `internal/command/redisbus_test.go::TestRedisBusLastingPublishOutageLogsErrorOnce`, `internal/command/redisbus_faults_test.go::TestRedisBusReceiveErrorsBackOffAndRecover`, `cmd/funnelbarn/recordings_queue_test.go::TestRecordingsQueuePublishFailureLevels`, `cmd/funnelbarn/spool_forwarder_test.go::TestForwardPublishFailureLogsWarnOnce`.
 
 ---
 
@@ -97,9 +129,11 @@ One Redis list per kind (`ingest`, `recordings`, `bookkeeping`), so an ingest ba
 
 Delivery is at-least-once: the consumer moves an item to a per-queue processing list with `BLMOVE`, applies it, then removes it; on startup the consumer requeues anything left in its processing list. Every consumer is idempotent: events dedupe on `ingest_id`, evaluation rows carry an id inserted with `INSERT OR IGNORE`, touches and health marks are idempotent by nature.
 
-Phase 2 step 1 ships the `bookkeeping` queue with a standalone consume and an in-process fallback when a publish fails; the `ingest` and `recordings` queues arrive with the reader and writer modes.
+The `bookkeeping` queue shipped first, with a standalone consume and an in-process fallback when a publish fails; the `ingest` and `recordings` queues followed with the reader and writer modes.
 
 After a failed publish, commands go straight to the in-process fallback for a cooldown (5 s), so an outage that times out instead of refusing connections costs one publish timeout, and evaluate does not wait two seconds on every call. The evaluation id is fixed before the publish, so a push that lands while its reply times out stores one row on both paths.
+
+A publish to the shared Valkey is synchronous and took 60 to 200+ ms at times in production (#337, FUN-48), while the evaluation itself takes under a millisecond. The evaluation row and the `last_evaluated_at` touch therefore go through `command.Async`: four workers publish from a 1024-slot buffer, and the request waits only for the hand-off. Neither command depends on the order of others, so the workers may publish them out of order. `EnsureAutoFlag` is published on the request, before the new flag's touch is queued. The API key touch and the health mark were moved off the request path earlier (#353).
 
 Exactly one process consumes a queue: `Recover` requeues the whole processing list at startup, so a second live consumer would re-apply the first one's in-flight item. Standalone runs one replica, and the writer Deployment uses `Recreate`. A command whose apply fails is logged at Warn and acked, as in phase 1: the write connection has a 5 s busy timeout, and a retrying consumer would hold up every command behind a bad one.
 
@@ -126,7 +160,7 @@ A reader serves `GET /api/v1/ready` with 503 until the database's goose version 
 
 ### How readers see the database
 
-Reader and writer pods mount the same volume and open the same SQLite file in WAL mode, the readers through the read-only pool. Pod affinity keeps them on the writer's node, which is required for a `ReadWriteOnce` volume and for SQLite's shared-memory WAL index. Readers see each commit as soon as it is made, so a flag edit in the dashboard reaches `/api/v1/evaluate` with no lag beyond the flag's `cache_max_age_seconds`.
+Reader and writer pods mount the same volume and open the same SQLite file in WAL mode, the readers through the read-only pool. A `nodeSelector` on the same hostname keeps them on the writer's node, which is required for a `ReadWriteOnce` volume and for SQLite's shared-memory WAL index. Readers see each commit as soon as it is made, so a flag edit in the dashboard reaches `/api/v1/evaluate` with no lag beyond the flag's `cache_max_age_seconds`.
 
 BugBarn's readers restore a Litestream copy instead, which adds replication lag and puts an object-store dependency on the read path. FunnelBarn does not do that. The cost of the shared volume is that readers cannot spread across nodes; every FunnelBarn environment runs on a single node today.
 
@@ -134,9 +168,9 @@ Async commands are eventually consistent: an evaluation row, a touch or an inges
 
 ### Deployment
 
-- Valkey Deployment and Service with AOF on, per environment.
+- A shared Valkey per environment, run from k3s-infra (`valkey-primary.shared-<env>.svc`), with a `funnelbarn` ACL user.
 - `FUNNELBARN_REDIS_QUEUE_URL` in each environment's SOPS secret. Empty means standalone.
-- Reader and writer Deployments; the ingress points at the reader Service.
+- A writer Deployment (`Recreate`, one replica) and a reader StatefulSet; the ingress points at the reader Service.
 
 ---
 
@@ -147,3 +181,35 @@ Async commands are eventually consistent: an evaluation row, a touch or an inges
 - A latency test runs the maintenance purge on a large database while evaluate requests go in, and asserts p99 under 100 ms. It is opt-in (`FUNNELBARN_CONTENTION_TEST=1`) because a wall-clock bound flakes on the shared CI runners.
 - In phase 2 the same goldens run against standalone and against an in-process reader and writer pair, and a durability test stops the writer, sends traffic to a reader, restarts the writer and checks that every row landed exactly once. Both are part of `make regress`. The durability test (`TestReaderTrafficSurvivesAStoppedWriter`) covers events, recording chunks, evaluations and health marks, with a Valkey outage while the writer is down. It then puts every message back on the processing lists, as a writer that crashed between apply and ack leaves them, and checks that a second writer adds no rows.
 - After each deploy to testing, `scripts/verify-testing.sh` probes evaluate latency through the post-boot maintenance pass and checks that a `maintenance.purge` span reached SpanBarn.
+
+---
+
+## Open Questions
+
+- [#337](https://github.com/webwiebe/funnelbarn/issues/337) Evaluate requests wait up to 740 ms on Valkey publishes in production.
+
+## Drift
+
+| Claim | Source | Tree |
+|---|---|---|
+| Status is in progress | Original header | Issue #302 is closed; both phases are in the tree and run in testing, staging and production |
+| Valkey runs as a Deployment and Service with AOF per environment | Deployment section | Valkey is the shared instance from k3s-infra (`valkey-primary.shared-<env>.svc`); no manifest in `deploy/k8s` creates it (`deploy/SECRETS.md`). The AOF setting is not established from this repo |
+| Reader and writer Deployments | Deployment section | The writer is a Deployment with `Recreate`; readers are a StatefulSet with 2 replicas in each environment (`deploy/k8s/*/reader-statefulset.yaml`) |
+| Pod affinity keeps readers on the writer's node | How readers see the database | Both manifests use `nodeSelector` on `kubernetes.io/hostname` |
+| Reader and writer modes refuse to start without the token | Forwarding section | They also refuse to start without `FUNNELBARN_REDIS_QUEUE_URL` (`internal/config/mode_test.go::TestValidateMode`) |
+| Requests that read do not wait for writes | Design principle 2 | Evaluate waits for a buffer slot only (FR-023); `EnsureAutoFlag` for an unknown key still publishes on the request. Production latency after the change is measured on issue #337 |
+| Evaluate logs at error level when slow | Async command dispatcher | `internal/api/flags_slow.go` logs `flag evaluate slow` at error level; issue #362 tracks the resulting BugBarn reports |
+| The latency test is opt-in through `FUNNELBARN_CONTENTION_TEST=1` | Verification | Holds (`internal/api/contention_test.go`) |
+
+## Proof contract
+
+- [ ] A write sent to a read-only store fails (`internal/repository/readonly_test.go::TestOpenReadOnlyRefusesWrites`).
+- [ ] `make regress` passes: `TestGoldenReaderMode` returns the same snapshots in reader mode as in standalone mode.
+- [ ] With the writer stopped, reader traffic lands exactly once after the writer returns (`cmd/funnelbarn/durability_test.go::TestReaderTrafficSurvivesAStoppedWriter`).
+- [ ] After a deploy to testing, `scripts/verify-testing.sh` exits 0 and finds a `maintenance.purge` span in SpanBarn.
+
+## Sources
+
+- `internal/command/`, `internal/ports/`, `internal/archtest/`, `internal/repository/db.go`, `internal/config/`, `internal/api/forwarder.go`, `cmd/funnelbarn/`
+- `deploy/k8s/*/deployment.yaml`, `deploy/k8s/*/reader-statefulset.yaml`, `deploy/SECRETS.md`, `deploy/RUNBOOK.md`, `scripts/verify-testing.sh`
+- Issue titles from the repository issue list: #302, #307, #337, #346, #362

@@ -4,18 +4,18 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 	"github.com/wiebe-xyz/funnelbarn/internal/workerhealth"
 )
 
 func newTestApplier(t *testing.T) (*ingestApplier, *repository.Store) {
 	t.Helper()
-	store, err := repository.Open(filepath.Join(t.TempDir(), "apply.db"))
+	store, err := repository.Open(repotest.Path(t, "apply.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

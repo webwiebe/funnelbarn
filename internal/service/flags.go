@@ -58,6 +58,9 @@ type FlagService struct {
 	// commands, when set, takes every write the evaluate path used to make
 	// synchronously (see flags_async.go). Nil keeps the synchronous behaviour.
 	commands command.Bus
+	// background, when set, takes the evaluation row and the last_evaluated_at
+	// touch instead of commands, so the request does not wait on their publish.
+	background command.Bus
 }
 
 func NewFlagService(store ports.FlagRepo) *FlagService {
@@ -326,7 +329,7 @@ func (svc *FlagService) recordEvaluation(ctx context.Context, flag repository.Fe
 		ContextKeys: ctxKeys,
 	}
 	if svc.commands != nil {
-		svc.submit(ctx, command.RecordEvaluation{Eval: eval})
+		svc.submitBookkeeping(ctx, command.RecordEvaluation{Eval: eval})
 		return
 	}
 	if err := svc.store.RecordEvaluation(ctx, eval); err != nil {

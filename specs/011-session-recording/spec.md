@@ -1,16 +1,39 @@
 # Feature Specification: Session Recording
 
-**Spec**: `011-session-recording`
+**Spec**: `specs/011-session-recording/`
+**Status**: Partial
+**Last verified against the tree**: 2026-10-17 at `ea1b0e6`
+**Issues**: [#228](https://github.com/webwiebe/funnelbarn/issues/228), [#305](https://github.com/webwiebe/funnelbarn/issues/305), [#345](https://github.com/webwiebe/funnelbarn/issues/345)
+**Principles touched**: II, III, V
 **Created**: 2026-06-07
-**Status**: Planned
+
+---
+
+## Functional Requirements
+
+- **FR-001**: The system MUST accept recording chunks on `POST /api/v1/recordings/chunk` with an API key, refuse a global ingest key, and store the chunk even when the client disconnects. Issues: none. Tests: `internal/api/recordings_globalkey_test.go::TestIngestRecordingChunk_GlobalKeyRejected`, `internal/api/recordings_cancel_test.go::TestIngestRecordingChunk_ClientDisconnectStillStoresChunk`, `internal/service/recordings_test.go::TestRecordingService_IngestChunk`.
+- **FR-002**: The system MUST store chunk bodies gzip-compressed in R2 under `recordings/{project_slug}/{recording_id}/{index:05d}.json.gz` and keep only metadata in SQLite. Issues: none. Tests: `internal/service/recordings_test.go::TestRecordingService_GetChunk`, `internal/repository/recordings_test.go::TestRecording_UpsertAndGet`.
+- **FR-003**: The system MUST answer 503 on recording routes when the R2 credentials are unset, and the recordings component MUST stay off. Issues: none. Tests: `cmd/funnelbarn/recordings_queue_test.go::TestNewRecordingsWithoutR2IsOff`, `cmd/funnelbarn/recordings_queue_test.go::TestNewRecordingsWithR2`.
+- **FR-004**: The system MUST apply a chunk once, so a replayed message changes nothing and a failed apply stores nothing. Issues: [#345](https://github.com/webwiebe/funnelbarn/issues/345). Tests: `internal/repository/recording_chunks_test.go::TestApplyChunk_ReplayIsANoOp`, `internal/repository/recording_chunks_test.go::TestApplyChunk_FailureStoresNothing`, `cmd/funnelbarn/recordings_queue_test.go::TestRecordingsQueueAppliesChunks`.
+- **FR-005**: The system MUST drop chunks from bot sessions and keep human chunks. Issues: [#228](https://github.com/webwiebe/funnelbarn/issues/228). Tests: `internal/service/recordings_test.go::TestRecordingService_IngestChunk_BotChunksAreDropped`, `internal/service/recordings_test.go::TestRecordingService_IngestChunk_HumanChunkStillStored`.
+- **FR-006**: The system MUST list a project's recordings with filters for session IDs, environment, device type, page URL and human-only, and paginate. Issues: none. Tests: `internal/repository/recordings_test.go::TestRecording_ListRecordings`, `internal/repository/recordings_test.go::TestRecording_ListRecordings_SessionIDFilter`, `internal/repository/recordings_test.go::TestRecording_ListRecordings_DeviceFilter`, `internal/repository/recordings_test.go::TestRecording_ListRecordings_BotFilter`.
+- **FR-007**: The system MUST serve a decompressed chunk to a signed-in user with `Cache-Control: private, max-age=3600`, scoped to the project. Issues: none. Tests: `internal/service/recordings_test.go::TestRecordingService_GetChunk`, `internal/api/recordings_trace_test.go::TestGetRecordingChunkByKey_CrossProjectDenied`.
+- **FR-008**: The system MUST delete a recording with its chunks, scoped to the project. Issues: [#305](https://github.com/webwiebe/funnelbarn/issues/305). Tests: `internal/repository/recordings_test.go::TestRecording_DeleteRecording`, `internal/service/recordings_test.go::TestRecordingService_DeleteRecording_ProjectScope`, `internal/repository/recording_chunks_test.go::TestApplyChunk_DeleteRecordingClearsChunks`. [gap] `DELETE .../recordings/{rid}` returns 500 for a missing recording; issue #305 is open.
+- **FR-009**: The system MUST purge recordings older than the retention window and recordings that never completed. Issues: none. Tests: `internal/service/recordings_test.go::TestRecordingService_PurgeOldRecordings`, `internal/service/recordings_test.go::TestRecordingService_PurgeBrokenRecordings`.
+- **FR-010**: The system MUST store per-project recording settings (sample rate and URL rules), validate them, and serve the effective config to the SDK on `GET /api/v1/recording-config`. Issues: none. Tests: `internal/api/recording_settings_test.go::TestHandleUpdateProjectRecordingSettings_OK`, `internal/api/recording_settings_test.go::TestHandleUpdateProjectRecordingSettings_BadSampleRate`, `internal/api/recording_settings_test.go::TestHandleUpdateProjectRecordingSettings_BadRule`, `internal/repository/project_recording_settings_test.go::TestStore_ProjectRecordingSettings`.
+- **FR-011**: The system MUST link a trace ID to its recording and resolve a trace to a recording, scoped to the project. Issues: none. Tests: `internal/api/recordings_trace_test.go::TestLookupTrace_EndToEnd`, `internal/repository/recording_traces_test.go::TestRecordingTraces_LookupScopedByProject`, `internal/api/recordings_trace_test.go::TestLookupTrace_Unauthorized`.
+- **FR-012**: The system MUST return the session IDs that dropped off at a funnel step (`GET .../funnels/{fid}/steps/{step}/sessions`) and the session IDs that visited a page (`GET .../flows/sessions`). Issues: none. [inferred]
+- **FR-013**: The system MUST return the flag evaluations of a recording's session (`GET .../recordings/{rid}/flags`). Issues: none. [inferred]
+- **FR-014**: The JS SDK MUST record only when enabled (default off), mask password inputs, redact elements with the `fb-block` class, and send chunks every `recordingChunkMs` (default 10000). Issues: none. Tests: `sdks/js/test/sdk.test.mjs::recording chunk body includes buffered traces`. [inferred] for masking and the class.
+- **FR-015**: The dashboard MUST show a Sessions page at `/sessions/:projectId` with a replay player, reachable from the navigation, from a funnel step and from a flow page. Issues: none. [inferred]
 
 ---
 
 ## Problem Statement
 
-FunnelBarn tells you *what* users do — which pages they visit, which funnels they complete, which flags they encountered. It does not tell you *how* they do it: where they hesitate, what they click that doesn't work, how they navigate through a confusing form.
+FunnelBarn tells you *what* users do, which pages they visit, which funnels they complete, which flags they encountered. It does not tell you *how* they do it: where they hesitate, what they click that doesn't work, how they navigate through a confusing form.
 
-Tools like Hotjar and FullStory fill this gap with session recording: the ability to watch a user's browser session play back like a video. The problem is the same as with analytics tools — third-party SaaS, data leaving your infrastructure, per-session pricing that scales with traffic.
+Tools like Hotjar and FullStory fill this gap with session recording: the ability to watch a user's browser session play back like a video. The problem is the same as with analytics tools, third-party SaaS, data leaving your infrastructure, per-session pricing that scales with traffic.
 
 FunnelBarn should own this too.
 
@@ -82,7 +105,7 @@ funnelbarn.init({
 
 ### Recording ID
 
-A new `recording_id` is generated at SDK init (same mechanism as `session_id` — 16-byte random hex). This is stable for the duration of the page load but does not persist across navigations (a new recording starts on each page load, matching rrweb's full-snapshot behavior).
+A new `recording_id` is generated at SDK init (same mechanism as `session_id`, 16-byte random hex). This is stable for the duration of the page load but does not persist across navigations (a new recording starts on each page load, matching rrweb's full-snapshot behavior).
 
 ### Chunk payload
 
@@ -102,27 +125,17 @@ Chunks are sent on a fixed interval (`recordingChunkMs`) and also on `beforeunlo
 
 ### Flag evaluation markers
 
-When recording is active and `evaluate()` is called, the SDK emits a custom rrweb event:
-
-```typescript
-{
-  type: EventType.Custom,
-  data: { tag: 'fb_flag', payload: { flag: flagName, variant: result } },
-  timestamp: Date.now(),
-}
-```
-
-These events are stored in the normal chunk stream and surfaced as timeline markers during replay — no extra backend calls required.
+The SDK emits no custom rrweb event for a flag evaluation. The replay player reads the evaluations of the recording's session from `GET /api/v1/projects/{id}/recordings/{rid}/flags` and lists them in a sidebar; the timeline has no flag markers.
 
 ### Privacy
 
-- `maskInputOptions: { password: true }` — password fields replaced with `***`
-- `blockClass: 'fb-block'` — any element with this class is fully redacted from the recording
+- `maskInputOptions: { password: true }`, password fields replaced with `***`
+- `blockClass: 'fb-block'`, any element with this class is fully redacted from the recording
 - No cookies set; uses existing session ID from localStorage
 
 ### Bundle
 
-rrweb is bundled into the existing `funnelbarn.js` IIFE. When `recording: false` (default), the rrweb `record()` function is never called — no DOM observers are registered, no overhead.
+rrweb is bundled into the existing `funnelbarn.js` IIFE. When `recording: false` (default), the rrweb `record()` function is never called, no DOM observers are registered, no overhead.
 
 ---
 
@@ -194,7 +207,7 @@ GET /api/v1/projects/{id}/recordings
   Response: { recordings: [Recording], limit, offset }
 
 GET /api/v1/projects/{id}/recordings/{rid}/chunks/{index}
-  Response: application/json — decompressed rrweb event array
+  Response: application/json, decompressed rrweb event array
   Headers: Cache-Control: private, max-age=3600
 
 GET /api/v1/projects/{id}/recordings/{rid}/flags
@@ -257,9 +270,9 @@ ORDER BY fe.created_at ASC
 GET /api/v1/projects/{id}/recordings/{rid}/flags
 ```
 
-**Dashboard replay player**: Custom rrweb events tagged `fb_flag` (embedded by the SDK during `evaluate()`) are detected in the loaded event stream and rendered as colored dot markers on the timeline scrubber. A sidebar panel lists all flag evaluations with their timestamps.
+**Dashboard replay player**: A sidebar panel lists the flag evaluations of the session with their timestamps. The timeline scrubber has no flag markers.
 
-**Sessions list**: Each recording row in the list shows a flag badge for each unique flag evaluated during that session (fetched on list load using the flags endpoint).
+**Sessions list**: The list rows carry no flag badges.
 
 ---
 
@@ -270,9 +283,10 @@ The `GET /api/v1/projects/{id}/recordings` endpoint accepts these filter params:
 | Param | Source | Behavior |
 |-------|--------|----------|
 | `session_ids` | Funnel / Flow drilldown | `WHERE session_id IN (...)` |
-| `flag` + `variant` | Flag page filter | JOIN flag_evaluations WHERE flag_id=? AND variant=? |
-| `session_id` | Direct link | Exact match |
+| `device_type`, `page_url`, `human_only` | Sessions page filters | Filters on the recordings query |
 | `environment` | Environment picker | Existing filter |
+
+The list endpoint has no `flag` and `variant` parameters.
 
 The Sessions page (`/sessions/:projectId`) reads these from `useSearchParams()`.
 
@@ -313,7 +327,7 @@ Navigation: `Video` icon added to `navLinks` in `Shell.tsx` between Live and Set
 - Sidebar: flag evaluation list with timestamps
 - Loading state: progress bar while chunks download
 
-**Styling**: All inline styles using `C` color palette. Dark theme. No external CSS (the rrweb Replayer renders into an iframe — its internal styles are self-contained).
+**Styling**: All inline styles using `C` color palette. Dark theme. No external CSS (the rrweb Replayer renders into an iframe, its internal styles are self-contained).
 
 ---
 
@@ -334,7 +348,7 @@ github.com/aws/aws-sdk-go-v2/service/s3
 
 ### Frontend (`web/package.json`)
 ```
-"rrweb": "^2.0.0"   (for Replayer class — same version as SDK)
+"rrweb": "^2.0.0"   (for Replayer class, same version as SDK)
 ```
 
 Note: `rrweb-player` (the pre-built UI widget) is NOT used in favor of a custom player that matches FunnelBarn's dark theme.
@@ -344,11 +358,11 @@ Note: `rrweb-player` (the pre-built UI widget) is NOT used in favor of a custom 
 ## Out of Scope
 
 - **Heatmaps**: Click/scroll heatmaps are a separate feature and not part of this spec.
-- **Network requests capture**: rrweb-plugin-network is not included — no request/response logging.
+- **Network requests capture**: rrweb-plugin-network is not included, no request/response logging.
 - **Console capture**: rrweb-plugin-console is not included.
 - **Mobile apps**: Recording is browser-only via the JS SDK.
-- **Retention / cleanup**: Old recordings in R2 are not auto-purged in this iteration. A separate retention job (similar to `PurgeOldEvents`) is planned but out of scope here.
-- **Recording sampling**: All sessions with `record: true` are recorded in full. Percentage-based sampling (e.g. "record 10% of sessions") is not in this spec.
+- **Retention / cleanup**: Shipped after this spec: the maintenance pass purges recordings older than `recording_retention_days` (default 90), unplayable recordings and bot recordings (FR-009).
+- **Recording sampling**: Shipped after this spec as a per-project sample rate in the recording settings (FR-010).
 
 ---
 
@@ -357,14 +371,46 @@ Note: `rrweb-player` (the pre-built UI widget) is NOT used in favor of a custom 
 - [ ] Set R2 env vars, start server with `go run ./cmd/funnelbarn`
 - [ ] Instrument a test page with `record: true`, navigate several pages, type in a password field, trigger a flag `evaluate()` call
 - [ ] Confirm chunks appear in R2 bucket at the expected key path
-- [ ] Open `/sessions` dashboard page — recording row appears with correct duration and flag badge
-- [ ] Click recording — player fetches all chunks, session replays correctly
+- [ ] Open `/sessions` dashboard page, recording row appears with correct duration and flag badge
+- [ ] Click recording, player fetches all chunks, session replays correctly
 - [ ] Password field in replay shows `***`
 - [ ] Flag evaluation appears as amber dot on timeline scrubber + in sidebar list
-- [ ] Go to Funnels page, click "Watch recordings" on a step — Sessions page loads filtered to those sessions
-- [ ] Go to Flows page, hover a page node, click secondary action — Sessions page loads filtered to sessions that visited that page
+- [ ] Go to Funnels page, click "Watch recordings" on a step, Sessions page loads filtered to those sessions
+- [ ] Go to Flows page, hover a page node, click secondary action, Sessions page loads filtered to sessions that visited that page
 - [ ] `POST /api/v1/recordings/chunk` returns 503 when R2 env vars are unset
 - [ ] `go fmt ./...` and `go vet ./...` produce zero output
 - [ ] `npm run build` in `sdks/js/` succeeds, IIFE bundle includes rrweb
 - [ ] `npm run build` and `npm run lint` in `web/` succeed
 - [ ] CI gates pass on PR (go fmt, go vet, staticcheck, tsc, eslint, vitest)
+
+---
+
+## Drift
+
+| Claim | Source | Tree |
+|---|---|---|
+| Status is planned | Original header | Recording ingest, storage, replay, retention, sampling and trace linking are in the tree; flag markers and flag filters are not |
+| The SDK emits a custom rrweb event tagged `fb_flag` on `evaluate()` and the player draws amber markers | Flag evaluation markers section | No file under `sdks/js/src`, `web/src` or `internal` contains `fb_flag`; the player shows a sidebar list from the flags endpoint |
+| The recordings list filters by `flag` and `variant` | Unified Session Filter | `handleListRecordings` reads `limit`, `offset`, `environment`, `device_type`, `page_url`, `human_only` and `session_ids` (`internal/api/recordings.go`) |
+| Sessions rows show flag badges | Frontend changes | `web/src/pages/Sessions.tsx` has no flag handling |
+| Old recordings are not purged | Out of Scope | The maintenance pass purges old, unplayable and bot recordings (`cmd/funnelbarn/maintenance.go`) |
+| All recordings are stored in full, with no sampling | Out of Scope | Per-project sample rate and URL include and exclude rules exist (`internal/api/recording_settings.go`) |
+| One migration, `00018_recordings.sql`, adds a `recordings` table with fixed columns | Database Schema | Migrations 00018 to 00022, 00025, 00032 and 00039 change the recording tables |
+| Four R2 variables | Config | A fifth, `FUNNELBARN_R2_ENDPOINT`, exists, plus `FUNNELBARN_RECORDINGS_VIA_QUEUE` and `FUNNELBARN_RECORDINGS_QUEUE_MAX_LEN` (`internal/config/config.go`) |
+| Chunks go to R2 inside the request | Data Flow | With `FUNNELBARN_RECORDINGS_VIA_QUEUE=true`, or in reader and writer mode, the chunk goes through the Redis queue and the writer applies it (`cmd/funnelbarn/recordings_queue.go`) |
+| `DELETE` is not part of the API | Endpoint list | `DELETE /api/v1/projects/{id}/recordings/{rid}`, `GET .../recordings/{rid}/traces`, recording settings routes and `GET /api/v1/recordings/{rid}/chunks/{index}` exist |
+| Sessions nav sits between Live and Settings | Frontend changes | `Shell.tsx` and `BottomTabBar.tsx` both list Sessions; order not established |
+
+## Proof contract
+
+- [ ] A chunk posted with a project API key lands in R2 and a recording row appears in the project's list (`internal/service/recordings_test.go::TestRecordingService_IngestChunk`).
+- [ ] A bot session leaves no stored chunk (`internal/service/recordings_test.go::TestRecordingService_IngestChunk_BotChunksAreDropped`).
+- [ ] Replaying the same chunk message twice leaves one chunk (`internal/repository/recording_chunks_test.go::TestApplyChunk_ReplayIsANoOp`).
+- [ ] A user of project A cannot read a chunk of project B (`internal/api/recordings_trace_test.go::TestGetRecordingChunkByKey_CrossProjectDenied`).
+- [ ] A browser session with `recording: true` plays back in the dashboard, with the password field masked (manual check; no automated test).
+
+## Sources
+
+- `internal/api/recordings.go`, `internal/api/recording_settings.go`, `internal/service/recordings.go`, `internal/storage/r2.go`, `internal/repository/recordings.go`, `cmd/funnelbarn/recordings_queue.go`, `cmd/funnelbarn/maintenance.go`
+- `sdks/js/src/index.ts`, `web/src/pages/Sessions.tsx`, `web/src/components/sessions/SessionReplay.tsx`
+- Issue titles: #228, #305, #345

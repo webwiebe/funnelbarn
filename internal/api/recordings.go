@@ -275,7 +275,7 @@ func (s *Server) handleGetRecordingChunk(w http.ResponseWriter, r *http.Request)
 	data, err := s.recordings.GetChunk(ctx, projectID, recordingID, index)
 	if err != nil {
 		errStr := err.Error()
-		if strings.Contains(errStr, "not found") || strings.Contains(errStr, "NoSuchKey") || strings.Contains(errStr, "404") {
+		if errors.Is(err, domain.ErrNotFound) || strings.Contains(errStr, "NoSuchKey") || strings.Contains(errStr, "404") {
 			jsonError(w, "not found", http.StatusNotFound)
 			return
 		}
@@ -317,7 +317,7 @@ func (s *Server) handleDeleteRecording(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 
 	if err := s.recordings.DeleteRecording(ctx, projectID, recordingID); err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, domain.ErrNotFound) {
 			jsonError(w, "not found", http.StatusNotFound)
 			return
 		}
@@ -354,7 +354,7 @@ func (s *Server) handleGetRecordingFlags(w http.ResponseWriter, r *http.Request)
 
 	sessionID, err := s.recordings.GetRecordingSessionID(ctx, projectID, recordingID)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, domain.ErrNotFound) {
 			jsonError(w, "not found", http.StatusNotFound)
 			return
 		}
@@ -466,7 +466,7 @@ func (s *Server) handleGetRecordingChunkByKey(w http.ResponseWriter, r *http.Req
 	data, err := s.recordings.GetChunk(ctx, projectID, recordingID, index)
 	if err != nil {
 		errStr := err.Error()
-		if strings.Contains(errStr, "not found") || strings.Contains(errStr, "NoSuchKey") || strings.Contains(errStr, "404") {
+		if errors.Is(err, domain.ErrNotFound) || strings.Contains(errStr, "NoSuchKey") || strings.Contains(errStr, "404") {
 			jsonError(w, "not found", http.StatusNotFound)
 			return
 		}
@@ -508,7 +508,7 @@ func (s *Server) handleGetRecordingTraces(w http.ResponseWriter, r *http.Request
 
 	traces, err := s.recordings.TracesForRecording(ctx, projectID, recordingID)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, domain.ErrNotFound) {
 			jsonError(w, "not found", http.StatusNotFound)
 			return
 		}

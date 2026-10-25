@@ -30,7 +30,10 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
-          cache: true
+          # Host Go caches are ~25 GB and shared by every runner. cache: true tars
+          # them and uploads on each key miss (20+ min in Post Set up Go); the host
+          # keeps them warm, so the action does not cache.
+          cache: false
 
       - name: go fmt
         run: |
@@ -47,8 +50,14 @@ jobs:
       - name: Regression harness (make regress)
         run: make regress
 
-      - name: staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@latest && staticcheck ./...
+      - name: staticcheck (U1000 is the Go dead-code gate)
+        # Pinned: a new staticcheck release would otherwise change what CI
+        # enforces with no commit. Every check blocks at zero findings. The gate
+        # also fails when U1000 analysed fewer packages than its floor, so a
+        # toolchain staticcheck cannot load turns this step red.
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
+          python3 scripts/staticcheck-gate.py
 
       - name: sqlc generate is up to date
         # sqlc reads every file in internal/repository/migrations as its schema,
@@ -80,6 +89,7 @@ jobs:
           python3 -m venv .ci-venv
           .ci-venv/bin/python -m pip install --quiet --disable-pip-version-check pyyaml
           .ci-venv/bin/python -m unittest discover -s scripts -p 'test_*.py' -v
+          sh scripts/diff-coverage.test.sh
 
       - name: Install pinned lint tooling
         # Pinned, not @latest: a gate whose tool version can change without a
@@ -92,7 +102,7 @@ jobs:
         # REPORT-ONLY against scripts/soak-baselines/golangci.txt. .golangci.yml
         # sat in this repo unread for months while README.md and the engineering
         # standards spec both listed `golangci-lint run ./...` as required; it
-        # did not even load. 120 findings across 57 files are baselined and do
+        # did not even load. 116 findings across 57 files are baselined and do
         # not block. A new finding, a worsened file, or a baseline that has
         # become beatable does block. Exit criterion in scripts/quality-soak.py.
         run: python3 scripts/quality-soak.py golangci
@@ -121,19 +131,51 @@ jobs:
             rm -rf "$c" 2>/dev/null || true
           fi
       - uses: actions/checkout@v6
+        with:
+          # Full history, so diff coverage can find the merge base with the PR's base branch.
+          fetch-depth: 0
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
-          cache: true
+          # Host Go caches are ~25 GB and shared by every runner. cache: true tars
+          # them and uploads on each key miss (20+ min in Post Set up Go); the host
+          # keeps them warm, so the action does not cache.
+          cache: false
 
       - name: Go tests with race detector
-        run: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
+        # internal/api takes about 400s under -race on an idle runner and over
+        # 600s when the mini is loaded, so go test's default 10m fails the gate.
+        run: go test -race -count=1 -timeout=25m -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Coverage ratchet (per-file / per-package / global)
         # Fails if ANY first-party file is 0% covered, if any package drops below
         # its committed floor, or if global coverage drops. Floors are pinned at
         # current in scripts/coverage-baseline.txt (raise, never lower).
         run: python3 scripts/coverage-gate.py
+
+      # Changed-line coverage, report only until 2026-10-31 (then add --enforce).
+      # 40% of the coverable Go lines a PR adds must be executed by a test;
+      # diffs under 10 coverable lines are exempt. Every nested module (sdks/go,
+      # sdks/go-bugbarn) is profiled into a copy of coverage.out, so the ratchet
+      # above keeps its numbers and a change in an SDK is measured too.
+      # A measurement that cannot be made fails the job in report mode as well:
+      # a missing or empty profile, an unknown base, a profile listing fewer than
+      # 165 repository files, and 10 or more changed lines in files that add a
+      # function but have no block in the profile.
+      - name: Diff coverage (report only)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          PR_BASE: origin/${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          cp coverage.out "${RUNNER_TEMP}/diff.profile"
+          for gomod in $(git ls-files -- '*/go.mod'); do
+            dir=$(dirname "$gomod")
+            (cd "$dir" && go test -count=1 -covermode=atomic -coverprofile="${RUNNER_TEMP}/module.profile" ./...)
+            cat "${RUNNER_TEMP}/module.profile" >> "${RUNNER_TEMP}/diff.profile"
+          done
+          sh scripts/diff-coverage.sh "${RUNNER_TEMP}/diff.profile" "$PR_BASE"
 
       - name: Upload coverage report
         if: github.event_name == 'push'
@@ -224,7 +266,9 @@ jobs:
         run: pnpm lint:eslint
 
       - name: Dead code (knip ratchet)
-        # Enforced against a baseline of 0 (web/scripts/knip-ratchet.mjs).
+        # Ratchet test blocks; it runs the real knip over throwaway packages.
+        # The gate is enforced against a baseline of 0
+        # (web/scripts/knip-ratchet.mjs); the file floor fails the step too.
         working-directory: web
         run: |
           pnpm lint:knip-test
@@ -282,3 +326,39 @@ jobs:
       - name: Duplication ratchet (jscpd)
         working-directory: web
         run: pnpm gate:duplication
+
+  secret-scan:
+    runs-on: [self-hosted, build]
+    timeout-minutes: 10
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/Applications/Docker.app/Contents/Resources/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      # Report-only until 2026-10-31: findings are annotated and the job passes.
+      # Flip to `enforce` then. A scan that cannot run fails in both modes (exit 2).
+      SECRET_SCAN_MODE: report
+      SECRET_SCAN_MIN_COMMITS: '250'
+    steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        # Only this job's own checkout: never another runner's work directory.
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c" 2>/dev/null || true
+            rm -rf "$c" 2>/dev/null || true
+          fi
+      - uses: actions/checkout@v6
+        with:
+          # Full history: the scan reads every commit and the PR base.
+          fetch-depth: 0
+      - name: Gate self-test (planted secret)
+        shell: bash
+        run: bash scripts/tests/secret-scan.test.sh
+      - name: Secret scan
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            bash scripts/secret-scan.sh diff "origin/${{ github.base_ref }}"
+          else
+            bash scripts/secret-scan.sh history
+          fi

@@ -2,17 +2,17 @@ package repository_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 )
 
 func TestReadPool_RejectsWritesAndSeesCommits(t *testing.T) {
 	ctx := context.Background()
-	s, err := repository.Open(filepath.Join(t.TempDir(), "rw.db"))
+	s, err := repository.Open(repotest.Path(t, "rw.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 

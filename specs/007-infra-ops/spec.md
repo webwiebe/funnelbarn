@@ -1,70 +1,40 @@
 # Spec 007: Infrastructure Hardening + Ops Runbook
 
-## Goal
-Verify K8s manifests have resource limits, add missing probes, and write a backup restore runbook.
+**Spec**: `specs/007-infra-ops/`
+**Status**: Shipped
+**Last verified against the tree**: 2026-10-17 at `ea1b0e6`
+**Issues**: none found
+**Principles touched**: VIII
 
-## Files to modify / create
-- `deploy/k8s/production/deployment.yaml` — verify/add resource limits + probes
-- `deploy/k8s/staging/deployment.yaml` — same
-- `deploy/k8s/testing/deployment.yaml` — same
-- `deploy/RUNBOOK.md` (new) — backup restore + ops procedures
+## Purpose
 
-## K8s Manifest Audit
+Every Kubernetes container declares resource requests and limits plus health probes, and `deploy/RUNBOOK.md` documents the operations an on-call person needs.
 
-For each deployment.yaml (service container), verify:
+## Functional Requirements
 
-1. **Resource limits present** — every container must have requests + limits:
-```yaml
-resources:
-  requests:
-    cpu: 100m
-    memory: 64Mi
-  limits:
-    cpu: 500m
-    memory: 256Mi
-```
-Production limits should be higher than staging/testing.
+- **FR-001**: Every service container in `deploy/k8s/{production,staging,testing}` (`deployment.yaml`, `reader-statefulset.yaml`, `web-deployment.yaml`) MUST declare resource requests and limits. Issues: none. [inferred]
+- **FR-002**: The writer container MUST declare a liveness and a readiness probe on `/api/v1/health`. Issues: none. [inferred]
+- **FR-003**: The reader container MUST declare a liveness probe on `/api/v1/health` and a readiness probe on `/api/v1/ready`. Issues: none. [inferred]
+- **FR-004**: The web container MUST declare liveness and readiness TCP probes on port 3000. Issues: none. [inferred]
+- **FR-005**: Production limits MUST be at least the staging and testing limits for the writer. Issues: none. [inferred]
+- **FR-006**: `deploy/RUNBOOK.md` MUST cover backup and restore, production deploy, rollback, database inspection, log access and emergency shutdown. Issues: none. [inferred]
 
-2. **Liveness probe** on `/api/v1/health`:
-```yaml
-livenessProbe:
-  httpGet:
-    path: /api/v1/health
-    port: 8080
-  initialDelaySeconds: 10
-  periodSeconds: 20
-  failureThreshold: 3
-```
+## Drift
 
-3. **Readiness probe** on `/api/v1/health`:
-```yaml
-readinessProbe:
-  httpGet:
-    path: /api/v1/health
-    port: 8080
-  initialDelaySeconds: 5
-  periodSeconds: 10
-  failureThreshold: 3
-```
+| Claim | Source | Tree |
+|---|---|---|
+| Both probes use `/api/v1/health` | Original task | Readers use `/api/v1/ready` for readiness (`reader-statefulset.yaml` in each environment) |
+| Production writer requests 100m CPU and 64Mi memory, limits 500m and 256Mi | Original task example | Production writer requests 128Mi (`deploy/k8s/production/deployment.yaml`); staging limits 128Mi, testing limits 250m CPU and 128Mi |
+| Three deployment files, one per environment | Original task | Each environment also has `reader-statefulset.yaml` and `web-deployment.yaml`, and production adds `ingressroute-f-wildcard.yaml` |
+| The runbook has 6 sections | Acceptance criteria | `deploy/RUNBOOK.md` has sections 1 to 6 plus 2b, 2d and 4b; there is no section 2c heading at level 2 (it is a level 3 heading under 2b) |
+| Backup restore uses Litestream S3 replication | Original task | Holds; `deploy/docker/litestream.yml` and the writer manifests set `LITESTREAM_*` variables |
 
-4. For the web container, use a TCP probe on port 3000 (no health path available).
+## Proof contract
 
-## Runbook (deploy/RUNBOOK.md)
+- [ ] `grep -c 'livenessProbe\|readinessProbe'` on each deployment, statefulset and web manifest returns 2.
+- [ ] Each of the 6 required runbook sections has a heading in `deploy/RUNBOOK.md`.
+- [ ] The post-deploy version smoke passes on the writer and a reader (`scripts/test_version_smoke.py::DeployWiringTest.test_every_environment_runs_the_smoke_on_writer_and_reader`).
 
-Write a practical ops runbook covering:
+## Sources
 
-### Sections required:
-1. **Backup & Restore** — how to restore from Litestream S3 replication:
-   - Command to list available restore points
-   - Command to restore to a point in time
-   - Validate restore procedure
-2. **Deploy Production** — manual steps using `deploy-production.yml` workflow
-3. **Rollback** — how to rollback a bad deployment (workflow has auto-rollback, document manual steps too)
-4. **Database Inspection** — how to exec into the pod and run sqlite3 queries
-5. **Log Access** — how to tail logs from K8s pods
-6. **Emergency Shutdown** — how to scale to 0 replicas safely
-
-## Acceptance criteria
-- All three environment deployment.yaml files have resource limits, liveness, and readiness probes
-- `deploy/RUNBOOK.md` exists with all 6 sections
-- No functional code changes — purely config + docs
+- `deploy/k8s/*/deployment.yaml`, `deploy/k8s/*/reader-statefulset.yaml`, `deploy/k8s/*/web-deployment.yaml`, `deploy/RUNBOOK.md`

@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -40,7 +40,7 @@ type testEnv struct {
 // non-nil, can adjust Deps before the server is built.
 func newTestEnv(t *testing.T, mutate func(*Deps)) *testEnv {
 	t.Helper()
-	store, err := repository.Open(filepath.Join(t.TempDir(), "test.db"))
+	store, err := repository.Open(repotest.Path(t, "test.db"))
 	if err != nil {
 		t.Fatalf("repository.Open: %v", err)
 	}

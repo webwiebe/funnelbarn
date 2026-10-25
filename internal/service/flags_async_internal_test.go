@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"fmt"
+	"reflect"
 	"runtime"
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
@@ -201,5 +204,88 @@ func TestEvaluateOrRegisterFlag_AsyncRespectsCap(t *testing.T) {
 	}
 	if len(store.ensured) != 2 {
 		t.Fatalf("a capped project must not gain a flag, have %d", len(store.ensured))
+	}
+}
+
+// recordingBus is a command.Bus that keeps what it is handed and reports a
+// fixed submit wait.
+type recordingBus struct {
+	wait time.Duration
+
+	mu   sync.Mutex
+	cmds []command.Command
+}
+
+func (b *recordingBus) Start(context.Context) {}
+func (b *recordingBus) Submit(_ context.Context, c command.Command) time.Duration {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.cmds = append(b.cmds, c)
+	return b.wait
+}
+func (b *recordingBus) Flush(context.Context) error { return nil }
+func (b *recordingBus) Close(context.Context) error { return nil }
+
+func (b *recordingBus) types() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var out []string
+	for _, c := range b.cmds {
+		out = append(out, fmt.Sprintf("%T", c))
+	}
+	return out
+}
+
+// #337: the evaluation row and the touch go to the background bus, so the
+// request waits only for its hand-off; auto-registration stays on the commands
+// bus so a new flag is published before its touch is queued.
+func TestEvaluate_BookkeepingGoesToTheBackgroundBus(t *testing.T) {
+	store := newAsyncFlagStore(t)
+	store.flags["p1/exp"] = repository.FeatureFlag{
+		ID: "f1", ProjectID: "p1", FlagKey: "exp", Status: "active", Kind: repository.FlagKindExperiment,
+		Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":100,"off":0}`, TargetingRules: "[]",
+	}
+	commands := &recordingBus{wait: time.Second}
+	background := &recordingBus{wait: time.Millisecond}
+	svc := NewFlagService(store).WithCommands(commands).WithBackgroundCommands(background)
+
+	ctx, wait := WithSubmitWait(context.Background())
+	if _, err := svc.EvaluateOrRegisterFlag(ctx, "p1", "exp", map[string]any{"targetingKey": "u1"}, false, 5, ""); err != nil {
+		t.Fatalf("evaluate existing flag: %v", err)
+	}
+	if got := background.types(); !reflect.DeepEqual(got, []string{"command.RecordEvaluation", "command.TouchFlagEvaluated"}) {
+		t.Fatalf("background bus got %v", got)
+	}
+	if got := commands.types(); len(got) != 0 {
+		t.Fatalf("commands bus got %v; the evaluate path must not wait on it", got)
+	}
+	if wait.Total() != 2*time.Millisecond {
+		t.Fatalf("submit wait %v, want the two background hand-offs (2ms)", wait.Total())
+	}
+
+	if _, err := svc.EvaluateOrRegisterFlag(context.Background(), "p1", "new_flag", nil, true, 5, ""); err != nil {
+		t.Fatalf("evaluate new flag: %v", err)
+	}
+	if got := commands.types(); !reflect.DeepEqual(got, []string{"command.EnsureAutoFlag"}) {
+		t.Fatalf("commands bus got %v, want only the auto-registration", got)
+	}
+	if got := background.types(); len(got) != 3 || got[2] != "command.TouchFlagEvaluated" {
+		t.Fatalf("background bus got %v, want the new flag's touch last", got)
+	}
+}
+
+func TestEvaluate_WithoutBackgroundBusUsesCommands(t *testing.T) {
+	store := newAsyncFlagStore(t)
+	store.flags["p1/exp"] = repository.FeatureFlag{
+		ID: "f1", ProjectID: "p1", FlagKey: "exp", Status: "active", Kind: repository.FlagKindExperiment,
+		Variants: `{"on":true}`, DefaultVariant: "on", Split: `{"on":100}`, TargetingRules: "[]",
+	}
+	commands := &recordingBus{}
+	svc := NewFlagService(store).WithCommands(commands)
+	if _, err := svc.EvaluateOrRegisterFlag(context.Background(), "p1", "exp", nil, false, 5, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := commands.types(); !reflect.DeepEqual(got, []string{"command.RecordEvaluation", "command.TouchFlagEvaluated"}) {
+		t.Fatalf("commands bus got %v", got)
 	}
 }

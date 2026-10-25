@@ -109,6 +109,27 @@ class DeployGraphTest(unittest.TestCase):
         self.assertIn("e2e", self.jobs["deploy-staging"]["needs"])
         self.assertIn("deploy", self.jobs["e2e"]["needs"])
 
+    def test_production_waits_for_staging_and_its_smoke_check(self):
+        """Issue #364: a broken staging stops promotion."""
+        promote = self.jobs["promote"]
+        self.assertIn("deploy-staging", promote["needs"])
+        self.assertIn("smoke-staging", promote["needs"])
+        self.assertIn("deploy-staging", self.jobs["smoke-staging"]["needs"])
+        self.assertEqual(promote["uses"], "./.github/workflows/deploy-production.yml")
+        self.assertEqual(
+            promote["with"]["production_version"], "${{ needs.build.outputs.sha }}"
+        )
+
+    def test_staging_smoke_checks_the_version_just_rolled_out(self):
+        steps = self.jobs["smoke-staging"]["steps"]
+        smoke = next(s for s in steps if "scripts/smoke.sh" in str(s.get("run", "")))
+        self.assertIn("funnelbarn.staging.wiebe.xyz", smoke["run"])
+        self.assertIn("needs.build.outputs.sha", smoke["run"])
+
+    def test_a_running_promotion_is_never_cancelled(self):
+        """Cancelling mid-rollout would leave production half deployed."""
+        self.assertIs(self.wf["concurrency"]["cancel-in-progress"], False)
+
     def test_no_job_swallows_a_failure(self):
         raw = WORKFLOW.read_text()
         for lineno, line in enumerate(raw.splitlines(), start=1):

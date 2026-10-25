@@ -49,6 +49,18 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleVersion reports what is running: the version the deploy stated
+// (FUNNELBARN_VERSION), and the commit and build time baked into the binary.
+// Deploy smokes compare it with what they just rolled out. It lives under /api
+// so the ingress sends it to the API pods; a bare /version would reach the SPA.
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"version": s.version,
+		"commit":  s.commit,
+		"built":   s.buildTime,
+	})
+}
+
 // handleReady is the readiness probe. It answers 503 while the Ready gate
 // fails, and otherwise as handleHealth does. The gate failing is expected while
 // a writer migrates, so it logs at Warn.

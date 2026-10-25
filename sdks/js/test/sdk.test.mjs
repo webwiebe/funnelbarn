@@ -1,6 +1,7 @@
 import { describe, it, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { FunnelBarnClient, parseTraceparent, buildTraceparent } from '../dist/esm/index.js';
+import { splitByBudget, RECORDING_CHUNK_BUDGET_BYTES } from '../dist/esm/recording-chunks.js';
 
 // defineWritable temporarily overrides a global (e.g. window) and returns a restore fn.
 function defineWritable(obj, key, value) {
@@ -541,5 +542,83 @@ describe('recording trace capture', () => {
     } finally {
       restoreWindow();
     }
+  });
+});
+
+// A recording client with a buffer of `count` incremental events of about
+// `eventBytes` each, so the buffer adds up to more than the server's 10 MiB.
+function recordingClient(count, eventBytes) {
+  const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'http://localhost:8080' });
+  client.recordingId = 'big';
+  client.recordingStartedAt = new Date().toISOString();
+  client.recordingStartMs = Date.now();
+  for (let i = 0; i < count; i++) client.rrwebBuffer.push({ type: 3, i, data: 'x'.repeat(eventBytes) });
+  return client;
+}
+
+function chunkBodies() {
+  return requests
+    .filter((r) => String(r.url).includes('/recordings/chunk'))
+    .map((r) => ({ raw: r.options.body, body: JSON.parse(r.options.body) }));
+}
+
+describe('recording chunk size (#349)', () => {
+  it('splits a buffer over the server limit into requests under it, in order', async () => {
+    const client = recordingClient(15, 1024 * 1024); // about 15 MiB, like FUN-45
+    client.traceBuffer.push({ trace_id: 'a'.repeat(32), span_id: 'b'.repeat(16), occurred_at: new Date().toISOString() });
+
+    await client.flushRecordingChunk();
+
+    const sent = chunkBodies();
+    assert.ok(sent.length >= 2, `split into ${sent.length} requests`);
+    for (const { raw } of sent) {
+      assert.ok(Buffer.byteLength(raw) < 10 * 1024 * 1024, `request of ${Buffer.byteLength(raw)} bytes is under the server limit`);
+    }
+    assert.deepEqual(sent.map((s) => s.body.chunk_index), sent.map((_, i) => i), 'consecutive chunk indexes');
+    assert.deepEqual(sent.flatMap((s) => s.body.events.map((e) => e.i)), [...Array(15).keys()], 'every event once, in order');
+    assert.equal(sent[0].body.traces.length, 1, 'traces go with the first request');
+    assert.ok(sent.slice(1).every((s) => s.body.traces === undefined), 'and only the first');
+    assert.equal(client.recordingChunkIndex, sent.length);
+    assert.equal(client.rrwebBuffer.length, 0);
+  });
+
+  it('keeps a small buffer in one request', async () => {
+    const client = recordingClient(3, 100);
+    await client.flushRecordingChunk();
+    const sent = chunkBodies();
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].body.events.length, 3);
+  });
+
+  it('puts a failed request and the ones after it back in the buffer', async () => {
+    const client = recordingClient(15, 1024 * 1024);
+    let calls = 0;
+    global.fetch = async (url, options) => {
+      calls++;
+      if (calls === 2) throw new TypeError('network');
+      requests.push({ url, options });
+      return { ok: true, status: 202 };
+    };
+
+    await client.flushRecordingChunk();
+
+    const sent = chunkBodies();
+    assert.equal(sent.length, 1, 'the first request went out');
+    const sentIds = sent[0].body.events.map((e) => e.i);
+    assert.ok(sentIds.length < 15, 'the first request held only part of the buffer');
+    assert.deepEqual(client.rrwebBuffer.map((e) => e.i), [...Array(15).keys()].slice(sentIds.length), 'the rest is buffered in order');
+    assert.equal(client.recordingChunkIndex, 1, 'the next flush reuses the failed index');
+  });
+
+  it('sends an event over the budget on its own', () => {
+    const big = { data: 'x'.repeat(RECORDING_CHUNK_BUDGET_BYTES + 1) };
+    const groups = splitByBudget([{ a: 1 }, big, { b: 2 }], RECORDING_CHUNK_BUDGET_BYTES);
+    assert.deepEqual(groups.map((g) => g.length), [1, 1, 1]);
+  });
+
+  it('counts multi-byte characters as UTF-8 bytes', () => {
+    // 1000 euro signs are 3000 bytes but 1000 UTF-16 units.
+    const groups = splitByBudget([{ s: '€'.repeat(1000) }, { s: '€'.repeat(1000) }], 4000);
+    assert.equal(groups.length, 2);
   });
 });

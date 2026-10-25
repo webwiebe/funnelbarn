@@ -19,6 +19,17 @@ func (svc *FlagService) WithCommands(d command.Bus) *FlagService {
 	return svc
 }
 
+// WithBackgroundCommands routes the evaluation row and the last_evaluated_at
+// touch through b, normally a command.Async in front of the WithCommands bus,
+// so the request no longer waits on their publish (#337: 60 to 200+ ms per
+// evaluate on the shared Valkey). Neither depends on the order of other
+// commands. Auto-registration stays on the WithCommands bus, so a new flag is
+// published before its touch is queued. Without WithCommands it has no effect.
+func (svc *FlagService) WithBackgroundCommands(b command.Bus) *FlagService {
+	svc.background = b
+	return svc
+}
+
 // SubmitWait accumulates how long one request waited to submit commands. The
 // dispatcher blocks a submitter while its buffer is full and never drops, so
 // this sum is the latency that backpressure added to the request.
@@ -52,6 +63,16 @@ func AddSubmitWait(ctx context.Context, d time.Duration) {
 // submit queues c and records the wait on the request's SubmitWait.
 func (svc *FlagService) submit(ctx context.Context, c command.Command) {
 	AddSubmitWait(ctx, svc.commands.Submit(ctx, c))
+}
+
+// submitBookkeeping queues c on the background bus when there is one, and on
+// the commands bus otherwise.
+func (svc *FlagService) submitBookkeeping(ctx context.Context, c command.Command) {
+	if svc.background == nil {
+		svc.submit(ctx, c)
+		return
+	}
+	AddSubmitWait(ctx, svc.background.Submit(ctx, c))
 }
 
 // touchInterval throttles the last_evaluated_at write to at most one per flag
@@ -92,7 +113,7 @@ func (svc *FlagService) touchEvaluated(ctx context.Context, projectID, flagKey s
 		return
 	}
 	if svc.commands != nil {
-		svc.submit(ctx, command.TouchFlagEvaluated{ProjectID: projectID, FlagKey: flagKey})
+		svc.submitBookkeeping(ctx, command.TouchFlagEvaluated{ProjectID: projectID, FlagKey: flagKey})
 		return
 	}
 	bblog.Go("flags-touch-evaluated", func() {

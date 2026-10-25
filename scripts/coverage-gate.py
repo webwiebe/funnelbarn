@@ -38,6 +38,10 @@ import collections
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASELINE = os.path.join(ROOT, "scripts", "coverage-baseline.txt")
 PROFILE = os.path.join(ROOT, "coverage-gate.out")
+# Per-package limit for the measuring run. Under load the mac mini runners run
+# the big packages 2 to 3 times slower, which pushes internal/api past go
+# test's default 10m.
+TEST_TIMEOUT = "25m"
 LINE_RE = re.compile(r"^(.*\.go:\d+\.\d+,\d+\.\d+) (\d+) (\d+)$")
 
 # Noise band for the percentage floors (Rules 2 & 3), in percentage points.
@@ -57,15 +61,39 @@ def short(path: str) -> str:
     return path.replace("github.com/wiebe-xyz/funnelbarn/", "")
 
 
+# Lines of failed `go test` output that name the cause: failed tests and
+# packages, panics, test assertions, build errors and a full disk or temp dir.
+FAILURE_RE = re.compile(
+    r"^(--- FAIL|FAIL\b|panic:|\s+\S+_test\.go:\d+:|# |\S+\.go:\d+:\d+: )"
+    r"|no space left|signal: killed|timed out"
+)
+FAILURE_TAIL = 60
+
+
+def failure_excerpt(output: str, tail: int = FAILURE_TAIL) -> str:
+    """The lines of a failed `go test` run that name the cause, then its last
+    `tail` lines. ok lines for passing packages are left out of the first part."""
+    lines = output.splitlines()
+    causes = [ln for ln in lines if FAILURE_RE.search(ln)]
+    parts = []
+    if causes:
+        parts += ["failure lines:"] + causes + [""]
+    parts += [f"last {min(tail, len(lines))} lines:"] + lines[-tail:]
+    return "\n".join(parts)
+
+
 def measure():
     print("measuring cross-package coverage (go test -coverpkg=./... ./...) ...", flush=True)
     r = subprocess.run(
-        ["go", "test", "-coverpkg=./...", "-covermode=atomic",
+        ["go", "test", f"-timeout={TEST_TIMEOUT}", "-coverpkg=./...", "-covermode=atomic",
          f"-coverprofile={PROFILE}", "./..."],
-        cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+        cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     if r.returncode != 0:
+        # The race run before this step uses a different build, so a failure
+        # here can be one it never saw; print what go test said.
         print("ERROR: `go test` failed; fix tests before the coverage gate.", file=sys.stderr)
+        print(failure_excerpt(r.stdout or ""), file=sys.stderr)
         sys.exit(1)
 
     # De-duplicate blocks: keep max count per unique block span.

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +16,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 	"github.com/wiebe-xyz/funnelbarn/internal/worker"
@@ -60,7 +60,7 @@ func (s *snapStack) flush(ctx context.Context) error {
 
 func newSnapStack(t *testing.T) *snapStack {
 	t.Helper()
-	store, err := repository.Open(filepath.Join(t.TempDir(), "snap.db"))
+	store, err := repository.Open(repotest.Path(t, "snap.db"))
 	if err != nil {
 		t.Fatalf("repository.Open: %v", err)
 	}

@@ -107,12 +107,6 @@ func parseGoldenTime(s string) (time.Time, bool) {
 //     between the inserts. Consecutive elements whose created_at was masked
 //     as <now> are sorted by their JSON encoding; seeded rows (fixed,
 //     distinct created_at) keep the order the server gave them.
-//  9. Element order of session_ids (any route) and of links/nodes on the flows
-//     route. Today's handlers build these from Go maps, so equal-weight
-//     entries come out in a different order on every call (found by
-//     TestGoldenDeterministic). The arrays are sorted by their JSON encoding,
-//     so the set of entries is still compared exactly. If the code makes the
-//     order deterministic, drop this rule and re-record.
 //
 // TestGoldenDeterministic backs these rules: it runs the whole suite twice a
 // second apart and fails on any difference a rule missed.

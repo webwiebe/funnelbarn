@@ -88,6 +88,11 @@ type RedisBus struct {
 	lastFailure    atomic.Int64 // unix nanos of the last failed publish
 	inflight       atomic.Int64
 
+	// publishOutage and receiveOutage pick the log level of a failed publish
+	// and a failed receive, so a short Valkey stall logs at Warn.
+	publishOutage Outage
+	receiveOutage Outage
+
 	mu      sync.Mutex
 	closed  bool
 	started bool
@@ -215,16 +220,14 @@ func (b *RedisBus) publish(ctx context.Context, c Command) {
 	defer cancel()
 	if err := b.queue.Publish(pubCtx, payload); err != nil {
 		b.lastFailure.Store(time.Now().UnixNano())
-		if b.publishFailing.CompareAndSwap(false, true) {
-			b.logger.ErrorContext(ctx, "command publish failed, using fallback", "kind", c.Kind(), "error", err, "handled", true)
-		} else {
-			b.logger.WarnContext(ctx, "command publish failed, using fallback", "kind", c.Kind(), "error", err, "handled", true)
-		}
+		b.publishFailing.Store(true)
+		b.logger.Log(ctx, b.publishOutage.Fail(), "command publish failed, using fallback", "kind", c.Kind(), "error", err, "handled", true)
 		b.toFallback(ctx, c)
 		return
 	}
 	if b.publishFailing.CompareAndSwap(true, false) {
-		b.logger.InfoContext(ctx, "command publish recovered")
+		lasted, _ := b.publishOutage.Recover()
+		b.logger.InfoContext(ctx, "command publish recovered", "lasted", lasted.Round(time.Millisecond).String())
 	}
 }
 
@@ -239,10 +242,7 @@ func (b *RedisBus) toFallback(ctx context.Context, c Command) {
 // run is the consumer loop.
 func (b *RedisBus) run(ctx context.Context) {
 	defer close(b.done)
-	var (
-		backoff time.Duration
-		failing bool
-	)
+	var backoff time.Duration
 	for ctx.Err() == nil {
 		payload, ack, err := b.queue.Receive(ctx)
 		if err != nil {
@@ -254,12 +254,7 @@ func (b *RedisBus) run(ctx context.Context) {
 			} else if backoff *= 2; backoff > receiveBackoffMax {
 				backoff = receiveBackoffMax
 			}
-			if !failing {
-				b.logger.ErrorContext(ctx, "command queue receive failed", "error", err, "backoff", backoff, "handled", true)
-			} else {
-				b.logger.WarnContext(ctx, "command queue receive failed", "error", err, "backoff", backoff, "handled", true)
-			}
-			failing = true
+			b.logger.Log(ctx, b.receiveOutage.Fail(), "command queue receive failed", "error", err, "backoff", backoff, "handled", true)
 			timer := time.NewTimer(backoff)
 			select {
 			case <-ctx.Done():
@@ -269,9 +264,8 @@ func (b *RedisBus) run(ctx context.Context) {
 			}
 			continue
 		}
-		if failing {
-			failing = false
-			b.logger.InfoContext(ctx, "command queue receive recovered")
+		if lasted, ok := b.receiveOutage.Recover(); ok {
+			b.logger.InfoContext(ctx, "command queue receive recovered", "lasted", lasted.Round(time.Millisecond).String())
 		}
 		backoff = 0
 		if payload == nil {

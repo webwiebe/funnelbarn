@@ -255,17 +255,21 @@ hand with the same inputs the workflow uses (see `deploy/SECRETS.md` for `IAMBAR
 
 ### Automatic rollback
 
-The `deploy-production.yml` workflow has an automatic rollback step (`if: failure()`). If either `rollout status` call times out or fails, the workflow runs:
+The `deploy-production.yml` workflow has an automatic rollback step (`if: failure()`). Before the apply, it records the revision that the writer, the web Deployment and the reader StatefulSet each run (`deploy/restore-revision.sh record`, printed in the "Record restore point and detect migrations" log). If a `rollout status` call or the smoke check fails, it runs for each of them:
 
 ```sh
-kubectl -n funnelbarn-production rollout undo deployment/funnelbarn
-kubectl -n funnelbarn-production rollout undo deployment/funnelbarn-web
-kubectl -n funnelbarn-production rollout undo statefulset/funnelbarn-reader
+sh deploy/restore-revision.sh restore funnelbarn-production deployment/funnelbarn <recorded>
+sh deploy/restore-revision.sh restore funnelbarn-production deployment/funnelbarn-web <recorded>
+sh deploy/restore-revision.sh restore funnelbarn-production statefulset/funnelbarn-reader <recorded>
 ```
 
+A workload still on its recorded revision is left alone: the apply never
+changed it, and a plain `rollout undo` would step back past the release that
+was running (issue #396). Otherwise it runs `rollout undo --to-revision=<recorded>`.
+
 It skips the rollback when the release carries a migration (see the step's log).
-On the release that introduced the readers the StatefulSet has no earlier
-revision, so its undo fails. Follow "Back to a single process" below.
+On the release that introduced the readers the StatefulSet had no revision to
+record, so its restore fails. Follow "Back to a single process" below.
 
 ### Manual rollback
 

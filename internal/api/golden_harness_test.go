@@ -21,7 +21,6 @@ import (
 	"context"
 	"flag"
 	"net/http"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -30,6 +29,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -191,7 +191,7 @@ func dispatcherTouch(d command.Bus) auth.DBKeyTouch {
 // in t.TempDir so a constructor can open further connections on deps.Path.
 func newGoldenEnv(t *testing.T, ctor goldenConstructor) (goldenTarget, *goldenSeed, goldenDeps) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "golden.db")
+	path := repotest.Path(t, "golden.db")
 	store, err := repository.Open(path)
 	if err != nil {
 		t.Fatalf("repository.Open(%s): %v", path, err)

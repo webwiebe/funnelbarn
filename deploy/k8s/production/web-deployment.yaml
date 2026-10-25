@@ -4,6 +4,7 @@ metadata:
   name: funnelbarn-web
 spec:
   replicas: 1
+  minReadySeconds: 5
   revisionHistoryLimit: 2
   selector:
     matchLabels:
@@ -33,6 +34,13 @@ spec:
             limits:
               cpu: 100m
               memory: 64Mi
+          # Keeps serving while Traefik drops this pod from its endpoints: without
+          # it a pod being replaced refuses connections for a moment, and Traefik
+          # answers 502 for the SDK script and the dashboard.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
           livenessProbe:
             tcpSocket:
               port: 3000

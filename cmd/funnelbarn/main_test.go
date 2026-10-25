@@ -10,6 +10,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 )
 
@@ -231,7 +232,7 @@ func (f *fakeRecordings) PurgeBotRecordings(_ context.Context) (int, error) {
 // is the only thing that can delete a bot recording's R2 chunks, so a pass that
 // silently skips it leaves them stored forever.
 func TestRunMaintenance_ReachesEverySweep(t *testing.T) {
-	store, err := repository.Open(filepath.Join(t.TempDir(), "maint.db"))
+	store, err := repository.Open(repotest.Path(t, "maint.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -259,7 +260,7 @@ func TestRunMaintenance_ReachesEverySweep(t *testing.T) {
 // Recordings are optional (no object storage configured), and the pass must
 // still run the database-side work rather than skipping or panicking.
 func TestRunMaintenance_NilRecordingsIsSafe(t *testing.T) {
-	store, err := repository.Open(filepath.Join(t.TempDir(), "maint-nil.db"))
+	store, err := repository.Open(repotest.Path(t, "maint-nil.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

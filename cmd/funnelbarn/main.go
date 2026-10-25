@@ -30,9 +30,12 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/workerhealth"
 )
 
-// Version and BuildTime are injected at build time via -ldflags.
+// Version, Commit and BuildTime are injected at build time via -ldflags.
+// Version is overridden at run time by FUNNELBARN_VERSION (see run); Commit and
+// BuildTime are facts about the binary and are served as built.
 var (
 	Version   = "dev"
+	Commit    = "unknown"
 	BuildTime = "unknown"
 )
 
@@ -267,12 +270,14 @@ func run() error {
 	if isReader(cfg) {
 		healthSvc = service.NewProjectHealthService(service.HealthViaCommands{ProjectHealthRepo: store, Bus: commands})
 	}
+	flagBookkeeping := newFlagBookkeeping(ctx, commands, slog.Default())
+	defer drainCommands(flagBookkeeping) // deferred LIFO: hands its queue to commands before they drain
 
 	// Wire services.
 	projectsSvc := service.NewProjectService(store)
 	funnelsSvc := service.NewFunnelService(store)
 	abtestsSvc := service.NewABTestService(store)
-	flagsSvc := service.NewFlagService(store).WithConfigCacheTTL(time.Duration(cfg.ConfigFlagCacheSeconds) * time.Second).WithCommands(commands)
+	flagsSvc := service.NewFlagService(store).WithConfigCacheTTL(time.Duration(cfg.ConfigFlagCacheSeconds) * time.Second).WithCommands(commands).WithBackgroundCommands(flagBookkeeping)
 	eventsSvc := service.NewEventService(store)
 	overviewSvc := service.NewOverviewService(store)
 	sessionsSvc := service.NewSessionService(store)
@@ -419,6 +424,8 @@ func run() error {
 		SetupRateBurst:        cfg.SetupRateBurst,
 		DB:                    store,
 		Version:               version,
+		Commit:                Commit,
+		BuildTime:             BuildTime,
 		TrustedProxies:        cfg.TrustedProxies,
 		BugbarnEndpoint:       cfg.SelfEndpoint,
 		BugbarnIngestKey:      cfg.SelfAPIKey,
