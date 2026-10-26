@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { BreakdownPanel } from './BreakdownPanel'
 import type { Funnel } from '../../lib/api'
 
@@ -37,6 +39,15 @@ const breakdown = {
   ],
 }
 
+// The panel keeps its breakdown in the URL; the probe shows what it wrote.
+function LocationProbe() {
+  return <output data-testid="search">{useLocation().search}</output>
+}
+
+function renderPanel(ui: ReactElement, search = '') {
+  return render(<MemoryRouter initialEntries={[`/funnels/p1${search}`]}>{ui}<LocationProbe /></MemoryRouter>)
+}
+
 describe('BreakdownPanel', () => {
   beforeEach(() => {
     mocks.getEventProperties.mockReset()
@@ -46,7 +57,7 @@ describe('BreakdownPanel', () => {
   })
 
   it('offers the properties of the first step event', async () => {
-    render(<BreakdownPanel projectId="p1" funnel={funnel} environment="" />)
+    renderPanel(<BreakdownPanel projectId="p1" funnel={funnel} environment="" />)
     await screen.findByRole('option', { name: 'surface' })
     expect(mocks.getEventProperties).toHaveBeenCalledWith('p1', 'visit')
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['No breakdown', 'surface', 'plan'])
@@ -54,7 +65,7 @@ describe('BreakdownPanel', () => {
   })
 
   it('shows one row per group with step counts and conversion', async () => {
-    render(<BreakdownPanel projectId="p1" funnel={funnel} environment="production" segment="mobile" segmentId="seg1" />)
+    renderPanel(<BreakdownPanel projectId="p1" funnel={funnel} environment="production" segment="mobile" segmentId="seg1" />)
     await screen.findByRole('option', { name: 'surface' })
     fireEvent.change(screen.getByLabelText('Break down by'), { target: { value: 'surface' } })
     await screen.findByText('wordpress')
@@ -67,7 +78,7 @@ describe('BreakdownPanel', () => {
 
   it('shows the failure when the breakdown cannot load', async () => {
     mocks.getFunnelBreakdown.mockRejectedValue(new Error('boom'))
-    render(<BreakdownPanel projectId="p1" funnel={funnel} environment="" />)
+    renderPanel(<BreakdownPanel projectId="p1" funnel={funnel} environment="" />)
     await screen.findByRole('option', { name: 'surface' })
     fireEvent.change(screen.getByLabelText('Break down by'), { target: { value: 'surface' } })
     await screen.findByText(/Failed to load breakdown/)
@@ -75,8 +86,46 @@ describe('BreakdownPanel', () => {
 
   it('renders nothing when the entry event has no properties', async () => {
     mocks.getEventProperties.mockResolvedValue({ properties: [] })
-    const { container } = render(<BreakdownPanel projectId="p1" funnel={funnel} environment="" />)
+    renderPanel(<BreakdownPanel projectId="p1" funnel={funnel} environment="" />)
     await waitFor(() => expect(mocks.getEventProperties).toHaveBeenCalled())
-    expect(container).toBeEmptyDOMElement()
+    expect(screen.queryByLabelText('Break down by')).not.toBeInTheDocument()
+  })
+
+  it('opens the breakdown a link names and marks its group', async () => {
+    renderPanel(<BreakdownPanel projectId="p1" funnel={funnel} environment="" />, '?funnel=f1&breakdown=surface&group=wordpress')
+    const row = await screen.findByRole('row', { current: true })
+    expect(row).toHaveTextContent('wordpress')
+    expect(screen.getByLabelText('Break down by')).toHaveValue('surface')
+    expect(mocks.getFunnelBreakdown).toHaveBeenCalledWith('p1', 'f1', 'surface', { segment: undefined, segmentId: undefined, environment: '' })
+  })
+
+  it('marks no row when the linked group is not in the breakdown', async () => {
+    renderPanel(<BreakdownPanel projectId="p1" funnel={funnel} environment="" />, '?breakdown=surface&group=lightroom')
+    await screen.findByText('wordpress')
+    expect(screen.queryByRole('row', { current: true })).not.toBeInTheDocument()
+  })
+
+  it('ignores a linked property the entry event does not carry', async () => {
+    renderPanel(<BreakdownPanel projectId="p1" funnel={funnel} environment="" />, '?breakdown=missing&group=wordpress')
+    await screen.findByRole('option', { name: 'surface' })
+    expect(screen.getByLabelText('Break down by')).toHaveValue('')
+    expect(mocks.getFunnelBreakdown).not.toHaveBeenCalled()
+  })
+
+  it('ignores a linked property name the API would reject', async () => {
+    mocks.getEventProperties.mockResolvedValue({ properties: ['surface', 'a-b'] })
+    renderPanel(<BreakdownPanel projectId="p1" funnel={funnel} environment="" />, '?breakdown=a-b')
+    await screen.findByRole('option', { name: 'surface' })
+    expect(screen.getByLabelText('Break down by')).toHaveValue('')
+    expect(mocks.getFunnelBreakdown).not.toHaveBeenCalled()
+  })
+
+  it('writes the chosen property to the URL and drops the linked group', async () => {
+    renderPanel(<BreakdownPanel projectId="p1" funnel={funnel} environment="" />, '?funnel=f1&breakdown=surface&group=wordpress')
+    await screen.findByRole('row', { current: true })
+    fireEvent.change(screen.getByLabelText('Break down by'), { target: { value: 'plan' } })
+    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent('?funnel=f1&breakdown=plan'))
+    fireEvent.change(screen.getByLabelText('Break down by'), { target: { value: '' } })
+    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\?funnel=f1$/))
   })
 })

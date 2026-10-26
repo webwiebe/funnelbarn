@@ -13,13 +13,8 @@ import { EditFunnelModal } from '../components/funnels/EditFunnelModal'
 import { SegmentManager } from '../components/funnels/SegmentManager'
 import { EnvironmentSwitch } from '../components/funnels/EnvironmentSwitch'
 import { BreakdownPanel } from '../components/funnels/BreakdownPanel'
-import { FUNNEL_TEMPLATES, FunnelTemplate, PRESET_SEGMENTS, watchRecordingsPath } from '../components/funnels/constants'
-
-function conversionColor(pct: number) {
-  if (pct >= 0.6) return C.success
-  if (pct >= 0.3) return C.amber
-  return C.error
-}
+import { useFunnelDeepLink } from '../components/funnels/funnelLink'
+import { FUNNEL_TEMPLATES, FunnelTemplate, PRESET_SEGMENTS, conversionColor, watchRecordingsPath } from '../components/funnels/constants'
 
 // ─── Templates dropdown ───────────────────────────────────────────────────────
 
@@ -405,6 +400,8 @@ export default function Funnels() {
     setShowDetail(true)
     // Analysis will be fetched by the effect above.
   }
+  // ?funnel= opens a funnel on load and follows the selection afterwards.
+  useFunnelDeepLink(funnels, selected, loadAnalysis)
 
   const handleDeleteFunnel = async () => {
     if (!selected || !projectId) return

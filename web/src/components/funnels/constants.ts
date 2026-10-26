@@ -1,4 +1,12 @@
 import { SegmentRule } from '../../lib/api'
+import { C } from '../../lib/theme'
+
+// Bar colour for a step's conversion rate.
+export function conversionColor(pct: number) {
+  if (pct >= 0.6) return C.success
+  if (pct >= 0.3) return C.amber
+  return C.error
+}
 
 // ─── Conversion window ────────────────────────────────────────────────────────
 

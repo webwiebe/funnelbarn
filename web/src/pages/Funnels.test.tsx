@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import Funnels from './Funnels'
 import type { Funnel, FunnelAnalysis } from '../lib/api'
 
@@ -53,6 +53,9 @@ const mockApi = vi.hoisted(() => ({
   }),
 }))
 
+const mockGetFunnelBreakdown = vi.hoisted(() => vi.fn())
+vi.mock('../lib/api.funnelbreakdown', () => ({ getFunnelBreakdown: mockGetFunnelBreakdown }))
+
 vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>()
   return { ...actual, api: mockApi }
@@ -98,14 +101,20 @@ const analysisEmpty: FunnelAnalysis = {
   ],
 }
 
-function renderFunnels(projectId: string | null = 'p1') {
-  const path = projectId ? `/funnels/${projectId}` : '/funnels'
+// Shows the query string the page wrote, for the deep link tests.
+function LocationProbe() {
+  return <output data-testid="search">{useLocation().search}</output>
+}
+
+function renderFunnels(projectId: string | null = 'p1', search = '') {
+  const path = (projectId ? `/funnels/${projectId}` : '/funnels') + search
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/funnels/:projectId" element={<Funnels />} />
         <Route path="/funnels" element={<Funnels />} />
       </Routes>
+      <LocationProbe />
     </MemoryRouter>,
   )
 }
@@ -393,5 +402,56 @@ describe('Funnels', () => {
     await waitFor(() =>
       expect(mockApi.getFunnelAnalysis).toHaveBeenCalledWith('p1', 'f2', 'all', undefined, ''),
     )
+  })
+
+  describe('deep link', () => {
+    const link = '?funnel=f1&breakdown=signup_surface&group=wordpress'
+    const breakdown = {
+      property: 'signup_surface',
+      groups: ['wordpress', 'site-badge'].map((value) => ({
+        value, label: value, entries: 2,
+        results: [
+          { step_order: 0, event_name: 'page_view', count: 2, conversion: 1, drop_off: 0 },
+          { step_order: 1, event_name: 'signup_completed', count: 1, conversion: 0.5, drop_off: 0.5 },
+        ],
+      })),
+    }
+
+    beforeEach(() => {
+      mockApi.getEventProperties.mockResolvedValue({ properties: ['signup_surface'] })
+      mockGetFunnelBreakdown.mockResolvedValue(breakdown)
+    })
+    afterEach(() => mockApi.getEventProperties.mockResolvedValue({ properties: [] }))
+
+    it('opens the linked funnel with its breakdown and group', async () => {
+      renderFunnels('p1', link)
+      const row = await screen.findByRole('row', { current: true })
+      expect(row).toHaveTextContent('wordpress')
+      expect(mockApi.getFunnelAnalysis).toHaveBeenCalledWith('p1', 'f1', 'all', undefined, '')
+      expect(mockGetFunnelBreakdown).toHaveBeenCalledWith('p1', 'f1', 'signup_surface', expect.anything())
+      expect(screen.getByTestId('search')).toHaveTextContent(link)
+    })
+
+    it('leaves the page usable for an unknown funnel id', async () => {
+      renderFunnels('p1', '?funnel=nope&breakdown=signup_surface')
+      await screen.findByText('Signup flow')
+      expect(screen.getByText(/select a funnel to view analysis/i)).toBeInTheDocument()
+      expect(mockApi.getFunnelAnalysis).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByText('Checkout'))
+      await waitFor(() => expect(mockApi.getFunnelAnalysis).toHaveBeenCalledWith('p1', 'f2', 'all', undefined, ''))
+    })
+
+    it('writes the selected funnel to the URL and drops the previous breakdown', async () => {
+      renderFunnels('p1', link)
+      await screen.findByRole('row', { current: true })
+      fireEvent.click(screen.getByText('Checkout'))
+      await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\?funnel=f2$/))
+    })
+
+    it('writes the funnel picked without a link', async () => {
+      renderFunnels()
+      fireEvent.click(await screen.findByText('Signup flow'))
+      await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\?funnel=f1$/))
+    })
   })
 })

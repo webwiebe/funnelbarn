@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, Funnel } from '../../lib/api'
 import { FunnelBreakdown, getFunnelBreakdown } from '../../lib/api.funnelbreakdown'
 import { C } from '../../lib/theme'
+import { useFunnelLink } from './funnelLink'
 
 const cell = { padding: '0.4rem 0.75rem', textAlign: 'right' as const, fontSize: 13 }
 
@@ -54,9 +55,11 @@ export function BreakdownPanel({
 }) {
   const entryEvent = funnel.steps?.[0]?.event_name ?? ''
   const properties = useEntryProperties(projectId, entryEvent)
-  const [property, setProperty] = useState('')
-  // A different funnel has different properties; start over.
-  useEffect(() => setProperty(''), [funnel.id])
+  // The breakdown lives in the URL (?breakdown=, ?group=), so a link opens it.
+  // A property the entry event does not carry is ignored.
+  const [link, updateLink] = useFunnelLink()
+  const property = properties.includes(link.breakdown) ? link.breakdown : ''
+  const setProperty = (p: string) => updateLink({ breakdown: p, group: '' })
   const { result, error, loading } = useBreakdown({ projectId, funnelId: funnel.id, environment, segment, segmentId }, property)
 
   if (!entryEvent || properties.length === 0) return null
@@ -80,18 +83,22 @@ export function BreakdownPanel({
           Entries are grouped by the {property} of their first step ({entryEvent}). Entries without it are shown as (none).
         </div>
       )}
-      <BreakdownBody funnel={funnel} result={result} error={error} loading={loading} />
+      <BreakdownBody funnel={funnel} result={result} error={error} loading={loading} group={link.group} />
     </div>
   )
 }
 
-function BreakdownBody({ funnel, result, error, loading }: { funnel: Funnel; result: FunnelBreakdown | null; error: string; loading: boolean }) {
+type BodyProps = { funnel: Funnel; result: FunnelBreakdown | null; error: string; loading: boolean; group: string }
+
+function BreakdownBody({ funnel, result, error, loading, group }: BodyProps) {
   if (loading) return <div style={{ color: C.muted, padding: '1rem 0' }}>Loading breakdown…</div>
   if (error) return <div style={{ color: C.error, fontSize: 14, padding: '1rem 0' }}>Failed to load breakdown: {error}</div>
-  return result ? <BreakdownTable funnel={funnel} breakdown={result} /> : null
+  return result ? <BreakdownTable funnel={funnel} breakdown={result} group={group} /> : null
 }
 
-function BreakdownTable({ funnel, breakdown }: { funnel: Funnel; breakdown: FunnelBreakdown }) {
+// group is the value a link points at; its row is marked. An unknown value
+// marks nothing.
+function BreakdownTable({ funnel, breakdown, group }: { funnel: Funnel; breakdown: FunnelBreakdown; group: string }) {
   if (breakdown.groups.length === 0) {
     return <div style={{ color: C.muted, padding: '1rem 0', fontSize: 14 }}>No entries in this range.</div>
   }
@@ -106,18 +113,33 @@ function BreakdownTable({ funnel, breakdown }: { funnel: Funnel; breakdown: Funn
         </thead>
         <tbody>
           {breakdown.groups.map((g) => (
-            <tr key={g.other ? '__other__' : `v:${g.value}`} style={{ borderBottom: `1px solid ${C.border}` }}>
-              <td style={{ ...cell, textAlign: 'left', fontStyle: g.value === '' ? 'italic' : 'normal' }}>{g.label}</td>
-              {g.results.map((r, i) => (
-                <td key={i} style={cell}>
-                  {r.count.toLocaleString()}
-                  {i > 0 && <span style={{ color: C.muted }}> ({(r.conversion * 100).toFixed(1)}%)</span>}
-                </td>
-              ))}
-            </tr>
+            <BreakdownRow
+              key={g.other ? '__other__' : `v:${g.value}`}
+              group={g}
+              linked={group !== '' && !g.other && g.value === group}
+            />
           ))}
         </tbody>
       </table>
     </div>
+  )
+}
+
+type Group = FunnelBreakdown['groups'][number]
+
+function BreakdownRow({ group, linked }: { group: Group; linked: boolean }) {
+  return (
+    <tr
+      aria-current={linked ? 'true' : undefined}
+      style={{ borderBottom: `1px solid ${C.border}`, background: linked ? 'rgba(245,158,11,0.1)' : undefined }}
+    >
+      <td style={{ ...cell, textAlign: 'left', fontStyle: group.value === '' ? 'italic' : 'normal' }}>{group.label}</td>
+      {group.results.map((r, i) => (
+        <td key={i} style={cell}>
+          {r.count.toLocaleString()}
+          {i > 0 && <span style={{ color: C.muted }}> ({(r.conversion * 100).toFixed(1)}%)</span>}
+        </td>
+      ))}
+    </tr>
   )
 }

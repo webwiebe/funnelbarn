@@ -74,6 +74,20 @@ Only events with matching property values will count toward that step.
 
 Select a time range (last 7d, 30d, or custom) and optionally a segment, then click **Analyze**.
 
+### Linking to a funnel view
+
+The Funnels page keeps the selected funnel and its breakdown in the URL, so a copied link opens the same view. Other tools can build the link themselves:
+
+```
+https://<your-funnelbarn>/funnels/<project id>?funnel=<funnel id>&breakdown=signup_surface&group=wordpress
+```
+
+- `funnel` selects the funnel.
+- `breakdown` opens **Break down by** on that property of the first step event (letters, digits and underscore).
+- `group` highlights the row with that value in the breakdown table.
+
+An unknown funnel, a property the first step event does not carry, or a group that is not in the result is ignored, and the rest of the page works as usual.
+
 ### API
 
 ```bash
