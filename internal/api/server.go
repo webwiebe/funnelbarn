@@ -334,9 +334,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/v1/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /api/v1/me", s.requireSession(s.handleMe))
 
-	// Setup guide. It used to be public and handed out a working ingest key
-	// for any slug, so it now needs a dashboard session like the API key
-	// routes it points to.
+	// Setup guide. It used to hand out a working ingest key for any slug, so
+	// it needs a dashboard session like the API key routes it points to.
 	s.mux.Handle("GET /api/v1/setup/{slug}", s.limit(s.setupLimiter, s.requireSession(s.handleSetup)))
 
 	// Landing endpoint for IAMBarn RP-initiated logout — clears the local
