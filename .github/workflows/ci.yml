@@ -95,8 +95,10 @@ jobs:
       - name: Install pinned lint tooling
         # Pinned, not @latest: a gate whose tool version can change without a
         # commit is a gate whose green run stops meaning anything.
+        # golangci-lint v2.13.2 cannot load Go 1.27.3's export data (typecheck error
+        # on stdlib imports, so every finding vanishes); v2.15.0 matches the baseline.
         run: |
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Soak, golangci-lint

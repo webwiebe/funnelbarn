@@ -77,7 +77,7 @@ BASELINE_DIR = REPO_ROOT / "scripts" / "soak-baselines"
 # Pinned tool versions. A soak that fetches @latest is a check whose behaviour
 # can change without a commit; that is how a green run stops meaning anything.
 GOCYCLO_VERSION = "v0.6.0"
-GOLANGCI_VERSION = "v2.13.2"
+GOLANGCI_VERSION = "v2.15.0"
 
 # Estate targets. These are the thresholds the soaks measure against; they are
 # NOT the blocking limits, which are walked down separately.
