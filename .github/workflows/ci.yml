@@ -329,7 +329,9 @@ jobs:
 
   secret-scan:
     runs-on: [self-hosted, build]
-    timeout-minutes: 10
+    # Above the sum of the step timeouts below, so the self-test can never use up
+    # the time the real scan needs: a slow step fails as itself.
+    timeout-minutes: 20
     env:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/Applications/Docker.app/Contents/Resources/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -351,11 +353,39 @@ jobs:
         with:
           # Full history: the scan reads every commit and the PR base.
           fetch-depth: 0
+      # Without gitleaks on PATH the script starts the gitleaks image once per
+      # scan. The self-test runs about 25 scans, which took 4 minutes on the mini
+      # and 8 under load (2026-10-26), against 2 seconds with the native binary.
+      - name: Install pinned gitleaks
+        shell: bash
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          v=8.30.1
+          case "$(uname -s)-$(uname -m)" in
+            Darwin-arm64) asset=darwin_arm64; sum=b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5 ;;
+            Darwin-x86_64) asset=darwin_x64; sum=dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709 ;;
+            Linux-x86_64) asset=linux_x64; sum=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb ;;
+            Linux-aarch64) asset=linux_arm64; sum=e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080 ;;
+            *) echo "::error::no pinned gitleaks for $(uname -s)-$(uname -m)"; exit 1 ;;
+          esac
+          dir="${RUNNER_TEMP:?}/gitleaks-bin"
+          tgz="${RUNNER_TEMP}/gitleaks.tar.gz"
+          mkdir -p "$dir"
+          curl -fsSL --retry 3 --max-time 60 -o "$tgz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${v}/gitleaks_${v}_${asset}.tar.gz"
+          echo "${sum}  ${tgz}" | shasum -a 256 -c -
+          tar -xzf "$tgz" -C "$dir" gitleaks
+          rm -f "$tgz"
+          echo "$dir" >> "$GITHUB_PATH"
+          "$dir/gitleaks" version
       - name: Gate self-test (planted secret)
         shell: bash
+        timeout-minutes: 8
         run: bash scripts/tests/secret-scan.test.sh
       - name: Secret scan
         shell: bash
+        timeout-minutes: 8
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             bash scripts/secret-scan.sh diff "origin/${{ github.base_ref }}"

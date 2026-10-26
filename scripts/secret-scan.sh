@@ -108,6 +108,12 @@ if [ "$kind" = diff ] && git cat-file -e "$base:$IGNORE_FILE" 2>/dev/null; then
   fi
 fi
 
+if [ "$use_docker" = 1 ]; then
+  echo "secret-scan: engine=docker (ghcr.io/gitleaks/gitleaks:v$PINNED_VERSION)" >&2
+else
+  echo "secret-scan: engine=native ($(command -v "$GITLEAKS"))" >&2
+fi
+
 log=$(mktemp)
 trap 'rm -f "$log"; [ -z "${DOCKER_CONFIG_DIR:-}" ] || rm -rf "$DOCKER_CONFIG_DIR"' EXIT
 # gitleaks can exit 0 with "0 commits scanned" after one of its own git calls failed

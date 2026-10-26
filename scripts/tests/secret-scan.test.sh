@@ -62,6 +62,7 @@ run "$R" enforce history;            check "history, enforce: planted secret fai
 run "$R" report history;             check "history, report: planted secret exits 0" 0 "$RC"
 has "history, report: finding is counted" "findings=1" "$OUT"
 has "history, report: finding is annotated" "::warning" "$OUT"
+has "history, report: the engine is logged" "secret-scan: engine=" "$OUT"
 case "$OUT" in *"$TOKEN"*) fail=$((fail + 1)); echo "FAIL output leaks the secret value" ;; *) pass=$((pass + 1)); echo "ok   output never shows the secret value" ;; esac
 
 run "$R" enforce diff "$BASE_CLEAN"; check "diff, enforce: planted secret fails" 1 "$RC"
