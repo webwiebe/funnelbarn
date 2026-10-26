@@ -2,13 +2,8 @@ package api
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
 
@@ -17,32 +12,17 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
-// setupKey derives a deterministic ingest API key from the session secret and
-// slug. Returns ok=false when no session secret is configured — in that case we
-// MUST NOT derive a key from a hardcoded constant, which would make every
-// project's ingest key globally predictable. Callers fail closed instead.
-func setupKey(secret, slug string) (plaintext, keySHA256 string, ok bool) {
-	if strings.TrimSpace(secret) == "" {
-		return "", "", false
-	}
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte("setup:" + slug))
-	raw := mac.Sum(nil)
-	plaintext = hex.EncodeToString(raw)[:40]
-	sum := sha256.Sum256([]byte(plaintext))
-	keySHA256 = hex.EncodeToString(sum[:])
-	return plaintext, keySHA256, true
-}
+// setupKeyPlaceholder stands in for the ingest key wherever the setup guide
+// shows one. The guide used to print a key derived from the session secret
+// and the slug, and re-created it on every fetch, so a revoked setup key came
+// back the next time anyone opened the guide. Keys now come only from
+// POST /api/v1/apikeys (Settings → API keys), which shows each one once.
+const setupKeyPlaceholder = "<your-ingest-api-key>"
 
-// errSetupKeyUnavailable is returned when no session secret is configured, so
-// the setup guide's ingest key cannot be derived. Deriving one from a
-// hardcoded constant would make every project's ingest key globally
-// predictable, so callers fail closed instead.
-var errSetupKeyUnavailable = errors.New("setup unavailable: server missing session secret")
-
-// handleSetup is a public endpoint that returns a self-service setup page in
-// Markdown format. It creates the project (status='pending') if it doesn't
-// exist yet and upserts a deterministic ingest API key.
+// handleSetup returns the setup guide in Markdown format. It needs a dashboard
+// session (see registerRoutes): an anonymous visitor used to get a working
+// ingest key for any slug. It creates the project (status='pending') if it
+// doesn't exist yet.
 //
 // GET /api/v1/setup/{slug}
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
@@ -73,11 +53,6 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	doc, err := s.renderSetupDoc(ctx, project, s.setupBaseURL(r))
 	if err != nil {
 		tracing.RecordError(span, err)
-		if errors.Is(err, errSetupKeyUnavailable) {
-			slog.Error("setup: refusing to derive key without a session secret", "slug", slug, "handled", false)
-			http.Error(w, "setup unavailable: server missing session secret", http.StatusServiceUnavailable)
-			return
-		}
 		slog.Error("setup: render doc", "project_id", project.ID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -103,9 +78,8 @@ func (s *Server) SetupDoc(ctx context.Context, project repository.Project) (stri
 }
 
 // renderSetupDoc renders the setup guide for project, addressed at publicURL,
-// and performs the side effects the document depends on: deriving (and
-// upserting) the project's deterministic ingest key, and marking the
-// project's health as "setup called".
+// and marks the project's health as "setup called". It creates no API key:
+// the guide shows setupKeyPlaceholder and tells the reader where to create one.
 //
 // Doing that mark here, not only from handleSetup, is a deliberate choice.
 // get_setup_guide over MCP returns the identical document a visitor gets from
@@ -115,16 +89,7 @@ func (s *Server) SetupDoc(ctx context.Context, project repository.Project) (stri
 // calling home, flips the health flag. That's accepted: a false "setup
 // called" only silences a health nag, while a false negative would leave a
 // real integration looking unconfigured.
-func (s *Server) renderSetupDoc(ctx context.Context, project repository.Project, publicURL string) (string, error) {
-	plaintext, keySHA256, ok := setupKey(s.sessionSecret, project.Slug)
-	if !ok {
-		return "", errSetupKeyUnavailable
-	}
-
-	if err := s.projects.EnsureSetupAPIKey(ctx, project.ID, keySHA256); err != nil {
-		return "", err
-	}
-
+func (s *Server) renderSetupDoc(_ context.Context, project repository.Project, publicURL string) (string, error) {
 	if s.projectHealth != nil {
 		pid := project.ID
 		bblog.Go("setup-health", func() {
@@ -134,5 +99,5 @@ func (s *Server) renderSetupDoc(ctx context.Context, project repository.Project,
 		})
 	}
 
-	return buildSetupMarkdown(project, plaintext, publicURL, s.flagAutoRegisterMax, s.mcpEnabled()), nil
+	return buildSetupMarkdown(project, setupKeyPlaceholder, publicURL, s.flagAutoRegisterMax, s.mcpEnabled()), nil
 }

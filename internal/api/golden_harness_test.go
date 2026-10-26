@@ -137,7 +137,6 @@ func newGoldenServer(t *testing.T, store *repository.Store, health ports.Project
 		UserAuth:            userAuth,
 		SessionManager:      sm,
 		WebSessions:         store,
-		SessionSecret:       "test-secret",
 		PublicURL:           "http://localhost",
 		LoginRatePerMinute:  100000,
 		LoginRateBurst:      100000,

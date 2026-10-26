@@ -35,7 +35,6 @@ type Projects interface {
 	DeleteProject(ctx context.Context, id string) error
 	ApproveProject(ctx context.Context, id string) (repository.Project, error)
 	EnsureProjectPending(ctx context.Context, name, slug string) (repository.Project, error)
-	EnsureSetupAPIKey(ctx context.Context, projectID, keySHA256 string) error
 	EnsureProject(ctx context.Context, slug string) (repository.Project, error)
 	HasProjects(ctx context.Context) (bool, error)
 	UserByUsername(ctx context.Context, username string) (repository.User, error)

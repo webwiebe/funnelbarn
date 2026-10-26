@@ -32,13 +32,6 @@
         "name": "a-flags",
         "project_id": "f0000000-0001-4000-8000-000000000001",
         "scope": "flags:read"
-      },
-      {
-        "created_at": "<now>",
-        "id": "<uuid>",
-        "name": "setup",
-        "project_id": "f0000000-0001-4000-8000-000000000001",
-        "scope": "ingest"
       }
     ]
   },

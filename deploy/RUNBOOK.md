@@ -170,7 +170,9 @@ on the dashboard and routes nothing.
 **Setup guide on the alias.** `GET https://f.<brand>/api/v1/setup/<slug>` hands back `https://f.<brand>`
 in every endpoint and snippet; any other host gets `FUNNELBARN_PUBLIC_URL`. The alias is recognised from
 `X-Forwarded-Host` (when the peer is trusted, see `FUNNELBARN_TRUSTED_PROXIES`) or `Host`, and must be
-`f.` followed by a valid DNS name (`internal/api/setup.go`, `setupBaseURL`).
+`f.` followed by a valid DNS name (`internal/api/setup.go`, `setupBaseURL`). The guide needs a dashboard
+session, and the session cookie belongs to the dashboard host, so a browser on the alias gets a 401; the
+MCP tool `get_setup_guide` always uses `FUNNELBARN_PUBLIC_URL`.
 
 **Theme manifest.** `/.well-known/iambarn-theme.json` is exempt from the bare-host redirect, because
 iambarn treats a 3xx as a failed fetch. A concrete per-host Ingress that serves the dashboard

@@ -24,6 +24,13 @@ describe('buildAgentPrompt', () => {
     expect(prompt).toContain(`${ORIGIN}/api/v1/setup/acme`)
   })
 
+  it('sends the agent to MCP or the user for the guide and the key', () => {
+    const prompt = buildAgentPrompt(health({}), project, ORIGIN)
+    expect(prompt).toContain('get_setup_guide')
+    expect(prompt).toContain('Settings → API keys')
+    expect(prompt).not.toContain("includes the project's API key")
+  })
+
   it('lists only the missing capabilities as numbered tasks', () => {
     // setup + events done, flags + recordings missing.
     const prompt = buildAgentPrompt(

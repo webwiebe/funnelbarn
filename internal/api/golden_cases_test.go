@@ -99,7 +99,6 @@ func goldenGETCases(s *goldenSeed) []goldenCase {
 	add("version", "/api/v1/version", authNone, "")
 	add("client_config", "/api/v1/client-config", authNone, "")
 	add("theme_manifest", themeManifestPath, authNone, "")
-	cs = append(cs, goldenCase{Name: "setup_guide", Method: "GET", Path: "/api/v1/setup/" + s.SlugA, Auth: authNone, Phase: phaseGETWrites})
 
 	// API-key authed.
 	add("trace_lookup", "/api/v1/traces/"+s.TraceA, authKey, s.KeyAFull)
@@ -108,6 +107,7 @@ func goldenGETCases(s *goldenSeed) []goldenCase {
 
 	// Session and account.
 	sess("me", "/api/v1/me")
+	cs = append(cs, goldenCase{Name: "setup_guide", Method: "GET", Path: "/api/v1/setup/" + s.SlugA, Auth: authSession, Phase: phaseGETWrites})
 	sess("projects_list", "/api/v1/projects")
 	add("projects_list_token", "/api/v1/projects", authKey, s.KeyAAnalytics)
 	// last_used_at of the keys used by the cases above is written off the

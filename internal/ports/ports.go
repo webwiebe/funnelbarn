@@ -31,7 +31,6 @@ type ProjectCommands interface {
 	ApproveProject(ctx context.Context, id string) (repository.Project, error)
 	EnsureProject(ctx context.Context, slug string) (repository.Project, error)
 	EnsureProjectPending(ctx context.Context, name, slug string) (repository.Project, error)
-	EnsureSetupAPIKey(ctx context.Context, projectID, keySHA256 string) error
 }
 
 // ProjectRepo is the persistence port for projects and setup operations.

@@ -37,7 +37,6 @@ type ServerConfig struct {
 	UserAuth       *auth.UserAuthenticator
 	SessionManager *auth.SessionManager
 	AllowedOrigins []string
-	SessionSecret  string
 	PublicURL      string
 	DB             Pinger
 	Version        string
@@ -154,7 +153,6 @@ type Server struct {
 	userAuth            *auth.UserAuthenticator
 	sessionManager      *auth.SessionManager
 	allowedOrigins      []string
-	sessionSecret       string
 	publicURL           string
 	metricsToken        string
 	version             string
@@ -242,7 +240,6 @@ func NewServer(cfg ServerConfig) *Server {
 		userAuth:            cfg.UserAuth,
 		sessionManager:      cfg.SessionManager,
 		allowedOrigins:      cfg.AllowedOrigins,
-		sessionSecret:       cfg.SessionSecret,
 		publicURL:           cfg.PublicURL,
 		bugbarnEndpoint:     cfg.BugbarnEndpoint,
 		bugbarnIngestKey:    cfg.BugbarnIngestKey,
@@ -320,7 +317,6 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/v1/ready", s.handleReady)
 	s.mux.HandleFunc("GET /api/v1/version", s.handleVersion)
-	s.mux.Handle("GET /api/v1/setup/{slug}", s.limit(s.setupLimiter, http.HandlerFunc(s.handleSetup)))
 	s.mux.Handle("GET /api/v1/client-config", s.limit(s.eventsLimiter, http.HandlerFunc(s.handleClientConfig)))
 	s.mux.HandleFunc("GET "+themeManifestPath, s.handleThemeManifest)
 
@@ -337,6 +333,11 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("POST /api/v1/login", s.limit(s.loginLimiter, http.HandlerFunc(s.handleLogin)))
 	s.mux.HandleFunc("POST /api/v1/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /api/v1/me", s.requireSession(s.handleMe))
+
+	// Setup guide. It used to be public and handed out a working ingest key
+	// for any slug, so it now needs a dashboard session like the API key
+	// routes it points to.
+	s.mux.Handle("GET /api/v1/setup/{slug}", s.limit(s.setupLimiter, s.requireSession(s.handleSetup)))
 
 	// Landing endpoint for IAMBarn RP-initiated logout — clears the local
 	// session, then redirects to /login. Registered as post_logout_redirect_uri

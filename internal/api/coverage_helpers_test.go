@@ -61,7 +61,6 @@ func fullServer(t *testing.T, mutate func(cfg *ServerConfig)) (*Server, *reposit
 		UserAuth:            userAuth,
 		SessionManager:      sm,
 		WebSessions:         store,
-		SessionSecret:       "test-secret",
 		PublicURL:           "http://localhost",
 		LoginRatePerMinute:  1000,
 		LoginRateBurst:      1000,

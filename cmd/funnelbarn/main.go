@@ -412,7 +412,6 @@ func run() error {
 		SessionManager:        sessionManager,
 		LocalUsersExist:       localUserCount > 0,
 		AllowedOrigins:        cfg.AllowedOrigins,
-		SessionSecret:         cfg.SessionSecret,
 		PublicURL:             cfg.PublicURL,
 		LoginRatePerMinute:    cfg.LoginRatePerMinute,
 		LoginRateBurst:        cfg.LoginRateBurst,

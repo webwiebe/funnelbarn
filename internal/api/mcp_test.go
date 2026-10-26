@@ -324,7 +324,7 @@ func TestMCP_NotServedWithoutOIDC(t *testing.T) {
 }
 
 // get_setup_guide must return exactly what a visitor gets from
-// GET /api/v1/setup/{slug} for the same project: same derived ingest key,
+// GET /api/v1/setup/{slug} for the same project: same key placeholder,
 // same public URL, same MCP section (since this server has MCP enabled).
 func TestMCP_GetSetupGuideMatchesHTTPEndpoint(t *testing.T) {
 	f := newFakeIdP(t)
@@ -335,6 +335,7 @@ func TestMCP_GetSetupGuideMatchesHTTPEndpoint(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/setup/"+p.Slug, nil)
+	req.AddCookie(sessionCookieFor(t, srv, "admin"))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {

@@ -97,23 +97,6 @@ func TestProjectService_HasProjects(t *testing.T) {
 	require.True(t, has)
 }
 
-func TestProjectService_EnsureSetupAPIKey(t *testing.T) {
-	ctx := context.Background()
-	store := newTestStore(t)
-	svc := service.NewProjectService(store)
-
-	p, err := svc.CreateProject(ctx, "Setup Test", "setup-test")
-	require.NoError(t, err)
-
-	const hash = "hash5555555555555555555555555555555555555555555555555555555555555"
-	err = svc.EnsureSetupAPIKey(ctx, p.ID, hash)
-	require.NoError(t, err)
-
-	// Calling again should be idempotent.
-	err = svc.EnsureSetupAPIKey(ctx, p.ID, hash)
-	require.NoError(t, err)
-}
-
 func TestProjectService_GetProject_NotFound_Extended(t *testing.T) {
 	ctx := context.Background()
 	svc := service.NewProjectService(newTestStore(t))

@@ -48,7 +48,7 @@ func buildSetupMarkdown(project repository.Project, apiKey, publicURL string, fl
 	fmt.Fprintf(b, "| Status     | %s |\n", project.Status)
 	fmt.Fprintf(b, "| Setup URL  | %s |\n\n", setupURL)
 	fmt.Fprintf(b, "> **Endpoint is the base URL**, not the ingest path. Every SDK appends `/api/v1/events` itself — pass `%s`, not `%s`. (Posting to the doubled path 404s, and older SDK versions reported that as success.) Only the raw `curl` example below uses the full URL.\n\n", baseURL, ingestURL)
-	fmt.Fprintf(b, "> The API key above is scoped to **ingest** only (event tracking). It is deterministic and will be identical on every visit. No apiKey is stored server-side.\n\n")
+	fmt.Fprintf(b, "> **Create the API key yourself.** This guide shows `%s` wherever the key goes. Create an **ingest** key for project `%s` under Settings → API keys in the dashboard (or `POST /api/v1/apikeys` with a dashboard session). The key is shown once. Store it in your app's secret config (environment variable, SOPS file, secret manager) and never commit it.\n\n", apiKey, project.Slug)
 	fmt.Fprintf(b, "> **One key, all environments.** Use the same API key and project across development, staging, and production. Tag each event with `\"environment\": \"dev\"` (or `\"staging\"`, `\"prod\"`, etc.) — aliases are normalised server-side. The dashboard lets you filter to a single environment so your dev traffic never pollutes production numbers.\n\n---\n\n")
 
 	fmt.Fprintf(b, "## What FunnelBarn Tracks\n\n")

@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -27,7 +29,7 @@ func TestHandleSetup_OK(t *testing.T) {
 	}
 }
 
-func TestHandleSetup_ContainsSlugAndAPIKey(t *testing.T) {
+func TestHandleSetup_ShowsPlaceholderInsteadOfAKey(t *testing.T) {
 	srv, _ := newTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/setup/my-new-site", nil)
@@ -39,46 +41,58 @@ func TestHandleSetup_ContainsSlugAndAPIKey(t *testing.T) {
 	}
 
 	body := w.Body.String()
-
-	// The response must mention the slug.
 	if !strings.Contains(body, "my-new-site") {
 		t.Error("setup response does not contain the slug 'my-new-site'")
 	}
-
-	// The response must contain the deterministic API key.
-	plaintext, _, _ := setupKey("test-secret", "my-new-site")
-	if !strings.Contains(body, plaintext) {
-		t.Errorf("setup response does not contain the expected API key %q", plaintext)
+	if !strings.Contains(body, setupKeyPlaceholder) {
+		t.Errorf("setup response does not show the key placeholder %q", setupKeyPlaceholder)
+	}
+	if k := regexp.MustCompile(`\b[0-9a-f]{40}\b`).FindString(body); k != "" {
+		t.Errorf("setup response contains something shaped like an API key: %q", k)
 	}
 }
 
-func TestHandleSetup_Idempotent(t *testing.T) {
-	srv, _ := newTestServer(t)
+// The guide used to upsert a key derived from the slug on every fetch, so a
+// revoked setup key came back as soon as anyone opened the guide again.
+func TestHandleSetup_CreatesNoAPIKey(t *testing.T) {
+	srv, store := newTestServer(t)
 
-	// First call.
-	req1 := httptest.NewRequest(http.MethodGet, "/api/v1/setup/my-new-site", nil)
-	w1 := httptest.NewRecorder()
-	srv.ServeHTTP(w1, req1)
-	if w1.Code != http.StatusOK {
-		t.Fatalf("first setup call: want 200, got %d", w1.Code)
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/setup/my-new-site", nil)
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("setup call %d: want 200, got %d", i+1, w.Code)
+		}
 	}
 
-	// Extract the key from the first response.
-	plaintext, _, _ := setupKey("test-secret", "my-new-site")
-	if !strings.Contains(w1.Body.String(), plaintext) {
-		t.Fatalf("first response missing expected key %q", plaintext)
+	keys, err := store.ListAllAPIKeys(context.Background())
+	if err != nil {
+		t.Fatalf("ListAllAPIKeys: %v", err)
+	}
+	if len(keys) != 0 {
+		t.Errorf("setup guide created %d API key(s), want none", len(keys))
+	}
+}
+
+// Anyone could fetch a working ingest key for any slug while the guide was
+// public. It now needs a dashboard session.
+func TestHandleSetup_RequiresSession(t *testing.T) {
+	srv, _ := newAuthedServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/setup/my-new-site", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("no session: want 401, got %d (body: %s)", w.Code, w.Body.String())
 	}
 
-	// Second call — must succeed and return the same API key.
-	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/setup/my-new-site", nil)
-	w2 := httptest.NewRecorder()
-	srv.ServeHTTP(w2, req2)
-	if w2.Code != http.StatusOK {
-		t.Fatalf("second setup call: want 200, got %d", w2.Code)
-	}
-
-	if !strings.Contains(w2.Body.String(), plaintext) {
-		t.Errorf("second response has a different API key — endpoint is not idempotent")
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/setup/my-new-site", nil)
+	req.AddCookie(sessionCookieFor(t, srv, "admin"))
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("with session: want 200, got %d (body: %s)", w.Code, w.Body.String())
 	}
 }
 
@@ -94,74 +108,6 @@ func TestHandleSetup_MissingSlug(t *testing.T) {
 	// A missing slug should not produce a 500. 404 or 400 are both acceptable.
 	if w.Code == http.StatusInternalServerError {
 		t.Errorf("missing slug: want non-500, got 500 (body: %s)", w.Body.String())
-	}
-}
-
-// ---------------------------------------------------------------------------
-// setupKey — deterministic key derivation
-// ---------------------------------------------------------------------------
-
-func TestSetupKey_Deterministic(t *testing.T) {
-	pt1, hash1, _ := setupKey("my-secret", "acme-corp")
-	pt2, hash2, _ := setupKey("my-secret", "acme-corp")
-
-	if pt1 != pt2 {
-		t.Errorf("plaintext not deterministic: %q != %q", pt1, pt2)
-	}
-	if hash1 != hash2 {
-		t.Errorf("hash not deterministic: %q != %q", hash1, hash2)
-	}
-}
-
-func TestSetupKey_DifferentSlugsProduceDifferentKeys(t *testing.T) {
-	pt1, _, _ := setupKey("my-secret", "site-a")
-	pt2, _, _ := setupKey("my-secret", "site-b")
-
-	if pt1 == pt2 {
-		t.Error("different slugs should produce different keys")
-	}
-}
-
-func TestSetupKey_DifferentSecretsProduceDifferentKeys(t *testing.T) {
-	pt1, _, _ := setupKey("secret-one", "my-site")
-	pt2, _, _ := setupKey("secret-two", "my-site")
-
-	if pt1 == pt2 {
-		t.Error("different secrets should produce different keys")
-	}
-}
-
-func TestSetupKey_EmptySecretFailsClosed(t *testing.T) {
-	// SETUP-1: with no session secret, setupKey must refuse (ok=false) rather
-	// than derive a key from a hardcoded constant, which would make every
-	// project's ingest key globally predictable.
-	pt, hash, ok := setupKey("", "test-slug")
-	if ok {
-		t.Error("empty secret: expected ok=false")
-	}
-	if pt != "" || hash != "" {
-		t.Errorf("empty secret: expected empty key material, got pt=%q hash=%q", pt, hash)
-	}
-}
-
-func TestSetupKey_PlaintextLength(t *testing.T) {
-	// The plaintext key is always 40 hex chars (first 40 of a 64-char SHA-256 hex).
-	plaintext, _, _ := setupKey("any-secret", "any-slug")
-	if len(plaintext) != 40 {
-		t.Errorf("plaintext length: want 40, got %d (%q)", len(plaintext), plaintext)
-	}
-}
-
-func TestSetupKey_HashIsHex(t *testing.T) {
-	_, keySHA256, _ := setupKey("any-secret", "any-slug")
-	if len(keySHA256) != 64 {
-		t.Errorf("keySHA256 length: want 64 hex chars, got %d (%q)", len(keySHA256), keySHA256)
-	}
-	for _, c := range keySHA256 {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
-			t.Errorf("keySHA256 contains non-hex character %q", c)
-			break
-		}
 	}
 }
 

@@ -122,10 +122,6 @@ func (svc *ProjectService) EnsureProjectPending(ctx context.Context, name, slug 
 	return svc.store.EnsureProjectPending(ctx, name, slug)
 }
 
-func (svc *ProjectService) EnsureSetupAPIKey(ctx context.Context, projectID, keySHA256 string) error {
-	return svc.store.EnsureSetupAPIKey(ctx, projectID, keySHA256)
-}
-
 func (svc *ProjectService) EnsureProject(ctx context.Context, slug string) (repository.Project, error) {
 	return svc.store.EnsureProject(ctx, slug)
 }

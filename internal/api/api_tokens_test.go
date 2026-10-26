@@ -42,7 +42,6 @@ func newFlagTokenServer(t *testing.T) (*Server, *repository.Store) {
 		UserAuth:            userAuth,
 		SessionManager:      sm,
 		WebSessions:         store,
-		SessionSecret:       "test-secret",
 		PublicURL:           "http://localhost",
 		LoginRatePerMinute:  1000,
 		LoginRateBurst:      1000,

@@ -91,7 +91,6 @@ func newRecordingServerWithStorage(t *testing.T, storage service.RecordingStorag
 		Recordings:          recSvc,
 		UserAuth:            userAuth,
 		SessionManager:      sm,
-		SessionSecret:       "test-secret",
 		PublicURL:           "http://localhost",
 		LoginRatePerMinute:  1000,
 		LoginRateBurst:      1000,

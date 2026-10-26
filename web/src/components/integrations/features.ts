@@ -19,7 +19,7 @@ export const FEATURES: HealthFeature[] = [
     key: 'setup_called',
     label: 'Setup guide fetched',
     description: 'GET /api/v1/setup/{slug}',
-    agentTask: 'Fetch the setup guide (the URL above) and use it as the source of truth for the API key, endpoint and headers.',
+    agentTask: 'Read the setup guide (see above) and use it as the source of truth for the endpoint, headers and SDK snippets.',
   },
   {
     key: 'events_received',
@@ -43,9 +43,10 @@ export const FEATURES: HealthFeature[] = [
 
 /**
  * Build a concise, copy-pasteable prompt for an LLM coding agent that is
- * integrating FunnelBarn. It points the agent at the authoritative (public,
- * idempotent) setup guide and lists ONLY the capabilities not yet detected, so
- * the agent skips work that's already done.
+ * integrating FunnelBarn. It points the agent at the authoritative setup guide
+ * and lists ONLY the capabilities not yet detected, so the agent skips work
+ * that's already done. The guide needs a dashboard login and holds no API key,
+ * so the prompt tells the agent how to read it and where the key comes from.
  *
  * Pure + exported so it can be unit-tested without rendering.
  */
@@ -72,8 +73,10 @@ export function buildAgentPrompt(
   return [
     `You are integrating FunnelBarn (analytics, feature flags and session recording) into this codebase.`,
     ``,
-    `Authoritative setup guide — fetch this first and treat it as the source of truth. It is idempotent and includes the project's API key, the required request headers, and ready-to-paste SDK snippets for JavaScript/TypeScript, Python, Go and raw HTTP:`,
+    `Authoritative setup guide — read this first and treat it as the source of truth. It has the required request headers and ready-to-paste SDK snippets for JavaScript/TypeScript, Python, Go and raw HTTP. It needs a FunnelBarn login: read it with the get_setup_guide tool of the FunnelBarn MCP server, or ask the user to open this URL and paste it:`,
     `  ${setupURL}`,
+    ``,
+    `The guide holds no API key. Ask the user to create an ingest key for project "${slug}" under Settings → API keys and to put it in the app's secret config. Read it from an environment variable and never commit it.`,
     ``,
     `Integration status so far (auto-detected by FunnelBarn from real traffic):`,
     statusList,
