@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import Settings from './Settings'
 import type { ApiKey, Project } from '../lib/api'
@@ -106,11 +106,28 @@ async function renderWithKeys() {
 // Tests
 // ---------------------------------------------------------------------------
 
+function mockLoadedApi() {
+  mockApi.listApiKeys.mockResolvedValue({ api_keys: mockApiKeys })
+  mockApi.getInstanceSettings.mockResolvedValue({ settings: { geo_enabled: 'true' } })
+}
+
 describe('Settings', () => {
+  // The first render in a worker pays for compiling React and the whole page
+  // tree, about 3x a later render. On a loaded CI host that one-time cost ran
+  // the first test past its 5 s budget (main, 2026-10-26: 5303 ms against
+  // ~500 ms for the rest). Paying it here, under its own budget, leaves each
+  // test's 5 s for the behaviour it checks.
+  beforeAll(async () => {
+    mockLoadedApi()
+    renderSettings()
+    await screen.findAllByText('prod-key', {}, { timeout: 30_000 })
+    screen.getByRole('heading', { name: /settings/i })
+    cleanup()
+  }, 60_000)
+
   beforeEach(() => {
     vi.clearAllMocks()
-    mockApi.listApiKeys.mockResolvedValue({ api_keys: mockApiKeys })
-    mockApi.getInstanceSettings.mockResolvedValue({ settings: { geo_enabled: 'true' } })
+    mockLoadedApi()
   })
 
   it('renders the Settings heading', async () => {
