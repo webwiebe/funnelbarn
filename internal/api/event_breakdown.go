@@ -15,6 +15,18 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
+// registerEventReadRoutes registers the event reads a scripted readout can
+// call with a project-scoped analytics:read token.
+func (s *Server) registerEventReadRoutes() {
+	read := func(h http.HandlerFunc) http.HandlerFunc {
+		return s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, h)
+	}
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/events", read(s.handleListEvents))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-names", read(s.handleEventNames))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-counts", read(s.handleEventCounts))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-breakdown", read(s.handleEventBreakdown))
+}
+
 // parseCountFilter reads environment, exclude_bots and the property/value pair
 // shared by event-counts and event-breakdown. exclude_bots must be true or false.
 func parseCountFilter(q url.Values) (repository.EventCountFilter, error) {

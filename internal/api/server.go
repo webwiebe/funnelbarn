@@ -363,10 +363,7 @@ func (s *Server) registerRoutes() {
 	// accept a project-scoped analytics:read token — see internal/api/api_tokens.go.
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/dashboard", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleDashboard))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/flows", s.requireSession(s.handlePageFlows))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/events", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleListEvents))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-names", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleEventNames))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-counts", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleEventCounts))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-breakdown", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleEventBreakdown))
+	s.registerEventReadRoutes()
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-properties", s.requireSession(s.handleEventProperties))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-property-values", s.requireSession(s.handleEventPropertyValues))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/environments", s.requireSession(s.handleEnvironments))
