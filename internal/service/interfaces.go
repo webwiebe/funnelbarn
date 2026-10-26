@@ -81,6 +81,8 @@ type Events interface {
 	InsertEvent(ctx context.Context, e repository.Event) error
 	ListEvents(ctx context.Context, projectID string, limit, offset int) ([]repository.Event, error)
 	ListEventsFiltered(ctx context.Context, projectID string, f repository.EventListFilter, limit, offset int) ([]repository.Event, error)
+	TopEventNamesFiltered(ctx context.Context, projectID string, from, to time.Time, limit int, f repository.EventCountFilter) ([]repository.EventNameStat, error)
+	EventBreakdown(ctx context.Context, projectID, eventName, dimension string, from, to time.Time, limit int, f repository.EventCountFilter) ([]repository.BreakdownRow, error)
 	CountEvents(ctx context.Context, projectID string, from, to time.Time, env string) (int64, error)
 	TopPages(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]repository.PageStat, error)
 	TopReferrers(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]repository.ReferrerStat, error)

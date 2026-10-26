@@ -60,7 +60,8 @@ These endpoints accept either a session cookie or an `analytics:read` (or `full`
 | `GET` | `/api/v1/projects/:id/dashboard` | Aggregate stats over a range |
 | `GET` | `/api/v1/projects/:id/events` | Paginated raw events; filters `name`, `environment`, `from`, `to` (RFC 3339); an unknown parameter or a bad limit answers `400` |
 | `GET` | `/api/v1/projects/:id/event-names` | Distinct event names |
-| `GET` | `/api/v1/projects/:id/event-counts` | Per-event counts over a range |
+| `GET` | `/api/v1/projects/:id/event-counts` | Per-event counts over a range; filters `environment`, `exclude_bots`, `property`+`value` |
+| `GET` | `/api/v1/projects/:id/event-breakdown` | One event by `device_type`, `referrer_domain` or `utm_source`: events and sessions per value |
 | `GET` | `/api/v1/projects/:id/funnels` | The project's funnels |
 | `GET` | `/api/v1/projects/:id/funnels/:fid/analysis` | Per-step conversion |
 
@@ -214,6 +215,8 @@ Returns a count per event name over a date range — the whole catalog, not the 
 | `to` | now | RFC3339 end time (overrides `range`) |
 | `limit` | `100` | Max distinct event names to return (1–500) |
 | `environment` | all | Restrict to one environment |
+| `exclude_bots` | `false` | `true` drops events from bot user agents (`device_type` = `bot`). The response then carries `"exclude_bots": true` |
+| `property`, `value` | none | Keep events whose JSON property `property` equals `value`. Both are required together; `property` is letters, digits and underscores |
 
 Unlike the dashboard endpoint, unparseable input is rejected with `400` rather than silently answered with the default window — a readout that asked for last week and quietly got last month reports the wrong number with no way to notice.
 
@@ -229,6 +232,40 @@ Unlike the dashboard endpoint, unparseable input is rejected with `400` rather t
     {"name": "page_view", "count": 941},
     {"name": "first_run_started", "count": 287},
     {"name": "first_run_completed", "count": 56}
+  ]
+}
+```
+
+### `GET /api/v1/projects/:id/event-breakdown`
+
+Counts one event by a dimension: events and distinct sessions per value, largest first (up to 100 values). Use it to see who completes an event and where they came from. Accepts an `analytics:read` key.
+
+**Query parameters:**
+
+| Parameter | Default | Description |
+|---|---|---|
+| `event` | required | Event name |
+| `by` | required | `device_type`, `referrer_domain` or `utm_source` |
+| `range`, `from`, `to` | `30d` | Same as `event-counts` |
+| `environment` | all | Restrict to one environment |
+| `exclude_bots` | `false` | Drop events from bot user agents |
+| `property`, `value` | none | Same property filter as `event-counts` |
+
+A missing `event`, an unknown `by`, a bad `exclude_bots` or an unparseable time answers `400`. Events with no value for the dimension are reported under `""`.
+
+```json
+{
+  "project_id": "proj-123",
+  "event": "signup",
+  "by": "device_type",
+  "from": "2026-08-29T09:00:00Z",
+  "to": "2026-09-05T09:00:00Z",
+  "environment": "",
+  "exclude_bots": true,
+  "total_events": 52,
+  "values": [
+    {"value": "desktop", "count": 38, "sessions": 36},
+    {"value": "mobile", "count": 14, "sessions": 14}
   ]
 }
 ```
