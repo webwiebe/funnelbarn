@@ -122,3 +122,116 @@ func TestAnalyzeFunnelBreakdown_RejectsBadProperty(t *testing.T) {
 	_, err = s.AnalyzeFunnelBreakdown(ctx, f, time.Now().Add(-time.Hour), time.Now(), nil, "a') OR 1=1 --")
 	require.Error(t, err)
 }
+
+// requireGroupsAddUp checks that the groups sum to the unbroken funnel run with
+// the same filters, so every entry landed in exactly one group.
+func requireGroupsAddUp(t *testing.T, s *repository.Store, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, groups []repository.FunnelBreakdownGroup, rules ...repository.SegmentRule) {
+	t.Helper()
+	whole, err := s.AnalyzeFunnel(context.Background(), f, from, to, seg, rules...)
+	require.NoError(t, err)
+	sum := make([]int64, len(f.Steps))
+	for _, g := range groups {
+		for i, r := range g.Results {
+			sum[i] += r.Count
+		}
+	}
+	require.Equal(t, stepCounts(whole), sum)
+}
+
+func TestAnalyzeFunnelBreakdown_PageViewScope(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	p, err := s.CreateProject(ctx, "Page views", "page-views")
+	require.NoError(t, err)
+	at := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	from, to := at.Add(-time.Hour), at.Add(time.Hour)
+
+	// One session, four page views. Each page view is its own entry, grouped
+	// by the surface on its visit. The visit without a page view id is outside
+	// a page view funnel.
+	insert := func(pageView, name, props string) {
+		require.NoError(t, s.InsertEvent(ctx, repository.Event{
+			ID: randomHex(t), ProjectID: p.ID, SessionID: "s1", PageViewID: pageView,
+			Name: name, Environment: "production", Properties: props,
+			IngestID: "ingest-" + randomHex(t), OccurredAt: at,
+		}))
+	}
+	insert("pv1", "visit", `{"surface":"wordpress"}`)
+	insert("pv1", "signup", "{}")
+	insert("pv2", "visit", `{"surface":"wordpress"}`)
+	insert("pv3", "visit", `{"surface":"lightroom"}`)
+	insert("pv3", "signup", "{}")
+	insert("pv4", "visit", "{}")
+	insert("", "visit", `{"surface":"wordpress"}`)
+
+	f, err := s.CreateFunnel(ctx, repository.Funnel{
+		ProjectID: p.ID, Name: "F", Scope: repository.FunnelScopePageView,
+		Steps: []repository.FunnelStep{{EventName: "visit"}, {EventName: "signup"}},
+	})
+	require.NoError(t, err)
+
+	groups, err := s.AnalyzeFunnelBreakdown(ctx, f, from, to, nil, "surface")
+	require.NoError(t, err)
+	require.Equal(t, map[string][]int64{
+		"wordpress": {2, 1}, "lightroom": {1, 1}, "(none)": {1, 0},
+	}, groupCounts(groups))
+	requireGroupsAddUp(t, s, f, from, to, nil, groups)
+}
+
+func TestAnalyzeFunnelBreakdown_WithSegments(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	p, err := s.CreateProject(ctx, "Segments", "segments")
+	require.NoError(t, err)
+	at := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	from, to := at.Add(-time.Hour), at.Add(time.Hour)
+
+	visit := func(session, env, device, surface string, signup bool) {
+		insert := func(name, props string, when time.Time) {
+			require.NoError(t, s.InsertEvent(ctx, repository.Event{
+				ID: randomHex(t), ProjectID: p.ID, SessionID: session, UserIDHash: "u-" + session,
+				Name: name, Environment: env, DeviceType: device, Properties: props,
+				IngestID: "ingest-" + randomHex(t), OccurredAt: when,
+			}))
+		}
+		insert("visit", fmt.Sprintf(`{"surface":%q}`, surface), at)
+		if signup {
+			insert("signup", "{}", at.Add(time.Minute))
+		}
+	}
+	visit("s1", "production", "mobile", "wordpress", true)
+	visit("s2", "production", "desktop", "wordpress", true)
+	visit("s3", "production", "mobile", "lightroom", false)
+	visit("s4", "staging", "mobile", "wordpress", true)
+	visit("s5", "production", "mobile", "wordpress", false)
+
+	mobile := &repository.SegmentFilter{Field: "device_type", Op: "eq", Value: "mobile"}
+	desktopRule := repository.SegmentRule{Field: "device_type", Operator: "eq", Value: "desktop"}
+	production := repository.EnvironmentRule("production")
+
+	cases := []struct {
+		name  string
+		seg   *repository.SegmentFilter
+		rules []repository.SegmentRule
+		want  map[string][]int64
+	}{
+		{"preset segment", mobile, nil, map[string][]int64{"wordpress": {3, 2}, "lightroom": {1, 0}}},
+		{"preset segment and environment", mobile, production, map[string][]int64{"wordpress": {2, 1}, "lightroom": {1, 0}}},
+		{"stored segment and environment", nil, append([]repository.SegmentRule{desktopRule}, production...), map[string][]int64{"wordpress": {1, 1}}},
+	}
+	for _, scope := range []string{repository.FunnelScopeSession, repository.FunnelScopeUser} {
+		f, err := s.CreateFunnel(ctx, repository.Funnel{
+			ProjectID: p.ID, Name: "F " + scope, Scope: scope,
+			Steps: []repository.FunnelStep{{EventName: "visit"}, {EventName: "signup"}},
+		})
+		require.NoError(t, err)
+		for _, tc := range cases {
+			t.Run(scope+"/"+tc.name, func(t *testing.T) {
+				groups, err := s.AnalyzeFunnelBreakdown(ctx, f, from, to, tc.seg, "surface", tc.rules...)
+				require.NoError(t, err)
+				require.Equal(t, tc.want, groupCounts(groups))
+				requireGroupsAddUp(t, s, f, from, to, tc.seg, groups, tc.rules...)
+			})
+		}
+	}
+}
