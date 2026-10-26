@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
+import { render, screen, waitFor, cleanup } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import Live from './Live'
 
@@ -52,14 +52,18 @@ class FakeEventSource {
   constructor(public url: string) {}
 }
 
-beforeEach(() => {
-  vi.clearAllMocks()
+function stubLiveDeps() {
   mockApi.getActiveSessions.mockResolvedValue({ active_sessions: 7, window_minutes: 5 })
   vi.stubGlobal('EventSource', FakeEventSource as unknown as typeof EventSource)
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue({ ok: true, json: async () => ({ events: [] }) }),
   )
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  stubLiveDeps()
 })
 
 afterEach(() => {
@@ -83,6 +87,17 @@ function renderLive(projectId: string | null = 'p1') {
 // ---------------------------------------------------------------------------
 
 describe('Live', () => {
+  // The first render in a worker pays for compiling React and the page tree,
+  // several times a later render. Paying it here, under its own budget, keeps
+  // that cost out of the first test (same as Settings.test.tsx).
+  beforeAll(async () => {
+    stubLiveDeps()
+    renderLive()
+    await screen.findByRole('heading', { name: /^live$/i }, { timeout: 30_000 })
+    cleanup()
+    vi.unstubAllGlobals()
+  }, 60_000)
+
   it('renders the Live heading', async () => {
     renderLive()
     expect(screen.getByRole('heading', { name: /^live$/i })).toBeInTheDocument()

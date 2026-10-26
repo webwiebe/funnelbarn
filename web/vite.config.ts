@@ -91,6 +91,14 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.ts'],
     // scripts/*.test.mjs run under node --test (lint:knip-test), not vitest.
     exclude: [...configDefaults.exclude, 'scripts/**'],
+    // CI runs on runners that share one host. At load 28 (#401, 2026-10-26)
+    // 12 tests timed out at 5 s across 7 files, trivial ones included, with
+    // 9 workers competing for the same cores. In CI: fewer workers and a 20 s
+    // budget. Locally the 5 s default stays, so a test that really gets slow
+    // still fails on a dev machine.
+    ...(process.env.CI
+      ? { maxWorkers: 4, testTimeout: 20_000, hookTimeout: 20_000 }
+      : {}),
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary', 'json-summary', 'lcov'],

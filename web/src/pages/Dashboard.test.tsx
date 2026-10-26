@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
+import { render, screen, waitFor, cleanup } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import Dashboard from './Dashboard'
 import type { DashboardData } from '../lib/api'
@@ -70,12 +70,26 @@ function renderDashboard(projectId = 'p1') {
 // Tests
 // ---------------------------------------------------------------------------
 
+function mockLoadedApi() {
+  mockApi.getDashboard.mockResolvedValue(mockDashboard)
+  mockApi.getActiveSessions.mockResolvedValue({ active_sessions: 7, window_minutes: 5 })
+  mockApi.listFunnels.mockResolvedValue({ funnels: [] })
+}
+
 describe('Dashboard', () => {
+  // The first render in a worker pays for compiling React and the page tree,
+  // several times a later render. Paying it here, under its own budget, keeps
+  // that cost out of the first test (same as Settings.test.tsx).
+  beforeAll(async () => {
+    mockLoadedApi()
+    renderDashboard()
+    await screen.findByText('/home', {}, { timeout: 30_000 })
+    cleanup()
+  }, 60_000)
+
   beforeEach(() => {
     vi.clearAllMocks()
-    mockApi.getDashboard.mockResolvedValue(mockDashboard)
-    mockApi.getActiveSessions.mockResolvedValue({ active_sessions: 7, window_minutes: 5 })
-    mockApi.listFunnels.mockResolvedValue({ funnels: [] })
+    mockLoadedApi()
   })
 
   it('renders the overview heading', async () => {

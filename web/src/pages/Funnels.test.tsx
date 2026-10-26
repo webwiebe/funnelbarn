@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import Funnels from './Funnels'
 import type { Funnel, FunnelAnalysis } from '../lib/api'
@@ -114,15 +114,29 @@ function renderFunnels(projectId: string | null = 'p1') {
 // Tests
 // ---------------------------------------------------------------------------
 
+function mockLoadedApi() {
+  mockApi.listApiKeys.mockResolvedValue({ api_keys: [{ id: 'k1', name: 'ingest', scope: 'ingest', created_at: '2024-01-01T00:00:00Z' }] })
+  mockApi.listFunnels.mockResolvedValue({ funnels: [funnelA, funnelB] })
+  mockApi.listSegments.mockResolvedValue({ segments: [] })
+  mockApi.getSessionDistributions.mockResolvedValue({ distributions: {} })
+  mockApi.getFunnelAnalysis.mockResolvedValue(analysisWithData)
+  mockApi.deleteFunnel.mockResolvedValue(undefined)
+}
+
 describe('Funnels', () => {
+  // The first render in a worker pays for compiling React and the page tree,
+  // several times a later render. Paying it here, under its own budget, keeps
+  // that cost out of the first test (same as Settings.test.tsx).
+  beforeAll(async () => {
+    mockLoadedApi()
+    renderFunnels()
+    await screen.findByText('Signup flow', {}, { timeout: 30_000 })
+    cleanup()
+  }, 60_000)
+
   beforeEach(() => {
     vi.clearAllMocks()
-    mockApi.listApiKeys.mockResolvedValue({ api_keys: [{ id: 'k1', name: 'ingest', scope: 'ingest', created_at: '2024-01-01T00:00:00Z' }] })
-    mockApi.listFunnels.mockResolvedValue({ funnels: [funnelA, funnelB] })
-    mockApi.listSegments.mockResolvedValue({ segments: [] })
-    mockApi.getSessionDistributions.mockResolvedValue({ distributions: {} })
-    mockApi.getFunnelAnalysis.mockResolvedValue(analysisWithData)
-    mockApi.deleteFunnel.mockResolvedValue(undefined)
+    mockLoadedApi()
   })
 
   it('renders the Funnels heading', async () => {

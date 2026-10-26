@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import OverviewEvents from './OverviewEvents'
 import type { OverviewEvent } from '../lib/api'
@@ -71,13 +71,27 @@ function renderPage() {
 // Tests
 // ---------------------------------------------------------------------------
 
+function mockLoadedApi() {
+  mockApi.getOverviewEvents.mockResolvedValue({
+    events: mockEvents,
+    next_cursor: { cursor_time: '2024-01-01T11:00:00Z', cursor_id: 'e0' },
+  })
+}
+
 describe('OverviewEvents', () => {
+  // The first render in a worker pays for compiling React and the page tree,
+  // several times a later render. Paying it here, under its own budget, keeps
+  // that cost out of the first test (same as Settings.test.tsx).
+  beforeAll(async () => {
+    mockLoadedApi()
+    renderPage()
+    await screen.findByText('page_view', {}, { timeout: 30_000 })
+    cleanup()
+  }, 60_000)
+
   beforeEach(() => {
     vi.clearAllMocks()
-    mockApi.getOverviewEvents.mockResolvedValue({
-      events: mockEvents,
-      next_cursor: { cursor_time: '2024-01-01T11:00:00Z', cursor_id: 'e0' },
-    })
+    mockLoadedApi()
   })
 
   it('renders the All Events heading', async () => {

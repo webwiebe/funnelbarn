@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
+import { render, screen, waitFor, cleanup } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import FlagUsage from './FlagUsage'
 import type { FlagUsageReport } from '../lib/api.flagusage'
@@ -65,6 +65,16 @@ function renderPage() {
 }
 
 describe('FlagUsage page', () => {
+  // The first render in a worker pays for compiling React and the page tree,
+  // several times a later render. Paying it here, under its own budget, keeps
+  // that cost out of the first test (same as Settings.test.tsx).
+  beforeAll(async () => {
+    mockUsage.getFlagUsage.mockResolvedValue(report)
+    renderPage()
+    await screen.findByTestId('usage-row-checkout', {}, { timeout: 30_000 })
+    cleanup()
+  }, 60_000)
+
   beforeEach(() => { mockUsage.getFlagUsage.mockReset() })
 
   it('shows the notes, the rows and the stale badge', async () => {

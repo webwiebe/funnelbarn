@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import Insights from './Insights'
 import type { WidgetBreakdownResult, DistributionEntry } from '../lib/api'
@@ -88,12 +88,26 @@ function renderPage(projectId = 'p1') {
 // Tests
 // ---------------------------------------------------------------------------
 
+function mockLoadedApi() {
+  mockApi.getBatchBreakdowns.mockResolvedValue({ results: mockResults })
+  mockApi.getSessionDistributions.mockResolvedValue({ distributions: mockDistributions })
+  mockApi.deleteWidget.mockResolvedValue(undefined)
+}
+
 describe('Insights', () => {
+  // The first render in a worker pays for compiling React and the page tree,
+  // several times a later render. Paying it here, under its own budget, keeps
+  // that cost out of the first test (same as Settings.test.tsx).
+  beforeAll(async () => {
+    mockLoadedApi()
+    renderPage()
+    await screen.findByText('Top Pages', {}, { timeout: 30_000 })
+    cleanup()
+  }, 60_000)
+
   beforeEach(() => {
     vi.clearAllMocks()
-    mockApi.getBatchBreakdowns.mockResolvedValue({ results: mockResults })
-    mockApi.getSessionDistributions.mockResolvedValue({ distributions: mockDistributions })
-    mockApi.deleteWidget.mockResolvedValue(undefined)
+    mockLoadedApi()
   })
 
   it('renders the Insights heading', async () => {

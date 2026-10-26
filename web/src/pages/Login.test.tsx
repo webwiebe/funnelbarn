@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import Login from './Login'
 
@@ -54,6 +54,16 @@ function renderLogin() {
 }
 
 describe('Login', () => {
+  // The first render in a worker pays for compiling React and the page tree,
+  // several times a later render. Paying it here, under its own budget, keeps
+  // that cost out of the first test (same as Settings.test.tsx).
+  beforeAll(async () => {
+    mockGetClientConfig.mockResolvedValue({})
+    renderLogin()
+    await screen.findByLabelText(/username/i, {}, { timeout: 30_000 })
+    cleanup()
+  }, 60_000)
+
   beforeEach(() => {
     vi.clearAllMocks()
     // Default: no SSO configured — show the local form.

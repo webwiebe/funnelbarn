@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { describe, it, expect, beforeAll } from 'vitest'
+import { render, screen, fireEvent, within, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import Landing from './Landing'
 
@@ -15,6 +15,15 @@ function renderLanding() {
 }
 
 describe('Landing', () => {
+  // The first render in a worker pays for compiling React and the page tree,
+  // several times a later render. Paying it here, under its own budget, keeps
+  // that cost out of the first test (same as Settings.test.tsx).
+  beforeAll(() => {
+    renderLanding()
+    screen.getByRole('heading', { name: /own your/i })
+    cleanup()
+  }, 60_000)
+
   it('renders the hero headline', () => {
     renderLanding()
     expect(screen.getByRole('heading', { name: /own your/i })).toBeInTheDocument()
