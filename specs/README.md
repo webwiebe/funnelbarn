@@ -13,7 +13,7 @@ All specs were last verified against the tree on 2026-10-17 at `ea1b0e6`.
 | [001 Analytics and funnels](./001-analytics-funnel/spec.md) | Partial | Ingest, spool and worker, session fingerprinting, enrichment, dashboard statistics, funnels, login and API keys, SDKs and distribution. Also holds the [plan](./001-analytics-funnel/plan.md), [data model](./001-analytics-funnel/data-model.md), [tasks](./001-analytics-funnel/tasks.md) and the [ingest contract](./001-analytics-funnel/contracts/ingest-api.yaml). |
 | [002 UI overhaul](./002-ui-overhaul/spec.md) | Partial | The React dashboard: landing page, login, shell, dashboard, live page, funnel pages and settings. Also holds the [design system](./002-ui-overhaul/design-system.md) and [tasks](./002-ui-overhaul/tasks.md). A/B test pages, the setup wizard, export and share links are not built. |
 | [003 Engineering standards](./003-engineering-standards/spec.md) | Partial | Architecture rules enforced by `archtest`, the CI quality gates and ratchets, the testing deploy chain. |
-| [004 Panic to error](./004-panic-to-error/spec.md) | Partial | Replacing panics with returned errors; `newUUID` in the repository still discards its error. |
+| [004 Panic to error](./004-panic-to-error/spec.md) | Shipped | UUID generation returns its error; the worker, ingest and repository create calls handle it. |
 | [005 Data retention](./005-data-retention/spec.md) | Shipped | Event and evaluation purge, the maintenance pass, the migration version check. |
 | [006 Frontend tests](./006-frontend-tests/spec.md) | Shipped | Vitest with jsdom, coverage floors, per-file gate. |
 | [007 Infra and ops](./007-infra-ops/spec.md) | Shipped | Kubernetes resource limits and probes per environment, and the operations runbook. |

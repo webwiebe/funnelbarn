@@ -45,8 +45,12 @@ func (s *Store) TouchAPIKey(ctx context.Context, keySHA256 string) error {
 // The key name is "setup" and the scope is "ingest". If a key with the same hash already exists,
 // nothing changes (idempotent).
 func (s *Store) EnsureSetupAPIKey(ctx context.Context, projectID, keySHA256 string) error {
+	id, err := generateUUID()
+	if err != nil {
+		return fmt.Errorf("ensure setup api key: %w", err)
+	}
 	return s.q.EnsureSetupAPIKey(ctx, sqlcgen.EnsureSetupAPIKeyParams{
-		ID:        newUUID(),
+		ID:        id,
 		ProjectID: projectID,
 		KeyHash:   keySHA256,
 	})
@@ -54,7 +58,10 @@ func (s *Store) EnsureSetupAPIKey(ctx context.Context, projectID, keySHA256 stri
 
 // CreateAPIKey inserts a new API key.
 func (s *Store) CreateAPIKey(ctx context.Context, name, projectID, keySHA256, scope string) (APIKey, error) {
-	id := newUUID()
+	id, err := generateUUID()
+	if err != nil {
+		return APIKey{}, fmt.Errorf("create api key: %w", err)
+	}
 	if err := s.q.InsertAPIKey(ctx, sqlcgen.InsertAPIKeyParams{
 		ID:        id,
 		ProjectID: projectID,

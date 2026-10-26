@@ -21,7 +21,11 @@ func (s *Store) UpsertUser(ctx context.Context, username, passwordHash string) e
 		INSERT INTO users (id, username, password_hash)
 		VALUES (?, ?, ?)
 		ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash`
-	_, err := s.db.ExecContext(ctx, q, newUUID(), username, passwordHash)
+	id, err := generateUUID()
+	if err != nil {
+		return fmt.Errorf("upsert user: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx, q, id, username, passwordHash)
 	return err
 }
 
@@ -76,9 +80,14 @@ func (s *Store) CreateIAMBarnUser(ctx context.Context, sub, username string) (Us
 	}
 
 	const ins = `INSERT INTO users (id, username, password_hash, iambarn_sub) VALUES (?, ?, 'iambarn', ?)`
-	if _, err := s.db.ExecContext(ctx, ins, newUUID(), username, sub); err != nil {
+	id, err := generateUUID()
+	if err != nil {
+		return User{}, fmt.Errorf("create iambarn user: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, ins, id, username, sub); err != nil {
 		// Username likely conflicts with a local account — fall back to using sub.
-		if _, err2 := s.db.ExecContext(ctx, ins, newUUID(), sub, sub); err2 != nil {
+		// The first insert failed, so its id is still free.
+		if _, err2 := s.db.ExecContext(ctx, ins, id, sub, sub); err2 != nil {
 			return User{}, fmt.Errorf("create iambarn user: %w", err)
 		}
 	}

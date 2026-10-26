@@ -61,7 +61,10 @@ type Project struct {
 
 // CreateProject inserts a new project.
 func (s *Store) CreateProject(ctx context.Context, name, slug string) (Project, error) {
-	id := newUUID()
+	id, err := generateUUID()
+	if err != nil {
+		return Project{}, fmt.Errorf("create project: %w", err)
+	}
 	if err := s.q.InsertProject(ctx, sqlcgen.InsertProjectParams{ID: id, Name: name, Slug: slug}); err != nil {
 		return Project{}, fmt.Errorf("create project: %w", err)
 	}
@@ -172,7 +175,10 @@ func (s *Store) EnsureProjectPending(ctx context.Context, name, slug string) (Pr
 	if err != sql.ErrNoRows {
 		return Project{}, err
 	}
-	id := newUUID()
+	id, err := generateUUID()
+	if err != nil {
+		return Project{}, fmt.Errorf("create pending project: %w", err)
+	}
 	if err := s.q.InsertProjectPending(ctx, sqlcgen.InsertProjectPendingParams{ID: id, Name: name, Slug: slug}); err != nil {
 		return Project{}, fmt.Errorf("create pending project: %w", err)
 	}
