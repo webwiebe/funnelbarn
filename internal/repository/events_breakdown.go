@@ -74,7 +74,7 @@ func (s *ReadStore) TopEventNamesFiltered(ctx context.Context, projectID string,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var stats []EventNameStat
 	for rows.Next() {
 		var es EventNameStat
@@ -113,7 +113,7 @@ func (s *ReadStore) EventBreakdown(ctx context.Context, projectID, eventName, di
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []BreakdownRow
 	for rows.Next() {
 		var r BreakdownRow
