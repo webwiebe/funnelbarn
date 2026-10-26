@@ -1,8 +1,10 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -199,7 +201,72 @@ func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"environments": envs})
 }
 
-// handleListEvents returns a paginated list of events for a project.
+// listEventsParams are the query parameters /events understands. Any other
+// parameter is rejected: an ignored filter returns the newest events of every
+// kind, which a script reads as a wrong number. "stream" is sent by the live
+// view and has no effect.
+var listEventsParams = map[string]bool{
+	"limit": true, "offset": true, "name": true, "environment": true,
+	"from": true, "to": true, "stream": true,
+}
+
+// parseListEvents reads and validates the /events query string.
+func parseListEvents(q url.Values) (f repository.EventListFilter, limit, offset int, err error) {
+	for k := range q {
+		if !listEventsParams[k] {
+			return f, 0, 0, fmt.Errorf("unknown query parameter %q (use limit, offset, name, environment, from, to)", k)
+		}
+	}
+	if limit, offset, err = parsePaging(q); err != nil {
+		return f, 0, 0, err
+	}
+	f.Name = q.Get("name")
+	f.Environment = q.Get("environment")
+	if f.From, err = parseOptionalTime(q, "from"); err != nil {
+		return f, 0, 0, err
+	}
+	if f.To, err = parseOptionalTime(q, "to"); err != nil {
+		return f, 0, 0, err
+	}
+	if !f.From.IsZero() && !f.To.IsZero() && !f.To.After(f.From) {
+		return f, 0, 0, errors.New("to must be after from")
+	}
+	return f, limit, offset, nil
+}
+
+func parsePaging(q url.Values) (limit, offset int, err error) {
+	limit = 50
+	if v := q.Get("limit"); v != "" {
+		n, perr := strconv.Atoi(v)
+		if perr != nil || n <= 0 || n > 500 {
+			return 0, 0, errors.New("limit must be an integer between 1 and 500")
+		}
+		limit = n
+	}
+	if v := q.Get("offset"); v != "" {
+		n, perr := strconv.Atoi(v)
+		if perr != nil || n < 0 {
+			return 0, 0, errors.New("offset must be a non-negative integer")
+		}
+		offset = n
+	}
+	return limit, offset, nil
+}
+
+func parseOptionalTime(q url.Values, key string) (time.Time, error) {
+	v := q.Get(key)
+	if v == "" {
+		return time.Time{}, nil
+	}
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%s must be an RFC3339 timestamp", key)
+	}
+	return t.UTC(), nil
+}
+
+// handleListEvents returns a paginated list of events for a project, newest
+// first, optionally narrowed by name, environment and an occurred_at window.
 func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
@@ -207,27 +274,22 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := 50
-	offset := 0
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
-			limit = n
-		}
-	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = n
-		}
+	filter, limit, offset, err := parseListEvents(r.URL.Query())
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	ctx, span := tracing.StartSpan(r.Context(), "events.list",
 		attribute.String("project.id", projectID),
 		attribute.Int("limit", limit),
 		attribute.Int("offset", offset),
+		attribute.String("event.name", filter.Name),
+		attribute.String("environment", filter.Environment),
 	)
 	defer span.End()
 
-	events, err := s.events.ListEvents(ctx, projectID, limit, offset)
+	events, err := s.events.ListEventsFiltered(ctx, projectID, filter, limit, offset)
 	if err != nil {
 		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleListEvents")

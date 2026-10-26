@@ -112,6 +112,7 @@ type FlagRepo interface {
 // EventQueries is the read side of the event port.
 type EventQueries interface {
 	ListEvents(ctx context.Context, projectID string, limit, offset int) ([]repository.Event, error)
+	ListEventsFiltered(ctx context.Context, projectID string, f repository.EventListFilter, limit, offset int) ([]repository.Event, error)
 	CountEvents(ctx context.Context, projectID string, from, to time.Time, env string) (int64, error)
 	GetEventByIngestID(ctx context.Context, ingestID string) (*repository.Event, error)
 	TopPages(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]repository.PageStat, error)

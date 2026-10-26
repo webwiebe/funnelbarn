@@ -346,7 +346,12 @@ paths:
   /api/v1/projects/{id}/events:
     get:
       summary: List events for a project
-      description: Returns a paginated list of events, most recent first.
+      description: >-
+        Returns a paginated list of events, most recent first, narrowed by the
+        filters below. An unknown query parameter, a limit outside 1 to 500 and
+        an unparseable from or to answer 400, so an ignored filter cannot return
+        the unfiltered newest events. The live view's stream=true is accepted
+        and has no effect.
       operationId: listEvents
       tags: [Events]
       parameters:
@@ -367,17 +372,26 @@ paths:
           description: Filter by event name
           schema:
             type: string
+        - name: environment
+          in: query
+          description: Filter by environment (for example production or test)
+          schema:
+            type: string
         - name: from
           in: query
+          description: Earliest occurred_at, inclusive (RFC 3339)
           schema:
             type: string
             format: date-time
         - name: to
           in: query
+          description: Latest occurred_at, inclusive (RFC 3339); must be after from
           schema:
             type: string
             format: date-time
       responses:
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "200":
           description: Paginated event list
           content:

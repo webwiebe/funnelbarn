@@ -79,25 +79,7 @@ func (s *ReadStore) CountOrphanedRows(ctx context.Context) (OrphanCounts, error)
 
 // ListEvents returns a paginated list of events for a project.
 func (s *ReadStore) ListEvents(ctx context.Context, projectID string, limit, offset int) ([]Event, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-	const q = `
-		SELECT id, project_id, session_id, COALESCE(user_id_hash,''), name,
-			COALESCE(url,''), COALESCE(referrer,''), COALESCE(referrer_domain,''),
-			COALESCE(utm_source,''), COALESCE(utm_medium,''), COALESCE(utm_campaign,''), COALESCE(utm_term,''), COALESCE(utm_content,''),
-			COALESCE(properties,''), COALESCE(user_agent,''), COALESCE(browser,''), COALESCE(os,''), COALESCE(device_type,''), COALESCE(country_code,''),
-			ingest_id, occurred_at, created_at, COALESCE(environment,'')
-		FROM events
-		WHERE project_id = ?
-		ORDER BY occurred_at DESC
-		LIMIT ? OFFSET ?`
-	rows, err := s.rdb.QueryContext(ctx, q, projectID, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanEvents(rows)
+	return s.ListEventsFiltered(ctx, projectID, EventListFilter{}, limit, offset)
 }
 
 // CountEvents returns the total event count for a project in a time range.

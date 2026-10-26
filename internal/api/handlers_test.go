@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -321,21 +322,80 @@ func TestHandleListEvents_Success(t *testing.T) {
 	}
 }
 
-func TestHandleListEvents_PaginationClamped(t *testing.T) {
+func TestHandleListEvents_RejectsBadParams(t *testing.T) {
 	srv, store := newTestServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "EvtPage", "evtpage")
 
-	// limit=9999 should be clamped to 500
-	w := getJSON(t, srv, "/api/v1/projects/"+p.ID+"/events?limit=9999", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
+	for _, q := range []string{
+		"limit=9999", "limit=0", "limit=x", "offset=-1", "offset=x",
+		"colour=blue", "from=yesterday", "to=tomorrow",
+		"from=2026-10-02T00:00:00Z&to=2026-10-01T00:00:00Z",
+	} {
+		w := getJSON(t, srv, "/api/v1/projects/"+p.ID+"/events?"+q, nil)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("?%s: want 400, got %d (body: %s)", q, w.Code, w.Body.String())
+		}
 	}
-	var resp map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	// limit in response should be clamped to ≤ 500
-	if lim, ok := resp["limit"].(float64); ok && lim > 500 {
-		t.Errorf("limit clamped: want ≤ 500, got %.0f", lim)
+	// The live view sends stream=true and must keep working.
+	if w := getJSON(t, srv, "/api/v1/projects/"+p.ID+"/events?stream=true&limit=5", nil); w.Code != http.StatusOK {
+		t.Errorf("stream=true: want 200, got %d", w.Code)
+	}
+}
+
+func TestHandleListEvents_Filters(t *testing.T) {
+	srv, store := newTestServer(t)
+	ctx := context.Background()
+	p, _ := store.CreateProject(ctx, "EvtFilter", "evtfilter")
+	base := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	add := func(id, name, env string, at time.Time) {
+		t.Helper()
+		if err := store.InsertEvent(ctx, repository.Event{
+			ID: id, ProjectID: p.ID, SessionID: "s-" + id, Name: name, Environment: env,
+			IngestID: "ing-" + id, OccurredAt: at, CreatedAt: at,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("1", "cta_click", "production", base)
+	add("2", "cta_click", "test", base.Add(time.Hour))
+	add("3", "page_view", "production", base.Add(2*time.Hour))
+	add("4", "cta_click", "production", base.Add(48*time.Hour))
+
+	ids := func(q string) []string {
+		t.Helper()
+		w := getJSON(t, srv, "/api/v1/projects/"+p.ID+"/events?"+q, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("?%s: want 200, got %d (body: %s)", q, w.Code, w.Body.String())
+		}
+		var resp struct {
+			Events []struct {
+				ID string `json:"id"`
+			} `json:"events"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, e := range resp.Events {
+			out = append(out, e.ID)
+		}
+		return out
+	}
+	cases := []struct {
+		q    string
+		want []string
+	}{
+		{"name=cta_click", []string{"4", "2", "1"}},
+		{"name=cta_click&environment=production", []string{"4", "1"}},
+		{"environment=production&from=2026-10-10T00:00:00Z&to=2026-10-11T00:00:00Z", []string{"3", "1"}},
+		{"name=cta_click&from=2026-10-11T00:00:00Z", []string{"4"}},
+		{"name=unknown", nil},
+	}
+	for _, c := range cases {
+		if got := ids(c.q); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("?%s: got %v, want %v", c.q, got, c.want)
+		}
 	}
 }
 

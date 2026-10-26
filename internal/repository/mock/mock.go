@@ -496,6 +496,10 @@ func (s *Store) PersistEvent(ctx context.Context, e repository.Event, sess repos
 }
 
 func (s *Store) ListEvents(ctx context.Context, projectID string, limit, offset int) ([]repository.Event, error) {
+	return s.ListEventsFiltered(ctx, projectID, repository.EventListFilter{}, limit, offset)
+}
+
+func (s *Store) ListEventsFiltered(ctx context.Context, projectID string, f repository.EventListFilter, limit, offset int) ([]repository.Event, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if limit <= 0 {
@@ -503,9 +507,10 @@ func (s *Store) ListEvents(ctx context.Context, projectID string, limit, offset 
 	}
 	var all []repository.Event
 	for _, e := range s.events {
-		if e.ProjectID == projectID {
-			all = append(all, e)
+		if e.ProjectID != projectID || !matchesEventFilter(e, f) {
+			continue
 		}
+		all = append(all, e)
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].OccurredAt.After(all[j].OccurredAt) })
 	if offset >= len(all) {
@@ -516,6 +521,20 @@ func (s *Store) ListEvents(ctx context.Context, projectID string, limit, offset 
 		all = all[:limit]
 	}
 	return all, nil
+}
+
+func matchesEventFilter(e repository.Event, f repository.EventListFilter) bool {
+	switch {
+	case f.Name != "" && e.Name != f.Name:
+		return false
+	case f.Environment != "" && e.Environment != f.Environment:
+		return false
+	case !f.From.IsZero() && e.OccurredAt.Before(f.From):
+		return false
+	case !f.To.IsZero() && e.OccurredAt.After(f.To):
+		return false
+	}
+	return true
 }
 
 func (s *Store) CountEvents(ctx context.Context, projectID string, from, to time.Time, env string) (int64, error) {

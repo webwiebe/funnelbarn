@@ -26,6 +26,10 @@ func (svc *EventService) ListEvents(ctx context.Context, projectID string, limit
 	return svc.store.ListEvents(ctx, projectID, limit, offset)
 }
 
+func (svc *EventService) ListEventsFiltered(ctx context.Context, projectID string, f repository.EventListFilter, limit, offset int) ([]repository.Event, error) {
+	return svc.store.ListEventsFiltered(ctx, projectID, f, limit, offset)
+}
+
 func (svc *EventService) CountEvents(ctx context.Context, projectID string, from, to time.Time, env string) (int64, error) {
 	return svc.store.CountEvents(ctx, projectID, from, to, env)
 }

@@ -58,7 +58,7 @@ These endpoints accept either a session cookie or an `analytics:read` (or `full`
 |---|---|---|
 | `GET` | `/api/v1/projects` | Just the project the key is scoped to |
 | `GET` | `/api/v1/projects/:id/dashboard` | Aggregate stats over a range |
-| `GET` | `/api/v1/projects/:id/events` | Paginated raw events |
+| `GET` | `/api/v1/projects/:id/events` | Paginated raw events; filters `name`, `environment`, `from`, `to` (RFC 3339); an unknown parameter or a bad limit answers `400` |
 | `GET` | `/api/v1/projects/:id/event-names` | Distinct event names |
 | `GET` | `/api/v1/projects/:id/event-counts` | Per-event counts over a range |
 | `GET` | `/api/v1/projects/:id/funnels` | The project's funnels |
