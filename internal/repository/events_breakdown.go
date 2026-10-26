@@ -15,7 +15,7 @@ type EventCountFilter struct {
 	// PropKey and PropValue keep events whose JSON property PropKey equals
 	// PropValue. PropKey must be a plain identifier (see ValidPropertyKey).
 	PropKey   string
-	PropValue string
+	PropValue string // "true" and "false" also match JSON booleans
 }
 
 // BreakdownDimensions are the columns EventBreakdown can group by.
@@ -51,8 +51,11 @@ func (f EventCountFilter) where() (string, []any) {
 		sql += " AND COALESCE(device_type,'') != 'bot'"
 	}
 	if f.PropKey != "" {
-		sql += " AND json_extract(properties, '$.' || ?) = ?"
-		args = append(args, f.PropKey, f.PropValue)
+		// json_extract returns 1 or 0 for JSON booleans and a number for JSON
+		// numbers, so compare booleans by json_type and everything else as text.
+		sql += ` AND (json_type(properties, '$.' || ?) IN ('true','false') AND json_type(properties, '$.' || ?) = ?
+			OR (json_type(properties, '$.' || ?) NOT IN ('true','false') AND CAST(json_extract(properties, '$.' || ?) AS TEXT) = ?))`
+		args = append(args, f.PropKey, f.PropKey, f.PropValue, f.PropKey, f.PropKey, f.PropValue)
 	}
 	return sql, args
 }

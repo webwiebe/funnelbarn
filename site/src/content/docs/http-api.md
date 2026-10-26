@@ -216,7 +216,7 @@ Returns a count per event name over a date range — the whole catalog, not the 
 | `limit` | `100` | Max distinct event names to return (1–500) |
 | `environment` | all | Restrict to one environment |
 | `exclude_bots` | `false` | `true` drops events from bot user agents (`device_type` = `bot`). The response then carries `"exclude_bots": true` |
-| `property`, `value` | none | Keep events whose JSON property `property` equals `value`. Both are required together; `property` is letters, digits and underscores |
+| `property`, `value` | none | Keep events whose JSON property `property` equals `value`. Both are required together; `property` is letters, digits and underscores. `true` and `false` match JSON booleans (and the strings "true"/"false"); numbers match by their text form |
 
 Unlike the dashboard endpoint, unparseable input is rejected with `400` rather than silently answered with the default window — a readout that asked for last week and quietly got last month reports the wrong number with no way to notice.
 

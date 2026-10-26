@@ -31,6 +31,9 @@ func seedBreakdown(t *testing.T) (*Server, string) {
 	add("2", "s1", "desktop", "google.com", `{"plan":"free"}`)
 	add("3", "s2", "mobile", "", `{"plan":"pro"}`)
 	add("4", "s3", "bot", "spam.example", `{"plan":"pro"}`)
+	add("5", "s4", "desktop", "bing.com", `{"real_signup":true,"seats":3}`)
+	add("6", "s5", "mobile", "bing.com", `{"real_signup":false}`)
+	add("7", "s6", "mobile", "bing.com", `{"real_signup":"true"}`)
 	return srv, p.ID
 }
 
@@ -57,11 +60,13 @@ func TestHandleEventBreakdown(t *testing.T) {
 		want []repository.BreakdownRow
 	}{
 		{"device", url.Values{"by": {"device_type"}}, []repository.BreakdownRow{
-			{Value: "desktop", Count: 2, Sessions: 1}, {Value: "bot", Count: 1, Sessions: 1}, {Value: "mobile", Count: 1, Sessions: 1}}},
+			{Value: "desktop", Count: 3, Sessions: 2}, {Value: "mobile", Count: 3, Sessions: 3}, {Value: "bot", Count: 1, Sessions: 1}}},
 		{"no bots", url.Values{"by": {"device_type"}, "exclude_bots": {"true"}}, []repository.BreakdownRow{
-			{Value: "desktop", Count: 2, Sessions: 1}, {Value: "mobile", Count: 1, Sessions: 1}}},
+			{Value: "desktop", Count: 3, Sessions: 2}, {Value: "mobile", Count: 3, Sessions: 3}}},
 		{"property", url.Values{"by": {"referrer_domain"}, "property": {"plan"}, "value": {"pro"}}, []repository.BreakdownRow{
 			{Value: "", Count: 1, Sessions: 1}, {Value: "google.com", Count: 1, Sessions: 1}, {Value: "spam.example", Count: 1, Sessions: 1}}},
+		{"boolean property", url.Values{"by": {"device_type"}, "property": {"real_signup"}, "value": {"true"}}, []repository.BreakdownRow{
+			{Value: "desktop", Count: 1, Sessions: 1}, {Value: "mobile", Count: 1, Sessions: 1}}},
 	}
 	for _, c := range cases {
 		if got := get(c.q); !reflect.DeepEqual(got, c.want) {
@@ -106,10 +111,14 @@ func TestHandleEventCounts_ExcludeBotsAndProperty(t *testing.T) {
 		return resp.Total
 	}
 	for q, want := range map[string]int64{
-		"range=7d":                                           4,
-		"range=7d&exclude_bots=true":                         3,
+		"range=7d":                                           7,
+		"range=7d&exclude_bots=true":                         6,
 		"range=7d&property=plan&value=pro":                   3,
 		"range=7d&property=plan&value=pro&exclude_bots=true": 2,
+		"range=7d&property=real_signup&value=true":           2, // JSON true and the string "true"
+		"range=7d&property=real_signup&value=false":          1,
+		"range=7d&property=seats&value=3":                    1,
+		"range=7d&property=plan&value=true":                  0,
 	} {
 		if got := count(q); got != want {
 			t.Errorf("?%s: got %d, want %d", q, got, want)
