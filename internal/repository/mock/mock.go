@@ -577,6 +577,14 @@ func (s *Store) TopDeviceTypes(_ context.Context, _ string, _, _ time.Time, _ st
 	return []repository.DeviceStat{}, nil
 }
 
+func (s *Store) TopEventNamesFiltered(_ context.Context, _ string, _, _ time.Time, _ int, _ repository.EventCountFilter) ([]repository.EventNameStat, error) {
+	return nil, nil
+}
+
+func (s *Store) EventBreakdown(_ context.Context, _, _, _ string, _, _ time.Time, _ int, _ repository.EventCountFilter) ([]repository.BreakdownRow, error) {
+	return nil, nil
+}
+
 func (s *Store) TopEventNames(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]repository.EventNameStat, error) {
 	return []repository.EventNameStat{}, nil
 }

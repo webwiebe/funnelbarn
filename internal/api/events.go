@@ -78,7 +78,12 @@ func (s *Server) handleEventCounts(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 
-	env := r.URL.Query().Get("environment")
+	filter, err := parseCountFilter(r.URL.Query())
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	env := filter.Environment
 
 	ctx, span := tracing.StartSpan(r.Context(), "events.counts",
 		attribute.String("project.id", projectID),
@@ -87,7 +92,7 @@ func (s *Server) handleEventCounts(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
-	counts, err := s.events.TopEventNames(ctx, projectID, rng.From, rng.To, limit, env)
+	counts, err := s.events.TopEventNamesFiltered(ctx, projectID, rng.From, rng.To, limit, filter)
 	if err != nil {
 		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleEventCounts")
@@ -103,7 +108,7 @@ func (s *Server) handleEventCounts(w http.ResponseWriter, r *http.Request) {
 	}
 	span.SetAttributes(attribute.Int("event.result_count", len(counts)))
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	body := map[string]any{
 		"project_id":   projectID,
 		"from":         rng.From.Format(time.RFC3339),
 		"to":           rng.To.Format(time.RFC3339),
@@ -111,7 +116,11 @@ func (s *Server) handleEventCounts(w http.ResponseWriter, r *http.Request) {
 		"limit":        limit,
 		"events":       counts,
 		"total_events": total,
-	})
+	}
+	if filter.ExcludeBots {
+		body["exclude_bots"] = true
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 // handleEventProperties returns distinct JSON property keys for a given event name.

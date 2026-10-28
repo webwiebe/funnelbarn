@@ -135,41 +135,9 @@ func breakdownGroups(f Funnel, counts map[string][]int64) []FunnelBreakdownGroup
 // sessions (or page views) that fired the step, among those whose first step
 // event carries the value. Like the unbroken funnel, the steps are not ordered.
 func (s *ReadStore) entryBreakdownCounts(ctx context.Context, f Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool, property string) (map[string][]int64, error) {
-	key := "e.session_id"
-	if f.Scope == FunnelScopePageView {
-		key = "e.page_view_id"
-	}
-	join := ""
-	if needJoin {
-		join = " JOIN sessions s ON s.id = e.session_id AND s.project_id = e.project_id"
-	}
-	valueExpr := fmt.Sprintf("COALESCE(json_extract(e.properties, '$.%s'), '')", property)
-
-	// The entry value is the one on the entry's earliest step 1 event (SQLite
-	// returns the bare columns of the MIN row).
-	entrySQL := fmt.Sprintf(`
-		SELECT %[1]s AS k, %[2]s AS v, MIN(e.occurred_at)
-		FROM events e%[3]s
-		WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?%[4]s`,
-		key, valueExpr, join, extraWhere)
-	entryArgs := append([]any{f.ProjectID, f.Steps[0].EventName, from, to}, extraArgs...)
-	entrySQL, entryArgs = stepFilterClause(entrySQL, entryArgs, f.Steps[0])
-	entrySQL += " GROUP BY " + key
-
 	counts := map[string][]int64{}
-	for i, step := range f.Steps {
-		q := fmt.Sprintf(`
-			WITH entry AS (%[1]s)
-			SELECT entry.v, COUNT(DISTINCT %[2]s)
-			FROM events e%[3]s
-			JOIN entry ON entry.k = %[2]s
-			WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?%[4]s`,
-			entrySQL, key, join, extraWhere)
-		args := append(append([]any{}, entryArgs...), f.ProjectID, step.EventName, from, to)
-		args = append(args, extraArgs...)
-		q, args = stepFilterClause(q, args, step)
-		q += " GROUP BY entry.v"
-
+	for i := range f.Steps {
+		q, args := entryBreakdownStepSQL(f, i, from, to, extraWhere, extraArgs, needJoin, property)
 		rows, err := s.rdb.QueryContext(ctx, q, args...)
 		if err != nil {
 			return nil, fmt.Errorf("breakdown step %d: %w", i, err)
@@ -195,6 +163,44 @@ func (s *ReadStore) entryBreakdownCounts(ctx context.Context, f Funnel, from, to
 	return counts, nil
 }
 
+// entryBreakdownStepSQL is the query entryBreakdownCounts runs for step i: per
+// entry value, the distinct sessions (or page views) that fired the step.
+func entryBreakdownStepSQL(f Funnel, i int, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool, property string) (string, []any) {
+	key := "e.session_id"
+	if f.Scope == FunnelScopePageView {
+		key = "e.page_view_id"
+	}
+	join := ""
+	if needJoin {
+		join = " JOIN sessions s ON s.id = e.session_id AND s.project_id = e.project_id"
+	}
+	valueExpr := fmt.Sprintf("COALESCE(json_extract(e.properties, '$.%s'), '')", property)
+
+	// The entry value is the one on the entry's earliest step 1 event (SQLite
+	// returns the bare columns of the MIN row).
+	entrySQL := fmt.Sprintf(`
+		SELECT %[1]s AS k, %[2]s AS v, MIN(e.occurred_at)
+		FROM events e%[3]s
+		WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?%[4]s`,
+		key, valueExpr, join, extraWhere)
+	entryArgs := append([]any{f.ProjectID, f.Steps[0].EventName, from, to}, extraArgs...)
+	entrySQL, entryArgs = stepFilterClause(entrySQL, entryArgs, f.Steps[0])
+	entrySQL += " GROUP BY " + key
+
+	step := f.Steps[i]
+	q := fmt.Sprintf(`
+		WITH entry AS (%[1]s)
+		SELECT entry.v, COUNT(DISTINCT %[2]s)
+		FROM events e%[3]s
+		JOIN entry ON entry.k = %[2]s
+		WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?%[4]s`,
+		entrySQL, key, join, extraWhere)
+	args := append(append([]any{}, entryArgs...), f.ProjectID, step.EventName, from, to)
+	args = append(args, extraArgs...)
+	q, args = stepFilterClause(q, args, step)
+	return q + " GROUP BY entry.v", args
+}
+
 // userBreakdownCounts is the user-scope breakdown: each user is grouped by the
 // property on their earliest step 1 event and counted through the same ordered
 // steps as the unbroken funnel.
@@ -203,19 +209,7 @@ func (s *ReadStore) userBreakdownCounts(ctx context.Context, f Funnel, from, to 
 	if err != nil {
 		return nil, err
 	}
-	join := ""
-	if needJoin {
-		join = " JOIN sessions s ON s.id = e.session_id AND s.project_id = e.project_id"
-	}
-	q := fmt.Sprintf(`
-		SELECT e.user_id_hash, COALESCE(json_extract(e.properties, '$.%s'), ''), MIN(e.occurred_at)
-		FROM events e%s
-		WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?%s`,
-		property, join, extraWhere)
-	args := append([]any{f.ProjectID, f.Steps[0].EventName, from, to}, extraArgs...)
-	q, args = stepFilterClause(q, args, f.Steps[0])
-	q += " GROUP BY e.user_id_hash"
-
+	q, args := userBreakdownEntrySQL(f, from, to, extraWhere, extraArgs, needJoin, property)
 	rows, err := s.rdb.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("breakdown entry values: %w", err)
@@ -240,4 +234,21 @@ func (s *ReadStore) userBreakdownCounts(ctx context.Context, f Funnel, from, to 
 		}
 	}
 	return counts, rows.Err()
+}
+
+// userBreakdownEntrySQL selects each user's property value from their earliest
+// step 1 event.
+func userBreakdownEntrySQL(f Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool, property string) (string, []any) {
+	join := ""
+	if needJoin {
+		join = " JOIN sessions s ON s.id = e.session_id AND s.project_id = e.project_id"
+	}
+	q := fmt.Sprintf(`
+		SELECT e.user_id_hash, COALESCE(json_extract(e.properties, '$.%s'), ''), MIN(e.occurred_at)
+		FROM events e%s
+		WHERE e.project_id = ? AND e.name = ? AND e.occurred_at >= ? AND e.occurred_at <= ?%s`,
+		property, join, extraWhere)
+	args := append([]any{f.ProjectID, f.Steps[0].EventName, from, to}, extraArgs...)
+	q, args = stepFilterClause(q, args, f.Steps[0])
+	return q + " GROUP BY e.user_id_hash", args
 }

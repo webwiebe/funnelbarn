@@ -62,6 +62,14 @@ func (svc *EventService) TopDeviceTypes(ctx context.Context, projectID string, f
 	return svc.store.TopDeviceTypes(ctx, projectID, from, to, env)
 }
 
+func (svc *EventService) TopEventNamesFiltered(ctx context.Context, projectID string, from, to time.Time, limit int, f repository.EventCountFilter) ([]repository.EventNameStat, error) {
+	return svc.store.TopEventNamesFiltered(ctx, projectID, from, to, limit, f)
+}
+
+func (svc *EventService) EventBreakdown(ctx context.Context, projectID, eventName, dimension string, from, to time.Time, limit int, f repository.EventCountFilter) ([]repository.BreakdownRow, error) {
+	return svc.store.EventBreakdown(ctx, projectID, eventName, dimension, from, to, limit, f)
+}
+
 func (svc *EventService) TopEventNames(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]repository.EventNameStat, error) {
 	return svc.store.TopEventNames(ctx, projectID, from, to, limit, env)
 }

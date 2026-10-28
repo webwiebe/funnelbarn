@@ -207,6 +207,7 @@ Scopes do not imply each other across features: `flags:write` implies `flags:rea
 | `GET` | `/api/v1/projects/{id}/events` | Session or `analytics:read` | Paginated events |
 | `GET` | `/api/v1/projects/{id}/event-names` | Session or `analytics:read` | Distinct event names |
 | `GET` | `/api/v1/projects/{id}/event-counts` | Session or `analytics:read` | Per-event counts over a date range |
+| `GET` | `/api/v1/projects/{id}/event-breakdown` | Session or `analytics:read` | One event by device, referrer or UTM source |
 | `GET` | `/api/v1/projects/{id}/sessions` | Session | Paginated sessions |
 | `GET` | `/api/v1/projects/{id}/funnels` | Session or `analytics:read` | List funnels |
 | `POST` | `/api/v1/projects/{id}/funnels` | Session | Create funnel |
