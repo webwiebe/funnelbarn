@@ -15,8 +15,9 @@ import (
 
 // Slow-evaluate thresholds (specs/012-cqrs-read-write-split/spec.md, "Async
 // command dispatcher"). The dispatcher never drops a command, so a full buffer
-// shows up as latency on the submitting request. An evaluate that crosses
-// either threshold logs at Error level, which opens a BugBarn issue.
+// shows up as latency on the submitting request. An evaluate that crosses a
+// threshold logs at Error level when the submit wait crossed its threshold,
+// which opens a BugBarn issue, and at Warn level when only the total did.
 const (
 	slowEvaluateTotal      = 250 * time.Millisecond
 	slowEvaluateSubmitWait = 50 * time.Millisecond
@@ -82,8 +83,9 @@ func (l *slowLogLimiter) allow(projectID string, now time.Time) (bool, int) {
 	return true, n
 }
 
-// reportEvaluate records the evaluate's timings on its span and logs at Error
-// when the total time or the summed submit wait crosses its threshold.
+// reportEvaluate records the evaluate's timings on its span and logs when the
+// total time or the summed submit wait crosses its threshold: at Error for the
+// submit wait, at Warn for the total alone.
 // poolWait is the growth of the read pool's connection wait during the request;
 // the pool is shared, so it is an approximation that includes other requests.
 func (s *Server) reportEvaluate(ctx context.Context, span trace.Span, projectID, flagKey string, total, submitWait, poolWait time.Duration) {
@@ -95,11 +97,21 @@ func (s *Server) reportEvaluate(ctx context.Context, span trace.Span, projectID,
 	if total <= s.slow.total && submitWait <= s.slow.submitWait {
 		return
 	}
-	ok, suppressed := s.evalLimits.slowLog.allow(projectID, time.Now())
+	// A long submit wait means the dispatcher is backed up, which is the stall
+	// this log exists to raise. A slow total with a short submit wait lost
+	// nothing: the caller got its value, and the time went to the host (CPU
+	// contention, IO), as in FUN-48 and FUN-57. That case stays visible in the
+	// logs at Warn without opening a BugBarn issue. The two levels are limited
+	// separately so a Warn never uses up the slot of a later Error.
+	level, limitKey := slog.LevelWarn, projectID+"/warn"
+	if submitWait > s.slow.submitWait {
+		level, limitKey = slog.LevelError, projectID+"/error"
+	}
+	ok, suppressed := s.evalLimits.slowLog.allow(limitKey, time.Now())
 	if !ok {
 		return
 	}
-	slog.ErrorContext(ctx, "flag evaluate slow",
+	slog.Log(ctx, level, "flag evaluate slow",
 		"handled", true,
 		"suppressed_since_last", suppressed,
 		"project_id", projectID,

@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 )
 
-// recordingHandler keeps every slog record so a test can look for Error ones.
+// recordingHandler keeps every slog record so a test can look for the slow-evaluate ones.
 type recordingHandler struct {
 	mu   sync.Mutex
 	recs []slog.Record
@@ -27,12 +27,12 @@ func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
 func (h *recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
 
-func (h *recordingHandler) slowErrors() []slog.Record {
+func (h *recordingHandler) slowAt(level slog.Level) []slog.Record {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	var out []slog.Record
 	for _, r := range h.recs {
-		if r.Level == slog.LevelError && r.Message == "flag evaluate slow" {
+		if r.Level == level && r.Message == "flag evaluate slow" {
 			out = append(out, r)
 		}
 	}
@@ -54,7 +54,9 @@ func recordAttrs(r slog.Record) map[string]any {
 	return m
 }
 
-func TestEvaluate_SlowTotalLogsAtError(t *testing.T) {
+// A slow total with a short submit wait lost nothing, so it logs at Warn and
+// opens no BugBarn issue (FUN-48, FUN-57).
+func TestEvaluate_SlowTotalLogsAtWarn(t *testing.T) {
 	h := captureSlog(t)
 	srv, store := newAuthedServer(t)
 	srv.slow = slowEvaluate{total: time.Nanosecond, submitWait: time.Hour}
@@ -68,9 +70,12 @@ func TestEvaluate_SlowTotalLogsAtError(t *testing.T) {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
 
-	recs := h.slowErrors()
+	if n := len(h.slowAt(slog.LevelError)); n != 0 {
+		t.Fatalf("a slow total alone must not log at Error, got %d", n)
+	}
+	recs := h.slowAt(slog.LevelWarn)
 	if len(recs) != 1 {
-		t.Fatalf("want 1 slow-evaluate Error log, got %d", len(recs))
+		t.Fatalf("want 1 slow-evaluate Warn log, got %d", len(recs))
 	}
 	attrs := recordAttrs(recs[0])
 	for _, key := range []string{"handled", "project_id", "flag_key", "duration_ms", "submit_wait_ms"} {
@@ -83,7 +88,7 @@ func TestEvaluate_SlowTotalLogsAtError(t *testing.T) {
 	}
 }
 
-func TestEvaluate_FastDoesNotLogAtError(t *testing.T) {
+func TestEvaluate_FastDoesNotLogSlow(t *testing.T) {
 	h := captureSlog(t)
 	srv, store := newAuthedServer(t)
 	srv.slow = slowEvaluate{total: time.Hour, submitWait: time.Hour}
@@ -94,33 +99,40 @@ func TestEvaluate_FastDoesNotLogAtError(t *testing.T) {
 		"context":  map[string]any{"user_id": "u1"},
 	}, cookie, csrf)
 
-	if n := len(h.slowErrors()); n != 0 {
+	if n := len(h.slowAt(slog.LevelError)) + len(h.slowAt(slog.LevelWarn)); n != 0 {
 		t.Fatalf("want no slow-evaluate log, got %d", n)
 	}
 }
 
-// The submit wait alone trips the check, whatever the total time.
+// The submit wait alone trips the Error; a slow total alone logs at Warn.
 func TestReportEvaluate_SubmitWaitThreshold(t *testing.T) {
 	h := captureSlog(t)
 	srv := &Server{slow: defaultSlowEvaluate}
 	_, span := noop.NewTracerProvider().Tracer("t").Start(context.Background(), "s")
+	errs := func() int { return len(h.slowAt(slog.LevelError)) }
+	warns := func() int { return len(h.slowAt(slog.LevelWarn)) }
 
 	srv.reportEvaluate(context.Background(), span, "p", "k", time.Millisecond, slowEvaluateSubmitWait, 0)
-	if n := len(h.slowErrors()); n != 0 {
-		t.Fatalf("wait at the threshold must not log, got %d", n)
+	if errs()+warns() != 0 {
+		t.Fatalf("wait at the threshold must not log, got %d error %d warn", errs(), warns())
 	}
 	srv.reportEvaluate(context.Background(), span, "p", "k", time.Millisecond, slowEvaluateSubmitWait+time.Millisecond, 0)
-	if n := len(h.slowErrors()); n != 1 {
-		t.Fatalf("wait over the threshold must log once, got %d", n)
+	if errs() != 1 || warns() != 0 {
+		t.Fatalf("wait over the threshold must log one Error, got %d error %d warn", errs(), warns())
 	}
 	srv.reportEvaluate(context.Background(), span, "p2", "k", slowEvaluateTotal+time.Millisecond, 0, 0)
-	if n := len(h.slowErrors()); n != 2 {
-		t.Fatalf("total over the threshold must log, got %d", n)
+	if errs() != 1 || warns() != 1 {
+		t.Fatalf("total over the threshold must log one Warn, got %d error %d warn", errs(), warns())
 	}
-	// Same project again within slowLogInterval: suppressed.
+	// Same project again within slowLogInterval: suppressed per level.
 	srv.reportEvaluate(context.Background(), span, "p", "k", slowEvaluateTotal+time.Millisecond, 0, 0)
-	if n := len(h.slowErrors()); n != 2 {
-		t.Fatalf("a second slow evaluate within the interval must not log, got %d", n)
+	srv.reportEvaluate(context.Background(), span, "p2", "k", slowEvaluateTotal+time.Millisecond, 0, 0)
+	if warns() != 2 {
+		t.Fatalf("a Warn for project p is not limited by its earlier Error, and p2's repeat is, got %d warn", warns())
+	}
+	srv.reportEvaluate(context.Background(), span, "p", "k", time.Millisecond, slowEvaluateSubmitWait+time.Millisecond, 0)
+	if errs() != 1 {
+		t.Fatalf("a second Error within the interval must not log, got %d", errs())
 	}
 }
 

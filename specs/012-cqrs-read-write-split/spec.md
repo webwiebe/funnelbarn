@@ -85,7 +85,7 @@ Each pool reports `otelsql` connection-pool metrics with a `db.pool` attribute (
 
 - `RecordEvaluation`, `TouchAPIKey`, `TouchFlagEvaluated`, `MarkFlagsEvaluated`, `EnsureAutoFlag`.
 - Phase 1: a buffered channel drained by one goroutine on the write pool. The queue depth is exported as a gauge.
-- A full buffer applies backpressure: submitting blocks until there is room, independent of the request context, so a caller that disconnects does not lose its row. Commands are never dropped, so A/B exposure rows stay complete. The time a submit waited is recorded on the request span, and an evaluate whose total time, or whose wait to submit, crosses a threshold logs at Error level, which opens a BugBarn issue. Dropping bookkeeping under pressure is deferred until that measurement shows evaluate actually slowing down.
+- A full buffer applies backpressure: submitting blocks until there is room, independent of the request context, so a caller that disconnects does not lose its row. Commands are never dropped, so A/B exposure rows stay complete. The time a submit waited is recorded on the request span, and an evaluate whose wait to submit crosses its threshold logs at Error level, which opens a BugBarn issue, and one whose total time alone crosses its threshold logs at Warn level with `duration_ms` and `submit_wait_ms`, because a slow total with a short submit wait lost nothing and points at the host (FUN-48, FUN-57). Dropping bookkeeping under pressure is deferred until that measurement shows evaluate actually slowing down.
 - `Flush(ctx)` waits until every submitted command is applied; tests use it, and shutdown drains with a timeout before the store closes.
 - Phase 2 replaces the channel with Redis/Valkey without touching the handlers.
 
@@ -198,7 +198,7 @@ Async commands are eventually consistent: an evaluation row, a touch or an inges
 | Pod affinity keeps readers on the writer's node | How readers see the database | Both manifests use `nodeSelector` on `kubernetes.io/hostname` |
 | Reader and writer modes refuse to start without the token | Forwarding section | They also refuse to start without `FUNNELBARN_REDIS_QUEUE_URL` (`internal/config/mode_test.go::TestValidateMode`) |
 | Requests that read do not wait for writes | Design principle 2 | Evaluate waits for a buffer slot only (FR-023); `EnsureAutoFlag` for an unknown key still publishes on the request. Production latency after the change is measured on issue #337 |
-| Evaluate logs at error level when slow | Async command dispatcher | `internal/api/flags_slow.go` logs `flag evaluate slow` at error level; issue #362 tracks the resulting BugBarn reports |
+| Evaluate logs a slow submit wait at error level and a slow total at warn level | Async command dispatcher | `internal/api/flags_slow.go` logs `flag evaluate slow` at error level when the submit wait crosses its threshold and at warn level when only the total does; issue #362 tracks the BugBarn reports |
 | The latency test is opt-in through `FUNNELBARN_CONTENTION_TEST=1` | Verification | Holds (`internal/api/contention_test.go`) |
 
 ## Proof contract
