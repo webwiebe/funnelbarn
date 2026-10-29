@@ -167,6 +167,17 @@ func (h *Handler) APIKeyProjectScope(r *http.Request) (projectID string, scope s
 	return h.auth.ValidWithProject(r.Context(), r.Header.Get(auth.HeaderAPIKey))
 }
 
+// EvaluateAPIKeyProjectScope is APIKeyProjectScope for POST /api/v1/evaluate
+// only. It may answer from the in-memory key snapshot, so a revoked key can
+// evaluate flags for up to auth.KeySnapshotInterval + auth.KeySnapshotMaxAge.
+// Every other route uses APIKeyProjectScope, which checks the key live.
+func (h *Handler) EvaluateAPIKeyProjectScope(r *http.Request) (projectID string, scope string, ok bool) {
+	if h == nil || h.auth == nil {
+		return "", "full", true
+	}
+	return h.auth.ValidForEvaluate(r.Context(), r.Header.Get(auth.HeaderAPIKey))
+}
+
 // ServeHTTP handles POST /api/v1/events.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.auth == nil || h.spool == nil {

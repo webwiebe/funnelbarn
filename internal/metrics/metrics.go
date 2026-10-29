@@ -1,6 +1,9 @@
 package metrics
 
 import (
+	"sync"
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -179,3 +182,39 @@ var (
 		Buckets: prometheus.DefBuckets,
 	})
 )
+
+// snapshotAgeDesc reports how old each in-memory snapshot is (internal/snapshot).
+// The value is read at scrape time, so it keeps growing while a refresh is
+// stuck in a database stall.
+var snapshotAgeDesc = prometheus.NewDesc(
+	"funnelbarn_snapshot_age_seconds",
+	"Seconds since the in-memory snapshot last loaded from the database, by snapshot.",
+	[]string{"snapshot"}, nil,
+)
+
+type snapshotAgeCollector struct {
+	mu   sync.Mutex
+	ages map[string]func() time.Duration
+}
+
+func (c *snapshotAgeCollector) Describe(ch chan<- *prometheus.Desc) { ch <- snapshotAgeDesc }
+
+func (c *snapshotAgeCollector) Collect(ch chan<- prometheus.Metric) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for name, age := range c.ages {
+		ch <- prometheus.MustNewConstMetric(snapshotAgeDesc, prometheus.GaugeValue, age().Seconds(), name)
+	}
+}
+
+var snapshotAges = &snapshotAgeCollector{ages: map[string]func() time.Duration{}}
+
+func init() { prometheus.MustRegister(snapshotAges) }
+
+// SetSnapshotAge reports age as the named snapshot's age. A later call for the
+// same name replaces the earlier one.
+func SetSnapshotAge(name string, age func() time.Duration) {
+	snapshotAges.mu.Lock()
+	defer snapshotAges.mu.Unlock()
+	snapshotAges.ages[name] = age
+}

@@ -291,7 +291,7 @@ func (s *Server) handleEvaluateFlag(w http.ResponseWriter, r *http.Request) {
 	// and the evaluation's own commands all count toward the slow-evaluate check.
 	ctx, _ := service.WithSubmitWait(r.Context())
 	r = r.WithContext(ctx)
-	projectID, _, ok := s.ingest.APIKeyProjectScope(r)
+	projectID, _, ok := s.ingest.EvaluateAPIKeyProjectScope(r)
 	timing.auth = time.Since(timing.start)
 	if !ok {
 		jsonError(w, "unauthorized", http.StatusUnauthorized)

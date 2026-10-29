@@ -160,7 +160,12 @@ A reader serves `GET /api/v1/ready` with 503 until the database's goose version 
 
 ### How readers see the database
 
-Reader and writer pods mount the same volume and open the same SQLite file in WAL mode, the readers through the read-only pool. A `nodeSelector` on the same hostname keeps them on the writer's node, which is required for a `ReadWriteOnce` volume and for SQLite's shared-memory WAL index. Readers see each commit as soon as it is made, so a flag edit in the dashboard reaches `/api/v1/evaluate` with no lag beyond the flag's `cache_max_age_seconds`.
+Reader and writer pods mount the same volume and open the same SQLite file in WAL mode, the readers through the read-only pool. A `nodeSelector` on the same hostname keeps them on the writer's node, which is required for a `ReadWriteOnce` volume and for SQLite's shared-memory WAL index. Readers see each commit as soon as it is made. `/api/v1/evaluate` answers from two in-memory snapshots that each process reloads on a background goroutine (#423), so a flag edit in the dashboard reaches it within about 2 s plus the flag's `cache_max_age_seconds`.
+
+- Flags reload every 2 s (`internal/service/flags_snapshot.go`). During a SQLite stall evaluate serves the last good load. A cold process, or a flag the snapshot does not hold, reads SQLite.
+- API keys reload every 5 s (`internal/auth/key_snapshot.go`) and answer the evaluate route only, for scopes `ingest`, `full`, `flags:read` and `flags:write`. The snapshot is trusted until it is 60 s old, and evaluate does the live lookup after that or when the key is missing. A failed lookup is never cached. Every other route checks keys live.
+- Stated assumption: a revoked key can evaluate flags for up to about 65 s (5 s refresh plus the 60 s cap) and is refused at once everywhere else.
+- `funnelbarn_snapshot_age_seconds{snapshot}` reports each snapshot's age at scrape time; a failed refresh logs `snapshot refresh failed` at Warn with `age_ms`.
 
 BugBarn's readers restore a Litestream copy instead, which adds replication lag and puts an object-store dependency on the read path. FunnelBarn does not do that. The cost of the shared volume is that readers cannot spread across nodes; every FunnelBarn environment runs on a single node today.
 

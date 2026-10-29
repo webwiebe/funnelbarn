@@ -61,6 +61,7 @@ type FlagService struct {
 	// background, when set, takes the evaluation row and the last_evaluated_at
 	// touch instead of commands, so the request does not wait on their publish.
 	background command.Bus
+	snapshot   *FlagSnapshot // answers evaluate's flag read from memory (flags_snapshot.go)
 }
 
 func NewFlagService(store ports.FlagRepo) *FlagService {
@@ -212,7 +213,7 @@ func (svc *FlagService) evaluateFlag(ctx context.Context, projectID, flagKey str
 	)
 	defer span.End()
 
-	flag, err := svc.store.FlagByKey(ctx, projectID, flagKey)
+	flag, err := svc.flagForEvaluate(ctx, projectID, flagKey)
 	if err != nil {
 		// A missing flag is an expected, well-defined outcome — the caller gets
 		// its own default (FLAG_NOT_FOUND), and auto-registration is built on

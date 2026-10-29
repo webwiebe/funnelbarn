@@ -201,7 +201,17 @@ func (r *ReadStore) FlagByKey(ctx context.Context, projectID, flagKey string) (F
 
 func (r *ReadStore) ListFlags(ctx context.Context, projectID string) ([]FeatureFlag, error) {
 	q := `SELECT ` + flagColumns + ` FROM feature_flags WHERE project_id = ? ORDER BY created_at DESC`
-	rows, err := r.rdb.QueryContext(ctx, q, projectID)
+	return r.queryFlags(ctx, q, projectID)
+}
+
+// ListAllFlags returns every project's flags. The in-memory flag snapshot
+// loads it every few seconds; production holds a few dozen rows.
+func (r *ReadStore) ListAllFlags(ctx context.Context) ([]FeatureFlag, error) {
+	return r.queryFlags(ctx, `SELECT `+flagColumns+` FROM feature_flags`)
+}
+
+func (r *ReadStore) queryFlags(ctx context.Context, q string, args ...any) ([]FeatureFlag, error) {
+	rows, err := r.rdb.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

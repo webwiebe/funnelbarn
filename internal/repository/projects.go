@@ -44,6 +44,17 @@ const APIKeyScopeAnalyticsRead = "analytics:read"
 // delete the gate.
 const APIKeyScopeFlagsWrite = "flags:write"
 
+// APIKeyScopeEvaluatesFlags reports whether a key with this scope is served
+// from the in-memory key snapshot on the flag evaluate path. SDKs evaluate
+// with ingest keys; analytics:read keys keep the live lookup.
+func APIKeyScopeEvaluatesFlags(scope string) bool {
+	switch scope {
+	case APIKeyScopeIngest, APIKeyScopeFull, APIKeyScopeFlagsRead, APIKeyScopeFlagsWrite:
+		return true
+	}
+	return false
+}
+
 // Project represents a tracked website or application.
 //
 // Domain is a display label for the site the project measures (shown on the

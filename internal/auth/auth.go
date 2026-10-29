@@ -31,6 +31,8 @@ type Authorizer struct {
 	apiKeyHash []byte
 	dbLookup   DBKeyLookupWithProject
 	dbTouch    DBKeyTouch
+	// evaluateKeys, when set, answers ValidForEvaluate from memory (key_snapshot.go).
+	evaluateKeys *KeySnapshot
 }
 
 // New creates an Authorizer from a plaintext API key.
@@ -64,7 +66,7 @@ func (a *Authorizer) WithDBLookup(lookup DBKeyLookupWithProject, touch DBKeyTouc
 	if a == nil {
 		return &Authorizer{dbLookup: lookup, dbTouch: touch}
 	}
-	return &Authorizer{apiKeyHash: a.apiKeyHash, dbLookup: lookup, dbTouch: touch}
+	return &Authorizer{apiKeyHash: a.apiKeyHash, dbLookup: lookup, dbTouch: touch, evaluateKeys: a.evaluateKeys}
 }
 
 // Enabled returns true when at least one auth mechanism is configured.

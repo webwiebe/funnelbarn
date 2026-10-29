@@ -29,13 +29,38 @@ func newFlagTokenServer(t *testing.T) (*Server, *repository.Store) {
 // passed through wrap, so a test can slow it down or fail it.
 func newFlagTokenServerWithLookup(t *testing.T, wrap func(auth.DBKeyLookupWithProject) auth.DBKeyLookupWithProject) (*Server, *repository.Store) {
 	t.Helper()
+	return newFlagTokenServerOpts(t, flagTokenOpts{wrapLookup: wrap})
+}
+
+// flagTokenOpts changes how newFlagTokenServerOpts builds its server. Every
+// field is optional.
+type flagTokenOpts struct {
+	wrapLookup func(auth.DBKeyLookupWithProject) auth.DBKeyLookupWithProject
+	wrapTouch  func(auth.DBKeyTouch) auth.DBKeyTouch
+	authz      func(*auth.Authorizer, *repository.Store) *auth.Authorizer
+	flags      func(*repository.Store) *service.FlagService
+}
+
+func newFlagTokenServerOpts(t *testing.T, o flagTokenOpts) (*Server, *repository.Store) {
+	t.Helper()
 	store := openMemoryStore(t)
 	sp := newTestSpool(t)
 	var lookup auth.DBKeyLookupWithProject = store.ValidAPIKeySHA256
-	if wrap != nil {
-		lookup = wrap(lookup)
+	if o.wrapLookup != nil {
+		lookup = o.wrapLookup(lookup)
 	}
-	authz := auth.New("global-instance-key").WithDBLookup(lookup, store.TouchAPIKey)
+	var touch auth.DBKeyTouch = store.TouchAPIKey
+	if o.wrapTouch != nil {
+		touch = o.wrapTouch(touch)
+	}
+	authz := auth.New("global-instance-key").WithDBLookup(lookup, touch)
+	if o.authz != nil {
+		authz = o.authz(authz, store)
+	}
+	flags := service.NewFlagService(store)
+	if o.flags != nil {
+		flags = o.flags(store)
+	}
 	sm := auth.NewSessionManager("test-secret", time.Hour)
 	userAuth, _ := auth.NewUserAuthenticator("admin", "pw", "")
 
@@ -44,7 +69,7 @@ func newFlagTokenServerWithLookup(t *testing.T, wrap func(auth.DBKeyLookupWithPr
 		Projects:            service.NewProjectService(store),
 		Funnels:             service.NewFunnelService(store),
 		ABTests:             service.NewABTestService(store),
-		Flags:               service.NewFlagService(store),
+		Flags:               flags,
 		Events:              service.NewEventService(store),
 		Overview:            service.NewOverviewService(store),
 		Sessions:            service.NewSessionService(store),

@@ -17,12 +17,14 @@ internal/geoip	50
 internal/ghwebhook	93
 internal/ingest	72
 internal/mcp	87
+internal/metrics	88
 internal/middleware	100
 internal/queue	100
 internal/repository	74
 internal/repository/repotest	80
 internal/service	74
 internal/session	100
+internal/snapshot	100
 internal/spool	75
 internal/storage	20
 internal/timerange	100

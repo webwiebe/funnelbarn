@@ -277,7 +277,8 @@ func run() error {
 	projectsSvc := service.NewProjectService(store)
 	funnelsSvc := service.NewFunnelService(store)
 	abtestsSvc := service.NewABTestService(store)
-	flagsSvc := service.NewFlagService(store).WithConfigCacheTTL(time.Duration(cfg.ConfigFlagCacheSeconds) * time.Second).WithCommands(commands).WithBackgroundCommands(flagBookkeeping)
+	flagSnapshot, keySnapshot := startEvaluateSnapshots(ctx, store)
+	flagsSvc := service.NewFlagService(store).WithConfigCacheTTL(time.Duration(cfg.ConfigFlagCacheSeconds) * time.Second).WithCommands(commands).WithBackgroundCommands(flagBookkeeping).WithSnapshot(flagSnapshot)
 	eventsSvc := service.NewEventService(store)
 	overviewSvc := service.NewOverviewService(store)
 	sessionsSvc := service.NewSessionService(store)
@@ -329,6 +330,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	apiAuthorizer = apiAuthorizer.WithEvaluateKeys(keySnapshot)
 	userAuth, err := auth.NewUserAuthenticator(cfg.AdminUsername, cfg.AdminPassword, cfg.AdminPasswordBcrypt)
 	if err != nil {
 		return err
