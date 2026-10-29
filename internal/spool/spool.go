@@ -19,6 +19,9 @@ const deadLetterFileName = "deadletter.ndjson"
 
 var ErrFull = errors.New("spool is full")
 
+// ErrClosed is returned by a write after Close.
+var ErrClosed = errors.New("spool is closed")
+
 // Record is a single durably-queued ingest payload.
 type Record struct {
 	IngestID      string    `json:"ingestId"`
@@ -56,7 +59,7 @@ func NewWithLimit(dir string, maxBytes int64) (*Spool, error) {
 	}
 
 	filePath := filepath.Join(dir, DefaultFileName)
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	file, err := openActive(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +73,14 @@ func NewWithLimit(dir string, maxBytes int64) (*Spool, error) {
 		path:     filePath,
 		file:     file,
 		maxBytes: maxBytes,
+		rename:   os.Rename,
+		open:     openActive,
 	}, nil
+}
+
+// openActive opens the active segment for appending, creating it if needed.
+func openActive(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 }
 
 // Spool is a durable append-only log of ingest records.
@@ -81,6 +91,10 @@ type Spool struct {
 	file     *os.File
 	maxBytes int64
 	closed   bool
+	// rename and open are os.Rename and openActive; tests replace them to
+	// make a rotation fail.
+	rename func(oldpath, newpath string) error
+	open   func(path string) (*os.File, error)
 }
 
 // Path returns the active spool file path.
@@ -130,6 +144,9 @@ func (s *Spool) Append(record Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if err := s.writableLocked(); err != nil {
+		return err
+	}
 	if s.maxBytes > 0 {
 		info, err := s.file.Stat()
 		if err != nil {
@@ -173,6 +190,9 @@ func (s *Spool) AppendBatch(records []Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if err := s.writableLocked(); err != nil {
+		return err
+	}
 	if s.maxBytes > 0 {
 		info, err := s.file.Stat()
 		if err != nil {
@@ -191,7 +211,7 @@ func (s *Spool) AppendBatch(records []Record) error {
 
 // Close flushes and closes the spool file. Closing twice is not an error.
 func (s *Spool) Close() error {
-	if s == nil || s.file == nil {
+	if s == nil {
 		return nil
 	}
 
@@ -202,7 +222,33 @@ func (s *Spool) Close() error {
 		return nil
 	}
 	s.closed = true
+	if s.file == nil {
+		return nil
+	}
 	return s.file.Close()
+}
+
+// writableLocked makes sure an open spool has an active file to write to.
+func (s *Spool) writableLocked() error {
+	if s.closed {
+		return ErrClosed
+	}
+	return s.reopenLocked()
+}
+
+// reopenLocked opens the active segment when a failed rotation left the spool
+// without one. If the open fails too, s.file stays nil and the next write
+// tries again, so one bad rotation never stops ingest until a restart.
+func (s *Spool) reopenLocked() error {
+	if s.file != nil {
+		return nil
+	}
+	file, err := s.open(s.path)
+	if err != nil {
+		return fmt.Errorf("spool reopen: %w", err)
+	}
+	s.file = file
+	return nil
 }
 
 // Rotate renames the current active segment to ingest-TIMESTAMP.ndjson and
@@ -220,22 +266,23 @@ func (s *Spool) Rotate() error {
 	if s.closed {
 		return nil
 	}
-	if err := s.file.Close(); err != nil {
-		return fmt.Errorf("spool rotate close: %w", err)
+	if err := s.reopenLocked(); err != nil {
+		return fmt.Errorf("spool rotate: %w", err)
+	}
+	// From here the active file is closed. Every return path reopens it, so a
+	// failed rename leaves the spool writing to the unrenamed file.
+	closeErr := s.file.Close()
+	s.file = nil
+	if closeErr != nil {
+		return errors.Join(fmt.Errorf("spool rotate close: %w", closeErr), s.reopenLocked())
 	}
 
 	ts := time.Now().UTC().Format("20060102T150405Z")
 	archived := filepath.Join(s.dir, fmt.Sprintf("ingest-%s.ndjson", ts))
-	if err := os.Rename(s.path, archived); err != nil {
-		return fmt.Errorf("spool rotate rename: %w", err)
+	if err := s.rename(s.path, archived); err != nil {
+		return errors.Join(fmt.Errorf("spool rotate rename: %w", err), s.reopenLocked())
 	}
-
-	file, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("spool rotate open: %w", err)
-	}
-	s.file = file
-	return nil
+	return s.reopenLocked()
 }
 
 // RotateIfExceeds rotates the active segment when it exceeds the given byte threshold.
@@ -248,6 +295,10 @@ func (s *Spool) RotateIfExceeds(maxBytes int64) error {
 	if s.closed {
 		s.mu.Unlock()
 		return nil
+	}
+	if err := s.reopenLocked(); err != nil {
+		s.mu.Unlock()
+		return err
 	}
 	info, err := s.file.Stat()
 	s.mu.Unlock()
