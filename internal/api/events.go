@@ -48,6 +48,29 @@ func (s *Server) handleEventNames(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"event_names": names})
 }
 
+// parseEventCounts reads and validates the event-counts query string, apart
+// from the environment, which the handler resolves against the project.
+func parseEventCounts(q url.Values) (rng timerange.Range, limit int, f repository.EventCountFilter, err error) {
+	if err = rejectUnknownParams(q, eventCountsParams); err != nil {
+		return rng, 0, f, err
+	}
+	if rng, err = timerange.ParseStrict(q); err != nil {
+		return rng, 0, f, err
+	}
+	// Unlike the dashboard's fixed top-10, a readout wants the whole catalog by
+	// default; the ceiling only exists to bound the response.
+	limit = 100
+	if v := q.Get("limit"); v != "" {
+		n, perr := strconv.Atoi(v)
+		if perr != nil || n <= 0 || n > 500 {
+			return rng, 0, f, errors.New("limit must be an integer between 1 and 500")
+		}
+		limit = n
+	}
+	f, err = parseCountFilter(q)
+	return rng, limit, f, err
+}
+
 // handleEventCounts returns per-event-name counts over a date range — the
 // smallest thing a scheduled readout needs to answer "how many signups last
 // week". The dashboard payload carries the same numbers, but only its top ten
@@ -60,30 +83,16 @@ func (s *Server) handleEventCounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rng, err := timerange.ParseStrict(r.URL.Query())
+	rng, limit, filter, err := parseEventCounts(r.URL.Query())
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	// Unlike the dashboard's fixed top-10, a readout wants the whole catalog by
-	// default; the ceiling only exists to bound the response.
-	limit := 100
-	if v := r.URL.Query().Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n <= 0 || n > 500 {
-			jsonError(w, "limit must be an integer between 1 and 500", http.StatusBadRequest)
-			return
-		}
-		limit = n
-	}
-
-	filter, err := parseCountFilter(r.URL.Query())
-	if err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+	env, ok := s.environmentParam(w, r, projectID, "handleEventCounts")
+	if !ok {
 		return
 	}
-	env := filter.Environment
+	filter.Environment = env
 
 	ctx, span := tracing.StartSpan(r.Context(), "events.counts",
 		attribute.String("project.id", projectID),
@@ -210,27 +219,18 @@ func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"environments": envs})
 }
 
-// listEventsParams are the query parameters /events understands. Any other
-// parameter is rejected: an ignored filter returns the newest events of every
-// kind, which a script reads as a wrong number. "stream" is sent by the live
-// view and has no effect.
-var listEventsParams = map[string]bool{
-	"limit": true, "offset": true, "name": true, "environment": true,
-	"from": true, "to": true, "stream": true,
-}
-
-// parseListEvents reads and validates the /events query string.
+// parseListEvents reads and validates the /events query string. An unknown
+// parameter is rejected (see listEventsParams); "stream" is sent by the live
+// view and has no effect. The environment is resolved by the handler, which
+// needs the project's recorded environments.
 func parseListEvents(q url.Values) (f repository.EventListFilter, limit, offset int, err error) {
-	for k := range q {
-		if !listEventsParams[k] {
-			return f, 0, 0, fmt.Errorf("unknown query parameter %q (use limit, offset, name, environment, from, to)", k)
-		}
+	if err = rejectUnknownParams(q, listEventsParams); err != nil {
+		return f, 0, 0, err
 	}
 	if limit, offset, err = parsePaging(q); err != nil {
 		return f, 0, 0, err
 	}
 	f.Name = q.Get("name")
-	f.Environment = q.Get("environment")
 	if f.From, err = parseOptionalTime(q, "from"); err != nil {
 		return f, 0, 0, err
 	}
@@ -288,6 +288,11 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	env, ok := s.environmentParam(w, r, projectID, "handleListEvents")
+	if !ok {
+		return
+	}
+	filter.Environment = env
 
 	ctx, span := tracing.StartSpan(r.Context(), "events.list",
 		attribute.String("project.id", projectID),

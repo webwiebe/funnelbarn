@@ -374,7 +374,10 @@ paths:
             type: string
         - name: environment
           in: query
-          description: Filter by environment (for example production or test)
+          description: >-
+            Filter by environment. A canonical name or an alias (prod is
+            production) maps to the canonical name; any other value must be one
+            the project has recorded, else 400 listing the values that work.
           schema:
             type: string
         - name: from

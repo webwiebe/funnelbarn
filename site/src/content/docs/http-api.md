@@ -60,10 +60,12 @@ These endpoints accept either a session cookie or an `analytics:read` (or `full`
 | `GET` | `/api/v1/projects/:id/dashboard` | Aggregate stats over a range |
 | `GET` | `/api/v1/projects/:id/events` | Paginated raw events; filters `name`, `environment`, `from`, `to` (RFC 3339); an unknown parameter or a bad limit answers `400` |
 | `GET` | `/api/v1/projects/:id/event-names` | Distinct event names |
-| `GET` | `/api/v1/projects/:id/event-counts` | Per-event counts over a range; filters `environment`, `exclude_bots`, `property`+`value` |
-| `GET` | `/api/v1/projects/:id/event-breakdown` | One event by `device_type`, `referrer_domain` or `utm_source`: events and sessions per value |
+| `GET` | `/api/v1/projects/:id/event-counts` | Per-event counts over a range; filters `environment`, `exclude_bots`, `property`+`value`; an unknown parameter answers `400` |
+| `GET` | `/api/v1/projects/:id/event-breakdown` | One event by `device_type`, `referrer_domain` or `utm_source`: events and sessions per value; an unknown parameter answers `400` |
 | `GET` | `/api/v1/projects/:id/funnels` | The project's funnels |
 | `GET` | `/api/v1/projects/:id/funnels/:fid/analysis` | Per-step conversion |
+
+On `events`, `event-counts` and `event-breakdown`, the `environment` filter takes a canonical name (`production`, `staging`, `test`, `development`) or one of its aliases (`prod` is `production`, as at ingest). Any other value must be one the project has recorded events under; an unrecorded value answers `400` and lists the values that work. A canonical name the project has no events under yet counts zero.
 
 A weekly readout, end to end:
 
@@ -214,11 +216,11 @@ Returns a count per event name over a date range — the whole catalog, not the 
 | `from` | 30 days ago | RFC3339 start time (overrides `range`) |
 | `to` | now | RFC3339 end time (overrides `range`) |
 | `limit` | `100` | Max distinct event names to return (1–500) |
-| `environment` | all | Restrict to one environment |
+| `environment` | all | Restrict to one environment; aliases such as `prod` map to the canonical name |
 | `exclude_bots` | `false` | `true` drops events from bot user agents (`device_type` = `bot`). The response then carries `"exclude_bots": true` |
 | `property`, `value` | none | Keep events whose JSON property `property` equals `value`. Both are required together; `property` is letters, digits and underscores. `true` and `false` match JSON booleans (and the strings "true"/"false"); numbers match by their text form |
 
-Unlike the dashboard endpoint, unparseable input is rejected with `400` rather than silently answered with the default window — a readout that asked for last week and quietly got last month reports the wrong number with no way to notice.
+Unlike the dashboard endpoint, unparseable input is rejected with `400` rather than silently answered with the default window — a readout that asked for last week and quietly got last month reports the wrong number with no way to notice. For the same reason an unknown query parameter (`exclude_bot` for `exclude_bots`) or an unrecorded environment answers `400`.
 
 ```json
 {
@@ -247,11 +249,11 @@ Counts one event by a dimension: events and distinct sessions per value, largest
 | `event` | required | Event name |
 | `by` | required | `device_type`, `referrer_domain` or `utm_source` |
 | `range`, `from`, `to` | `30d` | Same as `event-counts` |
-| `environment` | all | Restrict to one environment |
+| `environment` | all | Same as `event-counts` |
 | `exclude_bots` | `false` | Drop events from bot user agents |
 | `property`, `value` | none | Same property filter as `event-counts` |
 
-A missing `event`, an unknown `by`, a bad `exclude_bots` or an unparseable time answers `400`. Events with no value for the dimension are reported under `""`.
+A missing `event`, an unknown `by`, a bad `exclude_bots`, an unparseable time, an unknown query parameter or an unrecorded environment answers `400`. Events with no value for the dimension are reported under `""`.
 
 ```json
 {

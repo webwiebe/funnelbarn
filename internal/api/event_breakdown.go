@@ -63,6 +63,10 @@ func (s *Server) handleEventBreakdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
+	if err := rejectUnknownParams(q, eventBreakdownParams); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	event := q.Get("event")
 	if event == "" {
 		jsonError(w, "event is required", http.StatusBadRequest)
@@ -83,6 +87,11 @@ func (s *Server) handleEventBreakdown(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	env, ok := s.environmentParam(w, r, projectID, "handleEventBreakdown")
+	if !ok {
+		return
+	}
+	filter.Environment = env
 
 	ctx, span := tracing.StartSpan(r.Context(), "events.breakdown",
 		attribute.String("project.id", projectID),
