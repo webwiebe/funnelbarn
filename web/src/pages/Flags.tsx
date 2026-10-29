@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { Flag, Plus, X, Pause, Play, Pencil, Trash2 } from 'lucide-react'
+import { useParams, useSearchParams } from 'react-router-dom'
+import { Flag, Plus, Pause, Play, Pencil, Trash2 } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api } from '../lib/api'
-import type { FeatureFlag, FlagAnalysis, FlagEvaluationResult, TargetingRule } from '../lib/api'
+import type { FeatureFlag, FlagAnalysis, TargetingRule } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { reportError } from '../lib/bugbarn'
 import { trackEvent } from '../lib/analytics'
 import { Skeleton } from '../components/ui/Skeleton'
 import { C, statusBadge, originBadge, StatCard, FlagsTitle } from '../components/flags/shared'
 import { FlagFormModal } from '../components/flags/FlagFormModal'
+import { FlagList } from '../components/flags/FlagList'
+import { flagDate } from '../components/flags/flagListQuery'
+import { FlagPlayground, TargetingRulesDisplay } from '../components/flags/FlagPlayground'
 
 // alignBooleanSplit produces a new split where the *new default* is always
 // the majority bucket. This both preserves intentional rollouts and
@@ -169,191 +172,6 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   )
 }
 
-function FlagPlayground({ projectId, flag }: { projectId: string; flag: FeatureFlag }) {
-  const [flagKey, setFlagKey] = useState(flag.flag_key)
-  const [defaultValue, setDefaultValue] = useState('')
-  // targeting_key is what the eval service buckets on; defaulting to user_id
-  // would silently bucket every user to the same variant.
-  const [context, setContext] = useState<Array<{ k: string; v: string }>>([{ k: 'targeting_key', v: '' }])
-  const [result, setResult] = useState<FlagEvaluationResult | null>(null)
-  const [evaluating, setEvaluating] = useState(false)
-  const [requestError, setRequestError] = useState<string | null>(null)
-
-  // Keep flag_key in sync if the user switches to a different flag in the list.
-  useEffect(() => { setFlagKey(flag.flag_key) }, [flag.flag_key])
-
-  // Build the context object the API expects. Skip rows with empty keys.
-  // Cast numbers and booleans so targeting-rule comparisons line up with what
-  // a real SDK would send.
-  const contextObject = (() => {
-    const out: Record<string, unknown> = {}
-    for (const { k, v } of context) {
-      const key = k.trim()
-      if (!key) continue
-      if (v === 'true') out[key] = true
-      else if (v === 'false') out[key] = false
-      else if (v !== '' && !isNaN(Number(v))) out[key] = Number(v)
-      else out[key] = v
-    }
-    return out
-  })()
-
-  // Debounced live evaluation. Triggers on every change to flag_key, default,
-  // or context (300ms quiet period).
-  const debounceRef = useRef<number | undefined>(undefined)
-  useEffect(() => {
-    if (!flagKey.trim()) {
-      setResult(null)
-      setRequestError(null)
-      return
-    }
-    window.clearTimeout(debounceRef.current)
-    debounceRef.current = window.setTimeout(() => {
-      setEvaluating(true)
-      setRequestError(null)
-      api.evaluateFlagPlayground(projectId, {
-        flag_key: flagKey.trim(),
-        default_value: defaultValue || undefined,
-        context: contextObject,
-      })
-        .then(setResult)
-        .catch((e) => {
-          setResult(null)
-          setRequestError(e instanceof Error ? e.message : String(e))
-        })
-        .finally(() => setEvaluating(false))
-    }, 300)
-    return () => window.clearTimeout(debounceRef.current)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, flagKey, defaultValue, JSON.stringify(contextObject)])
-
-  const inputStyle: React.CSSProperties = {
-    background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6,
-    color: C.text, padding: '6px 10px', fontSize: 13, width: '100%',
-  }
-  const labelStyle: React.CSSProperties = { fontSize: 12, color: C.muted, marginBottom: 4, display: 'block' }
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-      <div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={labelStyle}>Flag key</label>
-          <input value={flagKey} onChange={(e) => setFlagKey(e.target.value)} style={inputStyle} spellCheck={false} />
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={labelStyle}>Default value (returned if flag is missing)</label>
-          <input value={defaultValue} onChange={(e) => setDefaultValue(e.target.value)} style={inputStyle} placeholder="optional" />
-        </div>
-        <div style={{ marginBottom: 8 }}>
-          <label style={labelStyle}>Evaluation context</label>
-          {context.map((row, i) => (
-            <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-              <input
-                value={row.k}
-                onChange={(e) => setContext((rows) => rows.map((r, idx) => idx === i ? { ...r, k: e.target.value } : r))}
-                style={{ ...inputStyle, flex: '0 0 40%' }}
-                placeholder="key"
-                spellCheck={false}
-              />
-              <input
-                value={row.v}
-                onChange={(e) => setContext((rows) => rows.map((r, idx) => idx === i ? { ...r, v: e.target.value } : r))}
-                style={{ ...inputStyle, flex: 1 }}
-                placeholder="value"
-                spellCheck={false}
-              />
-              <button
-                onClick={() => setContext((rows) => rows.filter((_, idx) => idx !== i))}
-                disabled={context.length === 1}
-                title="Remove row"
-                style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, cursor: 'pointer', padding: '0 8px' }}
-              >
-                <X size={12} />
-              </button>
-            </div>
-          ))}
-          <button
-            onClick={() => setContext((rows) => [...rows, { k: '', v: '' }])}
-            style={{ background: 'transparent', border: `1px dashed ${C.border}`, borderRadius: 6, color: C.muted, cursor: 'pointer', padding: '4px 10px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-          >
-            <Plus size={12} /> Add field
-          </button>
-        </div>
-      </div>
-
-      <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <span style={{ fontSize: 12, color: C.muted, letterSpacing: 0.5, textTransform: 'uppercase' }}>Result</span>
-          {evaluating && <span style={{ fontSize: 11, color: C.muted }}>evaluating…</span>}
-        </div>
-        {requestError ? (
-          <div style={{ color: C.error, fontSize: 13 }}>{requestError}</div>
-        ) : result ? (
-          <>
-            <div style={{ marginBottom: 8 }}>
-              <span style={{ fontSize: 12, color: C.muted }}>Variant: </span>
-              <code style={{ fontSize: 13, color: C.amber, background: 'rgba(245,158,11,0.1)', padding: '2px 6px', borderRadius: 4 }}>
-                {result.variant || '(none)'}
-              </code>
-            </div>
-            <div style={{ marginBottom: 8 }}>
-              <span style={{ fontSize: 12, color: C.muted }}>Value: </span>
-              <code style={{ fontSize: 13, color: C.text }}>{JSON.stringify(result.value)}</code>
-            </div>
-            <div style={{ marginBottom: 8 }}>
-              <span style={{ fontSize: 12, color: C.muted }}>Reason: </span>
-              <code style={{ fontSize: 13, color: result.reason === 'ERROR' ? C.error : C.success }}>{result.reason}</code>
-            </div>
-            {result.error && (
-              <div style={{ marginTop: 12, padding: 8, background: 'rgba(239,68,68,0.08)', border: `1px solid rgba(239,68,68,0.3)`, borderRadius: 6, color: C.error, fontSize: 12 }}>
-                {result.error}{result.error_code ? ` (${result.error_code})` : ''}
-              </div>
-            )}
-          </>
-        ) : (
-          <div style={{ color: C.muted, fontSize: 13 }}>Enter a flag key to evaluate.</div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function TargetingRulesDisplay({ rulesJSON }: { rulesJSON: string }) {
-  const rules: TargetingRule[] = (() => { try { return JSON.parse(rulesJSON || '[]') } catch { return [] } })()
-  if (rules.length === 0) return null
-  return (
-    <div style={{ marginBottom: 24 }}>
-      <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-        Targeting Rules ({rules.length})
-      </div>
-      {rules.map((rule, i) => (
-        <div key={i} style={{
-          background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
-          padding: '10px 12px', marginBottom: 6, fontSize: 13,
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span style={{ color: C.text, fontWeight: 600 }}>{rule.name || `Rule ${i + 1}`}</span>
-            <span style={{ color: C.amber }}>→ {rule.variant}</span>
-          </div>
-          <div style={{ color: C.muted, fontSize: 12 }}>
-            {rule.match === 'all' ? 'ALL' : 'ANY'} of:{' '}
-            {rule.conditions.map((c, j) => (
-              <span key={j}>
-                {j > 0 && <span style={{ color: C.amber }}> {rule.match === 'all' ? '&&' : '||'} </span>}
-                <code style={{ color: C.text }}>{c.context_key}</code>
-                {' '}<span style={{ color: C.amber }}>{c.operator}</span>{' '}
-                {c.operator !== 'present' && c.operator !== 'not_present' && (
-                  <code style={{ color: C.text }}>"{c.value}"</code>
-                )}
-              </span>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
   flag: FeatureFlag; projectId: string
   onUpdated: (f: FeatureFlag) => void
@@ -480,6 +298,8 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
           <div>Default: <span style={{ color: C.text }}>{flag.default_variant}</span></div>
         )}
         {flag.conversion_event && <div>Conversion: <span style={{ color: C.text }}>{flag.conversion_event}</span></div>}
+        <div>Created: <span style={{ color: C.text }}>{flagDate(flag.created_at) ?? 'unknown'}</span></div>
+        <div>Last evaluated: <span style={{ color: C.text }}>{flagDate(flag.last_evaluated_at) ?? 'never'}</span></div>
       </div>
 
       {(() => {
@@ -586,22 +406,73 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
   )
 }
 
-export default function Flags() {
-  const { projectId } = useParams<{ projectId?: string }>()
-  const { projects } = useProjects()
-  const [flags, setFlags] = useState<FeatureFlag[]>([])
-  const [selected, setSelected] = useState<FeatureFlag | null>(null)
-  const [showCreate, setShowCreate] = useState(false)
-  const [showDetail, setShowDetail] = useState(false)
+// Wide screens: both columns stick below the page header and fill the
+// viewport, the rows scroll inside the list column and the detail pane stays
+// in view whichever flag is picked. Phones: one column, the detail replaces
+// the list and Back returns to the same scroll position.
+const LAYOUT_CSS = `
+  .flags-layout { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+  @media (min-width: 768px) {
+    .flags-list, .flags-detail { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); box-sizing: border-box; }
+    .flags-list { display: flex; flex-direction: column; min-width: 0; }
+    .flags-rows { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+    .flags-detail { overflow-y: auto; }
+    .back-btn { display: none !important; }
+  }
+  @media (max-width: 767px) {
+    .flags-layout { grid-template-columns: minmax(0, 1fr); }
+    .flags-list.detail-open { display: none; }
+    .flags-detail.no-selection { display: none; }
+    .back-btn { display: block !important; }
+  }
+`
+
+const isNarrow = () => typeof window !== 'undefined' && !!window.matchMedia?.('(max-width: 767px)').matches
+
+// useProjectFlags loads a project's flags. flags is null until the first
+// response; a failed load sets error instead of reading as an empty project.
+function useProjectFlags(projectId: string | undefined) {
+  const [flags, setFlags] = useState<FeatureFlag[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     if (!projectId) return
-    setSelected(null)
-    setShowDetail(false)
+    let cancelled = false
+    setFlags(null)
+    setError(null)
     api.listFlags(projectId)
-      .then((d) => setFlags(d.flags || []))
-      .catch((e) => { console.error(e); reportError(e, { source: 'Flags' }) })
-  }, [projectId])
+      .then((d) => { if (!cancelled) setFlags(d.flags || []) })
+      .catch((e) => {
+        reportError(e instanceof Error ? e : new Error(String(e)), { source: 'Flags' })
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
+      })
+    return () => { cancelled = true }
+  }, [projectId, attempt])
+
+  return { flags, setFlags, error, retry: () => setAttempt((n) => n + 1) }
+}
+
+export default function Flags() {
+  const { projectId } = useParams<{ projectId?: string }>()
+  const { projects } = useProjects()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { flags, setFlags, error, retry } = useProjectFlags(projectId)
+  const [showCreate, setShowCreate] = useState(false)
+  const listScroll = useRef(0)
+
+  const selectedKey = searchParams.get('flag')
+  const selected = flags?.find((f) => f.flag_key === selectedKey) ?? null
+
+  const select = (f: FeatureFlag) => {
+    listScroll.current = window.scrollY
+    setSearchParams({ flag: f.flag_key }, { replace: true })
+    if (isNarrow()) window.scrollTo(0, 0)
+  }
+  const clearSelection = () => {
+    setSearchParams({}, { replace: true })
+    if (isNarrow()) requestAnimationFrame(() => window.scrollTo(0, listScroll.current))
+  }
 
   if (!projectId) {
     return (
@@ -615,27 +486,17 @@ export default function Flags() {
 
   return (
     <Shell projectId={projectId} projectName={projectName}>
-      <style>{`
-        @media (max-width: 767px) {
-          .flags-layout { grid-template-columns: 1fr !important; }
-          .flags-list.detail-open { display: none !important; }
-          .flags-detail.no-selection { display: none !important; }
-          .back-btn { display: block !important; }
-        }
-        @media (min-width: 768px) {
-          .back-btn { display: none !important; }
-        }
-      `}</style>
+      <style>{LAYOUT_CSS}</style>
 
       {showCreate && (
         <FlagFormModal projectId={projectId} onClose={() => setShowCreate(false)}
-          onSaved={(f) => { setFlags((prev) => [f, ...prev]); setShowCreate(false); setSelected(f); setShowDetail(true) }} />
+          onSaved={(f) => { setFlags((prev) => [f, ...(prev ?? [])]); setShowCreate(false); select(f) }} />
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: '1.25rem' }}>
         <FlagsTitle projectId={projectId} active="flags" />
         <button onClick={() => setShowCreate(true)} style={{
-          display: 'flex', alignItems: 'center', gap: 6,
+          display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
           background: C.amber, border: 'none', borderRadius: 8,
           color: '#0f1117', padding: '0.6rem 1.1rem', cursor: 'pointer', fontSize: 14, fontWeight: 700,
         }}>
@@ -643,48 +504,17 @@ export default function Flags() {
         </button>
       </div>
 
-      <div className="flags-layout" style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '1.5rem' }}>
-        <div className={`flags-list${showDetail ? ' detail-open' : ''}`}>
-          {flags.length === 0 ? (
-            <div style={{
-              background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12,
-              padding: '2rem', textAlign: 'center', color: C.muted,
-            }}>
-              <Flag size={32} style={{ opacity: 0.3, marginBottom: 8 }} />
-              <div style={{ fontSize: 14 }}>No flags yet</div>
-              <button onClick={() => setShowCreate(true)} style={{
-                marginTop: 12, background: 'transparent', border: `1px solid ${C.border}`,
-                borderRadius: 7, color: C.amber, padding: '0.4rem 0.8rem', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-              }}>
-                Create one
-              </button>
-            </div>
-          ) : (
-            flags.map((f) => (
-              <div key={f.id} onClick={() => { setSelected(f); setShowDetail(true) }} style={{
-                padding: '0.875rem 1rem', marginBottom: '0.5rem', cursor: 'pointer',
-                background: selected?.id === f.id ? 'rgba(245,158,11,0.1)' : C.surface,
-                border: `1px solid ${selected?.id === f.id ? 'rgba(245,158,11,0.4)' : C.border}`,
-                borderRadius: 10, transition: 'all 0.15s',
-              }}>
-                <div style={{ fontWeight: 700, fontSize: 14, color: C.text, marginBottom: 4 }}>{f.name}</div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <code style={{ fontSize: 12, color: C.muted }}>{f.flag_key}</code>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    {originBadge(f.origin)}
-                    {statusBadge(f.status)}
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
+      <div className="flags-layout">
+        <div className={`flags-list${selected ? ' detail-open' : ''}`}>
+          <FlagList flags={flags} error={error} onRetry={retry} selectedId={selected?.id ?? null}
+            onSelect={select} onCreate={() => setShowCreate(true)} />
         </div>
 
         <div className={`flags-detail${!selected ? ' no-selection' : ''}`} style={{
           background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12,
           padding: '1.5rem', minHeight: 300,
         }}>
-          <button className="back-btn" onClick={() => setShowDetail(false)} style={{
+          <button className="back-btn" onClick={clearSelection} style={{
             display: 'none', background: 'none', border: 'none', color: C.amber,
             cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: '0 0 1rem 0',
           }}>
@@ -697,8 +527,8 @@ export default function Flags() {
             </div>
           ) : (
             <FlagDetail flag={selected} projectId={projectId}
-              onUpdated={(f) => { setSelected(f); setFlags((prev) => prev.map((x) => x.id === f.id ? f : x)) }}
-              onDeleted={() => { setFlags((prev) => prev.filter((x) => x.id !== selected.id)); setSelected(null); setShowDetail(false) }}
+              onUpdated={(f) => { setFlags((prev) => prev?.map((x) => x.id === f.id ? f : x) ?? prev); setSearchParams({ flag: f.flag_key }, { replace: true }) }}
+              onDeleted={() => { setFlags((prev) => prev?.filter((x) => x.id !== selected.id) ?? prev); clearSelection() }}
             />
           )}
         </div>
