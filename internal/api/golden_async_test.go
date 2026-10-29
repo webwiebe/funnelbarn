@@ -185,7 +185,7 @@ func dumpGoldenState(db *sql.DB) string {
 			_ = rows.Scan(&n, &u)
 			fmt.Fprintf(&b, " %s=%v", n, u)
 		}
-		rows.Close()
+		writeReadErr(&b, rows)
 		b.WriteString("\n")
 	}
 	if rows, err := db.Query(`SELECT project_id, flag_key, COALESCE(origin,''), last_evaluated_at IS NOT NULL FROM feature_flags ORDER BY project_id, flag_key`); err == nil {
@@ -196,7 +196,7 @@ func dumpGoldenState(db *sql.DB) string {
 			_ = rows.Scan(&p, &k, &o, &e)
 			fmt.Fprintf(&b, "  %s %s %s %v\n", p, k, o, e)
 		}
-		rows.Close()
+		writeReadErr(&b, rows)
 	}
 	if n, err := countEvaluationRows(db); err == nil {
 		fmt.Fprintf(&b, "flag_evaluations rows=%d\n", n)
@@ -209,9 +209,17 @@ func dumpGoldenState(db *sql.DB) string {
 			_ = rows.Scan(&p, &a, &f, &e, &r)
 			fmt.Fprintf(&b, "  %s %d %d %d %d\n", p, a, f, e, r)
 		}
-		rows.Close()
+		writeReadErr(&b, rows)
 	}
 	return b.String()
+}
+
+// writeReadErr notes a failed read in the dump and closes rows.
+func writeReadErr(b *strings.Builder, rows *sql.Rows) {
+	if err := rows.Err(); err != nil {
+		fmt.Fprintf(b, " (read error: %v)", err)
+	}
+	_ = rows.Close()
 }
 
 func countEvaluationRows(db *sql.DB) (int, error) {

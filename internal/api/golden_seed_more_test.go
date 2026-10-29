@@ -231,6 +231,9 @@ func goldenRemap(t *testing.T, store *repository.Store, ids map[string]string) {
 	if rows.Next() {
 		t.Fatal("remap left a dangling foreign key")
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("remap: fk check: %v", err)
+	}
 }
 
 // goldenTextColumns lists [table, column] for every text-like column.
@@ -247,6 +250,9 @@ func goldenTextColumns(t *testing.T, ctx context.Context, conn *sql.Conn) [][2]s
 			t.Fatalf("scan: %v", err)
 		}
 		names = append(names, n)
+	}
+	if err := tables.Err(); err != nil {
+		t.Fatalf("list tables: %v", err)
 	}
 	tables.Close()
 	var out [][2]string
@@ -265,6 +271,9 @@ func goldenTextColumns(t *testing.T, ctx context.Context, conn *sql.Conn) [][2]s
 			if u := strings.ToUpper(typ); strings.Contains(u, "TEXT") || strings.Contains(u, "CHAR") || u == "" {
 				out = append(out, [2]string{tbl, name})
 			}
+		}
+		if err := cols.Err(); err != nil {
+			t.Fatalf("table_info: %v", err)
 		}
 		cols.Close()
 	}
@@ -308,6 +317,9 @@ func goldenTextTimeColumns(t *testing.T, ctx context.Context, conn *sql.Conn) []
 			t.Fatalf("scan: %v", err)
 		}
 		out = append(out, [2]string{tbl, col})
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("time columns: %v", err)
 	}
 	return out
 }

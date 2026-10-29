@@ -248,27 +248,10 @@ func ensureColumns(db *sql.DB) error {
 		{"projects", "status", "TEXT NOT NULL DEFAULT 'active'"},
 	}
 	for _, c := range checks {
-		rows, err := db.Query(`PRAGMA table_info(` + c.table + `)`)
+		found, err := tableHasColumn(db, c.table, c.column)
 		if err != nil {
 			return err
 		}
-		found := false
-		for rows.Next() {
-			var cid int
-			var name, typ string
-			var notNull int
-			var dflt sql.NullString
-			var pk int
-			if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
-				rows.Close()
-				return err
-			}
-			if name == c.column {
-				found = true
-				break
-			}
-		}
-		rows.Close()
 		if !found {
 			if _, err := db.Exec(`ALTER TABLE ` + c.table + ` ADD COLUMN ` + c.column + ` ` + c.def); err != nil {
 				return fmt.Errorf("add column %s.%s: %w", c.table, c.column, err)
@@ -276,6 +259,33 @@ func ensureColumns(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+// tableHasColumn reports whether table has column, from PRAGMA table_info.
+func tableHasColumn(db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	return scanForColumn(rows, column)
+}
+
+// scanForColumn reads PRAGMA table_info rows until it finds column. A read
+// that fails partway is an error, so it never reads as a missing column.
+func scanForColumn(rows *sql.Rows, column string) (bool, error) {
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typ string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 // Close closes both pools. When the read pool aliases the write pool it is

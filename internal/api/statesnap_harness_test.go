@@ -238,6 +238,9 @@ func idLabels(t *testing.T, db *sql.DB) map[string]string {
 			}
 			labels[id] = prefix + name
 		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("labels %q: %v", q, err)
+		}
 	}
 	collect(`SELECT id, slug FROM projects`, "project:")
 	// Events without a client session id get a fingerprint that changes per
