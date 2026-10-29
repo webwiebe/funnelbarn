@@ -80,6 +80,7 @@ type Spool struct {
 	path     string
 	file     *os.File
 	maxBytes int64
+	closed   bool
 }
 
 // Path returns the active spool file path.
@@ -188,7 +189,7 @@ func (s *Spool) AppendBatch(records []Record) error {
 	return s.file.Sync()
 }
 
-// Close flushes and closes the spool file.
+// Close flushes and closes the spool file. Closing twice is not an error.
 func (s *Spool) Close() error {
 	if s == nil || s.file == nil {
 		return nil
@@ -197,6 +198,10 @@ func (s *Spool) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.closed {
+		return nil
+	}
+	s.closed = true
 	return s.file.Close()
 }
 
@@ -210,6 +215,11 @@ func (s *Spool) Rotate() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// A worker tick that was already running when shutdown closed the spool
+	// reaches here with nothing left to rotate. It must not reopen the file.
+	if s.closed {
+		return nil
+	}
 	if err := s.file.Close(); err != nil {
 		return fmt.Errorf("spool rotate close: %w", err)
 	}
@@ -235,6 +245,10 @@ func (s *Spool) RotateIfExceeds(maxBytes int64) error {
 	}
 
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil
+	}
 	info, err := s.file.Stat()
 	s.mu.Unlock()
 	if err != nil {
