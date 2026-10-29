@@ -24,15 +24,19 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	// at Error and filed as a BugBarn issue whose entire message was "context
 	// canceled" — the prober's clock, reported as a database fault, with no
 	// trace of what the database was actually doing. Detached, a slow ping is
-	// measured against our own budget: it either fails for a real reason worth
-	// reporting, or it succeeds.
+	// measured against our own budget: it either fails for a real reason, which
+	// is logged at Warn and answered 503, or it succeeds.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), healthPingTimeout)
 	defer cancel()
 
 	if s.db != nil {
 		if err := s.db.Ping(ctx); err != nil {
-			slog.ErrorContext(ctx, "health check db ping failed",
-				"err", err, "handled", false, "timeout", healthPingTimeout.String())
+			// Warn: the 503 below is the signal. The prober acts on it, and the
+			// WorkloadUnavailable alerts report an outage that lasts. A single
+			// ping that outruns its budget, such as during a node stall, lost
+			// no data and must not open an issue (FUN-59).
+			slog.WarnContext(ctx, "health check db ping failed",
+				"err", err, "handled", true, "timeout", healthPingTimeout.String())
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"status": "unhealthy",
 				"error":  "database unavailable",

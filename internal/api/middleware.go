@@ -359,6 +359,13 @@ func requestLogger(next http.Handler) http.Handler {
 			"user_agent", ua,
 		}
 		switch {
+		case status >= 500 && isProbePath(r.URL.Path):
+			// A 503 from the liveness or readiness probe says the pod is not
+			// ready, which the prober acts on and the WorkloadUnavailable
+			// alerts report when it lasts. One stalled probe lost nothing, so
+			// it must not open an issue (FUN-60).
+			attrs = append(attrs, "handled", true)
+			slog.WarnContext(ctx, "probe failed", attrs...)
 		case status >= 500:
 			// handled=false: an unexpected server failure that should
 			// trigger an alert. The per-handler slog.Error already gave
@@ -389,4 +396,9 @@ func requestLogger(next http.Handler) http.Handler {
 		metrics.HTTPRequests.WithLabelValues(r.Method, r.URL.Path, statusStr).Inc()
 		metrics.HTTPLatency.WithLabelValues(r.Method, r.URL.Path).Observe(elapsed.Seconds())
 	})
+}
+
+// isProbePath reports whether path is a liveness or readiness probe route.
+func isProbePath(path string) bool {
+	return path == "/api/v1/health" || path == "/api/v1/ready"
 }
