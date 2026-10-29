@@ -40,6 +40,31 @@ func (s *Server) currentReadPoolWait() time.Duration {
 
 func ms(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
 
+// evalTiming follows one evaluate request from handler entry. The clock starts
+// before the API key lookup and the body read, because both can block on
+// SQLite or the network while the evaluation itself stays fast.
+type evalTiming struct {
+	start    time.Time
+	poolWait time.Duration // read pool wait at start
+	auth     time.Duration
+	read     time.Duration
+	eval     time.Duration
+}
+
+func (s *Server) startEvalTiming() evalTiming {
+	return evalTiming{start: time.Now(), poolWait: s.currentReadPoolWait()}
+}
+
+// evalPhases is where an evaluate spent its time. total runs from handler
+// entry, so it also covers what the three phases leave out.
+type evalPhases struct {
+	total, auth, read, eval time.Duration
+}
+
+func (t evalTiming) phases() evalPhases {
+	return evalPhases{total: time.Since(t.start), auth: t.auth, read: t.read, eval: t.eval}
+}
+
 // slowLogInterval limits the slow-evaluate Error log to one per project per
 // interval. BugBarn opens an issue per event with no severity gate, and a
 // stall makes every request in it slow, so one record per minute with a count
@@ -86,15 +111,20 @@ func (l *slowLogLimiter) allow(projectID string, now time.Time) (bool, int) {
 // reportEvaluate records the evaluate's timings on its span and logs when the
 // total time or the summed submit wait crosses its threshold: at Error for the
 // submit wait, at Warn for the total alone.
+// The total runs from handler entry: on the SDK route it includes the API key
+// lookup, which is where the 2026-10-29 stalls spent their time.
 // poolWait is the growth of the read pool's connection wait during the request;
 // the pool is shared, so it is an approximation that includes other requests.
-func (s *Server) reportEvaluate(ctx context.Context, span trace.Span, projectID, flagKey string, total, submitWait, poolWait time.Duration) {
+func (s *Server) reportEvaluate(ctx context.Context, span trace.Span, projectID, flagKey string, p evalPhases, submitWait, poolWait time.Duration) {
 	span.SetAttributes(
-		attribute.Float64("flag.duration_ms", ms(total)),
+		attribute.Float64("flag.duration_ms", ms(p.total)),
+		attribute.Float64("flag.auth_ms", ms(p.auth)),
+		attribute.Float64("flag.read_ms", ms(p.read)),
+		attribute.Float64("flag.eval_ms", ms(p.eval)),
 		attribute.Float64("command.submit_wait_ms", ms(submitWait)),
 		attribute.Float64("db.pool.wait_ms", ms(poolWait)),
 	)
-	if total <= s.slow.total && submitWait <= s.slow.submitWait {
+	if p.total <= s.slow.total && submitWait <= s.slow.submitWait {
 		return
 	}
 	// A long submit wait means the dispatcher is backed up, which is the stall
@@ -116,7 +146,10 @@ func (s *Server) reportEvaluate(ctx context.Context, span trace.Span, projectID,
 		"suppressed_since_last", suppressed,
 		"project_id", projectID,
 		"flag_key", flagKey,
-		"duration_ms", ms(total),
+		"duration_ms", ms(p.total),
+		"auth_ms", ms(p.auth),
+		"read_ms", ms(p.read),
+		"eval_ms", ms(p.eval),
 		"submit_wait_ms", ms(submitWait),
 		"pool_wait_ms", ms(poolWait),
 		"request_id", RequestIDFromContext(ctx),

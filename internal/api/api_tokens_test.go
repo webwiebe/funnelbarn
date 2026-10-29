@@ -22,9 +22,20 @@ import (
 // global-key paths can be exercised.
 func newFlagTokenServer(t *testing.T) (*Server, *repository.Store) {
 	t.Helper()
+	return newFlagTokenServerWithLookup(t, nil)
+}
+
+// newFlagTokenServerWithLookup is newFlagTokenServer with the API key lookup
+// passed through wrap, so a test can slow it down or fail it.
+func newFlagTokenServerWithLookup(t *testing.T, wrap func(auth.DBKeyLookupWithProject) auth.DBKeyLookupWithProject) (*Server, *repository.Store) {
+	t.Helper()
 	store := openMemoryStore(t)
 	sp := newTestSpool(t)
-	authz := auth.New("global-instance-key").WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
+	var lookup auth.DBKeyLookupWithProject = store.ValidAPIKeySHA256
+	if wrap != nil {
+		lookup = wrap(lookup)
+	}
+	authz := auth.New("global-instance-key").WithDBLookup(lookup, store.TouchAPIKey)
 	sm := auth.NewSessionManager("test-secret", time.Hour)
 	userAuth, _ := auth.NewUserAuthenticator("admin", "pw", "")
 

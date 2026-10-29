@@ -283,11 +283,16 @@ func (s *Server) handleFlagAnalysis(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleEvaluateFlag(w http.ResponseWriter, r *http.Request) {
+	// The slow-evaluate clock starts here: the API key lookup is a SQLite read,
+	// and in the layer7 disk stalls of 2026-10-29 it held requests for up to
+	// 29 s while the evaluation itself took under a millisecond.
+	timing := s.startEvalTiming()
 	// One wait sum for the whole request, so the API key touch, the health mark
 	// and the evaluation's own commands all count toward the slow-evaluate check.
 	ctx, _ := service.WithSubmitWait(r.Context())
 	r = r.WithContext(ctx)
 	projectID, _, ok := s.ingest.APIKeyProjectScope(r)
+	timing.auth = time.Since(timing.start)
 	if !ok {
 		jsonError(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -296,7 +301,7 @@ func (s *Server) handleEvaluateFlag(w http.ResponseWriter, r *http.Request) {
 		s.markFlagsEvaluated(r.Context(), projectID)
 	}
 	// SDK callers auto-register unknown flags so they surface in the dashboard.
-	s.evaluateFlagInProject(w, r, projectID, true)
+	s.evaluateFlagInProject(w, r, projectID, true, timing)
 }
 
 // handlePlaygroundEvaluateFlag is the session-authed dashboard counterpart of
@@ -309,10 +314,11 @@ func (s *Server) handlePlaygroundEvaluateFlag(w http.ResponseWriter, r *http.Req
 		jsonError(w, "project id required", http.StatusBadRequest)
 		return
 	}
-	s.evaluateFlagInProject(w, r, projectID, false)
+	s.evaluateFlagInProject(w, r, projectID, false, s.startEvalTiming())
 }
 
-func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, projectID string, autoRegister bool) {
+func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, projectID string, autoRegister bool, timing evalTiming) {
+	readStart := time.Now()
 	var body struct {
 		FlagKey      string         `json:"flag_key"`
 		DefaultValue any            `json:"default_value"`
@@ -326,6 +332,7 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 		jsonError(w, "invalid json", http.StatusBadRequest)
 		return
 	}
+	timing.read = time.Since(readStart)
 	if body.FlagKey == "" {
 		jsonError(w, "flag_key is required", http.StatusUnprocessableEntity)
 		return
@@ -343,10 +350,10 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 
 	evalStart := time.Now()
 	ctx, submitWait := service.WithSubmitWait(ctx)
-	poolWait := s.currentReadPoolWait()
 	defer func() {
-		metrics.FlagEvaluationDuration.Observe(time.Since(evalStart).Seconds())
-		s.reportEvaluate(ctx, span, projectID, body.FlagKey, time.Since(evalStart), submitWait.Total(), s.currentReadPoolWait()-poolWait)
+		timing.eval = time.Since(evalStart)
+		metrics.FlagEvaluationDuration.Observe(timing.eval.Seconds())
+		s.reportEvaluate(ctx, span, projectID, body.FlagKey, timing.phases(), submitWait.Total(), s.currentReadPoolWait()-timing.poolWait)
 	}()
 
 	var result service.FlagEvalResult

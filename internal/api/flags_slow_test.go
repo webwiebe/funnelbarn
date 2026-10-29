@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/trace/noop"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // recordingHandler keeps every slog record so a test can look for the slow-evaluate ones.
@@ -88,6 +91,47 @@ func TestEvaluate_SlowTotalLogsAtWarn(t *testing.T) {
 	}
 }
 
+// The SDK route looks up its API key in SQLite before it reads the body. In the
+// 2026-10-29 stalls that lookup held requests for up to 29 s while the
+// evaluation took under a millisecond, and no slow-evaluate log was written
+// because the clock started after it.
+func TestEvaluate_SlowAPIKeyLookupLogsAtWarn(t *testing.T) {
+	h := captureSlog(t)
+	const lookupDelay = 30 * time.Millisecond
+	srv, store := newFlagTokenServerWithLookup(t, func(next auth.DBKeyLookupWithProject) auth.DBKeyLookupWithProject {
+		return func(ctx context.Context, sum string) (string, string, bool, error) {
+			time.Sleep(lookupDelay)
+			return next(ctx, sum)
+		}
+	})
+	srv.slow = slowEvaluate{total: 20 * time.Millisecond, submitWait: time.Hour}
+	p, _ := store.CreateProject(context.Background(), "P", "p")
+	seedFlag(t, store, p.ID, "gate")
+	key := scopedKey(t, store, p.ID, "sdk-key", repository.APIKeyScopeFlagsRead)
+
+	w := withKey(t, srv, http.MethodPost, "/api/v1/evaluate", key, map[string]any{"flag_key": "gate"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	recs := h.slowAt(slog.LevelWarn)
+	if len(recs) != 1 {
+		t.Fatalf("want 1 slow-evaluate Warn log for a slow key lookup, got %d", len(recs))
+	}
+	attrs := recordAttrs(recs[0])
+	for _, key := range []string{"auth_ms", "read_ms", "eval_ms"} {
+		if _, ok := attrs[key].(float64); !ok {
+			t.Errorf("slow-evaluate log is missing %q: %v", key, attrs)
+		}
+	}
+	if got := attrs["auth_ms"].(float64); got < ms(lookupDelay) {
+		t.Errorf("auth_ms = %v, want at least %v", got, ms(lookupDelay))
+	}
+	if total, auth := attrs["duration_ms"].(float64), attrs["auth_ms"].(float64); total < auth {
+		t.Errorf("duration_ms %v must include auth_ms %v", total, auth)
+	}
+}
+
 func TestEvaluate_FastDoesNotLogSlow(t *testing.T) {
 	h := captureSlog(t)
 	srv, store := newAuthedServer(t)
@@ -112,25 +156,25 @@ func TestReportEvaluate_SubmitWaitThreshold(t *testing.T) {
 	errs := func() int { return len(h.slowAt(slog.LevelError)) }
 	warns := func() int { return len(h.slowAt(slog.LevelWarn)) }
 
-	srv.reportEvaluate(context.Background(), span, "p", "k", time.Millisecond, slowEvaluateSubmitWait, 0)
+	srv.reportEvaluate(context.Background(), span, "p", "k", evalPhases{total: time.Millisecond}, slowEvaluateSubmitWait, 0)
 	if errs()+warns() != 0 {
 		t.Fatalf("wait at the threshold must not log, got %d error %d warn", errs(), warns())
 	}
-	srv.reportEvaluate(context.Background(), span, "p", "k", time.Millisecond, slowEvaluateSubmitWait+time.Millisecond, 0)
+	srv.reportEvaluate(context.Background(), span, "p", "k", evalPhases{total: time.Millisecond}, slowEvaluateSubmitWait+time.Millisecond, 0)
 	if errs() != 1 || warns() != 0 {
 		t.Fatalf("wait over the threshold must log one Error, got %d error %d warn", errs(), warns())
 	}
-	srv.reportEvaluate(context.Background(), span, "p2", "k", slowEvaluateTotal+time.Millisecond, 0, 0)
+	srv.reportEvaluate(context.Background(), span, "p2", "k", evalPhases{total: slowEvaluateTotal + time.Millisecond}, 0, 0)
 	if errs() != 1 || warns() != 1 {
 		t.Fatalf("total over the threshold must log one Warn, got %d error %d warn", errs(), warns())
 	}
 	// Same project again within slowLogInterval: suppressed per level.
-	srv.reportEvaluate(context.Background(), span, "p", "k", slowEvaluateTotal+time.Millisecond, 0, 0)
-	srv.reportEvaluate(context.Background(), span, "p2", "k", slowEvaluateTotal+time.Millisecond, 0, 0)
+	srv.reportEvaluate(context.Background(), span, "p", "k", evalPhases{total: slowEvaluateTotal + time.Millisecond}, 0, 0)
+	srv.reportEvaluate(context.Background(), span, "p2", "k", evalPhases{total: slowEvaluateTotal + time.Millisecond}, 0, 0)
 	if warns() != 2 {
 		t.Fatalf("a Warn for project p is not limited by its earlier Error, and p2's repeat is, got %d warn", warns())
 	}
-	srv.reportEvaluate(context.Background(), span, "p", "k", time.Millisecond, slowEvaluateSubmitWait+time.Millisecond, 0)
+	srv.reportEvaluate(context.Background(), span, "p", "k", evalPhases{total: time.Millisecond}, slowEvaluateSubmitWait+time.Millisecond, 0)
 	if errs() != 1 {
 		t.Fatalf("a second Error within the interval must not log, got %d", errs())
 	}
