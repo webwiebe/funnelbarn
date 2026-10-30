@@ -10,12 +10,13 @@ import (
 
 	"github.com/XSAM/otelsql"
 	"github.com/pressly/goose/v3"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository/sqlcgen"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	_ "modernc.org/sqlite"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/sqlcgen"
 )
 
 //go:embed migrations/*.sql
