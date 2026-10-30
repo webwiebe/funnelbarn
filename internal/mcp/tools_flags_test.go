@@ -444,6 +444,185 @@ func TestEvaluateFlagTool_StoredRuleNamingMissingVariant(t *testing.T) {
 	}
 }
 
+const environmentRuleOn = `[{"name":"testing only","match":"all","conditions":[{"context_key":"environment","operator":"eq","value":"testing"}],"variant":"on"}]`
+
+// The case from #299: a flag that stays off everywhere except where a rule turns
+// it on, built through the tools alone.
+func TestCreateFlagTool_VariantsServeARuleOnlyValue(t *testing.T) {
+	env := newTestEnv(t, nil)
+	p := env.createProject(t, "Alpha", "alpha")
+	cs := env.connect(t, tokenReadWrite, p.Slug)
+
+	var created flagDetail
+	callOK(t, cs, "create_flag", map[string]any{
+		"flag_key":        "outreach_live",
+		"variants":        map[string]any{"default": false, "on": true},
+		"targeting_rules": environmentRuleOn,
+	}, &created)
+	if created.DefaultVariant != "default" {
+		t.Errorf("default_variant = %q, want default", created.DefaultVariant)
+	}
+
+	for environment, want := range map[string]bool{"testing": true, "production": false} {
+		var out evaluateFlagOut
+		callOK(t, cs, "evaluate_flag", map[string]any{
+			"flag_key": "outreach_live",
+			"context":  map[string]any{"targetingKey": "user-1", "environment": environment},
+		}, &out)
+		if out.Value != want {
+			t.Errorf("environment %s: value = %v, want %v (%+v)", environment, out.Value, want, out)
+		}
+	}
+}
+
+func TestCreateFlagTool_DefaultValueAlongsideVariants(t *testing.T) {
+	env := newTestEnv(t, nil)
+	p := env.createProject(t, "Alpha", "alpha")
+	cs := env.connect(t, tokenReadWrite, p.Slug)
+
+	var out flagDetail
+	callOK(t, cs, "create_flag", map[string]any{
+		"flag_key":      "k",
+		"default_value": "blue",
+		"variants":      map[string]any{"green": "green"},
+	}, &out)
+
+	variants := unmarshalVariants(t, out.Variants)
+	if variants["default"] != "blue" || variants["green"] != "green" {
+		t.Errorf("variants = %v", variants)
+	}
+}
+
+func TestCreateFlagTool_RejectsBadVariants(t *testing.T) {
+	cases := map[string]map[string]any{
+		"default set twice": {"default_value": true, "variants": map[string]any{"default": false}},
+		"no value":          {"variants": map[string]any{"on": nil}},
+		"no name":           {"variants": map[string]any{"": true}},
+	}
+	for name, args := range cases {
+		t.Run(name, func(t *testing.T) {
+			env := newTestEnv(t, nil)
+			p := env.createProject(t, "Alpha", "alpha")
+			cs := env.connect(t, tokenReadWrite, p.Slug)
+
+			args["flag_key"] = "k"
+			if msg := callErr(t, cs, "create_flag", args); !strings.Contains(msg, "variants") && !strings.Contains(msg, "default_value") {
+				t.Errorf("error should name the field, got %q", msg)
+			}
+		})
+	}
+}
+
+func TestUpdateFlagTool_AddsVariantForARule(t *testing.T) {
+	env := newTestEnv(t, nil)
+	p := env.createProject(t, "Alpha", "alpha")
+	cs := env.connect(t, tokenReadWrite, p.Slug)
+	callOK(t, cs, "create_flag", map[string]any{"flag_key": "k"}, &flagDetail{})
+
+	var out flagDetail
+	callOK(t, cs, "update_flag", map[string]any{
+		"flag_key":        "k",
+		"variants":        map[string]any{"on": true},
+		"targeting_rules": environmentRuleOn,
+	}, &out)
+
+	variants := unmarshalVariants(t, out.Variants)
+	if variants["default"] != false || variants["on"] != true {
+		t.Errorf("variants = %v", variants)
+	}
+}
+
+func TestUpdateFlagTool_RemovesVariant(t *testing.T) {
+	env := newTestEnv(t, nil)
+	p := env.createProject(t, "Alpha", "alpha")
+	createManualFlag(t, env, p.ID, "multi", func(f *repository.FeatureFlag) {
+		f.Variants = `{"on":true,"off":false,"canary":true}`
+		f.Split = `{"on":50,"off":50}`
+	})
+	cs := env.connect(t, tokenReadWrite, p.Slug)
+
+	var out flagDetail
+	callOK(t, cs, "update_flag", map[string]any{"flag_key": "multi", "variants": map[string]any{"canary": nil}}, &out)
+
+	variants := unmarshalVariants(t, out.Variants)
+	if len(variants) != 2 || variants["on"] != true || variants["off"] != false {
+		t.Errorf("variants = %v, want on and off", variants)
+	}
+}
+
+func TestUpdateFlagTool_RejectsVariantRemovalInUse(t *testing.T) {
+	rule := `[{"name":"staff","match":"all","conditions":[{"context_key":"plan","operator":"eq","value":"staff"}],"variant":"canary"}]`
+	cases := map[string]struct {
+		variant string
+		rules   string
+		want    string
+	}{
+		"default variant": {variant: "off", rules: "[]", want: "default variant"},
+		"in the split":    {variant: "on", rules: "[]", want: "split"},
+		"named by a rule": {variant: "canary", rules: rule, want: "canary"},
+		"unknown":         {variant: "nope", rules: "[]", want: "does not exist"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			env := newTestEnv(t, nil)
+			p := env.createProject(t, "Alpha", "alpha")
+			createManualFlag(t, env, p.ID, "multi", func(f *repository.FeatureFlag) {
+				f.Variants = `{"on":true,"off":false,"canary":true}`
+				f.Split = `{"on":50,"off":50}`
+				f.TargetingRules = tc.rules
+			})
+			cs := env.connect(t, tokenReadWrite, p.Slug)
+
+			msg := callErr(t, cs, "update_flag", map[string]any{"flag_key": "multi", "variants": map[string]any{tc.variant: nil}})
+			if !strings.Contains(msg, tc.want) {
+				t.Errorf("error = %q, want it to contain %q", msg, tc.want)
+			}
+		})
+	}
+}
+
+func TestUpdateFlagTool_RejectsDefaultSetTwice(t *testing.T) {
+	env := newTestEnv(t, nil)
+	p := env.createProject(t, "Alpha", "alpha")
+	createManualFlag(t, env, p.ID, "multi", nil)
+	cs := env.connect(t, tokenReadWrite, p.Slug)
+
+	msg := callErr(t, cs, "update_flag", map[string]any{
+		"flag_key":      "multi",
+		"default_value": true,
+		"variants":      map[string]any{"off": false},
+	})
+	if !strings.Contains(msg, "default_value") {
+		t.Errorf("error should name default_value, got %q", msg)
+	}
+}
+
+func TestFlagWriteTools_DescribeTheRuleSchema(t *testing.T) {
+	env := newTestEnv(t, nil)
+	p := env.createProject(t, "Alpha", "alpha")
+	cs := env.connect(t, tokenReadWrite, p.Slug)
+
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	checked := 0
+	for _, tool := range res.Tools {
+		if tool.Name != "create_flag" && tool.Name != "update_flag" {
+			continue
+		}
+		checked++
+		for _, want := range []string{"context_key", "not_present", "variants"} {
+			if !strings.Contains(tool.Description, want) {
+				t.Errorf("%s description lacks %q", tool.Name, want)
+			}
+		}
+	}
+	if checked != 2 {
+		t.Errorf("found %d of the write tools, want 2", checked)
+	}
+}
+
 func TestUpdateFlagTool_CrossProjectNotFoundByKey(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
