@@ -128,6 +128,26 @@ class DeployProductionTest(unittest.TestCase):
             self._index("Rollback on failure"), self._index("Post release marker to BugBarn")
         )
 
+    def test_refused_rollback_turns_the_run_red(self):
+        rollback = self.steps[self._index("Rollback on failure")]["run"]
+        refusal = rollback[rollback.index("NOT rolling back"):rollback.index("\nfi\n")]
+        self.assertIn("exit 1", refusal)
+        self.assertNotIn("continue-on-error", WORKFLOW.read_text())
+
+    def test_refused_rollback_reports_to_bugbarn(self):
+        report = self.steps[self._index("Report refused rollback to BugBarn")]
+        self.assertLess(
+            self._index("Rollback on failure"), self._index("Report refused rollback to BugBarn")
+        )
+        self.assertEqual(self.steps[self._index("Apply manifests and roll out")]["id"], "apply")
+        self.assertIn("failure()", report["if"])
+        self.assertIn("steps.pre.outputs.carries_migrations == 'true'", report["if"])
+        self.assertIn("steps.apply.outcome != 'skipped'", report["if"])
+        self.assertIn("/api/v1/events", report["run"])
+        self.assertIn("RollbackRefused", report["run"])
+        self.assertIn("exit 1", report["run"])
+        self.assertNotIn("|| true", report["run"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

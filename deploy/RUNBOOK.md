@@ -270,6 +270,8 @@ changed it, and a plain `rollout undo` would step back past the release that
 was running (issue #396). Otherwise it runs `rollout undo --to-revision=<recorded>`.
 
 It skips the rollback when the release carries a migration (see the step's log).
+The run goes red and the next step opens a `RollbackRefused` issue in BugBarn.
+Litestream keeps the restore point for 24h, so act on that issue the same day.
 On the release that introduced the readers the StatefulSet had no revision to
 record, so its restore fails. Follow "Back to a single process" below.
 
