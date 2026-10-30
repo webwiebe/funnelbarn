@@ -579,8 +579,11 @@ jobs:
           AMD64_SHA=$(cat darwin-download/darwin-amd64/funnelbarn-darwin-amd64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
           ARM64_SHA=$(cat darwin-download/darwin-arm64/funnelbarn-darwin-arm64-${VERSION}.tar.gz.sha256 | awk '{print $1}')
 
-          git clone https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/webwiebe/homebrew-funnelbarn.git tap-repo
-          cd tap-repo
+          # This job checks nothing out, so the runner keeps its workspace between
+          # runs. RUNNER_TEMP is emptied per job, which also drops the token in the
+          # clone's git config.
+          git clone https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/webwiebe/homebrew-funnelbarn.git "$RUNNER_TEMP/tap-repo"
+          cd "$RUNNER_TEMP/tap-repo"
           mkdir -p Formula
 
           cat > Formula/funnelbarn.rb << EOF
