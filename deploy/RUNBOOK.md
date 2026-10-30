@@ -462,6 +462,32 @@ events are skipped rather than duplicated.
 
 ---
 
+## 4c. Volume drop alert
+
+The log line `volume drop: <project> production events under a tenth of the 7-day
+baseline` means the project's production events stored in the last 24 hours fell under a
+tenth of the median of the same 24 hours over the prior 7 days. It logs at Error, so it
+opens a BugBarn issue for that project. It logs once per drop. The writer checks once an
+hour and keeps open drops in the instance setting `volume_drop_open`, so a restart does
+not repeat the line. A drop closes once the project is back at a fifth of its baseline,
+and a later fall logs again. Losing the setting repeats the line once for each open drop.
+
+A project needs a median of at least 50 events a day and events on at least 6 of
+the 7 days. Smaller and newer projects raise nothing, and neither do test or
+development rows. `agents` is left out by name in `internal/volumedrop`, because
+it falls whenever the rig goes quiet.
+
+Check in this order:
+
+1. Whether the project's scheduled E2E ran on time. E2E rows on `pensioenfeest` and
+   `iambarn` are tagged `production` and make up most of their volume, so a late or
+   failed run looks like a drop.
+2. Whether other projects fell at the same time. One project points at its tracker
+   or site. Several point at ingest: read Traefik's log while it is happening, it
+   keeps about an hour.
+
+---
+
 ## 5. Log Access
 
 ### Tail service logs (production)
