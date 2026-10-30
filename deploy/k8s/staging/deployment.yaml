@@ -178,6 +178,12 @@ spec:
                   name: funnelbarn-secrets
                   key: FUNNELBARN_SPANBARN_API_KEY
                   optional: true
+            - name: FUNNELBARN_OIDC_ORGANIZATION_ID
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_OIDC_ORGANIZATION_ID
+                  optional: true
             - name: FUNNELBARN_OIDC_ISSUER
               valueFrom:
                 secretKeyRef:

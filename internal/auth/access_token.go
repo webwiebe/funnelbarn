@@ -94,16 +94,16 @@ func (c *OIDCClient) VerifyAccessToken(ctx context.Context, raw, audience string
 		TokenUse:   raws.TokenUse,
 		Expiry:     tok.Expiry,
 	}
-	if present.Groups == nil {
+	if present.Roles == nil {
 		groups, roles, err := c.userinfoGroups(ctx, raw, tok.Expiry)
 		if err != nil {
 			metrics.OIDCRequests.WithLabelValues("verify_access_token", "error").Inc()
 			tracing.RecordError(span, err)
 			return AccessTokenClaims{}, err
 		}
-		claims.Groups = groups
-		if present.Roles == nil {
-			claims.Roles = roles
+		claims.Roles = roles
+		if present.Groups == nil {
+			claims.Groups = groups
 		}
 	}
 	metrics.OIDCRequests.WithLabelValues("verify_access_token", "success").Inc()

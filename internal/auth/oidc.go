@@ -27,11 +27,15 @@ import (
 
 // OIDCConfig is the static configuration for the OIDC login flow.
 type OIDCConfig struct {
-	Issuer        string // iambarn issuer URL, e.g. https://iam.wiebe.xyz
-	ClientID      string
-	ClientSecret  string
-	RedirectURL   string // e.g. https://funnelbarn.wiebe.xyz/api/v1/oidc/callback
-	RequiredGroup string // group slug that grants access; bypass roles always win
+	Issuer       string // iambarn issuer URL, e.g. https://iam.wiebe.xyz
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string // e.g. https://funnelbarn.wiebe.xyz/api/v1/oidc/callback
+
+	// RequiredOrganizationID is the IAMBarn organization this instance belongs
+	// to. Roles and groups only mean something inside it, so a token from any
+	// other organization is refused, and an empty value refuses every token.
+	RequiredOrganizationID string
 
 	// PostLogoutRedirectURI is where iambarn returns the browser after an
 	// RP-initiated /oauth2/end-session logout. It must be registered on the
@@ -75,9 +79,6 @@ type OIDCClient struct {
 // NewOIDCClient returns a client. Discovery is deferred to the first call so
 // that an unreachable issuer at startup does not crash the process.
 func NewOIDCClient(cfg OIDCConfig) *OIDCClient {
-	if cfg.RequiredGroup == "" {
-		cfg.RequiredGroup = "funnelbarn-users"
-	}
 	return &OIDCClient{cfg: cfg, timeout: 10 * time.Second}
 }
 
@@ -409,17 +410,17 @@ func (c *OIDCClient) VerifyLogoutToken(ctx context.Context, raw string) (LogoutC
 	return LogoutClaims{Subject: claims.Sub, SessionID: claims.Sid}, nil
 }
 
-// Allowed returns true if the claims grant access to this barn.
-// Owner/organization_admin/operator roles bypass the group check.
+// Allowed returns true if the claims grant access to this barn: an
+// owner/organization_admin/operator role in the required organization. IAMBarn
+// scopes a role to the organization it was issued in. Groups do not count, since
+// signing up through a client can add a member to a project group.
 func (c *OIDCClient) Allowed(claims OIDCClaims) bool {
+	if c.cfg.RequiredOrganizationID == "" || claims.OrganizationID != c.cfg.RequiredOrganizationID {
+		return false
+	}
 	for _, role := range claims.Roles {
 		switch role {
 		case "owner", "organization_admin", "operator":
-			return true
-		}
-	}
-	for _, g := range claims.Groups {
-		if g == c.cfg.RequiredGroup {
 			return true
 		}
 	}

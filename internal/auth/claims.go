@@ -5,7 +5,8 @@ import "strings"
 // OIDCClaims is the subset of ID-token claims this barn cares about.
 type OIDCClaims struct {
 	Subject           string   `json:"sub"`
-	SessionID         string   `json:"sid"` // IdP session id; keys back-channel logout
+	OrganizationID    string   `json:"organization_id"` // the IAMBarn org the token was issued in
+	SessionID         string   `json:"sid"`             // IdP session id; keys back-channel logout
 	Email             string   `json:"email"`
 	PreferredUsername string   `json:"preferred_username"`
 	Name              string   `json:"name"`

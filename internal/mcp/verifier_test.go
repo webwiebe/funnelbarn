@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,6 +28,7 @@ const (
 	testResourceURL = "https://funnelbarn.test/api/v1/mcp"
 	testClientID    = "fb_dashboard"
 	testSub         = "sub-alice"
+	testOrgID       = "org-home"
 )
 
 // fakeIssuer is an in-process IAMBarn: discovery, an Ed25519 JWKS and a
@@ -112,8 +114,9 @@ func (f *fakeIssuer) accessToken(t *testing.T, extra map[string]any) string {
 		"token_use":          "access_token",
 		"client_id":          "dcr-client-1",
 		"preferred_username": "alice",
+		"organization_id":    testOrgID,
 		"groups":             []string{"funnelbarn-users"},
-		"roles":              []string{},
+		"roles":              []string{"owner"},
 	}
 	for k, v := range extra {
 		if v == nil {
@@ -131,6 +134,8 @@ func (f *fakeIssuer) client() *fbauth.OIDCClient {
 		ClientID:     testClientID,
 		ClientSecret: "sek",
 		RedirectURL:  "https://funnelbarn.test/api/v1/oidc/callback",
+
+		RequiredOrganizationID: testOrgID,
 	})
 }
 
@@ -171,14 +176,26 @@ func TestTokenVerifier_Rejects(t *testing.T) {
 		{"id token", func() string { return f.accessToken(t, map[string]any{"token_use": "id_token"}) }},
 		{"no token_use", func() string { return f.accessToken(t, map[string]any{"token_use": nil}) }},
 		{"no subject", func() string { return f.accessToken(t, map[string]any{"sub": nil}) }},
-		{"outside required group", func() string {
+		{"member in the former required group", func() string {
+			return f.accessToken(t, map[string]any{"roles": []string{"member"}})
+		}},
+		{"member in another group", func() string {
 			return f.accessToken(t, map[string]any{"groups": []string{"other"}, "roles": []string{"member"}})
+		}},
+		{"owner of another organization", func() string {
+			return f.accessToken(t, map[string]any{"organization_id": "org-other"})
+		}},
+		{"operator of another organization", func() string {
+			return f.accessToken(t, map[string]any{"organization_id": "org-other", "roles": []string{"operator"}})
+		}},
+		{"no organization", func() string {
+			return f.accessToken(t, map[string]any{"organization_id": nil})
 		}},
 		{"signed by another key", func() string {
 			return signWith(t, otherKey, f.kid, map[string]any{
 				"iss": f.srv.URL, "sub": testSub, "aud": []string{testResourceURL},
 				"exp": time.Now().Add(time.Minute).Unix(), "token_use": "access_token",
-				"groups": []string{"funnelbarn-users"},
+				"organization_id": testOrgID, "groups": []string{"funnelbarn-users"},
 			})
 		}},
 		{"garbage", func() string { return "not-a-jwt" }},
@@ -259,7 +276,7 @@ func TestTokenVerifier_ExistingUserKeepsName(t *testing.T) {
 	}
 }
 
-func TestTokenVerifier_RoleBypassesGroup(t *testing.T) {
+func TestTokenVerifier_RoleInToken(t *testing.T) {
 	f := newFakeIssuer(t)
 	verify := NewTokenVerifier(f.client(), testResourceURL, nil, quietLogger())
 	info, err := verify(context.Background(), f.accessToken(t, map[string]any{
@@ -272,13 +289,13 @@ func TestTokenVerifier_RoleBypassesGroup(t *testing.T) {
 		t.Errorf("username without a user store = %v, want alice", info.Extra[ExtraUsername])
 	}
 	if n := f.userinfoCalls.Load(); n != 0 {
-		t.Errorf("an empty groups claim must not trigger userinfo; got %d calls", n)
+		t.Errorf("a roles claim must not trigger userinfo; got %d calls", n)
 	}
 }
 
-func TestTokenVerifier_GroupsFromUserinfo(t *testing.T) {
+func TestTokenVerifier_RolesFromUserinfo(t *testing.T) {
 	f := newFakeIssuer(t)
-	f.userinfo.Store(map[string]any{"sub": testSub, "groups": []string{"funnelbarn-users"}})
+	f.userinfo.Store(map[string]any{"sub": testSub, "roles": []string{"owner"}})
 	verify := NewTokenVerifier(f.client(), testResourceURL, nil, quietLogger())
 
 	tok := f.accessToken(t, map[string]any{"groups": nil, "roles": nil})
@@ -292,7 +309,7 @@ func TestTokenVerifier_GroupsFromUserinfo(t *testing.T) {
 	}
 
 	// A different token is a new cache entry.
-	if _, err := verify(context.Background(), f.accessToken(t, map[string]any{"groups": nil, "jti": "2"}), nil); err != nil {
+	if _, err := verify(context.Background(), f.accessToken(t, map[string]any{"roles": nil, "jti": "2"}), nil); err != nil {
 		t.Fatalf("second token: %v", err)
 	}
 	if n := f.userinfoCalls.Load(); n != 2 {
@@ -300,13 +317,22 @@ func TestTokenVerifier_GroupsFromUserinfo(t *testing.T) {
 	}
 }
 
-func TestTokenVerifier_UserinfoWithoutGroupRejects(t *testing.T) {
+func TestTokenVerifier_UserinfoWithoutRoleRejects(t *testing.T) {
 	f := newFakeIssuer(t)
-	f.userinfo.Store(map[string]any{"sub": testSub, "groups": []string{"other"}})
+	f.userinfo.Store(map[string]any{"sub": testSub, "roles": []string{"member"}, "groups": []string{"funnelbarn-users"}})
 	verify := NewTokenVerifier(f.client(), testResourceURL, nil, quietLogger())
-	_, err := verify(context.Background(), f.accessToken(t, map[string]any{"groups": nil}), nil)
+	_, err := verify(context.Background(), f.accessToken(t, map[string]any{"roles": nil}), nil)
 	if !errors.Is(err, auth.ErrInvalidToken) {
 		t.Fatalf("err = %v, want auth.ErrInvalidToken", err)
+	}
+}
+
+func TestTokenVerifier_RefusalSaysToSwitchToHomeOrganization(t *testing.T) {
+	f := newFakeIssuer(t)
+	verify := NewTokenVerifier(f.client(), testResourceURL, nil, quietLogger())
+	_, err := verify(context.Background(), f.accessToken(t, map[string]any{"organization_id": "org-other"}), nil)
+	if err == nil || !strings.Contains(err.Error(), "home organization") {
+		t.Fatalf("err = %v, want it to name the home organization", err)
 	}
 }
 

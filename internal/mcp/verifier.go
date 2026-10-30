@@ -19,7 +19,7 @@ import (
 const tokenUseAccess = "access_token"
 
 // AccessTokenVerifier verifies IAMBarn access tokens and applies the barn's
-// group rule. *auth.OIDCClient satisfies it.
+// access rule. *auth.OIDCClient satisfies it.
 type AccessTokenVerifier interface {
 	VerifyAccessToken(ctx context.Context, raw, audience string) (fbauth.AccessTokenClaims, error)
 	Allowed(claims fbauth.OIDCClaims) bool
@@ -35,7 +35,7 @@ type UserResolver interface {
 // NewTokenVerifier returns the bearer-token verifier for the MCP endpoint. It
 // accepts an IAMBarn access token whose audience contains audience (the MCP
 // resource URL), whose token_use is access_token and whose user passes the
-// barn's group rule. Every rejection wraps auth.ErrInvalidToken, so the client
+// barn's access rule. Every rejection wraps auth.ErrInvalidToken, so the client
 // gets a 401 with the resource-metadata pointer and can sign in again. users
 // may be nil.
 func NewTokenVerifier(v AccessTokenVerifier, audience string, users UserResolver, log *slog.Logger) auth.TokenVerifier {
@@ -66,9 +66,9 @@ func NewTokenVerifier(v AccessTokenVerifier, audience string, users UserResolver
 			return nil, fmt.Errorf("%w: token has no subject", auth.ErrInvalidToken)
 		}
 		if !v.Allowed(claims.OIDCClaims) {
-			log.WarnContext(ctx, "mcp token rejected", "reason", "group",
-				"sub", claims.Subject, "groups", claims.Groups, "roles", claims.Roles)
-			return nil, fmt.Errorf("%w: user is not a member of the required group", auth.ErrInvalidToken)
+			log.WarnContext(ctx, "mcp token rejected", "reason", "access",
+				"sub", claims.Subject, "organization_id", claims.OrganizationID, "groups", claims.Groups, "roles", claims.Roles)
+			return nil, fmt.Errorf("%w: this account has no access role in the organization it is signed in to, switch to your home organization in IAMBarn and sign in again", auth.ErrInvalidToken)
 		}
 
 		return &auth.TokenInfo{
