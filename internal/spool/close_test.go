@@ -1,6 +1,7 @@
 package spool_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -64,8 +65,8 @@ func TestClose_Twice(t *testing.T) {
 	}
 }
 
-// An append after Close still fails, so a record is never reported written
-// when it was not.
+// An append after Close fails with ErrClosed, so a record is never reported
+// written when it was not, and a failed rotation cannot reopen a closed spool.
 func TestAppend_AfterCloseFails(t *testing.T) {
 	dir := newTestDir(t)
 	sp, err := spool.New(dir)
@@ -75,8 +76,11 @@ func TestAppend_AfterCloseFails(t *testing.T) {
 	if err := sp.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if err := sp.Append(makeRecord("id-late", `{}`)); err == nil {
-		t.Fatal("Append after Close succeeded, want an error")
+	if err := sp.Append(makeRecord("id-late", `{}`)); !errors.Is(err, spool.ErrClosed) {
+		t.Fatalf("Append after Close = %v, want ErrClosed", err)
+	}
+	if err := sp.AppendBatch([]spool.Record{makeRecord("id-late-batch", `{}`)}); !errors.Is(err, spool.ErrClosed) {
+		t.Fatalf("AppendBatch after Close = %v, want ErrClosed", err)
 	}
 	if _, err := os.Stat(spool.Path(dir)); err != nil {
 		t.Fatalf("active segment missing: %v", err)
