@@ -62,15 +62,15 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 	}
 
 	// Normalize environment to a canonical value. An unrecognised value is
-	// filed as production rather than rejected — dropping an event over a typo
-	// is worse than mis-filing it — but say so once per distinct value, or
-	// "prodution" silently pollutes production reporting forever. An absent
-	// value is filed as production too: the analytics filters compare
-	// environment for equality, so an untagged event is invisible under every
-	// filter including the one the dashboard defaults to.
+	// filed as development rather than rejected — dropping an event over a typo
+	// is worse than mis-filing it — and said once per distinct value, because a
+	// production client with a typo goes missing from production. An absent
+	// value is filed as production: the analytics filters compare environment
+	// for equality, so an untagged event is invisible under every filter
+	// including the one the dashboard defaults to.
 	env := environment.NormalizeEvent(payload.Environment)
 	if !environment.IsKnown(payload.Environment) {
-		warnUnknownEnvironment(payload.Environment, env)
+		warnUnknownEnvironment(payload.Environment, env, record.ProjectSlug)
 	}
 
 	// The user agent. SDKs that post from a browser leave user_agent out of the
@@ -322,7 +322,7 @@ var unknownEnvironments = struct {
 
 const maxTrackedUnknownEnvironments = 64
 
-func warnUnknownEnvironment(raw, filedAs string) {
+func warnUnknownEnvironment(raw, filedAs, project string) {
 	unknownEnvironments.Lock()
 	_, already := unknownEnvironments.seen[raw]
 	if !already && len(unknownEnvironments.seen) < maxTrackedUnknownEnvironments {
@@ -336,6 +336,7 @@ func warnUnknownEnvironment(raw, filedAs string) {
 		"handled", true,
 		"environment", raw,
 		"filed_as", filedAs,
+		"project", project,
 		"known", environment.Canonical(),
 	)
 }

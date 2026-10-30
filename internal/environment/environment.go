@@ -25,10 +25,12 @@ var aliases = map[string]string{
 	"qa":          Test,
 	"uat":         Test,
 	"pr":          Test,
+	"e2e":         Test,
 	"development": Development,
 	"dev":         Development,
 	"local":       Development,
 	"develop":     Development,
+	"workstation": Development,
 }
 
 // Normalize maps any alias to its canonical value.
@@ -51,17 +53,25 @@ func Normalize(s string) string {
 // filter including the "production" one the dashboard defaults to. Tagging it
 // production matches where those events actually came from — SDKs that predate
 // the environment field only ever ran in production.
+//
+// A name it does not know is filed as development. A client that names its
+// environment and picks something off the list is usually a preview, a CI run or
+// a laptop, and filing those as production inflates the numbers people act on. A
+// production client with a typo goes missing from production instead, which shows
+// on the dashboard at once and is logged by the worker.
 func NormalizeEvent(s string) string {
-	if canonical := Normalize(s); canonical != "" {
-		return canonical
+	if strings.TrimSpace(s) == "" {
+		return Production
 	}
-	return Production
+	if !IsKnown(s) {
+		return Development
+	}
+	return Normalize(s)
 }
 
 // IsKnown reports whether s is a recognised environment alias. An unrecognised
-// value still normalises to Production rather than being rejected — dropping an
-// event over a typo is worse than mis-filing it — but callers use this to say
-// so out loud instead of silently mis-filing "prodution" as production.
+// value is still filed rather than rejected — dropping an event over a typo is
+// worse than mis-filing it — but callers use this to say so out loud.
 func IsKnown(s string) bool {
 	if s == "" {
 		return true

@@ -81,10 +81,23 @@ func TestNormalizeEvent(t *testing.T) {
 	if got := NormalizeEvent("   "); got != Production {
 		t.Errorf("NormalizeEvent(%q) = %q, want %q", "   ", got, Production)
 	}
-	// Everything else behaves exactly as Normalize does.
-	for _, s := range []string{"prod", "STG", "qa", "local", "feat-branch", "staging"} {
+	// A known name behaves exactly as Normalize does.
+	for _, s := range []string{"prod", "STG", "qa", "local", "staging", "e2e", "workstation"} {
 		if got, want := NormalizeEvent(s), Normalize(s); got != want {
 			t.Errorf("NormalizeEvent(%q) = %q, want %q", s, got, want)
+		}
+	}
+	if got := NormalizeEvent("e2e"); got != Test {
+		t.Errorf("NormalizeEvent(%q) = %q, want %q", "e2e", got, Test)
+	}
+	if got := NormalizeEvent("workstation"); got != Development {
+		t.Errorf("NormalizeEvent(%q) = %q, want %q", "workstation", got, Development)
+	}
+	// An unknown name stays out of production. Deployment config still fails
+	// towards production (see TestIsKnown).
+	for _, s := range []string{"feat-branch", "prodution", "preview-42"} {
+		if got := NormalizeEvent(s); got != Development {
+			t.Errorf("NormalizeEvent(%q) = %q, want %q", s, got, Development)
 		}
 	}
 	// And it always lands on a canonical value.
