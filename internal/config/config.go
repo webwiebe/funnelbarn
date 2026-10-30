@@ -73,11 +73,13 @@ type Config struct {
 	// local FunnelBarn session. Overridable via FUNNELBARN_POST_LOGOUT_REDIRECT_URI.
 	PostLogoutRedirectURI string
 
-	OIDCIssuer        string // FUNNELBARN_OIDC_ISSUER — when all four OIDC vars are set, OIDC login is offered alongside local auth
-	OIDCClientID      string // FUNNELBARN_OIDC_CLIENT_ID
-	OIDCClientSecret  string // FUNNELBARN_OIDC_CLIENT_SECRET
-	OIDCRedirectURL   string // FUNNELBARN_OIDC_REDIRECT_URL
-	OIDCRequiredGroup string // FUNNELBARN_OIDC_REQUIRED_GROUP — defaults to "funnelbarn-users"
+	OIDCIssuer       string // FUNNELBARN_OIDC_ISSUER — when all four OIDC vars are set, OIDC login is offered alongside local auth
+	OIDCClientID     string // FUNNELBARN_OIDC_CLIENT_ID
+	OIDCClientSecret string // FUNNELBARN_OIDC_CLIENT_SECRET
+	OIDCRedirectURL  string // FUNNELBARN_OIDC_REDIRECT_URL
+	// OIDCOrganizationID is the IAMBarn organization allowed to sign in
+	// (FUNNELBARN_OIDC_ORGANIZATION_ID). Unset refuses every OIDC sign-in.
+	OIDCOrganizationID string
 
 	// OIDCRefreshGraceSeconds bounds how long an OIDC session whose refresh is
 	// failing transiently (IdP outage / network) keeps being served stale
@@ -293,7 +295,7 @@ func Load() Config {
 	cfg.OIDCClientID = os.Getenv("FUNNELBARN_OIDC_CLIENT_ID")
 	cfg.OIDCClientSecret = os.Getenv("FUNNELBARN_OIDC_CLIENT_SECRET")
 	cfg.OIDCRedirectURL = os.Getenv("FUNNELBARN_OIDC_REDIRECT_URL")
-	cfg.OIDCRequiredGroup = getenv("FUNNELBARN_OIDC_REQUIRED_GROUP", "funnelbarn-users")
+	cfg.OIDCOrganizationID = os.Getenv("FUNNELBARN_OIDC_ORGANIZATION_ID")
 	cfg.OIDCRefreshGraceSeconds = envPositiveInt("FUNNELBARN_OIDC_REFRESH_GRACE_SECONDS", 3600)
 	cfg.MCPResourceURL = defaultMCPResourceURL(os.Getenv("FUNNELBARN_MCP_RESOURCE_URL"), cfg.PublicURL)
 

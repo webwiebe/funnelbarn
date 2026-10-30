@@ -180,6 +180,12 @@ spec:
                   name: funnelbarn-secrets
                   key: FUNNELBARN_REDIS_QUEUE_URL
                   optional: true
+            - name: FUNNELBARN_OIDC_ORGANIZATION_ID
+              valueFrom:
+                secretKeyRef:
+                  name: funnelbarn-secrets
+                  key: FUNNELBARN_OIDC_ORGANIZATION_ID
+                  optional: true
             - name: FUNNELBARN_OIDC_ISSUER
               valueFrom:
                 secretKeyRef:

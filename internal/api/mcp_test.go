@@ -51,8 +51,9 @@ func (f *fakeIdP) mcpAccessToken(t *testing.T, extra map[string]any) string {
 		"scope":              "mcp:read",
 		"token_use":          "access_token",
 		"preferred_username": "alice",
+		"organization_id":    fakeIdPOrgID,
 		"groups":             []string{"funnelbarn-users"},
-		"roles":              []string{},
+		"roles":              []string{"owner"},
 	}
 	for k, v := range extra {
 		claims[k] = v
@@ -138,7 +139,11 @@ func TestMCP_RejectedTokens(t *testing.T) {
 		"expired":                   f.mcpAccessToken(t, map[string]any{"exp": time.Now().Add(-time.Minute).Unix()}),
 		"wrong issuer":              f.mcpAccessToken(t, map[string]any{"iss": "https://evil.example"}),
 		"id token use":              f.mcpAccessToken(t, map[string]any{"token_use": "id_token"}),
-		"outside group":             f.mcpAccessToken(t, map[string]any{"groups": []string{"other"}}),
+		"member in the group":       f.mcpAccessToken(t, map[string]any{"roles": []string{"member"}}),
+		"member in another group":   f.mcpAccessToken(t, map[string]any{"groups": []string{"other"}, "roles": []string{"member"}}),
+		"owner of another org":      f.mcpAccessToken(t, map[string]any{"organization_id": "org-other"}),
+		"operator of another org":   f.mcpAccessToken(t, map[string]any{"organization_id": "org-other", "roles": []string{"operator"}}),
+		"owner with no org":         f.mcpAccessToken(t, map[string]any{"organization_id": nil}),
 	}
 	for name, tok := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -25,13 +25,17 @@ func buildOIDCClient(cfg config.Config) *auth.OIDCClient {
 		ClientID:              cfg.OIDCClientID,
 		ClientSecret:          cfg.OIDCClientSecret,
 		RedirectURL:           cfg.OIDCRedirectURL,
-		RequiredGroup:         cfg.OIDCRequiredGroup,
 		PostLogoutRedirectURI: cfg.PostLogoutRedirectURI,
+
+		RequiredOrganizationID: cfg.OIDCOrganizationID,
 	}
 	if !oc.Enabled() {
 		return nil
 	}
-	slog.Info("oidc: enabled", "issuer", oc.Issuer, "client_id", oc.ClientID, "required_group", oc.RequiredGroup)
+	slog.Info("oidc: enabled", "issuer", oc.Issuer, "client_id", oc.ClientID, "required_organization_id", oc.RequiredOrganizationID)
+	if oc.RequiredOrganizationID == "" {
+		slog.Error("oidc: FUNNELBARN_OIDC_ORGANIZATION_ID is not set, every OIDC sign-in will be refused", "handled", true)
+	}
 	return auth.NewOIDCClient(oc)
 }
 

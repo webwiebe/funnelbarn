@@ -112,8 +112,8 @@ func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.R
 	if !s.oidc.Allowed(claims) {
 		tracing.RecordError(span, errors.New("oidc: access denied"))
 		slog.WarnContext(r.Context(), "oidc: access denied",
-			"sub", claims.Subject, "groups", claims.Groups, "roles", claims.Roles)
-		jsonError(w, "access denied: user is not a member of the required group", http.StatusForbidden)
+			"sub", claims.Subject, "organization_id", claims.OrganizationID, "groups", claims.Groups, "roles", claims.Roles)
+		jsonError(w, "access denied: this account has no access role in the organization it is signed in to. Switch to your home organization in IAMBarn and sign in again", http.StatusForbidden)
 		return
 	}
 	if s.sessionManager == nil || s.webSessions == nil {

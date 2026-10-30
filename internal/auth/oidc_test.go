@@ -4,11 +4,12 @@ import "testing"
 
 func TestOIDCClientAllowed(t *testing.T) {
 	cli := NewOIDCClient(OIDCConfig{
-		Issuer:        "https://iam.example.com",
-		ClientID:      "funnelbarn",
-		ClientSecret:  "sek",
-		RedirectURL:   "https://funnelbarn.example.com/api/v1/oidc/callback",
-		RequiredGroup: "funnelbarn-users",
+		Issuer:       "https://iam.example.com",
+		ClientID:     "funnelbarn",
+		ClientSecret: "sek",
+		RedirectURL:  "https://funnelbarn.example.com/api/v1/oidc/callback",
+
+		RequiredOrganizationID: "org-home",
 	})
 
 	cases := []struct {
@@ -16,13 +17,17 @@ func TestOIDCClientAllowed(t *testing.T) {
 		claims OIDCClaims
 		want   bool
 	}{
-		{"in required group", OIDCClaims{Groups: []string{"funnelbarn-users"}}, true},
-		{"owner bypass", OIDCClaims{Roles: []string{"owner"}}, true},
-		{"organization_admin bypass", OIDCClaims{Roles: []string{"organization_admin"}}, true},
-		{"operator bypass", OIDCClaims{Roles: []string{"operator"}}, true},
-		{"other group only", OIDCClaims{Groups: []string{"engineering"}}, false},
+		{"former required group grants nothing", OIDCClaims{OrganizationID: "org-home", Roles: []string{"member"}, Groups: []string{"funnelbarn-users"}}, false},
+		{"owner bypass", OIDCClaims{OrganizationID: "org-home", Roles: []string{"owner"}}, true},
+		{"organization_admin bypass", OIDCClaims{OrganizationID: "org-home", Roles: []string{"organization_admin"}}, true},
+		{"operator bypass", OIDCClaims{OrganizationID: "org-home", Roles: []string{"operator"}}, true},
+		{"other group only", OIDCClaims{OrganizationID: "org-home", Groups: []string{"engineering"}}, false},
 		{"no claims", OIDCClaims{}, false},
-		{"unrelated role", OIDCClaims{Roles: []string{"member"}}, false},
+		{"no roles in the organization", OIDCClaims{OrganizationID: "org-home"}, false},
+		{"owner of another organization", OIDCClaims{OrganizationID: "org-other", Roles: []string{"owner"}}, false},
+		{"operator of another organization", OIDCClaims{OrganizationID: "org-other", Roles: []string{"operator"}}, false},
+		{"owner with no organization claim", OIDCClaims{Roles: []string{"owner"}}, false},
+		{"unrelated role", OIDCClaims{OrganizationID: "org-home", Roles: []string{"member"}}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -30,6 +35,18 @@ func TestOIDCClientAllowed(t *testing.T) {
 				t.Errorf("Allowed(%+v) = %v, want %v", tc.claims, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestOIDCClientAllowed_NoRequiredOrganizationRefusesEveryone(t *testing.T) {
+	cli := NewOIDCClient(OIDCConfig{Issuer: "i", ClientID: "c", ClientSecret: "s", RedirectURL: "r"})
+	for _, claims := range []OIDCClaims{
+		{Roles: []string{"owner"}},
+		{OrganizationID: "org-home", Roles: []string{"owner"}},
+	} {
+		if cli.Allowed(claims) {
+			t.Errorf("Allowed(%+v) = true with no required organization", claims)
+		}
 	}
 }
 

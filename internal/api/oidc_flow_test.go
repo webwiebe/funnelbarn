@@ -30,6 +30,7 @@ import (
 const (
 	fakeIdPClientID = "fb_conf"
 	fakeIdPSub      = "user-sub-1"
+	fakeIdPOrgID    = "org-home"
 	fakeIdPSid      = "idp-sid-1"
 )
 
@@ -144,7 +145,9 @@ func (f *fakeIdP) idToken(t *testing.T, nonce string, extra map[string]any) stri
 		"iat":                time.Now().Unix(),
 		"sid":                fakeIdPSid,
 		"preferred_username": "alice",
+		"organization_id":    fakeIdPOrgID,
 		"groups":             []string{"funnelbarn-users"},
+		"roles":              []string{"owner"},
 	}
 	if nonce != "" {
 		claims["nonce"] = nonce
@@ -205,6 +208,8 @@ func oidcFlowServer(t *testing.T, f *fakeIdP, mutate func(cfg *ServerConfig)) (*
 			ClientSecret:          "sek",
 			RedirectURL:           "http://funnelbarn.test/api/v1/oidc/callback",
 			PostLogoutRedirectURI: "http://funnelbarn.test/api/v1/auth/oidc/logged-out",
+
+			RequiredOrganizationID: fakeIdPOrgID,
 		})
 		if mutate != nil {
 			mutate(cfg)
@@ -378,7 +383,15 @@ func TestOIDCFullFlow_CallbackPersistsTokenBoundSession(t *testing.T) {
 	}
 }
 
-func TestOIDCCallback_GroupDenied(t *testing.T) {
+// oidcCallbackCode runs one login through the callback, with the given claims on
+// the ID token, and returns the status.
+func oidcCallbackCode(t *testing.T, extra map[string]any) int {
+	t.Helper()
+	return oidcCallback(t, extra).Code
+}
+
+func oidcCallback(t *testing.T, extra map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
 	f := newFakeIdP(t)
 	srv, _ := oidcFlowServer(t, f, nil)
 
@@ -392,7 +405,7 @@ func TestOIDCCallback_GroupDenied(t *testing.T) {
 		}
 	}
 	f.setTokenHandler(func(tw http.ResponseWriter, _ *http.Request) {
-		tokenResponse(tw, "at", "rt", f.idToken(t, nonce, map[string]any{"groups": []string{"other"}}), 900)
+		tokenResponse(tw, "at", "rt", f.idToken(t, nonce, extra), 900)
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/oidc/callback?state="+url.QueryEscape(loc.Query().Get("state"))+"&code=c", nil)
@@ -401,8 +414,38 @@ func TestOIDCCallback_GroupDenied(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for wrong group, got %d (body: %s)", rec.Code, rec.Body.String())
+	return rec
+}
+
+func TestOIDCCallback_RefusalSaysToSwitchToHomeOrganization(t *testing.T) {
+	rec := oidcCallback(t, map[string]any{"organization_id": "org-other"})
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "home organization") {
+		t.Errorf("callback = %d %s, want 403 naming the home organization", rec.Code, rec.Body.String())
+	}
+}
+
+func TestOIDCCallback_AccessRule(t *testing.T) {
+	cases := []struct {
+		name  string
+		extra map[string]any
+		want  int
+	}{
+		{"owner of this organization", nil, http.StatusFound},
+		{"organization_admin of this organization", map[string]any{"roles": []string{"organization_admin"}}, http.StatusFound},
+		{"owner with no groups claim", map[string]any{"groups": nil}, http.StatusFound},
+		{"member in the former required group", map[string]any{"roles": []string{"member"}}, http.StatusForbidden},
+		{"member in another group", map[string]any{"groups": []string{"other"}, "roles": []string{"member"}}, http.StatusForbidden},
+		{"no roles", map[string]any{"roles": []string{}}, http.StatusForbidden},
+		{"owner of another organization", map[string]any{"organization_id": "org-other"}, http.StatusForbidden},
+		{"operator of another organization", map[string]any{"organization_id": "org-other", "roles": []string{"operator"}}, http.StatusForbidden},
+		{"owner with no organization", map[string]any{"organization_id": nil}, http.StatusForbidden},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := oidcCallbackCode(t, tc.extra); got != tc.want {
+				t.Errorf("callback status = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }
 
