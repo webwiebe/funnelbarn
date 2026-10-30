@@ -487,3 +487,38 @@ func TestSDKEvaluate_ErrorIsNeverCached(t *testing.T) {
 		t.Errorf("Cache-Control: want no-store, got %q", got)
 	}
 }
+
+func TestSDKEvaluate_StoredRuleNamingMissingVariant(t *testing.T) {
+	srv, store, projectID, apiKey := newSDKServer(t, 100)
+	if _, err := store.CreateFlag(context.Background(), repository.FeatureFlag{
+		ProjectID: projectID, FlagKey: "outreach", Name: "outreach", FlagType: "boolean",
+		Variants: `{"default":true}`, DefaultVariant: "default", Split: `{}`, Status: "active",
+		Kind:           repository.FlagKindConfig,
+		TargetingRules: `[{"name":"testing sends","match":"all","conditions":[{"context_key":"environment","operator":"eq","value":"testing"}],"variant":"on"}]`,
+	}); err != nil {
+		t.Fatalf("CreateFlag: %v", err)
+	}
+	evalContext := map[string]any{"environment": "testing"}
+
+	// The caller's default is echoed, as for every ERROR result.
+	w := postEvaluateSDK(t, srv, apiKey, map[string]any{"flag_key": "outreach", "default_value": false, "context": evalContext})
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["reason"] != "ERROR" || resp["error_code"] != "GENERAL" {
+		t.Fatalf("want ERROR/GENERAL, got %v", resp)
+	}
+	if resp["value"] != false {
+		t.Errorf("value: want the caller's default false, got %v", resp["value"])
+	}
+	if got := w.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control: want no-store, got %q", got)
+	}
+
+	// Without one the flag's own default is served, never null.
+	w = postEvaluateSDK(t, srv, apiKey, map[string]any{"flag_key": "outreach", "context": evalContext})
+	resp = nil
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["reason"] != "ERROR" || resp["value"] != true {
+		t.Errorf("want ERROR with the flag's default true, got %v", resp)
+	}
+}

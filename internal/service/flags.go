@@ -51,6 +51,8 @@ type FlagService struct {
 	touchedMu sync.Mutex
 	touchedAt map[string]time.Time
 
+	missingVariants missingVariantReports // flag_targeting.go
+
 	// usageMu guards usageCache, the per-project Usage report (flag_usage.go).
 	usageMu    sync.Mutex
 	usageCache map[string]flagUsageCacheEntry
@@ -127,7 +129,7 @@ func (svc *FlagService) CreateFlag(ctx context.Context, f repository.FeatureFlag
 	if f.TargetingRules == "" {
 		f.TargetingRules = "[]"
 	}
-	if err := ValidateTargetingRules(f.TargetingRules); err != nil {
+	if err := validateFlagRules(f.TargetingRules, f.Variants); err != nil {
 		return repository.FeatureFlag{}, &domain.ValidationError{Message: err.Error()}
 	}
 	kind, err := NormalizeFlagKind(f.Kind)
@@ -180,7 +182,7 @@ func (svc *FlagService) UpdateFlag(ctx context.Context, f repository.FeatureFlag
 	if f.TargetingRules == "" {
 		f.TargetingRules = "[]"
 	}
-	if err := ValidateTargetingRules(f.TargetingRules); err != nil {
+	if err := svc.validateUpdatedRules(ctx, f); err != nil {
 		return repository.FeatureFlag{}, &domain.ValidationError{Message: err.Error()}
 	}
 	kind, err := NormalizeFlagKind(f.Kind)
@@ -259,7 +261,10 @@ func (svc *FlagService) evaluateFlag(ctx context.Context, projectID, flagKey str
 	ctxKeys := contextKeyNames(evalContext)
 
 	if variant, ruleName, matched := evaluateTargetingRules(flag.TargetingRules, evalContext); matched {
-		val, _ := variantValue(flag.Variants, variant)
+		val, variantErr := variantValue(flag.Variants, variant)
+		if variantErr != nil {
+			return svc.ruleVariantMissing(ctx, span, flag, ruleName, variantErr), nil
+		}
 		span.SetAttributes(
 			attribute.String("flag.variant", variant),
 			attribute.String("flag.reason", "TARGETING_MATCH"),
@@ -345,23 +350,6 @@ func (svc *FlagService) recordEvaluation(ctx context.Context, flag repository.Fe
 var flagKeyRe = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,64}$`)
 
 func validFlagKey(key string) bool { return flagKeyRe.MatchString(key) }
-
-// InferFlagType maps a JSON-decoded default value to a flag_type for the
-// dashboard. Exported so callers outside the service (e.g. the MCP tools'
-// create_flag) can build a repository.FeatureFlag from a bare default value
-// the same way EvaluateOrRegisterFlag's auto-registration does.
-func InferFlagType(v any) string {
-	switch v.(type) {
-	case bool:
-		return "boolean"
-	case float64, int, int64:
-		return "number"
-	case string, nil:
-		return "string"
-	default:
-		return "json"
-	}
-}
 
 // buildAutoFlag describes an inert, auto-created flag: a single "default" variant
 // holding the caller's default value, status "inactive" so evaluation returns that

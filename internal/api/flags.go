@@ -415,6 +415,17 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 	)
 	metrics.FlagEvaluations.WithLabelValues(result.Reason).Inc()
 
+	writeEvaluateResult(w, result, body.DefaultValue)
+}
+
+// writeEvaluateResult answers one resolved evaluation.
+func writeEvaluateResult(w http.ResponseWriter, result service.FlagEvalResult, callerDefault any) {
+	// A stored rule naming a missing variant comes back as a result with reason
+	// ERROR. The contract for that reason is to echo the caller's default_value.
+	if result.Reason == "ERROR" && callerDefault != nil {
+		result.Value = callerDefault
+	}
+
 	// One sanctioned polling interval beats N guesses. A config flag holds the
 	// same value for everyone, so it is safe to reuse for its advertised
 	// max-age; an experiment resolves per targeting key and every read is a

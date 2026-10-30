@@ -43,10 +43,10 @@ const goldenAsyncTimeout = 10 * time.Second
 
 // Number of flags the evaluate cases touch (SDK path, existing and
 // auto-registered): project A checkout_redesign, pricing_banner, max_items,
-// legacy_search, sdk_discovered, brand_new_flag, new_limit; project B
+// legacy_search, sdk_discovered, brand_new_flag, new_limit, stale_rule; project B
 // beta_banner and the auto-registered checkout_redesign.
 const (
-	goldenTouchedA = 7
+	goldenTouchedA = 8
 	goldenTouchedB = 2
 )
 

@@ -36,6 +36,8 @@ func goldenPOSTCases(s *goldenSeed) []goldenCase {
 	sdk("evaluate_unknown_key_invalid", s.KeyAIngest, map[string]any{"flag_key": "not a valid key!", "default_value": "fallback", "context": map[string]any{}})
 	sdk("evaluate_other_project_flag", s.KeyBFull, map[string]any{"flag_key": "checkout_redesign", "default_value": false, "context": ctx(7, "NL")})
 	sdk("evaluate_project_b_flag", s.KeyBFull, map[string]any{"flag_key": "beta_banner", "default_value": false, "context": ctx(8, "NL")})
+	sdk("evaluate_rule_names_missing_variant", s.KeyAIngest, map[string]any{"flag_key": "stale_rule", "default_value": false, "context": map[string]any{"plan": "staff"}})
+	sdk("evaluate_rule_names_missing_variant_no_default", s.KeyAIngest, map[string]any{"flag_key": "stale_rule", "context": map[string]any{"plan": "staff"}})
 	sdk("evaluate_missing_flag_key", s.KeyAIngest, map[string]any{"default_value": false})
 	want(http.StatusUnprocessableEntity)
 	sdk("evaluate_bad_key", "gk-wrong", map[string]any{"flag_key": "checkout_redesign"})
