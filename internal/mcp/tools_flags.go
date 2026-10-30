@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -77,16 +78,17 @@ func registerFlagTools(s *mcp.Server, d *Deps) {
 
 	addTool(s, d, &mcp.Tool{
 		Name: "create_flag",
-		Description: "Create a feature flag with a single default value returned to everyone " +
-			"until you add targeting rules. It appears on the Flags page with origin " +
-			"\"manual\" and is active immediately, so SDK evaluation returns its value right away.",
+		Description: "Create a feature flag. Its default value goes to everyone a targeting " +
+			"rule does not match, and variants gives rules other values to return. It appears on " +
+			"the Flags page with origin \"manual\" and is active immediately, so SDK evaluation " +
+			"returns its value right away. " + targetingRuleHelp(),
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(false), OpenWorldHint: ptr(false)},
 	}, scopeWrite, createFlag)
 
 	addTool(s, d, &mcp.Tool{
 		Name: "update_flag",
-		Description: "Update a feature flag's name, default value, kind, targeting rules or " +
-			"status. Fields you omit keep their current value.",
+		Description: "Update a feature flag's name, default value, variants, kind, targeting " +
+			"rules or status. Fields you omit keep their current value. " + targetingRuleHelp(),
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(false), OpenWorldHint: ptr(false)},
 	}, scopeWrite, updateFlag)
 
@@ -118,6 +120,15 @@ type flagDetail struct {
 	TargetingRules  string     `json:"targeting_rules" jsonschema:"JSON array of targeting rules; [] means none configured."`
 	CreatedAt       time.Time  `json:"created_at" jsonschema:"When the flag was created."`
 	LastEvaluatedAt *time.Time `json:"last_evaluated_at,omitempty" jsonschema:"When the flag was last evaluated; unset if never."`
+}
+
+// targetingRuleHelp describes the rule schema, which an assistant otherwise only
+// learns one validation error at a time.
+func targetingRuleHelp() string {
+	return "targeting_rules is a JSON array of objects with name, variant, match (\"all\" or " +
+		"\"any\") and conditions, an array of objects with context_key, operator and value. " +
+		"Operators: " + strings.Join(service.TargetingOperators(), ", ") + ". " +
+		"Each rule's variant must exist on the flag."
 }
 
 func toFlagDetail(f repository.FeatureFlag) flagDetail {

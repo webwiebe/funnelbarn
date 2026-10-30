@@ -42,6 +42,16 @@ var validOperators = map[string]bool{
 	"present": true, "not_present": true,
 }
 
+// TargetingOperators lists the operators a rule condition may use.
+func TargetingOperators() []string {
+	ops := make([]string, 0, len(validOperators))
+	for op := range validOperators {
+		ops = append(ops, op)
+	}
+	sort.Strings(ops)
+	return ops
+}
+
 func ValidateTargetingRules(rulesJSON string) error {
 	if rulesJSON == "" || rulesJSON == "[]" {
 		return nil
