@@ -47,7 +47,8 @@ Dimensions, their thresholds, and their written exit criteria:
 
   golangci        golangci-lint run ./... with the repo's own .golangci.yml
                   (errcheck, govet, staticcheck, unused, ineffassign, misspell,
-                  goimports). 120 findings in 57 files today: 88 errcheck,
+                  rowserrcheck, goimports). 120 findings in 57 files at the
+                  start (2026-09-08): 88 errcheck,
                   27 goimports, 5 staticcheck. Nothing had ever run this config
                   and it did not even load.
                   ENFORCE AT 0: when the baseline is empty, replace this
@@ -385,7 +386,7 @@ DIMENSIONS = {
         "unit": "findings",
         "header": (
             "SOAK BASELINE: golangci-lint findings per file, using the repo's .golangci.yml\n"
-            "(errcheck, govet, staticcheck, unused, ineffassign, misspell, goimports).\n"
+            "(errcheck, govet, staticcheck, unused, ineffassign, misspell, rowserrcheck, goimports).\n"
             "This config existed for months and was invoked by nothing, while README.md and\n"
             "specs/003-engineering-standards/spec.md both listed it as a required check.\n"
             "ENFORCE AT 0 entries: replace this dimension with a blocking\n"

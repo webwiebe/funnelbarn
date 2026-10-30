@@ -22,6 +22,14 @@ linters:
     - unused
     - ineffassign
     - misspell
+    - rowserrcheck
+  settings:
+    errcheck:
+      # A failed read surfaces in rows.Err, which rowserrcheck makes every
+      # query loop check. Once that is checked, the error from closing the
+      # rows has nothing left to report, so `defer rows.Close()` stays as is.
+      exclude-functions:
+        - (*database/sql.Rows).Close
   exclusions:
     rules:
       - path: _test\.go
