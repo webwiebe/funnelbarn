@@ -4,12 +4,21 @@ package service
 // FlagService's evaluation paths.
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
+	"sync"
+	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 type TargetingCondition struct {
@@ -71,6 +80,144 @@ func validateTargetingRule(i int, r TargetingRule) error {
 		}
 	}
 	return nil
+}
+
+// ValidateRuleVariants reports the first rule naming a variant the flag does
+// not have. Such a rule would match and then have no value to serve.
+func ValidateRuleVariants(rulesJSON, variantsJSON string) error {
+	if rulesJSON == "" || rulesJSON == "[]" {
+		return nil
+	}
+	var rules []TargetingRule
+	if err := json.Unmarshal([]byte(rulesJSON), &rules); err != nil {
+		return fmt.Errorf("invalid targeting rules JSON: %w", err)
+	}
+	var variants map[string]any
+	if variantsJSON != "" {
+		if err := json.Unmarshal([]byte(variantsJSON), &variants); err != nil {
+			return fmt.Errorf("invalid variants JSON: %w", err)
+		}
+	}
+	for i, r := range rules {
+		if _, ok := variants[r.Variant]; !ok {
+			return fmt.Errorf("rule %d: variant %q does not exist (have: %s)", i, r.Variant, variantNames(variants))
+		}
+	}
+	return nil
+}
+
+func variantNames(variants map[string]any) string {
+	if len(variants) == 0 {
+		return "none"
+	}
+	names := make([]string, 0, len(variants))
+	for name := range variants {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
+}
+
+// validateFlagRules checks the rules' syntax and that each names a variant the
+// flag has.
+func validateFlagRules(rulesJSON, variantsJSON string) error {
+	if err := ValidateTargetingRules(rulesJSON); err != nil {
+		return err
+	}
+	return ValidateRuleVariants(rulesJSON, variantsJSON)
+}
+
+// validateUpdatedRules applies validateFlagRules to an update. A flag stored
+// with a rule naming a missing variant has to stay editable, so its owner can
+// still pause it or change a value. The check passes when the rules are
+// unchanged and the update reports the same missing variant against the same
+// variant names; editing the rules or the set of names has to repair it.
+func (svc *FlagService) validateUpdatedRules(ctx context.Context, f repository.FeatureFlag) error {
+	err := validateFlagRules(f.TargetingRules, f.Variants)
+	if err == nil {
+		return nil
+	}
+	existing, lookupErr := svc.store.FlagByID(ctx, f.ID)
+	if lookupErr != nil || existing.TargetingRules != f.TargetingRules {
+		return err
+	}
+	if stored := validateFlagRules(existing.TargetingRules, existing.Variants); stored != nil && stored.Error() == err.Error() {
+		return nil
+	}
+	return err
+}
+
+// missingVariantReportInterval limits the Error for a rule naming a missing
+// variant to one per flag per hour on each instance. The rule stays broken until
+// someone repairs it and a poller can hit it on every read, while BugBarn needs
+// only enough events to keep the issue current.
+const missingVariantReportInterval = time.Hour
+
+// missingVariantReports is that limit's state. The zero value is ready.
+type missingVariantReports struct {
+	mu sync.Mutex
+	at map[string]time.Time
+}
+
+// due reports whether this flag is due for an Error, recording the decision so
+// the next evaluation within the interval skips it. The map is bounded the same
+// way as the touch throttle.
+func (r *missingVariantReports) due(flagID string, now time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if last, ok := r.at[flagID]; ok && now.Sub(last) < missingVariantReportInterval {
+		return false
+	}
+	if r.at == nil || len(r.at) >= maxTrackedTouches {
+		r.at = make(map[string]time.Time)
+	}
+	r.at[flagID] = now
+	return true
+}
+
+// ruleVariantMissing answers a matched rule whose variant does not exist. Only a
+// rule stored before the write check can get here. It serves the flag's default
+// value with reason ERROR, so an SDK falls back to its caller's default. It
+// records no evaluation, and a zero cache hint keeps the error result out of
+// every cache. Serving a default in silence is how this fault hid, so it logs at
+// Error to reach BugBarn.
+func (svc *FlagService) ruleVariantMissing(ctx context.Context, span trace.Span, flag repository.FeatureFlag, ruleName string, cause error) FlagEvalResult {
+	span.SetAttributes(
+		attribute.String("flag.reason", "ERROR"),
+		attribute.String("flag.error_code", "GENERAL"),
+		attribute.String("flag.rule_name", ruleName),
+	)
+	if svc.missingVariants.due(flag.ID, time.Now()) {
+		slog.ErrorContext(ctx, "flag: targeting rule names a missing variant",
+			"err", cause, "handled", true,
+			"project_id", flag.ProjectID, "flag_key", flag.FlagKey, "rule", ruleName)
+	}
+	val, _ := variantValue(flag.Variants, flag.DefaultVariant)
+	return FlagEvalResult{
+		Value:        val,
+		Variant:      flag.DefaultVariant,
+		Reason:       "ERROR",
+		FlagKey:      flag.FlagKey,
+		ErrorCode:    "GENERAL",
+		FlagMetadata: map[string]any{"evaluated_rule_name": ruleName},
+	}
+}
+
+// InferFlagType maps a JSON-decoded default value to a flag_type for the
+// dashboard. Exported so callers outside the service (e.g. the MCP tools'
+// create_flag) can build a repository.FeatureFlag from a bare default value
+// the same way EvaluateOrRegisterFlag's auto-registration does.
+func InferFlagType(v any) string {
+	switch v.(type) {
+	case bool:
+		return "boolean"
+	case float64, int, int64:
+		return "number"
+	case string, nil:
+		return "string"
+	default:
+		return "json"
+	}
 }
 
 // resolveVariant deterministically assigns a variant based on split percentages.

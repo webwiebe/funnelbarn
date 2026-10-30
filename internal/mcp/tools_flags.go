@@ -357,8 +357,9 @@ type evaluateFlagIn struct {
 type evaluateFlagOut struct {
 	Value              any            `json:"value" jsonschema:"The resolved value."`
 	Variant            string         `json:"variant" jsonschema:"The resolved variant name."`
-	Reason             string         `json:"reason" jsonschema:"Why this variant was chosen: TARGETING_MATCH, SPLIT, STATIC (config flag) or DISABLED (paused flag)."`
+	Reason             string         `json:"reason" jsonschema:"Why this variant was chosen: TARGETING_MATCH, SPLIT, STATIC (config flag), DISABLED (paused flag) or ERROR (a matched rule names a variant the flag does not have, so the default variant is served)."`
 	FlagKey            string         `json:"flag_key" jsonschema:"The flag's key."`
+	ErrorCode          string         `json:"error_code,omitempty" jsonschema:"Set when reason is ERROR."`
 	FlagMetadata       map[string]any `json:"flag_metadata,omitempty" jsonschema:"Extra detail, e.g. evaluated_rule_name on a TARGETING_MATCH."`
 	CacheMaxAgeSeconds int            `json:"cache_max_age_seconds" jsonschema:"How long an SDK may cache this result; 0 for an experiment, since every real read there is an analytics data point."`
 }
@@ -394,6 +395,7 @@ func evaluateFlag(ctx context.Context, c *Call, in evaluateFlagIn) (evaluateFlag
 		Variant:            res.Variant,
 		Reason:             res.Reason,
 		FlagKey:            res.FlagKey,
+		ErrorCode:          res.ErrorCode,
 		FlagMetadata:       res.FlagMetadata,
 		CacheMaxAgeSeconds: res.CacheMaxAgeSeconds,
 	}, nil

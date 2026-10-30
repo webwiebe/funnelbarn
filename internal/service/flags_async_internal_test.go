@@ -289,3 +289,21 @@ func TestEvaluate_WithoutBackgroundBusUsesCommands(t *testing.T) {
 		t.Fatalf("commands bus got %v", got)
 	}
 }
+
+func TestMissingVariantReports_OncePerIntervalPerFlag(t *testing.T) {
+	var reports missingVariantReports
+	now := time.Now()
+
+	if !reports.due("flag-a", now) {
+		t.Fatal("first report of a flag must go out")
+	}
+	if reports.due("flag-a", now.Add(missingVariantReportInterval-time.Second)) {
+		t.Fatal("a report inside the interval must be skipped")
+	}
+	if !reports.due("flag-b", now) {
+		t.Fatal("another flag has its own interval")
+	}
+	if !reports.due("flag-a", now.Add(missingVariantReportInterval)) {
+		t.Fatal("a report after the interval must go out")
+	}
+}

@@ -81,7 +81,7 @@ type updateFlagIn struct {
 	Name           string `json:"name,omitempty" jsonschema:"New name; omit to keep the current name."`
 	DefaultValue   any    `json:"default_value,omitempty" jsonschema:"New value for the flag's default_variant; omit to keep the current value. Cannot be set to null."`
 	Kind           string `json:"flag_kind,omitempty" jsonschema:"\"experiment\" or \"config\"; omit to keep the current kind."`
-	TargetingRules string `json:"targeting_rules,omitempty" jsonschema:"JSON array of targeting rules; omit to keep the current rules."`
+	TargetingRules string `json:"targeting_rules,omitempty" jsonschema:"JSON array of targeting rules; omit to keep the current rules. Every rule's variant must exist on the flag."`
 	Status         string `json:"status,omitempty" jsonschema:"\"active\" or \"paused\"; omit to keep the current status."`
 }
 

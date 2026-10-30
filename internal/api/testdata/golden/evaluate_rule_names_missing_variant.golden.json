@@ -1,0 +1,18 @@
+{
+  "body": {
+    "cache_max_age_seconds": 0,
+    "error_code": "GENERAL",
+    "flag_key": "stale_rule",
+    "flag_metadata": {
+      "evaluated_rule_name": "testers"
+    },
+    "reason": "ERROR",
+    "value": false,
+    "variant": "default"
+  },
+  "headers": {
+    "Cache-Control": "no-store",
+    "Content-Type": "application/json"
+  },
+  "status": 200
+}

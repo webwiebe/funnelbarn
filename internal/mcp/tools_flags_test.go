@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -407,6 +408,39 @@ func TestUpdateFlagTool_InvalidTargetingRules(t *testing.T) {
 	msg := callErr(t, cs, "update_flag", map[string]any{"flag_id": f.ID, "targeting_rules": "not json"})
 	if msg == "" {
 		t.Fatal("want a non-empty error message")
+	}
+}
+
+func TestUpdateFlagTool_RuleNamingMissingVariant(t *testing.T) {
+	env := newTestEnv(t, nil)
+	p := env.createProject(t, "Alpha", "alpha")
+	f := createManualFlag(t, env, p.ID, "rules", nil)
+	cs := env.connect(t, tokenReadWrite, p.Slug)
+
+	msg := callErr(t, cs, "update_flag", map[string]any{
+		"flag_id":         f.ID,
+		"targeting_rules": `[{"name":"staff","match":"all","conditions":[{"context_key":"plan","operator":"eq","value":"staff"}],"variant":"missing"}]`,
+	})
+	if !strings.Contains(msg, `variant "missing" does not exist`) {
+		t.Errorf("error should name the variant, got %q", msg)
+	}
+}
+
+func TestEvaluateFlagTool_StoredRuleNamingMissingVariant(t *testing.T) {
+	env := newTestEnv(t, nil)
+	p := env.createProject(t, "Alpha", "alpha")
+	createManualFlag(t, env, p.ID, "beta_banner", func(f *repository.FeatureFlag) {
+		f.TargetingRules = `[{"name":"staff","match":"all","conditions":[{"context_key":"plan","operator":"eq","value":"staff"}],"variant":"missing"}]`
+	})
+	cs := env.connect(t, tokenRead, p.Slug)
+
+	var out evaluateFlagOut
+	callOK(t, cs, "evaluate_flag", map[string]any{
+		"flag_key": "beta_banner",
+		"context":  map[string]any{"targetingKey": "user-1", "plan": "staff"},
+	}, &out)
+	if out.Reason != "ERROR" || out.ErrorCode != "GENERAL" || out.Value != false {
+		t.Errorf("got %+v, want reason=ERROR error_code=GENERAL value=false", out)
 	}
 }
 

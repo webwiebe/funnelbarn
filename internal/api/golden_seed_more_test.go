@@ -73,7 +73,8 @@ func seedGoldenEntities(t *testing.T, store *repository.Store, storage *memStora
 	s.CanonicalFunnel = fix(cf.ID, kindCanonicalFunnel, 1)
 
 	// Flags: experiment with a split, experiment with targeting rules, config,
-	// inactive manual, auto-registered, plus one in project B.
+	// inactive manual, auto-registered, one in project B, plus one whose rule names
+	// a missing variant.
 	flags := service.NewFlagService(store)
 	mk := func(f repository.FeatureFlag, nth int) string {
 		t.Helper()
@@ -97,6 +98,12 @@ func seedGoldenEntities(t *testing.T, store *repository.Store, storage *memStora
 	s.FlagAuto = fix(auto.ID, kindFlag, 5)
 	s.FlagB = mk(repository.FeatureFlag{ProjectID: s.ProjectB, FlagKey: "beta_banner", Name: "Beta banner",
 		FlagType: "boolean", Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":30,"off":70}`}, 6)
+	// A rule naming a missing variant cannot be written any more, so this row goes
+	// straight to the store, as one saved before the check existed.
+	_, err = store.CreateFlag(ctx, repository.FeatureFlag{ProjectID: s.ProjectA, FlagKey: "stale_rule", Name: "Stale rule",
+		FlagType: "boolean", Variants: `{"default":true}`, DefaultVariant: "default", Split: `{}`, Status: "active", Kind: repository.FlagKindConfig,
+		TargetingRules: `[{"name":"testers","match":"all","conditions":[{"context_key":"plan","operator":"eq","value":"staff"}],"variant":"on"}]`})
+	must(err, "flag stale_rule")
 
 	ab, err := store.CreateABTest(ctx, repository.ABTest{ProjectID: s.ProjectA, Name: "Variant a vs b", Status: "running",
 		ControlFilter: `{"property":"variant","value":"a"}`, VariantFilter: `{"property":"variant","value":"b"}`, ConversionEvent: "purchase"})

@@ -1,9 +1,12 @@
 package service_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -726,4 +729,181 @@ func TestEvaluateOrRegisterFlag_TouchIsThrottled(t *testing.T) {
 	require.NotNil(t, got.LastEvaluatedAt)
 	require.True(t, got.LastEvaluatedAt.Equal(first),
 		"throttled evaluations still wrote: %v != %v", *got.LastEvaluatedAt, first)
+}
+
+const missingVariantRule = `[{"name":"testing sends","match":"all","conditions":[{"context_key":"environment","operator":"eq","value":"testing"}],"variant":"on"}]`
+
+func TestValidateRuleVariants(t *testing.T) {
+	tests := []struct {
+		name     string
+		rules    string
+		variants string
+		wantErr  string
+	}{
+		{"no rules", "[]", `{"default":false}`, ""},
+		{"empty rules", "", "", ""},
+		{"variant exists", missingVariantRule, `{"default":false,"on":true}`, ""},
+		{"variant missing", missingVariantRule, `{"default":false}`, `rule 0: variant "on" does not exist (have: default)`},
+		{"names sorted", missingVariantRule, `{"z":1,"a":2}`, `(have: a, z)`},
+		{"no variants", missingVariantRule, "", `(have: none)`},
+		{"invalid variants", missingVariantRule, "not json", "invalid variants JSON"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := service.ValidateRuleVariants(tt.rules, tt.variants)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestFlagService_CreateFlag_RejectsRuleNamingMissingVariant(t *testing.T) {
+	store := mock.New()
+	svc := service.NewFlagService(store)
+
+	_, err := svc.CreateFlag(context.Background(), repository.FeatureFlag{
+		ProjectID: "proj-1", FlagKey: "outreach", Name: "outreach",
+		Variants: `{"default":false}`, DefaultVariant: "default", TargetingRules: missingVariantRule,
+	})
+	require.ErrorIs(t, err, domain.ErrValidation)
+	require.ErrorContains(t, err, `variant "on" does not exist`)
+
+	flags, err := store.ListFlags(context.Background(), "proj-1")
+	require.NoError(t, err)
+	require.Empty(t, flags, "a rejected flag must not be stored")
+}
+
+func TestFlagService_UpdateFlag_RuleVariantCheck(t *testing.T) {
+	ctx := context.Background()
+	editedRule := strings.Replace(missingVariantRule, "testing sends", "renamed", 1)
+	validRule := strings.Replace(missingVariantRule, `"variant":"on"`, `"variant":"default"`, 1)
+
+	tests := []struct {
+		name     string
+		variants string
+		rules    string
+		status   string
+		wantErr  string
+	}{
+		{"pausing a stored bad rule stays allowed", `{"default":false}`, missingVariantRule, "paused", ""},
+		{"changing a value stays allowed", `{"default":true}`, missingVariantRule, "active", ""},
+		{"editing the bad rule is rejected", `{"default":false}`, editedRule, "active", `variant "on" does not exist`},
+		{"changing variant names without repair is rejected", `{"default":false,"off":false}`, missingVariantRule, "active", `(have: default, off)`},
+		{"adding the variant repairs it", `{"default":false,"on":true}`, missingVariantRule, "active", ""},
+		{"pointing the rule at a real variant repairs it", `{"default":false}`, validRule, "active", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := mock.New()
+			svc := service.NewFlagService(store)
+			// Written to the store directly: this is data from before the check.
+			f, err := store.CreateFlag(ctx, repository.FeatureFlag{
+				ProjectID: "proj-1", FlagKey: "outreach", Name: "outreach", FlagType: "boolean",
+				Variants: `{"default":false}`, DefaultVariant: "default", Split: "{}",
+				TargetingRules: missingVariantRule, Status: "active",
+			})
+			require.NoError(t, err)
+
+			_, err = svc.UpdateFlag(ctx, repository.FeatureFlag{
+				ID: f.ID, Name: f.Name, FlagType: f.FlagType, Variants: tt.variants,
+				DefaultVariant: f.DefaultVariant, Split: f.Split, TargetingRules: tt.rules, Status: tt.status,
+			})
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, domain.ErrValidation)
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestFlagService_UpdateFlag_RejectsRemovingAVariantARuleNames(t *testing.T) {
+	ctx := context.Background()
+	store := mock.New()
+	svc := service.NewFlagService(store)
+	f, err := svc.CreateFlag(ctx, repository.FeatureFlag{
+		ProjectID: "proj-1", FlagKey: "outreach", Name: "outreach",
+		Variants: `{"default":false,"on":true}`, DefaultVariant: "default", TargetingRules: missingVariantRule,
+	})
+	require.NoError(t, err)
+
+	_, err = svc.UpdateFlag(ctx, repository.FeatureFlag{
+		ID: f.ID, Name: f.Name, Variants: `{"default":false}`,
+		DefaultVariant: f.DefaultVariant, TargetingRules: f.TargetingRules, Status: "active",
+	})
+	require.ErrorIs(t, err, domain.ErrValidation)
+	require.ErrorContains(t, err, `variant "on" does not exist`)
+}
+
+func TestFlagService_EvaluateFlag_StoredRuleNamingMissingVariant(t *testing.T) {
+	ctx := context.Background()
+	for _, kind := range []string{repository.FlagKindExperiment, repository.FlagKindConfig} {
+		t.Run(kind, func(t *testing.T) {
+			store := mock.New()
+			svc := service.NewFlagService(store)
+			_, err := store.CreateFlag(ctx, repository.FeatureFlag{
+				ProjectID: "proj-1", FlagKey: "outreach", Name: "outreach", FlagType: "boolean",
+				Variants: `{"default":false}`, DefaultVariant: "default", Split: "{}",
+				TargetingRules: missingVariantRule, Status: "active", Kind: kind,
+			})
+			require.NoError(t, err)
+
+			result, err := svc.EvaluateFlag(ctx, "proj-1", "outreach", map[string]any{
+				"targetingKey": "user-1", "environment": "testing",
+			})
+			require.NoError(t, err)
+			require.Equal(t, "ERROR", result.Reason)
+			require.Equal(t, "GENERAL", result.ErrorCode)
+			require.Equal(t, "default", result.Variant)
+			require.Equal(t, false, result.Value, "the flag's default, never nil")
+			require.Equal(t, "testing sends", result.FlagMetadata["evaluated_rule_name"])
+			require.Zero(t, result.CacheMaxAgeSeconds, "an error result must not be cached")
+			require.Empty(t, store.RecordedEvaluations(), "a variant that was not served must not reach analytics")
+
+			// A context the rule does not match is unaffected.
+			result, err = svc.EvaluateFlag(ctx, "proj-1", "outreach", map[string]any{
+				"targetingKey": "user-1", "environment": "production",
+			})
+			require.NoError(t, err)
+			require.NotEqual(t, "ERROR", result.Reason)
+			require.Equal(t, false, result.Value)
+		})
+	}
+}
+
+func TestFlagService_EvaluateFlag_MissingVariantLogsErrorOncePerFlag(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelError})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	ctx := context.Background()
+	store := mock.New()
+	svc := service.NewFlagService(store)
+	for _, key := range []string{"outreach", "other"} {
+		_, err := store.CreateFlag(ctx, repository.FeatureFlag{
+			ProjectID: "proj-1", FlagKey: key, Name: key, FlagType: "boolean",
+			Variants: `{"default":false}`, DefaultVariant: "default", Split: "{}",
+			TargetingRules: missingVariantRule, Status: "active",
+		})
+		require.NoError(t, err)
+	}
+	evaluate := func(key string) {
+		t.Helper()
+		_, err := svc.EvaluateFlag(ctx, "proj-1", key, map[string]any{"targetingKey": "user-1", "environment": "testing"})
+		require.NoError(t, err)
+	}
+
+	evaluate("outreach")
+	evaluate("outreach")
+	evaluate("outreach")
+	require.Equal(t, 1, strings.Count(logs.String(), "level=ERROR"), "repeated reads of one flag log once: %s", logs.String())
+	require.Contains(t, logs.String(), "flag_key=outreach")
+
+	evaluate("other")
+	require.Equal(t, 2, strings.Count(logs.String(), "level=ERROR"), "a second flag gets its own report: %s", logs.String())
 }
