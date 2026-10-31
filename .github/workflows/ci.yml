@@ -13,8 +13,10 @@ concurrency:
 permissions:
   contents: read
 
+# Every job runs for pull requests from branches in this repository only.
 jobs:
   go-quality:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, build]
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
@@ -122,6 +124,7 @@ jobs:
         run: python3 scripts/quality-soak.py file-length
 
   go-test:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, build]
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
@@ -191,6 +194,7 @@ jobs:
   # sdks/go is its own module, so the root `go test ./...` never reached it and
   # the SDK shipped untested. Give it its own job.
   go-sdk:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, build]
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
@@ -229,6 +233,7 @@ jobs:
         run: go test -race -count=1 ./...
 
   frontend-lint:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, build]
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
@@ -283,6 +288,7 @@ jobs:
         run: python3 scripts/quality-soak.py web-complexity
 
   frontend-test:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, build]
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
@@ -331,6 +337,7 @@ jobs:
         run: pnpm gate:duplication
 
   secret-scan:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, build]
     # Above the sum of the step timeouts below, so the self-test can never use up
     # the time the real scan needs: a slow step fails as itself.
