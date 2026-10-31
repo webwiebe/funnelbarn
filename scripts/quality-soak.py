@@ -45,17 +45,6 @@ Dimensions, their thresholds, and their written exit criteria:
                   web/eslint.soak.config.js and this dimension. Interim
                   walk-down: 55 -> 30 -> 20 -> 15 -> 12.
 
-  golangci        golangci-lint run ./... with the repo's own .golangci.yml
-                  (errcheck, govet, staticcheck, unused, ineffassign, misspell,
-                  rowserrcheck, goimports). 120 findings in 57 files at the
-                  start (2026-09-08): 88 errcheck,
-                  27 goimports, 5 staticcheck. Nothing had ever run this config
-                  and it did not even load.
-                  ENFORCE AT 0: when the baseline is empty, replace this
-                  dimension with a blocking `golangci-lint run ./...` step in
-                  ci.yml's go-quality job. The 27 goimports findings clear with
-                  `golangci-lint fmt`; errcheck is the real work.
-
 Usage:
     python3 scripts/quality-soak.py <dimension> [--update-baseline]
     python3 scripts/quality-soak.py all
@@ -262,36 +251,6 @@ def measure_go_complexity(root: Path = REPO_ROOT) -> dict[str, int]:
     return measured
 
 
-def measure_golangci(root: Path = REPO_ROOT) -> dict[str, int]:
-    # A config that does not load is the failure mode this soak exists to close:
-    # .golangci.yml sat in this repo for months declaring version "2" while using
-    # the v1 schema, so it would have errored out on first contact.
-    _run(["golangci-lint", "config", "verify"], cwd=root, allowed_returncodes=(0,))
-
-    with tempfile.TemporaryDirectory() as tmp:
-        report = Path(tmp) / "golangci.json"
-        _run(
-            ["golangci-lint", "run", f"--output.json.path={report}", "./..."],
-            cwd=root,
-            allowed_returncodes=(0, 1),
-        )
-        if not report.exists():
-            raise MeasurementError("golangci-lint produced no JSON report")
-        try:
-            payload = json.loads(report.read_text())
-        except json.JSONDecodeError as exc:
-            raise MeasurementError(f"golangci-lint report is not JSON: {exc}") from exc
-
-    if payload.get("Report", {}).get("Error"):
-        raise MeasurementError(f"golangci-lint reported an error: {payload['Report']['Error']}")
-
-    measured: dict[str, int] = {}
-    for issue in payload.get("Issues") or []:
-        path = issue["Pos"]["Filename"]
-        measured[path] = measured.get(path, 0) + 1
-    return measured
-
-
 def measure_web_complexity(root: Path = REPO_ROOT) -> dict[str, int]:
     web = root / "web"
     if not (web / "node_modules").is_dir():
@@ -379,19 +338,6 @@ DIMENSIONS = {
             "ENFORCE AT 0 entries: set complexity: ['error', 12] in web/eslint.config.js,\n"
             "delete web/eslint.soak.config.js, drop this dimension.\n"
             "Refresh with: python3 scripts/quality-soak.py web-complexity --update-baseline"
-        ),
-    },
-    "golangci": {
-        "measure": measure_golangci,
-        "unit": "findings",
-        "header": (
-            "SOAK BASELINE: golangci-lint findings per file, using the repo's .golangci.yml\n"
-            "(errcheck, govet, staticcheck, unused, ineffassign, misspell, rowserrcheck, goimports).\n"
-            "This config existed for months and was invoked by nothing, while README.md and\n"
-            "specs/003-engineering-standards/spec.md both listed it as a required check.\n"
-            "ENFORCE AT 0 entries: replace this dimension with a blocking\n"
-            "`golangci-lint run ./...` step in ci.yml's go-quality job.\n"
-            "Refresh with: python3 scripts/quality-soak.py golangci --update-baseline"
         ),
     },
 }

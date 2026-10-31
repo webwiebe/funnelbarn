@@ -103,14 +103,12 @@ jobs:
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      - name: Soak, golangci-lint
-        # REPORT-ONLY against scripts/soak-baselines/golangci.txt. .golangci.yml
-        # sat in this repo unread for months while README.md and the engineering
-        # standards spec both listed `golangci-lint run ./...` as required; it
-        # did not even load. 116 findings across 57 files are baselined and do
-        # not block. A new finding, a worsened file, or a baseline that has
-        # become beatable does block. Exit criterion in scripts/quality-soak.py.
-        run: python3 scripts/quality-soak.py golangci
+      - name: golangci-lint
+        # Blocking since the last findings cleared (#273). config verify runs first:
+        # .golangci.yml once sat here unread and did not even load.
+        run: |
+          golangci-lint config verify
+          golangci-lint run ./...
 
       - name: Soak, Go cyclomatic complexity at the estate target
         # REPORT-ONLY at complexity 12, while the blocking limit in
@@ -149,8 +147,8 @@ jobs:
           cache: false
 
       - name: Go tests with race detector
-        # internal/api takes about 400s under -race on an idle runner and over
-        # 600s when the mini is loaded, so go test's default 10m fails the gate.
+        # internal/api is the slowest package and has passed 600s under -race when
+        # the mini is loaded, so go test's default 10m can fail the gate.
         run: go test -race -count=1 -timeout=25m -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Coverage ratchet (per-file / per-package / global)
