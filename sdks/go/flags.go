@@ -198,7 +198,7 @@ func (t *transport) evaluate(ctx context.Context, key string, def any, evalCtx m
 	if err != nil {
 		return fail("TRANSPORT")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fail("TRANSPORT")
