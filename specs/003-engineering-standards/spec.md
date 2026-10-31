@@ -32,7 +32,7 @@ CI enforces the architecture and quality rules of the codebase mechanically. The
 
 - **FR-008**: CI MUST fail on unformatted Go code, `go vet` findings and `staticcheck` findings. Issues: none. [inferred]
 - **FR-009**: CI MUST run the Go tests with `-race` and fail when per-package or total coverage falls below the floors in `scripts/coverage-baseline.txt` (`internal/service` 74, `internal/repository` 74, total 64). Issues: none. [inferred]
-- **FR-010**: CI MUST fail on a new golangci-lint finding, a worsened file or a baseline that became beatable. Issues: [#273](https://github.com/webwiebe/funnelbarn/issues/273). Tests: `scripts/test_quality_soak.py`.
+- **FR-010**: CI MUST fail on any golangci-lint finding. Issues: [#273](https://github.com/webwiebe/funnelbarn/issues/273). Tests: `scripts/test_quality_soak.py`.
 - **FR-011**: CI MUST run `tsc --noEmit`, `eslint` and `vitest` with coverage floors for the web app. Issues: [#196](https://github.com/webwiebe/funnelbarn/issues/196). [inferred]
 - **FR-012**: The gate scripts MUST have tests that run in CI. Issues: none. Tests: `scripts/test_quality_soak.py`, `scripts/test_deploy_graph.py`.
 - **FR-013**: The testing deploy MUST build only after a green CI run, and E2E failures block promotion to staging. Issues: none. Tests: `scripts/test_deploy_graph.py::DeployGraphTest.test_build_requires_ci_success`, `scripts/test_deploy_graph.py::DeployGraphTest.test_staging_waits_for_e2e`, `scripts/test_deploy_graph.py::SpecMatchesMechanismTest.test_spec_still_claims_e2e_blocks_staging` (this spec must keep the sentence "E2E failures block promotion to staging").
@@ -61,7 +61,7 @@ CI enforces the architecture and quality rules of the codebase mechanically. The
 | `lib/api.ts` is the only file that calls `fetch` | Frontend rules | `fetch(` appears in `App.tsx`, `lib/bugbarn.ts`, `lib/projects.tsx`, `lib/analytics.ts` and `pages/Live.tsx` as well |
 | Each component file exports exactly one default component | Frontend rules | not established |
 | Vitest coverage fails under 80 percent (and 70 percent in the CI table) | Unit Tests and CI table | `web/vite.config.ts` pins lines 51, statements 48, functions 42, branches 45; the per-file gate adds a floor per source file |
-| Lint is `golangci-lint run ./...`, with 120 findings in the soak | CI table | The soak (`scripts/quality-soak.py golangci`) records 116 findings in 57 files (`scripts/soak-baselines/golangci.txt`); issue #273 tracks burning them down |
+| Lint is `golangci-lint run ./...`, with 120 findings in the soak | CI table | Findings reached zero and `golangci-lint run ./...` is a blocking step in `go-quality` (#273) |
 | Coverage fails below 70 percent on `service/` and `repository/` | CI table | Per-package floors are 74 and 74 in `scripts/coverage-baseline.txt`, plus a total floor of 64 |
 | `sqlc vet` checks the generated code | CI table | CI runs `sqlc generate` and `git diff --exit-code` on `internal/repository/sqlcgen` |
 | `vite build` runs in the frontend quality job | CI table | `ci.yml` does not build the web app; `deploy/docker/web.Dockerfile` runs the build when the image is made |
