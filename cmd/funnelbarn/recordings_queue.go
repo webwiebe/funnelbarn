@@ -186,10 +186,11 @@ func (q *recordingsQueue) Enqueue(ctx context.Context, meta service.ChunkMeta) b
 }
 
 // publishFailed logs at Warn for a short Valkey stall and at Error once when
-// the failures last; see command.Outage.
+// the stall time adds up; see command.Outage.
 func (q *recordingsQueue) publishFailed(ctx context.Context, err error) {
-	slog.Log(ctx, q.outage.Fail(), "recordings queue publish failed, chunks bypass it (applied on the request, or buffered on disk in a reader)",
-		"err", err, "handled", true)
+	level, outage := q.outage.Fail()
+	slog.Log(ctx, level, "recordings queue publish failed, chunks bypass it (applied on the request, or buffered on disk in a reader)",
+		outage, "err", err, "handled", true)
 }
 
 // toFallback buffers chunk in a reader and reports it queued. Without a
