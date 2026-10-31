@@ -87,6 +87,13 @@ func (o *Outage) Recover() (time.Duration, bool) {
 	return o.closeRun(), true
 }
 
+// Failing reports whether the last call was a Fail.
+func (o *Outage) Failing() bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.failing
+}
+
 // closeRun moves the current run to closed and returns its stall time.
 func (o *Outage) closeRun() time.Duration {
 	lasted := o.currentRun()
