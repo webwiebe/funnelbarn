@@ -36,7 +36,7 @@ type Options struct {
 	// Environment tags every event ("production", "staging", "test",
 	// "development"), so one key and project can be reused across deployments
 	// and filtered apart in the dashboard. Aliases are normalised server-side;
-	// an unrecognised value is filed under production and warned about.
+	// an unrecognised value is filed under development and warned about.
 	Environment string
 
 	// FlagCacheTTL is how long a resolved flag is reused when the server sends
