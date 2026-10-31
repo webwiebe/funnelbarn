@@ -174,7 +174,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("init logs: %w", err)
 	}
-	defer shutdownLogs(context.Background())
+	defer logShutdown(slog.LevelWarn, "logs", func() error { return shutdownLogs(context.Background()) })
 
 	// Rewire the global logger with the appropriate sinks.
 	slog.SetDefault(buildLogger(os.Stderr, cfg, spanbarnLogHandler))
@@ -206,7 +206,7 @@ func run() error {
 					"event", e.Name, "err", err, "handled", true)
 			},
 		})
-		defer selfsdk.Shutdown(2 * time.Second)
+		defer logShutdown(slog.LevelWarn, "self-reporting", func() error { return selfsdk.Shutdown(2 * time.Second) })
 	} else if cfg.DogfoodAPIKey != "" {
 		slog.Warn("dogfood analytics enabled but FUNNELBARN_PUBLIC_URL is unset; backend self-tracking disabled",
 			"handled", true)
@@ -216,7 +216,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("init tracing: %w", err)
 	}
-	defer shutdownTracer(context.Background())
+	defer logShutdown(slog.LevelWarn, "tracer", func() error { return shutdownTracer(context.Background()) })
 
 	// Must run before repository.Open (see comment above): this is what sets
 	// the real OTel MeterProvider via otel.SetMeterProvider.
@@ -224,7 +224,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("init metrics: %w", err)
 	}
-	defer shutdownMetrics(context.Background())
+	defer logShutdown(slog.LevelWarn, "metrics", func() error { return shutdownMetrics(context.Background()) })
 
 	// Relays the dashboard's own browser spans to SpanBarn, so a trace shows the
 	// page and the client-side view of each API call above the server spans that
@@ -241,7 +241,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)
 	}
-	defer store.Close()
+	defer logShutdown(slog.LevelError, "store", store.Close)
 
 	healthSvc := service.NewProjectHealthService(store)
 	commands, err := newCommandBus(ctx, cfg, command.Deps{
@@ -276,7 +276,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("open spool: %w", err)
 	}
-	defer eventSpool.Close()
+	defer logShutdown(slog.LevelError, "spool", eventSpool.Close)
 
 	recordingsSvc, recordingsQ, err := newRecordings(ctx, cfg, store, slog.Default())
 	if err != nil {
