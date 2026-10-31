@@ -19,6 +19,10 @@ Replica paths per environment:
 - Staging: (not configured — no Litestream env vars in staging manifest)
 - Testing: (not configured — no Litestream env vars in testing manifest)
 
+The replica keeps 6 to 7 days: `retention: 168h` with a snapshot every 24h. A
+restore starts at the newest snapshot before the target and replays the WAL after
+it, so replay stays at about a day of writes.
+
 ### List available restore points
 
 ```sh
@@ -271,7 +275,8 @@ was running (issue #396). Otherwise it runs `rollout undo --to-revision=<recorde
 
 It skips the rollback when the release carries a migration (see the step's log).
 The run goes red and the next step opens a `RollbackRefused` issue in BugBarn.
-Litestream keeps the restore point for 24h, so act on that issue the same day.
+Litestream keeps the restore point for 6 to 7 days, so act on that issue within
+the week.
 On the release that introduced the readers the StatefulSet had no revision to
 record, so its restore fails. Follow "Back to a single process" below.
 

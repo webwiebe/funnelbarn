@@ -13,7 +13,13 @@ dbs:
         # bad migration — `kubectl rollout undo` puts the old image back but
         # cannot move the schema, so it is not a rollback for a release that
         # carries one. At 24h a migration problem found on Monday morning after
-        # a Friday deploy was already outside the window. The database is ~50 MB
+        # a Friday deploy was already outside the window. The database is ~270 MB
         # and R2 storage is ~$0.015/GB/month, so the extra six days cost cents.
         retention: 168h
+        # Litestream deletes everything before the oldest snapshot inside
+        # retention. With no interval the only snapshot ages out, a new one
+        # replaces it, and the restore window falls to zero every 7 days. A
+        # restore also replays all the WAL since that snapshot. Daily snapshots
+        # hold the window between 6 and 7 days and limit replay to about a day.
+        snapshot-interval: 24h
         sync-interval: 1s

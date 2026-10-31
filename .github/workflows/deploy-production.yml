@@ -231,7 +231,7 @@ jobs:
             echo "- Deployed image: \`${CURRENT:-unknown}\`"
             echo "- Carries migrations: \`${CARRIES}\`"
             echo ""
-            echo "Litestream restore point (retention is 24h):"
+            echo "Litestream restore point (the replica keeps 6 to 7 days):"
             echo ""
             echo '```'
             echo "${RESTORE:-unavailable}"
@@ -298,7 +298,7 @@ jobs:
             echo "unique index and every event insert fails. That is an outage, not a recovery."
             echo ""
             echo "The new image is left running. To recover the DATA, restore from litestream"
-            echo "(restore point is in this run's summary; retention is 24h):"
+            echo "(restore point is in this run's summary; the replica keeps 6 to 7 days):"
             echo ""
             echo "  POD=\$(kubectl -n ${NAMESPACE} get pods -l app.kubernetes.io/name=funnelbarn -o jsonpath='{.items[0].metadata.name}')"
             echo "  kubectl -n ${NAMESPACE} exec \$POD -c funnelbarn -- \\"
