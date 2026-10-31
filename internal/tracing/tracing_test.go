@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"go.opentelemetry.io/otel"
@@ -176,5 +177,24 @@ func TestMiddleware_NoTraceparentStartsRoot(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), req)
 	if !valid {
 		t.Error("expected a valid new-root trace id when no traceparent is present")
+	}
+}
+
+// Each pod needs its own series in SpanBarn: see instanceID.
+func TestNewResource_NamesTheInstance(t *testing.T) {
+	res, err := newResource(context.Background(), Config{ServiceName: "funnelbarn", Version: "v1", Environment: "test"})
+	if err != nil {
+		t.Fatalf("newResource: %v", err)
+	}
+	host, err := os.Hostname()
+	if err != nil {
+		t.Fatalf("hostname: %v", err)
+	}
+	got, ok := res.Set().Value(attribute.Key("service.instance.id"))
+	if !ok {
+		t.Fatal("service.instance.id is not set")
+	}
+	if got.AsString() != host {
+		t.Errorf("service.instance.id = %q, want the hostname %q", got.AsString(), host)
 	}
 }
