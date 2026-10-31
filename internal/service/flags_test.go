@@ -903,6 +903,8 @@ func TestFlagService_EvaluateFlag_MissingVariantLogsErrorOncePerFlag(t *testing.
 	evaluate("outreach")
 	require.Equal(t, 1, strings.Count(logs.String(), "level=ERROR"), "repeated reads of one flag log once: %s", logs.String())
 	require.Contains(t, logs.String(), "flag_key=outreach")
+	require.Contains(t, logs.String(), `err="flag \"outreach\" rule \"testing sends\": variant \"on\" not found"`,
+		"the error text is the BugBarn title, so it names the flag")
 
 	evaluate("other")
 	require.Equal(t, 2, strings.Count(logs.String(), "level=ERROR"), "a second flag gets its own report: %s", logs.String())

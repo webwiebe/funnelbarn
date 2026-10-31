@@ -190,7 +190,8 @@ func (r *missingVariantReports) due(flagID string, now time.Time) bool {
 // value with reason ERROR, so an SDK falls back to its caller's default. It
 // records no evaluation, and a zero cache hint keeps the error result out of
 // every cache. Serving a default in silence is how this fault hid, so it logs at
-// Error to reach BugBarn.
+// Error to reach BugBarn. BugBarn titles and groups the issue on the error text, so
+// the text names the flag and each flag gets its own issue.
 func (svc *FlagService) ruleVariantMissing(ctx context.Context, span trace.Span, flag repository.FeatureFlag, ruleName string, cause error) FlagEvalResult {
 	span.SetAttributes(
 		attribute.String("flag.reason", "ERROR"),
@@ -199,7 +200,7 @@ func (svc *FlagService) ruleVariantMissing(ctx context.Context, span trace.Span,
 	)
 	if svc.missingVariants.due(flag.ID, time.Now()) {
 		slog.ErrorContext(ctx, "flag: targeting rule names a missing variant",
-			"err", cause, "handled", true,
+			"err", fmt.Errorf("flag %q rule %q: %w", flag.FlagKey, ruleName, cause), "handled", true,
 			"project_id", flag.ProjectID, "flag_key", flag.FlagKey, "rule", ruleName)
 	}
 	val, _ := variantValue(flag.Variants, flag.DefaultVariant)
