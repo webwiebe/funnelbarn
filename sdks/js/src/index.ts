@@ -7,6 +7,7 @@
  */
 
 import { record } from "rrweb";
+import { isAutomatedBrowser, observePerformance } from "./browser.js";
 import { RECORDING_CHUNK_BUDGET_BYTES, sendInOrder, splitByBudget } from "./recording-chunks.js";
 
 export interface RecordingRule {
@@ -24,7 +25,8 @@ export interface FunnelBarnOptions {
    * can be reused across dev / staging / production and filtered apart in the
    * dashboard. Aliases are normalised server-side ("prod" and "live" both mean
    * production); an unrecognised value is filed as development, so a typo is
-   * worth avoiding.
+   * worth avoiding. A browser under automation (navigator.webdriver) sends
+   * "test" whatever this says.
    */
   environment?: string;
   /** Flush interval in ms (default: 5000) */
@@ -142,15 +144,6 @@ function normaliseEndpoint(endpoint: string): string {
   return trimmed.replace(/\/api\/v1\/events$/, "");
 }
 
-// Observe a performance entry type; browsers that do not support it throw.
-function observePerformance(type: string, onEntries: PerformanceObserverCallback): void {
-  try {
-    new PerformanceObserver(onEntries).observe({ type, buffered: true });
-  } catch {
-    // Not supported in this environment.
-  }
-}
-
 export class FunnelBarnClient {
   private readonly apiKey: string;
   private readonly endpoint: string;
@@ -206,7 +199,7 @@ export class FunnelBarnClient {
     this.apiKey = options.apiKey;
     this.endpoint = normaliseEndpoint(options.endpoint);
     this.projectName = options.projectName;
-    this.environment = options.environment;
+    this.environment = isAutomatedBrowser() ? "test" : options.environment;
     this.flushInterval = options.flushInterval ?? 5000;
     this.sessionTimeout = options.sessionTimeout ?? SESSION_TIMEOUT_DEFAULT;
     this.sessionMaxAge = options.sessionMaxAge ?? SESSION_MAX_AGE_DEFAULT;
