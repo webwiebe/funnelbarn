@@ -19,8 +19,13 @@ Replica paths per environment:
 - Staging: (not configured — no Litestream env vars in staging manifest)
 - Testing: (not configured — no Litestream env vars in testing manifest)
 
-The replica keeps 6 to 7 days: `retention: 168h` with a snapshot every 24h. A
-restore starts at the newest snapshot before the target and replays the WAL after
+From 2026-11-06 06:59Z the replica keeps 6 to 7 days: `retention: 168h` with a
+snapshot every 24h. The window is shorter until then. On 2026-11-02 at about
+14:00Z the 10-26 snapshot ages out and takes everything before the 10-31 06:59Z
+snapshot, so the window drops to about 55 hours and grows by an hour per hour
+from there. After that drop, no point before 10-31 06:59Z can be restored.
+
+A restore starts at the newest snapshot before the target and replays the WAL after
 it, so replay stays at about a day of writes. The Restore Proof workflow
 (`scripts/restore-proof.sh`) restores the replica into a throwaway Job in the
 production namespace and compares row counts with production. Production data
