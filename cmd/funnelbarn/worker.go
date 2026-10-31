@@ -59,6 +59,10 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 	startupMaintenance := time.NewTimer(startupMaintenanceDelay)
 	defer startupMaintenance.Stop()
 
+	volumeDropTicker := time.NewTicker(volumeDropInterval)
+	defer volumeDropTicker.Stop()
+	volumeDrop := newVolumeDropCheck(store)
+
 	offset, err := spool.ReadCursor(cfg.SpoolDir)
 	if err != nil {
 		slog.Warn("worker: failed to read cursor, starting from 0", "err", err)
@@ -79,6 +83,8 @@ func runBackgroundWorker(ctx context.Context, cfg config.Config, store *reposito
 			runMaintenance(ctx, cfg, store, recordings)
 		case <-purgeTicker.C:
 			runMaintenance(ctx, cfg, store, recordings)
+		case <-volumeDropTicker.C:
+			volumeDrop.run(ctx)
 		case <-ticker.C:
 			tickCtx, tickSpan := tracing.StartSpan(ctx, "worker.tick",
 				attribute.Int64("spool.offset", offset),
