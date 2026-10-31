@@ -299,9 +299,9 @@ func TestCoalesce(t *testing.T) {
 	}
 }
 
-// An unrecognised environment is filed under the default rather than rejected —
-// dropping an event over a typo is worse than mis-filing it — but the process
-// says so once per distinct value instead of silently polluting reporting.
+// An unrecognised environment is filed as development rather than rejected —
+// dropping an event over a typo is worse than mis-filing it — and the process
+// says so once per distinct value.
 func TestProcessRecord_UnknownEnvironmentIsFiledNotDropped(t *testing.T) {
 	body := base64.StdEncoding.EncodeToString([]byte(
 		`{"name":"page_view","environment":"prodution"}`))
@@ -315,8 +315,8 @@ func TestProcessRecord_UnknownEnvironmentIsFiledNotDropped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProcessRecord: %v", err)
 	}
-	if event.Environment != environment.Production {
-		t.Errorf("environment: want %q, got %q", environment.Production, event.Environment)
+	if event.Environment != environment.Development {
+		t.Errorf("environment: want %q, got %q", environment.Development, event.Environment)
 	}
 	if event.Name != "page_view" {
 		t.Errorf("the event must still be processed, got name %q", event.Name)

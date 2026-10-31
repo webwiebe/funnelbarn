@@ -23,7 +23,7 @@ export interface FunnelBarnOptions {
    * Deployment environment tagged on every event, so one API key and project
    * can be reused across dev / staging / production and filtered apart in the
    * dashboard. Aliases are normalised server-side ("prod" and "live" both mean
-   * production); an unrecognised value is treated as production, so a typo is
+   * production); an unrecognised value is filed as development, so a typo is
    * worth avoiding.
    */
   environment?: string;
