@@ -146,6 +146,14 @@ func replayRecord(ctx context.Context, store *repository.Store, record spool.Rec
 		return false
 	}
 
+	if dryRun {
+		if err := store.CheckProjectSlug(ctx, slug); err != nil {
+			slog.Error("replay: resolve project", "ingest_id", record.IngestID, "slug", slug, "err", err)
+			return false
+		}
+		return true
+	}
+
 	proj, err := store.EnsureProject(ctx, slug)
 	if err != nil {
 		slog.Error("replay: resolve project", "ingest_id", record.IngestID, "slug", slug, "err", err)
@@ -153,9 +161,6 @@ func replayRecord(ctx context.Context, store *repository.Store, record spool.Rec
 	}
 	event.ProjectID = proj.ID
 
-	if dryRun {
-		return true
-	}
 	if err := worker.PersistEvent(ctx, store, event, nil); err != nil {
 		slog.Error("replay: persist event", "ingest_id", record.IngestID, "err", err)
 		return false

@@ -5,6 +5,7 @@ package repository_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -513,6 +514,46 @@ func TestEnsureProject_UUIDSlug_NoMatchingProject_Refuses(t *testing.T) {
 
 // Normal slugs that happen to contain hex characters but aren't UUID-shaped
 // must still auto-create as before.
+func TestCheckProjectSlug(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	existing, err := store.EnsureProject(ctx, "existing")
+	if err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+
+	cases := []struct {
+		name           string
+		slug           string
+		wantUnresolved bool
+	}{
+		{name: "existing slug", slug: "existing"},
+		{name: "existing project id", slug: existing.ID},
+		{name: "new well-formed slug", slug: "not-created-yet"},
+		{name: "unknown uuid", slug: "00000000-0000-0000-0000-000000000000", wantUnresolved: true},
+		{name: "invalid slug", slug: "Bad Slug", wantUnresolved: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := store.CheckProjectSlug(ctx, tc.slug)
+			if got := errors.Is(err, repository.ErrProjectUnresolvable); got != tc.wantUnresolved {
+				t.Errorf("CheckProjectSlug(%q) = %v, want unresolvable %v", tc.slug, err, tc.wantUnresolved)
+			}
+			if !tc.wantUnresolved && err != nil {
+				t.Errorf("CheckProjectSlug(%q) = %v, want nil", tc.slug, err)
+			}
+		})
+	}
+
+	var n int
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM projects`).Scan(&n); err != nil {
+		t.Fatalf("count projects: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("projects = %d, want 1: the check must create nothing", n)
+	}
+}
+
 func TestEnsureProject_NormalSlugAutoCreates(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)

@@ -118,6 +118,41 @@ func TestReplayRecord_DryRunStoresNoEvent(t *testing.T) {
 	}
 }
 
+// A dry run must not leave an empty project behind for a slug it only previewed.
+func TestReplayRecord_DryRunCreatesNoProject(t *testing.T) {
+	store := repotest.Open(t)
+	record := replayableRecord("rr-dry-project", "not-created-yet")
+
+	if !replayRecord(context.Background(), store, record, "", true) {
+		t.Fatal("replayRecord = false, want true for a slug a real run could create")
+	}
+	var n int
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM projects WHERE slug = ?`, record.ProjectSlug).Scan(&n); err != nil {
+		t.Fatalf("count projects: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("dry run created %d projects, want 0", n)
+	}
+}
+
+// The preview has to match the real run: a slug a real run refuses is skipped,
+// which keeps the dead-letter file on a real run.
+func TestReplayRecord_DryRunRefusesAnUnusableSlug(t *testing.T) {
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	store := repotest.Open(t)
+	if replayRecord(context.Background(), store, replayableRecord("rr-dry-bad", "Bad Slug"), "", true) {
+		t.Fatal("replayRecord = true, want false")
+	}
+	want := `"level":"ERROR","msg":"replay: resolve project"`
+	if !strings.Contains(logs.String(), want) {
+		t.Errorf("logs = %s, want a line with %s", logs.String(), want)
+	}
+}
+
 // --project names the project for records that carry none. A record that names
 // its own keeps it.
 func TestReplayRecord_RecordSlugWinsOverProjectFlag(t *testing.T) {
