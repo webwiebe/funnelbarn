@@ -27,7 +27,7 @@ Every Kubernetes container declares resource requests and limits plus health pro
 | Production writer requests 100m CPU and 64Mi memory, limits 500m and 256Mi | Original task example | Production writer requests 128Mi (`deploy/k8s/production/deployment.yaml`); staging limits 128Mi, testing limits 250m CPU and 128Mi |
 | Three deployment files, one per environment | Original task | Each environment also has `reader-statefulset.yaml` and `web-deployment.yaml`, and production adds `ingressroute-f-wildcard.yaml` |
 | The runbook has 6 sections | Acceptance criteria | `deploy/RUNBOOK.md` has sections 1 to 6 plus 2b, 2d and 4b; there is no section 2c heading at level 2 (it is a level 3 heading under 2b) |
-| Backup restore uses Litestream S3 replication | Original task | Holds; `deploy/docker/litestream.yml` and the writer manifests set `LITESTREAM_*` variables |
+| Backup restore uses Litestream S3 replication | Original task | Holds; `deploy/docker/litestream.yml` and the writer manifests set `LITESTREAM_*` variables. Retention is 168h with a 24h snapshot interval, which keeps 6 to 7 days |
 
 ## Proof contract
 
