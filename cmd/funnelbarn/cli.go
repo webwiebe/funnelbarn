@@ -35,7 +35,7 @@ func runWorkerOnce(cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer logShutdown(slog.LevelError, "store", store.Close)
 
 	records, err := spool.ReadRecords(spool.Path(cfg.SpoolDir))
 	if err != nil {
@@ -94,7 +94,7 @@ func runReplayDeadLetter(cfg config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer logShutdown(slog.LevelError, "store", store.Close)
 
 	records, err := spool.ReadRecords(spool.DeadLetterPath(cfg.SpoolDir))
 	if err != nil {
@@ -186,7 +186,7 @@ func runUserCmd(cfg config.Config, args []string) error {
 		if err != nil {
 			return err
 		}
-		defer store.Close()
+		defer logShutdown(slog.LevelError, "store", store.Close)
 		if err := store.UpsertUser(context.Background(), *username, string(hash)); err != nil {
 			return fmt.Errorf("upsert user: %w", err)
 		}
@@ -224,7 +224,7 @@ func runProjectCmd(cfg config.Config, args []string) error {
 		if err != nil {
 			return err
 		}
-		defer store.Close()
+		defer logShutdown(slog.LevelError, "store", store.Close)
 		p, err := store.CreateProject(context.Background(), *name, *slug)
 		if err != nil {
 			return fmt.Errorf("create project: %w", err)
@@ -261,7 +261,7 @@ func runAPIKeyCmd(cfg config.Config, args []string) error {
 		if err != nil {
 			return err
 		}
-		defer store.Close()
+		defer logShutdown(slog.LevelError, "store", store.Close)
 		ctx := context.Background()
 		project, err := store.ProjectBySlug(ctx, *projectSlug)
 		if err != nil {

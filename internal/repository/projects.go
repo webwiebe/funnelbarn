@@ -231,7 +231,7 @@ func (s *Store) DeleteProject(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("delete project: begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// recording_traces has no FK to projects, so cascade won't reach it.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM recording_traces WHERE project_id = ?`, id); err != nil {

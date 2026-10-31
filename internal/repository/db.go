@@ -100,14 +100,14 @@ func Open(path string) (*Store, error) {
 		otelsql.WithMeterProvider(otel.GetMeterProvider()),
 		otelsql.WithAttributes(semconv.DBSystemSqlite, poolAttr("write")))
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("register db stats metrics: %w", err)
 	}
 	// closeAll tears down both the stats callback registration and the DB
 	// connection; used on every error path below now that both exist.
 	closeAll := func() {
-		statsReg.Unregister()
-		db.Close()
+		_ = statsReg.Unregister()
+		_ = db.Close()
 	}
 
 	// SQLite should use a single writer connection.
@@ -306,7 +306,7 @@ func (s *Store) Close() error {
 		_ = s.readStatsReg.Unregister()
 	}
 	if s.statsReg != nil {
-		s.statsReg.Unregister()
+		_ = s.statsReg.Unregister()
 	}
 	if err := s.db.Close(); err != nil {
 		return err
