@@ -1,0 +1,42 @@
+name: Restore Proof
+
+# Dispatch only. Restores the production replica into a throwaway Job in the
+# production namespace on layer7 and reports whether it came back whole. Actions
+# logs on this repository are public, so counts per table stay in a temp directory
+# that this job removes. See scripts/restore-proof.sh.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: restore-proof
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  restore-proof:
+    runs-on: [self-hosted, build]
+    # The Job's own deadline is 60 minutes; the rest covers the two production counts.
+    timeout-minutes: 80
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        # Only this job's own checkout: never another runner's work directory.
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c"
+            rm -rf "$c"
+          fi
+      - uses: actions/checkout@v6
+
+      - name: Restore the replica and compare
+        shell: bash
+        run: |
+          out="${RUNNER_TEMP:?}/restore-proof"
+          trap 'rm -rf "$out"' EXIT
+          bash scripts/restore-proof.sh "$out"
