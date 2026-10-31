@@ -28,8 +28,11 @@ from there. After that drop, no point before 10-31 06:59Z can be restored.
 A restore starts at the newest snapshot before the target and replays the WAL after
 it, so replay stays at about a day of writes. The Restore Proof workflow
 (`scripts/restore-proof.sh`) restores the replica into a throwaway Job in the
-production namespace and compares row counts with production. Production data
-stays on layer7, and IP records stay out of testing.
+production namespace and compares row counts with production. It runs every
+Wednesday at 11:43Z and on dispatch, and a failed run opens a `RestoreProofFailed`
+issue in BugBarn. Dispatching it with `simulate_failure` fails it before any restore
+or exec and sends the same report with `simulated: true`, to prove that path. Production
+data stays on layer7, and IP records stay out of testing.
 
 ### List available restore points
 

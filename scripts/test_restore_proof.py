@@ -11,6 +11,8 @@ if one property goes:
   - an empty production count reading as a pass-> test_empty_production_count_fails
   - a table lost in the restore passing        -> test_missing_table_fails
   - the Job left behind                        -> test_job_deleted_on_every_path
+  - a simulated failure reaching production    -> test_simulated_failure_stops_before_ssh
+  - a scheduled run simulating a failure       -> test_only_dispatch_can_simulate
 
 Run with:  python3 -m unittest discover -s scripts -p 'test_*.py'
 """
@@ -24,8 +26,11 @@ import tempfile
 import textwrap
 import unittest
 
+import yaml
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "restore-proof.sh"
+WORKFLOW = REPO_ROOT / ".github" / "workflows" / "restore-proof.yml"
 
 # Distinct enough that a substring match cannot come from a timestamp or exit code.
 EVENTS_BEFORE, EVENTS_RESTORED, EVENTS_AFTER = 7654321, 7654322, 7654323
@@ -65,8 +70,8 @@ FAKE_SSH = textwrap.dedent(
 
 
 class RestoreProof(unittest.TestCase):
-    def run_proof(self, log=GOOD_LOG, before=None, after=None):
-        """Returns the finished process and the fake's working directory."""
+    def fake_ssh(self, log=GOOD_LOG, before=None, after=None):
+        """Returns a directory holding a fake ssh and the answers it gives."""
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         fake = pathlib.Path(tmp.name)
@@ -78,9 +83,29 @@ class RestoreProof(unittest.TestCase):
         (fake / "counts-0").write_text(default_before if before is None else before)
         (fake / "counts-1").write_text(default_after if after is None else after)
         (fake / "job-log").write_text(log)
+        return fake
+
+    def run_proof(self, log=GOOD_LOG, before=None, after=None):
+        """Returns the finished process and the fake's working directory."""
+        fake = self.fake_ssh(log, before, after)
         run = subprocess.run(
             ["bash", str(SCRIPT), str(fake / "out")],
             env={**os.environ, "PATH": f"{fake}:{os.environ['PATH']}"},
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        return run, fake
+
+    def run_step(self, simulate):
+        """Runs the workflow's proof step the way Actions runs a bash step."""
+        fake = self.fake_ssh()
+        workflow = yaml.safe_load(WORKFLOW.read_text())
+        step = next(s for s in workflow["jobs"]["restore-proof"]["steps"] if s.get("name") == "Restore the replica and compare")
+        run = subprocess.run(
+            ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", step["run"]],
+            cwd=REPO_ROOT,
+            env={**os.environ, "PATH": f"{fake}:{os.environ['PATH']}", "RUNNER_TEMP": str(fake), "SIMULATE_FAILURE": simulate},
             capture_output=True,
             text=True,
             timeout=60,
@@ -151,6 +176,26 @@ class RestoreProof(unittest.TestCase):
         for log in (GOOD_LOG, ""):
             _, fake = self.run_proof(log=log)
             self.assertRegex((fake / "calls").read_text(), r"delete job restore-proof-\d+ ")
+
+    def test_simulated_failure_stops_before_ssh(self):
+        run, fake = self.run_step("true")
+        self.assertEqual(run.returncode, 1)
+        self.assertFalse((fake / "calls").exists())
+
+    # A scheduled run has no inputs, so the variable arrives empty.
+    def test_proof_runs_without_the_simulation(self):
+        for simulate in ("", "false"):
+            run, fake = self.run_step(simulate)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertTrue((fake / "calls").exists())
+
+    def test_only_dispatch_can_simulate(self):
+        workflow = yaml.safe_load(WORKFLOW.read_text())
+        # YAML 1.1 reads the bare key `on` as True.
+        on = workflow[True]
+        self.assertEqual(sorted(on), ["schedule", "workflow_dispatch"])
+        self.assertEqual(list(on["schedule"]), [{"cron": on["schedule"][0]["cron"]}])
+        self.assertIs(on["workflow_dispatch"]["inputs"]["simulate_failure"]["default"], False)
 
 
 if __name__ == "__main__":

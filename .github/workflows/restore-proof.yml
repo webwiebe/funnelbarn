@@ -1,11 +1,20 @@
 name: Restore Proof
 
-# Dispatch only. Restores the production replica into a throwaway Job in the
+# Weekly and on dispatch. Restores the production replica into a throwaway Job in the
 # production namespace on layer7 and reports whether it came back whole. Actions
 # logs on this repository are public, so counts per table stay in a temp directory
 # that this job removes. See scripts/restore-proof.sh.
 on:
+  schedule:
+    # Wednesday midday UTC: away from the nightly jobs, about 02:00 to 07:30, and
+    # within working hours, so a failure gets read the same day.
+    - cron: '43 11 * * 3'
   workflow_dispatch:
+    inputs:
+      simulate_failure:
+        description: Fail before any restore or exec, to prove the BugBarn report
+        type: boolean
+        default: false
 
 concurrency:
   group: restore-proof
@@ -17,8 +26,9 @@ permissions:
 jobs:
   restore-proof:
     runs-on: [self-hosted, build]
-    # The Job's own deadline is 60 minutes; the rest covers the two production counts.
-    timeout-minutes: 80
+    # The Job's own deadline is 12 minutes; the rest covers checkout and the two
+    # production counts.
+    timeout-minutes: 15
     env:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -36,7 +46,43 @@ jobs:
 
       - name: Restore the replica and compare
         shell: bash
+        env:
+          SIMULATE_FAILURE: ${{ inputs.simulate_failure }}
         run: |
+          if [ "${SIMULATE_FAILURE:-}" = "true" ]; then
+            echo "::error::simulate_failure is set. Nothing ran against production."
+            exit 1
+          fi
           out="${RUNNER_TEMP:?}/restore-proof"
           trap 'rm -rf "$out"' EXIT
           bash scripts/restore-proof.sh "$out"
+
+      # A failed scheduled run has nobody watching it. The event opens a BugBarn
+      # issue. A job timeout ends as cancelled, so that reports too. No `|| echo`: a
+      # report that did not land has to show in the log.
+      - name: Report a failed proof to BugBarn
+        if: (failure() || cancelled()) && vars.BUGBARN_ENDPOINT != ''
+        shell: bash
+        env:
+          BUGBARN_ENDPOINT: ${{ vars.BUGBARN_ENDPOINT }}
+          BUGBARN_API_KEY: ${{ secrets.FUNNELBARN_BUGBARN_API_KEY }}
+          SIMULATE_FAILURE: ${{ inputs.simulate_failure }}
+        run: |
+          set -euo pipefail
+          curl -sf --retry 3 --max-time 20 -X POST "${BUGBARN_ENDPOINT}/api/v1/events" \
+            -H "Content-Type: application/json" \
+            -H "X-BugBarn-Api-Key: ${BUGBARN_API_KEY}" \
+            -H "X-BugBarn-Project: funnelbarn" \
+            -d "{
+              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+              \"severityText\": \"error\",
+              \"exception\": {
+                \"type\": \"RestoreProofFailed\",
+                \"message\": \"The Restore Proof workflow failed. Read the run before trusting the replica.\"
+              },
+              \"attributes\": {
+                \"environment\": \"production\",
+                \"simulated\": \"${SIMULATE_FAILURE:-false}\",
+                \"run_url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"
+              }
+            }" || { echo "::error::Could not report the failed proof to BugBarn."; exit 1; }
