@@ -21,7 +21,10 @@ Replica paths per environment:
 
 The replica keeps 6 to 7 days: `retention: 168h` with a snapshot every 24h. A
 restore starts at the newest snapshot before the target and replays the WAL after
-it, so replay stays at about a day of writes.
+it, so replay stays at about a day of writes. The Restore Proof workflow
+(`scripts/restore-proof.sh`) restores the replica into a throwaway Job in the
+production namespace and compares row counts with production. Production data
+stays on layer7, and IP records stay out of testing.
 
 ### List available restore points
 
