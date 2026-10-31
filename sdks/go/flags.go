@@ -183,37 +183,15 @@ func (t *transport) evaluate(ctx context.Context, key string, def any, evalCtx m
 		return EvalResult{FlagKey: key, Value: def, Reason: "ERROR", ErrorCode: code}
 	}
 
-	if evalCtx == nil {
-		evalCtx = map[string]any{}
-	}
-	body, err := json.Marshal(map[string]any{
-		"flag_key":      key,
-		"default_value": def,
-		"context":       evalCtx,
-		"kind":          t.opts.FlagKind,
-	})
-	if err != nil {
-		return fail("GENERAL")
-	}
-
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	ctx, cancel := context.WithTimeout(ctx, flagEvalTimeout)
 	defer cancel()
 
-	// Endpoint is normalised by newTransport, so it is a bare base URL here.
-	url := t.opts.Endpoint + "/api/v1/evaluate"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return fail("TRANSPORT")
-	}
-	req.Header.Set("Content-Type", "application/json")
-	// Note for anyone reading this while debugging a 401: the evaluate endpoint
-	// reads these two headers only. Authorization and x-api-key both fail.
-	req.Header.Set("x-funnelbarn-api-key", t.opts.APIKey)
-	if t.opts.ProjectName != "" {
-		req.Header.Set("x-funnelbarn-project", t.opts.ProjectName)
+	req, code := t.newEvalRequest(ctx, key, def, evalCtx)
+	if code != "" {
+		return fail(code)
 	}
 
 	resp, err := t.client.Do(req)
@@ -250,6 +228,38 @@ func (t *transport) evaluate(ctx context.Context, key string, def any, evalCtx m
 		res.serverHinted = true
 	}
 	return res
+}
+
+// newEvalRequest builds the evaluate call. It returns the error code to report
+// when it cannot.
+func (t *transport) newEvalRequest(ctx context.Context, key string, def any, evalCtx map[string]any) (*http.Request, string) {
+	if evalCtx == nil {
+		evalCtx = map[string]any{}
+	}
+	body, err := json.Marshal(map[string]any{
+		"flag_key":      key,
+		"default_value": def,
+		"context":       evalCtx,
+		"kind":          t.opts.FlagKind,
+	})
+	if err != nil {
+		return nil, "GENERAL"
+	}
+
+	// Endpoint is normalised by newTransport, so it is a bare base URL here.
+	url := t.opts.Endpoint + "/api/v1/evaluate"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, "TRANSPORT"
+	}
+	req.Header.Set("Content-Type", "application/json")
+	// Note for anyone reading this while debugging a 401: the evaluate endpoint
+	// reads these two headers only. Authorization and x-api-key both fail.
+	req.Header.Set("x-funnelbarn-api-key", t.opts.APIKey)
+	if t.opts.ProjectName != "" {
+		req.Header.Set("x-funnelbarn-project", t.opts.ProjectName)
+	}
+	return req, ""
 }
 
 // --------------------------------------------------------------------------

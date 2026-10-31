@@ -331,3 +331,26 @@ func TestStripURL(t *testing.T) {
 		})
 	}
 }
+
+// The rule order decides these: each string names more than one browser.
+func TestParseBrowser_RuleOrder(t *testing.T) {
+	cases := map[string]string{
+		"chrome/120 safari/537 edg/120": "Edge",
+		"chrome/120 safari/537 opr/108": "Opera",
+		"chrome/120 safari/537":         "Chrome",
+		"chromium/120 chrome/120":       "Chromium",
+		"chromium/120":                  "Chromium",
+		"chromium/120 safari/537":       "Chromium",
+		"fxios/120 safari/537":          "Firefox",
+		"version/17 safari/605":         "Safari",
+		"trident/7.0":                   "IE",
+		"curl/8.4.0":                    "curl",
+		"wget/1.21":                     "Other",
+		"":                              "Other",
+	}
+	for ua, want := range cases {
+		if got := parseBrowser(ua); got != want {
+			t.Errorf("parseBrowser(%q) = %q, want %q", ua, got, want)
+		}
+	}
+}

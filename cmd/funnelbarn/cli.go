@@ -108,41 +108,11 @@ func runReplayDeadLetter(cfg config.Config, args []string) error {
 
 	var replayed, skipped int
 	for _, record := range records {
-		slug := record.ProjectSlug
-		if slug == "" {
-			slug = *project
-		}
-		if slug == "" {
-			skipped++
-			slog.Warn("replay: record has no project slug and no --project given", "ingest_id", record.IngestID)
-			continue
-		}
-
-		event, err := worker.SafeProcess(record)
-		if err != nil {
-			skipped++
-			slog.Error("replay: process record", "ingest_id", record.IngestID, "err", err)
-			continue
-		}
-
-		proj, projErr := store.EnsureProject(ctx, slug)
-		if projErr != nil {
-			skipped++
-			slog.Error("replay: resolve project", "ingest_id", record.IngestID, "slug", slug, "err", projErr)
-			continue
-		}
-		event.ProjectID = proj.ID
-
-		if *dryRun {
+		if replayRecord(ctx, store, record, *project, *dryRun) {
 			replayed++
-			continue
-		}
-		if err := worker.PersistEvent(ctx, store, event, nil); err != nil {
+		} else {
 			skipped++
-			slog.Error("replay: persist event", "ingest_id", record.IngestID, "err", err)
-			continue
 		}
-		replayed++
 	}
 
 	span.SetAttributes(attribute.Int("replayed", replayed), attribute.Int("skipped", skipped))
@@ -155,6 +125,42 @@ func runReplayDeadLetter(cfg config.Config, args []string) error {
 
 	fmt.Printf("{\"records\":%d,\"replayed\":%d,\"skipped\":%d,\"dry_run\":%t}\n", len(records), replayed, skipped, *dryRun)
 	return nil
+}
+
+// replayRecord applies one dead-letter record, or checks that it could be on a
+// dry run. It logs why it could not and reports whether the record counts as
+// replayed.
+func replayRecord(ctx context.Context, store *repository.Store, record spool.Record, project string, dryRun bool) bool {
+	slug := record.ProjectSlug
+	if slug == "" {
+		slug = project
+	}
+	if slug == "" {
+		slog.Warn("replay: record has no project slug and no --project given", "ingest_id", record.IngestID)
+		return false
+	}
+
+	event, err := worker.SafeProcess(record)
+	if err != nil {
+		slog.Error("replay: process record", "ingest_id", record.IngestID, "err", err)
+		return false
+	}
+
+	proj, err := store.EnsureProject(ctx, slug)
+	if err != nil {
+		slog.Error("replay: resolve project", "ingest_id", record.IngestID, "slug", slug, "err", err)
+		return false
+	}
+	event.ProjectID = proj.ID
+
+	if dryRun {
+		return true
+	}
+	if err := worker.PersistEvent(ctx, store, event, nil); err != nil {
+		slog.Error("replay: persist event", "ingest_id", record.IngestID, "err", err)
+		return false
+	}
+	return true
 }
 
 // runUserCmd handles: funnelbarn user create --username=X --password=Y

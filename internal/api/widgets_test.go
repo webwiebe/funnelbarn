@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -93,5 +94,23 @@ func TestHandleWidgetBreakdown_NotFound(t *testing.T) {
 	w := getJSON(t, srv, "/api/v1/projects/"+pid+"/widgets/nonexistent/breakdown", nil)
 	if w.Code == http.StatusOK {
 		t.Fatalf("expected error status for unknown widget, got 200 (body: %s)", w.Body.String())
+	}
+}
+
+func TestPositiveQueryInt(t *testing.T) {
+	cases := map[string]int{
+		"":        100,
+		"?n=1":    1,
+		"?n=1000": 1000,
+		"?n=0":    100,
+		"?n=-1":   100,
+		"?n=1001": 100,
+		"?n=abc":  100,
+	}
+	for query, want := range cases {
+		r := httptest.NewRequest(http.MethodGet, "/"+query, nil)
+		if got := positiveQueryInt(r, "n", 100, 1000); got != want {
+			t.Errorf("positiveQueryInt(%q) = %d, want %d", query, got, want)
+		}
 	}
 }
