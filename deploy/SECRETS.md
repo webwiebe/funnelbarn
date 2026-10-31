@@ -13,6 +13,32 @@ Used to decrypt Kubernetes secret manifests per environment.
 | `SOPS_AGE_KEY_STAGING` | build-and-test.yml (`deploy-staging` job) | Age private key for decrypting `deploy/k8s/staging/secret.yaml` |
 | `SOPS_AGE_KEY_PRODUCTION` | deploy-production.yml | Age private key for decrypting `deploy/k8s/production/secret.yaml` |
 
+## Cloudflare R2 (recordings and backups)
+
+Each environment has its own token, set through `FUNNELBARN_R2_ACCESS_KEY_ID` and
+`FUNNELBARN_R2_SECRET_ACCESS_KEY` in its SOPS file. A testing or staging pod holds
+its own token, so it must not be able to read production data.
+
+| Environment | Token may read and write |
+|-------------|--------------------------|
+| production | `funnelbarn-recordings-production`, `barn-backups` |
+| staging | `funnelbarn-recordings-staging` |
+| testing | `funnelbarn-recordings-testing` |
+
+R2 tokens scope to whole buckets, so the production token reaches every prefix in
+`barn-backups`. Only production replicates with Litestream.
+
+To rotate:
+
+1. Create the tokens in the Cloudflare console with the scopes above.
+2. Run `scripts/rotate-r2-token.sh`, or name one environment. It prompts with echo
+   off and writes only the SOPS files.
+3. Merge the change and deploy each environment.
+4. Check the startup log line `session recording enabled` in each environment, a
+   recording upload, and in production that Litestream still replicates.
+5. Revoke the old token in the console. Do this last: a pod on the old token fails
+   as soon as it is revoked.
+
 ## Cloudflare R2 (package repository)
 
 Used by `binary-release.yml` to publish Homebrew tarballs into the shared
