@@ -68,7 +68,7 @@ regress:
 # Report-only soaks. Each compares the current measurement against a committed
 # baseline in scripts/soak-baselines/ and fails on a new violation, a worsened
 # file, or a baseline that has become beatable. Exit criteria are written into
-# scripts/quality-soak.py. Needs golangci-lint on PATH and web/node_modules.
+# scripts/quality-soak.py. Needs web/node_modules.
 soak:
 	python3 scripts/quality-soak.py all
 

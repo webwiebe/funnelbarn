@@ -455,10 +455,10 @@ func AppendDeadLetter(dir string, record Record) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-
+	// A failed close can mean the write never reached the disk, and the caller
+	// keeps the record only if this reports it.
 	_, err = file.Write(payload)
-	return err
+	return errors.Join(err, file.Close())
 }
 
 // ReadRecords reads all records from path.
@@ -470,7 +470,7 @@ func ReadRecords(path string) ([]Record, error) {
 		}
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var records []Record
 	scanner := bufio.NewScanner(file)

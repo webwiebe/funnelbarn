@@ -301,7 +301,7 @@ cd web && pnpm test
 # Lint (gofmt + go vet + frontend lint)
 make lint
 
-# Report-only quality soaks (golangci-lint, complexity, file length)
+# Report-only quality soaks (complexity, file length)
 # against the committed baselines in scripts/soak-baselines/
 make soak
 

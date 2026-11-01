@@ -83,7 +83,7 @@ func (s *R2Store) Get(ctx context.Context, key string) ([]byte, error) {
 		tracing.RecordError(span, err)
 		return nil, err
 	}
-	defer out.Body.Close()
+	defer func() { _ = out.Body.Close() }()
 	data, err := io.ReadAll(out.Body)
 	metrics.R2RequestDuration.WithLabelValues("get").Observe(time.Since(start).Seconds())
 	if err != nil {
