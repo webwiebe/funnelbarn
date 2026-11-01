@@ -46,8 +46,9 @@ env:
 
 jobs:
   build:
-    # workflow_dispatch is a deliberate manual re-deploy of the current main and
-    # carries no workflow_run context; every automatic run must have passed CI.
+    # workflow_dispatch is a deliberate manual re-deploy, of main or of a branch to
+    # testing only, and carries no workflow_run context; every automatic run must
+    # have passed CI.
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: [self-hosted, build]
     timeout-minutes: 30
@@ -246,7 +247,17 @@ jobs:
           E2E_BASE_URL: https://funnelbarn.test.wiebe.xyz
           # k3s cluster private IP — reachable from the Mac Mini runner
           E2E_CLUSTER_IP: 192.168.4.108
-        run: pnpm exec playwright test --reporter=list,html
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY_TESTING }}
+        run: |
+          set -euo pipefail
+          # The login lives only in the testing secret, so a rotation needs no second copy.
+          E2E_USERNAME="$(sops -d --extract '["stringData"]["FUNNELBARN_ADMIN_USERNAME"]' deploy/k8s/testing/secret.yaml)"
+          E2E_PASSWORD="$(sops -d --extract '["stringData"]["E2E_PASSWORD"]' deploy/k8s/testing/secret.yaml)"
+          echo "::add-mask::${E2E_USERNAME}"
+          echo "::add-mask::${E2E_PASSWORD}"
+          export E2E_USERNAME E2E_PASSWORD
+          unset SOPS_AGE_KEY
+          pnpm exec playwright test --reporter=list,html
 
       - name: Upload test results on failure
         if: failure()
@@ -328,6 +339,9 @@ jobs:
     # build -> deploy-testing -> e2e -> deploy-staging. The spec was right about
     # the intent and the workflow did not implement it. Now it does.
     needs: [build, deploy, e2e]
+    # A dispatch on a branch stops here, after testing and E2E, so it can prove a
+    # branch without reaching staging or the promote job behind it.
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: [self-hosted, build]
     timeout-minutes: 15
     env:
