@@ -193,7 +193,7 @@ func TestRecordingService_ChunkEventsRedactedAndScanned(t *testing.T) {
 	assert.JSONEq(t, `[{"type":4,"data":{"href":"https://id.example.com/verify?token=redacted"},"timestamp":1730000000123}]`, string(stored))
 
 	// A clean scan: the stored chunk is already redacted.
-	res, err := svc.ScanChunkURLs(ctx, p.ID)
+	res, err := svc.ScanChunkURLs(ctx, p.ID, service.ChunkScanOpts{})
 	require.NoError(t, err)
 	assert.Equal(t, 1, res.Recordings)
 	assert.Equal(t, 1, res.Chunks)
@@ -212,7 +212,7 @@ func TestRecordingService_ChunkEventsRedactedAndScanned(t *testing.T) {
 	require.NoError(t, svc.IngestChunk(ctx, second))
 	require.NoError(t, storage.Delete(ctx, "recordings/"+p.ID+"/rec-scan-001/00001.json.gz"))
 
-	res, err = svc.ScanChunkURLs(ctx, p.ID)
+	res, err = svc.ScanChunkURLs(ctx, p.ID, service.ChunkScanOpts{})
 	require.NoError(t, err)
 	assert.Equal(t, 1, res.Recordings)
 	assert.Equal(t, 3, res.Chunks)
