@@ -147,9 +147,9 @@ func TestAPIKeyRoutes_AllowALocalSession(t *testing.T) {
 	}
 }
 
-// A role removed in IAMBarn ends key access at the next refresh, because the
-// refresh re-snapshots the claims the check reads.
-func TestAPIKeyRoutes_RoleRemovedAtRefreshEndsAccess(t *testing.T) {
+// When a refresh returns claims without the role, key access ends at that
+// refresh, because the check reads the re-snapshotted claims.
+func TestAPIKeyRoutes_RefreshedClaimsWithoutTheRoleEndAccess(t *testing.T) {
 	fx := newAdminFixture(t)
 	cookie, _ := insertOIDCSession(t, fx.srv, repository.WebSession{
 		Username:        "alice",

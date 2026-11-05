@@ -33,9 +33,10 @@ func sessionAdmin(ctx context.Context) bool {
 // (the env-var admin and DB users) are set up by whoever runs the server, so
 // they are admins. An OIDC session is an admin while its stored claims pass
 // the sign-in role check: owner, organization_admin or operator in the
-// required organization. The claims are re-snapshotted on every refresh, so a
-// role removed in IAMBarn ends key access at the next refresh. Groups do not
-// count, for the reason given on OIDCClient.Allowed.
+// required organization. claims_json is the sign-in snapshot, replaced when a
+// refresh returns new claims (#481 makes that happen with IAMBarn, whose
+// refresh response carries no id_token). Groups do not count, for the reason
+// given on OIDCClient.Allowed.
 func (s *Server) sessionIsAdmin(ws repository.WebSession) bool {
 	if ws.AuthMethod != "oidc" {
 		return true
