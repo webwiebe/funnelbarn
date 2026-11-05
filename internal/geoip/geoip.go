@@ -42,7 +42,7 @@ func Open(cityDBPath, asnDBPath string) (*Lookup, error) {
 	if asnDBPath != "" {
 		asn, err := geoip2.Open(asnDBPath)
 		if err != nil {
-			city.Close()
+			_ = city.Close()
 			return nil, err
 		}
 		l.asnDB = asn
@@ -55,9 +55,9 @@ func (l *Lookup) Close() {
 	if l == nil {
 		return
 	}
-	l.cityDB.Close()
+	_ = l.cityDB.Close()
 	if l.asnDB != nil {
-		l.asnDB.Close()
+		_ = l.asnDB.Close()
 	}
 }
 
