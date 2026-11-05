@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -107,4 +108,79 @@ func TestScanChunkURLs_StopsAtMemoryCap(t *testing.T) {
 	assert.Equal(t, 1, res.Chunks)
 	assert.Equal(t, 1, res.MatchingChunks)
 	assert.Equal(t, 1, res.MatchingRecordings)
+}
+
+// gzipChunk gzips one rrweb-shaped event array.
+func gzipChunk(t *testing.T, events string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, err := zw.Write([]byte(events))
+	require.NoError(t, err)
+	require.NoError(t, zw.Close())
+	return buf.Bytes()
+}
+
+// With Shapes set, a chunk that holds token values yields only host, masked
+// path and parameter name: no value and no identifier segment reaches the
+// result or its JSON.
+func TestScanChunkURLs_ShapesAreMaskedAndHoldNoValue(t *testing.T) {
+	const (
+		secret = "tok_SECRETVALUE_4f9a2c"
+		pathID = "9f8e7d6c5b4a3928"
+	)
+	first := gzipChunk(t, `[`+
+		`{"type":4,"data":{"href":"https://id.example.com/reset/`+pathID+`/confirm?token=`+secret+`&lang=nl"},"timestamp":1},`+
+		`{"type":3,"data":{"href":"https://id.example.com/reset/`+pathID+`/confirm?token=`+secret+`"},"timestamp":2},`+
+		`{"type":3,"data":{"src":"https://app.example.com/page?tab=overview"},"timestamp":3}]`)
+	second := gzipChunk(t, `[{"type":4,"data":{"href":"https://app.example.com/#/invite/12345?invite=`+secret+`"},"timestamp":4}]`)
+	clean := gzipChunk(t, `[{"type":3,"data":{"href":"https://app.example.com/page?tab=overview"},"timestamp":5}]`)
+	svc, projectID := seedRecordings(t, 2, [][]byte{first, second, clean})
+
+	res, err := svc.ScanChunkURLs(context.Background(), projectID, service.ChunkScanOpts{Shapes: true})
+	require.NoError(t, err)
+	assert.Equal(t, 6, res.Chunks)
+	assert.Equal(t, 4, res.MatchingChunks)
+	assert.Equal(t, 2, res.MatchingRecordings)
+
+	reset := enrich.URLShape{Host: "id.example.com", Path: "/reset/:id/confirm", Param: "token"}
+	invite := enrich.URLShape{Host: "app.example.com", Path: "/#/invite/:id", Param: "invite"}
+	assert.ElementsMatch(t, []service.URLShapeCount{
+		{URLShape: reset, Chunks: 2, Recordings: 2},
+		{URLShape: invite, Chunks: 2, Recordings: 2},
+	}, res.Shapes)
+
+	out, err := json.Marshal(res)
+	require.NoError(t, err)
+	for _, leak := range []string{secret, "SECRET", pathID, "12345", "lang", "overview"} {
+		assert.NotContains(t, string(out), leak)
+	}
+	assert.Contains(t, string(out), `"path":"/reset/:id/confirm"`)
+}
+
+// Past MaxShapes distinct shapes, the rest count under OtherShapes.
+func TestScanChunkURLs_ShapesCapAtMaxShapes(t *testing.T) {
+	chunk := gzipChunk(t, `[{"href":"https://a.example/one?token=x"},{"href":"https://a.example/two?token=x"},{"href":"https://a.example/three?token=x"}]`)
+	svc, projectID := seedRecordings(t, 1, [][]byte{chunk})
+
+	res, err := svc.ScanChunkURLs(context.Background(), projectID, service.ChunkScanOpts{Shapes: true, MaxShapes: 2})
+	require.NoError(t, err)
+	require.Len(t, res.Shapes, 3)
+	var other *service.URLShapeCount
+	for i := range res.Shapes {
+		if res.Shapes[i].URLShape == service.OtherShapes {
+			other = &res.Shapes[i]
+		}
+	}
+	require.NotNil(t, other)
+	assert.Equal(t, 1, other.Chunks)
+}
+
+// Without Shapes the result carries no shapes.
+func TestScanChunkURLs_NoShapesByDefault(t *testing.T) {
+	svc, projectID := seedRecordings(t, 1, [][]byte{bigChunk(t, 1<<10, true)})
+	res, err := svc.ScanChunkURLs(context.Background(), projectID, service.ChunkScanOpts{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.MatchingChunks)
+	assert.Empty(t, res.Shapes)
 }
