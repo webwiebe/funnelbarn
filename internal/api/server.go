@@ -459,9 +459,9 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("GET /api/v1/recording-config", s.limit(s.eventsLimiter, http.HandlerFunc(s.handleGetRecordingConfig)))
 
 	// API keys
-	s.mux.HandleFunc("GET /api/v1/apikeys", s.requireSession(s.handleListAPIKeys))
-	s.mux.HandleFunc("POST /api/v1/apikeys", s.requireSession(s.handleCreateAPIKey))
-	s.mux.HandleFunc("DELETE /api/v1/apikeys/{kid}", s.requireSession(s.handleDeleteAPIKey))
+	s.mux.HandleFunc("GET /api/v1/apikeys", s.requireAdminSession(s.handleListAPIKeys))
+	s.mux.HandleFunc("POST /api/v1/apikeys", s.requireAdminSession(s.handleCreateAPIKey))
+	s.mux.HandleFunc("DELETE /api/v1/apikeys/{kid}", s.requireAdminSession(s.handleDeleteAPIKey))
 
 	// Project approval
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/approve", s.requireSession(s.handleApproveProject))

@@ -277,6 +277,8 @@ The HTTP handler never writes to the database. Events are appended to a durable 
 
 ## Security
 
+- One trust level for projects: every signed-in session can read and write every project. Sign-in takes the env-var admin, a local user, or an IAMBarn account with the `owner`, `organization_admin` or `operator` role in `FUNNELBARN_OIDC_ORGANIZATION_ID`. IAMBarn groups do not grant access
+- Listing, creating and deleting API keys (`/api/v1/apikeys`) needs an admin session: a local session, or an IAMBarn session whose roles, re-read at each token refresh, still include one of those three. Other sessions get 403
 - Rate limiting on login, ingest, and authenticated API endpoints (configurable via env vars above)
 - Security headers applied automatically: `X-Frame-Options`, `Content-Security-Policy`, `HSTS`, etc.
 - `/metrics` endpoint can be protected with `FUNNELBARN_METRICS_TOKEN` (Bearer token)
