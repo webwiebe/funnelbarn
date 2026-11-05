@@ -94,7 +94,7 @@ type fallbackForwarder struct {
 	name     string
 	fallback *command.SpoolFallback
 	list     batchPublisher
-	failing  bool // the last forward failed; logged once per outage
+	outage   command.Outage // failed forwards; picks the log level
 }
 
 // forward runs on the reader's worker tick.
@@ -103,16 +103,13 @@ func (f *fallbackForwarder) forward(ctx context.Context) {
 	defer cancel()
 	n, err := f.fallback.Forward(pubCtx, f.list.PublishBatch)
 	if err != nil {
-		if !f.failing {
-			f.failing = true
-			slog.WarnContext(ctx, f.name+": forwarding buffered commands failed, keeping them on disk",
-				"err", err, "handled", true)
-		}
+		level, outage := f.outage.Fail()
+		slog.Log(ctx, level, f.name+": forwarding buffered commands failed, keeping them on disk",
+			outage, "err", err, "handled", true)
 		return
 	}
-	if f.failing {
-		f.failing = false
-		slog.InfoContext(ctx, f.name+": forwarding buffered commands recovered")
+	if lasted, ok := f.outage.Recover(); ok {
+		slog.InfoContext(ctx, f.name+": forwarding buffered commands recovered", "lasted", lasted.Round(time.Millisecond).String())
 	}
 	if n > 0 {
 		slog.InfoContext(ctx, f.name+": forwarded buffered commands", "count", n)

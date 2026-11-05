@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
@@ -133,8 +136,7 @@ func equal(a, b []string) bool {
 	return true
 }
 
-// Records stay in the spool, so a failed publish logs at Warn; the spool stall
-// check is what reports an outage that lasts.
+// Records stay in the spool, so a short stall logs at Warn once.
 func TestForwardPublishFailureLogsWarnOnce(t *testing.T) {
 	count := levelCounts(t)
 	dir := t.TempDir()
@@ -154,4 +156,42 @@ func TestForwardPublishFailureLogsWarnOnce(t *testing.T) {
 	if got := count("INFO", "ingest queue publish recovered"); got != 1 {
 		t.Errorf("INFO lines = %d, want 1", got)
 	}
+}
+
+// Repeated stalls with one successful publish between them re-arm the spool
+// stall check, so the forwarder reports them itself, once per window.
+func TestForwardRepeatedStallsLogErrorOnce(t *testing.T) {
+	count := levelCounts(t)
+	dir := t.TempDir()
+	now := time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC)
+	list := &fakeForwardList{}
+	f := &spoolForwarder{list: list, spoolDir: dir, maxLen: 100}
+	f.outage.Now = func() time.Time { return now }
+
+	stall := func() {
+		list.failNext = true
+		f.forward(context.Background(), entries("a"), 0)
+		now = now.Add(29 * time.Second)
+		list.failNext = true
+		f.forward(context.Background(), entries("a"), 0)
+		now = now.Add(time.Second)
+		f.forward(context.Background(), entries("a"), 0)
+	}
+
+	stall()
+	require.Zero(t, count("ERROR", "ingest queue publish failed"), "29s is under the total")
+	require.Equal(t, 1, count("INFO", "ingest queue publish recovered"))
+
+	stall()
+	require.Equal(t, 1, count("ERROR", "ingest queue publish failed"), "the second run takes the total to 30s")
+
+	stall()
+	stall()
+	require.Equal(t, 1, count("ERROR", "ingest queue publish failed"), "once inside the window")
+	require.Equal(t, 4, count("INFO", "ingest queue publish recovered"))
+
+	now = now.Add(command.OutageWindow)
+	stall()
+	stall()
+	require.Equal(t, 2, count("ERROR", "ingest queue publish failed"), "the pattern goes on past the window")
 }
