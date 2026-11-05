@@ -299,28 +299,35 @@ func toSlugLocal(name string) string {
 	return s
 }
 
-// runSubcommand runs a one-shot CLI subcommand named by args[0]. handled is
+// subcommands maps each one-shot CLI subcommand to its handler, which gets the
+// arguments after the name. classifyArgs reads the same map, so a subcommand
+// added here is also accepted on the command line.
+var subcommands = map[string]func(cfg config.Config, args []string) error{
+	"version":            runVersion,
+	"--version":          runVersion,
+	"-v":                 runVersion,
+	"worker-once":        func(cfg config.Config, _ []string) error { return runWorkerOnce(cfg) },
+	"replay-dead-letter": runReplayDeadLetter,
+	"user":               runUserCmd,
+	"project":            runProjectCmd,
+	"apikey":             runAPIKeyCmd,
+	"recordings":         runRecordingsCmd,
+}
+
+func runVersion(config.Config, []string) error {
+	fmt.Printf("funnelbarn %s (built %s)\n", Version, BuildTime)
+	return nil
+}
+
+// runSubcommand runs the one-shot CLI subcommand named by args[0]. handled is
 // false when args name none, and the caller starts the server.
 func runSubcommand(cfg config.Config, args []string) (handled bool, err error) {
 	if len(args) == 0 {
 		return false, nil
 	}
-	switch args[0] {
-	case "version", "--version", "-v":
-		fmt.Printf("funnelbarn %s (built %s)\n", Version, BuildTime)
-		return true, nil
-	case "worker-once":
-		return true, runWorkerOnce(cfg)
-	case "replay-dead-letter":
-		return true, runReplayDeadLetter(cfg, args[1:])
-	case "user":
-		return true, runUserCmd(cfg, args[1:])
-	case "project":
-		return true, runProjectCmd(cfg, args[1:])
-	case "apikey":
-		return true, runAPIKeyCmd(cfg, args[1:])
-	case "recordings":
-		return true, runRecordingsCmd(cfg, args[1:])
+	fn, ok := subcommands[args[0]]
+	if !ok {
+		return false, nil
 	}
-	return false, nil
+	return true, fn(cfg, args[1:])
 }

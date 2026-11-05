@@ -7,7 +7,7 @@ import (
 
 // usageText lists the subcommands. Running the binary with no argument, or
 // with `serve`, starts the server.
-const usageText = "usage: funnelbarn [serve | version | worker-once | replay-dead-letter | user | project | apikey | help]"
+const usageText = "usage: funnelbarn [serve | version | worker-once | replay-dead-letter | user | project | apikey | recordings | help]"
 
 // argAction is what the first command-line argument asks the process to do.
 type argAction int
@@ -36,7 +36,8 @@ func classifyArgs(args []string) argAction {
 		return actionServe
 	case "help", "-h", "--help":
 		return actionHelp
-	case "version", "--version", "-v", "worker-once", "replay-dead-letter", "user", "project", "apikey":
+	}
+	if _, ok := subcommands[args[0]]; ok {
 		return actionSubcommand
 	}
 	return actionUnknown
