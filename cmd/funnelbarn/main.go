@@ -123,24 +123,8 @@ func run() error {
 		version = cfg.Version
 	}
 
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "version", "--version", "-v":
-			fmt.Printf("funnelbarn %s (built %s)\n", Version, BuildTime)
-			return nil
-		case "worker-once":
-			return runWorkerOnce(cfg)
-		case "replay-dead-letter":
-			return runReplayDeadLetter(cfg, os.Args[2:])
-		case "user":
-			return runUserCmd(cfg, os.Args[2:])
-		case "project":
-			return runProjectCmd(cfg, os.Args[2:])
-		case "apikey":
-			return runAPIKeyCmd(cfg, os.Args[2:])
-		case "recordings":
-			return runRecordingsCmd(cfg, os.Args[2:])
-		}
+	if handled, err := runSubcommand(cfg, os.Args[1:]); handled {
+		return err
 	}
 
 	if err := cfg.ValidateMode(); err != nil {
@@ -497,4 +481,30 @@ func resolveEventProject(ctx context.Context, store *repository.Store, slug stri
 		return "", err
 	}
 	return proj.ID, nil
+}
+
+// runSubcommand runs a one-shot CLI subcommand named by args[0]. handled is
+// false when args name none, and the caller starts the server.
+func runSubcommand(cfg config.Config, args []string) (handled bool, err error) {
+	if len(args) == 0 {
+		return false, nil
+	}
+	switch args[0] {
+	case "version", "--version", "-v":
+		fmt.Printf("funnelbarn %s (built %s)\n", Version, BuildTime)
+		return true, nil
+	case "worker-once":
+		return true, runWorkerOnce(cfg)
+	case "replay-dead-letter":
+		return true, runReplayDeadLetter(cfg, args[1:])
+	case "user":
+		return true, runUserCmd(cfg, args[1:])
+	case "project":
+		return true, runProjectCmd(cfg, args[1:])
+	case "apikey":
+		return true, runAPIKeyCmd(cfg, args[1:])
+	case "recordings":
+		return true, runRecordingsCmd(cfg, args[1:])
+	}
+	return false, nil
 }
