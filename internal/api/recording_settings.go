@@ -71,19 +71,9 @@ func (s *Server) handleUpdateProjectRecordingSettings(w http.ResponseWriter, r *
 		return
 	}
 
-	if body.SampleRate != nil && (*body.SampleRate < 0 || *body.SampleRate > 1) {
-		jsonError(w, "sample_rate must be between 0 and 1", http.StatusBadRequest)
+	if msg := recordingSettingsProblem(body.SampleRate, body.Rules); msg != "" {
+		jsonError(w, msg, http.StatusBadRequest)
 		return
-	}
-	for _, rule := range body.Rules {
-		if rule.Action != "capture" && rule.Action != "ignore" {
-			jsonError(w, "rule action must be 'capture' or 'ignore'", http.StatusBadRequest)
-			return
-		}
-		if rule.Pattern == "" {
-			jsonError(w, "rule pattern must not be empty", http.StatusBadRequest)
-			return
-		}
 	}
 	if body.Rules == nil {
 		body.Rules = []repository.RecordingRule{}
@@ -114,6 +104,23 @@ func (s *Server) handleUpdateProjectRecordingSettings(w http.ResponseWriter, r *
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// recordingSettingsProblem returns what is wrong with submitted settings, or ""
+// when they are valid.
+func recordingSettingsProblem(sampleRate *float64, rules []repository.RecordingRule) string {
+	if sampleRate != nil && (*sampleRate < 0 || *sampleRate > 1) {
+		return "sample_rate must be between 0 and 1"
+	}
+	for _, rule := range rules {
+		if rule.Action != "capture" && rule.Action != "ignore" {
+			return "rule action must be 'capture' or 'ignore'"
+		}
+		if rule.Pattern == "" {
+			return "rule pattern must not be empty"
+		}
+	}
+	return ""
 }
 
 // effectiveRecordingConfig is the resolved recording config for a project.

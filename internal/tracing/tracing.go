@@ -2,8 +2,10 @@ package tracing
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -39,9 +41,20 @@ func newResource(ctx context.Context, cfg Config) (*resource.Resource, error) {
 		resource.WithAttributes(
 			semconv.ServiceName(cfg.ServiceName),
 			semconv.ServiceVersion(cfg.Version),
+			semconv.ServiceInstanceID(instanceID()),
 			semconv.DeploymentEnvironment(cfg.Environment),
 		),
 	)
+}
+
+// instanceID tells this process's telemetry apart from the other pods'. Without
+// it their cumulative counters land in one SpanBarn series, which then reads the
+// jumps between pods as counter resets.
+func instanceID() string {
+	if host, err := os.Hostname(); err == nil && host != "" {
+		return host
+	}
+	return rand.Text()
 }
 
 // signalURL derives a sibling OTLP signal endpoint from the configured traces

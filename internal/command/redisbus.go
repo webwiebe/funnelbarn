@@ -221,7 +221,8 @@ func (b *RedisBus) publish(ctx context.Context, c Command) {
 	if err := b.queue.Publish(pubCtx, payload); err != nil {
 		b.lastFailure.Store(time.Now().UnixNano())
 		b.publishFailing.Store(true)
-		b.logger.Log(ctx, b.publishOutage.Fail(), "command publish failed, using fallback", "kind", c.Kind(), "error", err, "handled", true)
+		level, outage := b.publishOutage.Fail()
+		b.logger.Log(ctx, level, "command publish failed, using fallback", outage, "kind", c.Kind(), "error", err, "handled", true)
 		b.toFallback(ctx, c)
 		return
 	}
@@ -254,7 +255,8 @@ func (b *RedisBus) run(ctx context.Context) {
 			} else if backoff *= 2; backoff > receiveBackoffMax {
 				backoff = receiveBackoffMax
 			}
-			b.logger.Log(ctx, b.receiveOutage.Fail(), "command queue receive failed", "error", err, "backoff", backoff, "handled", true)
+			level, outage := b.receiveOutage.Fail()
+			b.logger.Log(ctx, level, "command queue receive failed", outage, "error", err, "backoff", backoff, "handled", true)
 			timer := time.NewTimer(backoff)
 			select {
 			case <-ctx.Done():

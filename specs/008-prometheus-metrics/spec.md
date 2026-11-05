@@ -19,6 +19,7 @@
 - **FR-005**: The worker MUST increment `funnelbarn_events_processed_total` on success and `funnelbarn_event_errors_total{reason}` on a failure (`cmd/funnelbarn/ingest_apply.go`, `cmd/funnelbarn/worker_spool.go`). Issues: none. [inferred]
 - **FR-006**: The maintenance pass MUST add the deleted row count to `funnelbarn_events_purged_total` (`cmd/funnelbarn/maintenance.go`). Issues: none. [inferred]
 - **FR-007**: The system MUST expose metrics for rejected events, fingerprinted sessions, geo lookups, dead letter bytes, spool depth, ingest stalls, recording chunk drops, misrouted requests, R2, IAMBarn and OIDC calls, flag evaluations and funnel analysis duration (`internal/metrics/metrics.go`). Issues: none. [inferred]
+- **FR-008**: Each process MUST send `service.instance.id` (its hostname) with its telemetry, so SpanBarn keeps one series per pod. Without it the cumulative counters of all pods share one series and its rate reads wrong: 98,398 events for 11 stored rows on 2026-10-30, 08:00 to 13:00Z. Issues: [#435](https://github.com/webwiebe/funnelbarn/issues/435). Tests: `internal/tracing/tracing_test.go::TestNewResource_NamesTheInstance`.
 
 ## Drift
 

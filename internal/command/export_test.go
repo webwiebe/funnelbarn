@@ -12,6 +12,13 @@ func SetOutageClock(b *RedisBus, now func() time.Time) {
 	b.receiveOutage.Now = now
 }
 
+// OutageClosedEntries returns how many closed-run entries o keeps.
+func OutageClosedEntries(o *Outage) int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return len(o.closed)
+}
+
 // AppliedCount reads funnelbarn_command_applied_total for one label pair from
 // the default registry.
 func AppliedCount(kind, result string) float64 {

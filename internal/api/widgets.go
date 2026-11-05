@@ -163,18 +163,8 @@ func (s *Server) handleWidgetBreakdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	window := 100
-	limit := 10
-	if v := r.URL.Query().Get("window"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 1000 {
-			window = n
-		}
-	}
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 50 {
-			limit = n
-		}
-	}
+	window := positiveQueryInt(r, "window", 100, 1000)
+	limit := positiveQueryInt(r, "limit", 10, 50)
 	span.SetAttributes(
 		attribute.String("project.id", widget.ProjectID),
 		attribute.String("event.name", widget.EventName),
@@ -197,6 +187,16 @@ func (s *Server) handleWidgetBreakdown(w http.ResponseWriter, r *http.Request) {
 		"breakdown": breakdown,
 		"window":    window,
 	})
+}
+
+// positiveQueryInt reads a query parameter between 1 and most, and returns def
+// when it is missing or out of range.
+func positiveQueryInt(r *http.Request, name string, def, most int) int {
+	n, err := strconv.Atoi(r.URL.Query().Get(name))
+	if err != nil || n < 1 || n > most {
+		return def
+	}
+	return n
 }
 
 func (s *Server) handleBatchBreakdowns(w http.ResponseWriter, r *http.Request) {

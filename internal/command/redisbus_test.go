@@ -297,7 +297,7 @@ func TestRedisBusPublishFailureUsesFallback(t *testing.T) {
 }
 
 // A publish outage that lasts DefaultOutageAfter is logged at Error once; the
-// next run of failures starts at Warn again.
+// next run of failures starts at Warn again and adds to the same window.
 func TestRedisBusLastingPublishOutageLogsErrorOnce(t *testing.T) {
 	e := newBusEnvCooldown(t, true, time.Nanosecond)
 	now := time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC)
@@ -314,7 +314,7 @@ func TestRedisBusLastingPublishOutageLogsErrorOnce(t *testing.T) {
 	submit("b", command.DefaultOutageAfter-time.Second)
 	require.Zero(t, e.logs.count("ERROR", "publish failed"), "still under DefaultOutageAfter")
 	submit("c", time.Second)
-	submit("d", time.Minute)
+	submit("d", 20*time.Second)
 	require.Equal(t, 1, e.logs.count("ERROR", "publish failed"))
 	require.Equal(t, 1, e.logs.count("WARN", "publish failed"))
 
