@@ -180,15 +180,7 @@ func (h *Handler) EvaluateAPIKeyProjectScope(r *http.Request) (projectID string,
 
 // ServeHTTP handles POST /api/v1/events.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h == nil || h.auth == nil || h.spool == nil {
-		// Service mis-configuration: a 503 here means the process is up but
-		// ingest is not wired correctly. Surface to BugBarn.
-		slog.ErrorContext(r.Context(), "ingest unavailable: handler not initialised",
-			"handled", false,
-			"has_auth", h != nil && h.auth != nil,
-			"has_spool", h != nil && h.spool != nil,
-		)
-		jsonErr(w, "ingest unavailable", http.StatusServiceUnavailable)
+	if !h.available(w, r) {
 		return
 	}
 
@@ -221,27 +213,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	defer func() { _ = r.Body.Close() }()
 
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, h.maxBodyBytes))
-	if err != nil {
-		var maxBytesErr *http.MaxBytesError
-		if errors.As(err, &maxBytesErr) {
-			// 413s used to be silent on the recording-chunk endpoint and
-			// caused weeks of lost data. Surface them everywhere.
-			slog.ErrorContext(r.Context(), "ingest body too large",
-				"err", err, "handled", false,
-				"project_id", projectID,
-				"content_length", r.ContentLength,
-				"limit_bytes", h.maxBodyBytes,
-				"user_agent", r.Header.Get("User-Agent"),
-			)
-			jsonErr(w, "request body too large", http.StatusRequestEntityTooLarge)
-			return
-		}
-		slog.WarnContext(r.Context(), "ingest: unable to read body",
-			"err", err, "handled", true,
-			"project_id", projectID,
-		)
-		jsonErr(w, "unable to read request body", http.StatusBadRequest)
+	body, ok := h.readBody(w, r, projectID)
+	if !ok {
 		return
 	}
 
@@ -318,6 +291,54 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"accepted": true,
 		"ingestId": ingestID,
 	})
+}
+
+// available reports whether the handler is wired to serve ingest. When it is
+// not, it answers 503 and logs at Error: the process is up but ingest is not
+// wired correctly, which BugBarn has to see.
+func (h *Handler) available(w http.ResponseWriter, r *http.Request) bool {
+	if h == nil || h.auth == nil || h.spool == nil {
+		// Service mis-configuration: a 503 here means the process is up but
+		// ingest is not wired correctly. Surface to BugBarn.
+		slog.ErrorContext(r.Context(), "ingest unavailable: handler not initialised",
+			"handled", false,
+			"has_auth", h != nil && h.auth != nil,
+			"has_spool", h != nil && h.spool != nil,
+		)
+		jsonErr(w, "ingest unavailable", http.StatusServiceUnavailable)
+		return false
+	}
+	return true
+}
+
+// readBody reads the request body up to maxBodyBytes. On failure it answers
+// 413 for a body over the limit (logged at Error) or 400 for any other read
+// error, and reports false.
+func (h *Handler) readBody(w http.ResponseWriter, r *http.Request, projectID string) ([]byte, bool) {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, h.maxBodyBytes))
+	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			// 413s used to be silent on the recording-chunk endpoint and
+			// caused weeks of lost data. Surface them everywhere.
+			slog.ErrorContext(r.Context(), "ingest body too large",
+				"err", err, "handled", false,
+				"project_id", projectID,
+				"content_length", r.ContentLength,
+				"limit_bytes", h.maxBodyBytes,
+				"user_agent", r.Header.Get("User-Agent"),
+			)
+			jsonErr(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return nil, false
+		}
+		slog.WarnContext(r.Context(), "ingest: unable to read body",
+			"err", err, "handled", true,
+			"project_id", projectID,
+		)
+		jsonErr(w, "unable to read request body", http.StatusBadRequest)
+		return nil, false
+	}
+	return body, true
 }
 
 // ErrQueueFull is returned by Enqueue when the in-memory queue has no room.

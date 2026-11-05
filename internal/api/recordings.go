@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -181,6 +182,29 @@ func isValidStorageID(s string) bool {
 	return true
 }
 
+// parseRecordingListOpts reads the recordings list filters. limit defaults to
+// 50 and offset to 0; a value that is not a number, or out of range (limit 1 to
+// 500, offset from 0), keeps the default. session_ids is a comma-separated list.
+func parseRecordingListOpts(q url.Values) repository.RecordingListOpts {
+	opts := repository.RecordingListOpts{
+		Limit:       50,
+		Environment: q.Get("environment"),
+		DeviceType:  q.Get("device_type"),
+		PageURL:     q.Get("page_url"),
+		HumanOnly:   q.Get("human_only") == "true",
+	}
+	if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 && n <= 500 {
+		opts.Limit = n
+	}
+	if n, err := strconv.Atoi(q.Get("offset")); err == nil && n >= 0 {
+		opts.Offset = n
+	}
+	if ids := splitCSV(q.Get("session_ids")); len(ids) > 0 {
+		opts.SessionIDs = ids
+	}
+	return opts
+}
+
 func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 	if s.recordings == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"recordings": []any{}, "limit": 50, "offset": 0})
@@ -192,34 +216,8 @@ func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := 50
-	offset := 0
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
-			limit = n
-		}
-	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = n
-		}
-	}
-
-	opts := repository.RecordingListOpts{
-		Limit:       limit,
-		Offset:      offset,
-		Environment: r.URL.Query().Get("environment"),
-		DeviceType:  r.URL.Query().Get("device_type"),
-		PageURL:     r.URL.Query().Get("page_url"),
-		HumanOnly:   r.URL.Query().Get("human_only") == "true",
-	}
-	if ids := r.URL.Query().Get("session_ids"); ids != "" {
-		for _, id := range strings.Split(ids, ",") {
-			if trimmed := strings.TrimSpace(id); trimmed != "" {
-				opts.SessionIDs = append(opts.SessionIDs, trimmed)
-			}
-		}
-	}
+	opts := parseRecordingListOpts(r.URL.Query())
+	limit, offset := opts.Limit, opts.Offset
 
 	ctx, span := tracing.StartSpan(r.Context(), "recordings.list",
 		attribute.String("project.id", projectID),

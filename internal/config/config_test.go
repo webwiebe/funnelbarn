@@ -290,3 +290,30 @@ func TestLoad_QueueFlags(t *testing.T) {
 		t.Errorf("RecordingsQueueMaxLen ignores a negative value: got %d", cfg.RecordingsQueueMaxLen)
 	}
 }
+
+func TestParseConfigLine(t *testing.T) {
+	cases := []struct {
+		line, key, val string
+		ok             bool
+	}{
+		{line: "", ok: false},
+		{line: "   ", ok: false},
+		{line: "# FUNNELBARN_ADDR=:1", ok: false},
+		{line: "no equals sign", ok: false},
+		{line: " = value", ok: false},
+		{line: "KEY=value", key: "KEY", val: "value", ok: true},
+		{line: "  KEY = spaced  ", key: "KEY", val: "spaced", ok: true},
+		{line: `KEY="double quoted"`, key: "KEY", val: "double quoted", ok: true},
+		{line: "KEY='single quoted'", key: "KEY", val: "single quoted", ok: true},
+		{line: `KEY="mismatched'`, key: "KEY", val: `"mismatched'`, ok: true},
+		{line: `KEY="`, key: "KEY", val: `"`, ok: true},
+		{line: "KEY=a=b", key: "KEY", val: "a=b", ok: true},
+		{line: "KEY=", key: "KEY", val: "", ok: true},
+	}
+	for _, tc := range cases {
+		key, val, ok := parseConfigLine(tc.line)
+		if key != tc.key || val != tc.val || ok != tc.ok {
+			t.Errorf("parseConfigLine(%q) = (%q, %q, %v), want (%q, %q, %v)", tc.line, key, val, ok, tc.key, tc.val, tc.ok)
+		}
+	}
+}
