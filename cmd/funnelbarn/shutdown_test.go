@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
@@ -48,5 +51,24 @@ func TestDrainCommandsAppliesQueued(t *testing.T) {
 	drainCommands(d)
 	if n != 3 {
 		t.Fatalf("drain applied %d of 3 commands", n)
+	}
+}
+
+func TestLogShutdown(t *testing.T) {
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	logShutdown(slog.LevelError, "clean", func() error { return nil })
+	if logs.Len() != 0 {
+		t.Fatalf("a clean step logged: %s", logs.String())
+	}
+
+	logShutdown(slog.LevelError, "store", func() error { return errors.New("disk full") })
+	for _, want := range []string{`"level":"ERROR"`, `"step":"store"`, `"err":"disk full"`} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("log %s misses %s", logs.String(), want)
+		}
 	}
 }

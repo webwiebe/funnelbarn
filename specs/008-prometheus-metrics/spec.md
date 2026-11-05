@@ -35,7 +35,7 @@
 ## Proof contract
 
 - [ ] `curl` against a running server returns 200 on `/metrics` with `funnelbarn_http_requests_total`, `funnelbarn_events_ingested_total` and `funnelbarn_events_processed_total` in the body (no automated test exists).
-- [ ] With `FUNNELBARN_METRICS_TOKEN` set, a request without the bearer token answers 401 (no automated test exists).
+- [x] With `FUNNELBARN_METRICS_TOKEN` set, a request without the bearer token answers 401 (`TestMetricsToken` in `internal/api/metrics_handler_test.go`).
 
 ## Sources
 

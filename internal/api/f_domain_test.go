@@ -50,6 +50,15 @@ func TestFDomainRedirect(t *testing.T) {
 			wantLoc:  "https://profotograaf.nl",
 		},
 		{
+			// The f.* route sends this path to the Go service, so this redirect
+			// is what keeps /metrics off customer domains.
+			name:     "metrics path redirects to app root",
+			host:     "f.profotograaf.nl",
+			path:     "/metrics",
+			wantCode: http.StatusMovedPermanently,
+			wantLoc:  "https://profotograaf.nl",
+		},
+		{
 			name:     "api path passes through on f-subdomain",
 			host:     "f.pensioenfeest.nl",
 			path:     "/api/v1/health",

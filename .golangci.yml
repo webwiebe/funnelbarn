@@ -1,11 +1,7 @@
 # golangci-lint configuration.
 #
-# Invoked by `python3 scripts/quality-soak.py golangci`, which runs this config
-# in REPORT-ONLY mode against a committed baseline
-# (scripts/soak-baselines/golangci.txt). The soak does not yet break the build
-# on a pre-existing finding; it fails on a new one, on a worsened file, and on
-# a baseline that became beatable. The exit criterion is written at the top of
-# scripts/quality-soak.py.
+# Run by the blocking golangci-lint step in ci.yml's go-quality job, where any
+# finding fails the build.
 #
 # Until 2026-09-08 this file existed and nothing ran it. It also did not load:
 # it was written against the golangci-lint v1 schema while declaring

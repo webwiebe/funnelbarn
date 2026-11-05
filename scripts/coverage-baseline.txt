@@ -29,5 +29,6 @@ internal/spool	75
 internal/storage	20
 internal/timerange	100
 internal/tracing	46
+internal/volumedrop	100
 internal/worker	61
 internal/workerhealth	89
