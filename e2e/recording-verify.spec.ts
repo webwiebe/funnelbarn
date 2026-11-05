@@ -11,7 +11,7 @@ const PROJECT_ID = 'e7af9de5-04d3-4e00-a552-5fa49baca192'
 
 test.beforeEach(async ({ page }) => {
   const res = await page.request.post('/api/v1/login', {
-    data: { username: 'wiebe', password: 'wiebe' },
+    data: { username: process.env.E2E_USERNAME, password: process.env.E2E_PASSWORD },
   })
   expect(res.ok(), `Login failed: ${res.status()}`).toBeTruthy()
 })

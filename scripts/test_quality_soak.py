@@ -206,5 +206,12 @@ class MissingBaselineTest(unittest.TestCase):
         self.assertIn("no baseline", err.getvalue())
 
 
+class GolangciGateTest(unittest.TestCase):
+    def test_ci_blocks_on_golangci_lint(self) -> None:
+        ci = (Path(__file__).resolve().parent.parent / ".github/workflows/ci.yml").read_text()
+        self.assertIn("golangci-lint run ./...", ci)
+        self.assertNotIn("quality-soak.py golangci", ci)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

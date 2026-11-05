@@ -20,6 +20,7 @@ func TestClassifyArgsStartsTheServerOnlyForNoArgumentOrServe(t *testing.T) {
 		{[]string{"user", "list"}, actionSubcommand},
 		{[]string{"project"}, actionSubcommand},
 		{[]string{"apikey"}, actionSubcommand},
+		{[]string{"recordings", "scan-url-params"}, actionSubcommand},
 		{[]string{"help"}, actionHelp},
 		{[]string{"-h"}, actionHelp},
 		{[]string{"--help"}, actionHelp},
@@ -56,6 +57,23 @@ func TestHandleUsageArgsExitCodes(t *testing.T) {
 	for _, args := range [][]string{nil, {"serve"}, {"user", "list"}} {
 		if handled, _ := handleUsageArgs(args, &out, &errOut); handled {
 			t.Errorf("%q must fall through to the server or its subcommand", args)
+		}
+	}
+}
+
+// Every subcommand the binary runs is accepted on the command line and named
+// in the usage text. The recordings subcommand shipped once without the
+// first, so it was refused as an unknown argument.
+func TestEverySubcommandIsAcceptedAndListed(t *testing.T) {
+	for name := range subcommands {
+		if got := classifyArgs([]string{name}); got != actionSubcommand {
+			t.Errorf("classifyArgs(%q) = %d, want actionSubcommand", name, got)
+		}
+		if strings.HasPrefix(name, "-") {
+			continue
+		}
+		if !strings.Contains(usageText, " "+name+" ") {
+			t.Errorf("usage text does not list %q: %s", name, usageText)
 		}
 	}
 }
