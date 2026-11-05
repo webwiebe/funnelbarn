@@ -175,7 +175,7 @@ func TestReaderTrafficSurvivesAStoppedWriter(t *testing.T) {
 	reader.Submit(ctx, command.MarkProjectHealth{ProjectID: p.ID, Field: command.HealthSetupCalled})
 	mr.SetError("")
 	reader.fallback.forward(ctx)
-	require.False(t, reader.fallback.failing)
+	require.False(t, reader.fallback.outage.Failing())
 
 	// The writer is down: nothing is stored, everything waits in Valkey.
 	before := readDurableRows(t, writerStore.DB(), ingestIDs, "rec-durable", p.ID)

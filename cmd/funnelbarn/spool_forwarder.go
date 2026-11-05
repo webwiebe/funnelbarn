@@ -28,8 +28,8 @@ type spoolForwarder struct {
 	spoolDir string
 	maxLen   int64
 
-	failing bool // last publish failed; logged at Warn once per outage
-	full    bool // queue at its cap; logged once per episode
+	outage command.Outage // failed publishes; picks the log level
+	full   bool           // queue at its cap; logged once per episode
 }
 
 // forward publishes entries from offset on, up to the queue's cap, and returns
@@ -142,23 +142,17 @@ func (b *forwardBatch) flush() bool {
 	return true
 }
 
+// publishFailed logs at Warn for a short Valkey stall and at Error once when
+// the stall time adds up; see command.Outage. The records stay in the spool, so
+// a stall loses nothing. checkSpoolProgress stays for a read that keeps failing.
 func (f *spoolForwarder) publishFailed(ctx context.Context, err error) {
-	// The records stay in the spool, so a short Valkey stall loses nothing
-	// and logs at Warn. The worker ticks every second; the spool stall check
-	// reports an outage that lasts, at Error.
-	if !f.failing {
-		f.failing = true
-		slog.WarnContext(ctx, "ingest queue publish failed, leaving records in the spool",
-			"err", err, "handled", true)
-		return
-	}
-	slog.DebugContext(ctx, "ingest queue publish failed, leaving records in the spool",
-		"err", err, "handled", true)
+	level, outage := f.outage.Fail()
+	slog.Log(ctx, level, "ingest queue publish failed, leaving records in the spool",
+		outage, "err", err, "handled", true)
 }
 
 func (f *spoolForwarder) publishRecovered(ctx context.Context) {
-	if f.failing {
-		f.failing = false
-		slog.InfoContext(ctx, "ingest queue publish recovered")
+	if lasted, ok := f.outage.Recover(); ok {
+		slog.InfoContext(ctx, "ingest queue publish recovered", "lasted", lasted.Round(time.Millisecond).String())
 	}
 }
