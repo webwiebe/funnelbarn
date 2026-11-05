@@ -489,6 +489,20 @@ Check in this order:
    or site. Several point at ingest: read Traefik's log while it is happening, it
    keeps about an hour.
 
+The line's `hour` attribute is the hour the drop was found in. The writer stores the
+last hour it evaluated in the instance setting `volume_drop_last_hour`, and after a
+failed read or a restart it evaluates every hour since, up to 24. So `hour` can sit a
+few hours before the line's timestamp.
+
+Two more Error lines come from the check itself:
+
+- `volume drop: check has evaluated no hour for 3 hours` means its reads keep failing.
+  A failed read logs Warn and retries every 10 minutes; `err` on either line gives the
+  cause. Until a read succeeds, no drop is reported.
+- `volume drop: hours skipped past the catch-up limit` means more than 24 hours went
+  unevaluated. `hours` says how many and `first_evaluated` where evaluation resumed.
+  A drop that started and recovered inside the skipped hours is not reported.
+
 ---
 
 ## 5. Log Access
