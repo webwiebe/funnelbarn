@@ -343,9 +343,9 @@ jobs:
     env:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/Applications/Docker.app/Contents/Resources/bin:/usr/bin:/bin:/usr/sbin:/sbin
-      # Report-only until 2026-10-31: findings are annotated and the job passes.
-      # Flip to `enforce` then. A scan that cannot run fails in both modes (exit 2).
-      SECRET_SCAN_MODE: report
+      # A finding, or a fingerprint added to .gitleaksignore, fails the job (exit 1).
+      # A scan that cannot run fails as well (exit 2).
+      SECRET_SCAN_MODE: enforce
       SECRET_SCAN_MIN_COMMITS: '250'
     steps:
       - name: Reclaim workspace (clear read-only Go cache from prior runs)
