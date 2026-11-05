@@ -26,8 +26,32 @@ func HasSensitiveURLInJSON(r io.Reader) (bool, error) {
 		if err != nil {
 			return false, w.endErr(err)
 		}
-		if found, done := w.step(tok); found || done {
-			return found, nil
+		if match, done := w.step(tok); match != "" || done {
+			return match != "", nil
+		}
+	}
+}
+
+// WalkSensitiveURLsInJSON reads the first JSON value from r as a stream of
+// tokens and calls fn with every URL-shaped string value that RedactURL would
+// change, in document order. Object keys are not checked. Memory stays near the
+// size of the largest single string. It returns the read error, or
+// io.ErrUnexpectedEOF for a truncated document.
+func WalkSensitiveURLsInJSON(r io.Reader, fn func(string)) error {
+	dec := json.NewDecoder(r)
+	dec.UseNumber()
+	var w jsonWalk
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return w.endErr(err)
+		}
+		match, done := w.step(tok)
+		if match != "" {
+			fn(match)
+		}
+		if done {
+			return nil
 		}
 	}
 }
@@ -49,25 +73,25 @@ func (w *jsonWalk) endErr(err error) error {
 	return io.ErrUnexpectedEOF
 }
 
-// step takes one token. It reports a sensitive URL value (found) or the end of
-// the top-level value (done).
-func (w *jsonWalk) step(tok json.Token) (found, done bool) {
+// step takes one token. It returns the token when it is a sensitive URL value
+// (match, empty otherwise) and reports the end of the top-level value (done).
+func (w *jsonWalk) step(tok json.Token) (match string, done bool) {
 	d, isDelim := tok.(json.Delim)
 	switch {
 	case isDelim && (d == '}' || d == ']'):
 		w.stack = w.stack[:len(w.stack)-1]
-		return false, w.valueDone()
+		return "", w.valueDone()
 	case w.atKey():
 		w.stack[len(w.stack)-1].wantKey = false
-		return false, false
+		return "", false
 	case isDelim:
 		w.stack = append(w.stack, jsonFrame{object: d == '{', wantKey: d == '{'})
-		return false, false
+		return "", false
 	}
 	if s, ok := tok.(string); ok && looksLikeURL(s) && RedactURL(s) != s {
-		return true, false
+		match = s
 	}
-	return false, w.valueDone()
+	return match, w.valueDone()
 }
 
 // atKey reports whether the next token is an object key.
