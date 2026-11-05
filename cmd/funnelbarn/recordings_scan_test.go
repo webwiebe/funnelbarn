@@ -105,8 +105,12 @@ func TestParseScanFlags(t *testing.T) {
 		t.Errorf("defaults: %+v, %v", f, err)
 	}
 	f, err = parseScanFlags([]string{"--project", "iambarn", "--max-memory-mib", "32"})
-	if err != nil || f.project != "iambarn" || f.maxMemoryMiB != 32 {
+	if err != nil || f.project != "iambarn" || f.maxMemoryMiB != 32 || f.byURL {
 		t.Errorf("flags: %+v, %v", f, err)
+	}
+	f, err = parseScanFlags([]string{"--by-url"})
+	if err != nil || !f.byURL {
+		t.Errorf("--by-url: %+v, %v", f, err)
 	}
 	for _, bad := range [][]string{{"--max-memory-mib", "0"}, {"extra"}, {"--nope"}} {
 		if _, err := parseScanFlags(bad); err == nil {

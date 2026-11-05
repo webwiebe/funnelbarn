@@ -6,8 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"runtime/debug"
 	"runtime/metrics"
+	"sort"
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
@@ -28,7 +30,24 @@ type ChunkURLScan struct {
 	// PeakMemoryBytes is the most memory the Go runtime held from the OS at
 	// any check between chunks.
 	PeakMemoryBytes uint64 `json:"peak_memory_bytes"`
+	// Shapes lists where the matching URLs pointed, when the scan collects
+	// them (ChunkScanOpts.Shapes): host, masked path and parameter name, with
+	// counts, most recordings first. It never holds a parameter value.
+	Shapes []URLShapeCount `json:"shapes,omitempty"`
+
+	tally map[enrich.URLShape]*URLShapeCount
 }
+
+// URLShapeCount counts the chunks and recordings in which one URL shape held
+// a sensitive parameter value.
+type URLShapeCount struct {
+	enrich.URLShape
+	Chunks     int `json:"chunks"`
+	Recordings int `json:"recordings"`
+}
+
+// OtherShapes is the shape that counts every shape past ChunkScanOpts.MaxShapes.
+var OtherShapes = enrich.URLShape{Host: "(other)", Path: "(other)", Param: "(other)"}
 
 // ChunkScanOpts bounds a chunk scan.
 type ChunkScanOpts struct {
@@ -39,6 +58,12 @@ type ChunkScanOpts struct {
 	// means no cap. Pair it with debug.SetMemoryLimit at the same size, so the
 	// runtime collects before the cap is reached.
 	MemoryCap uint64
+	// Shapes makes the scan read every chunk to its end and count each
+	// matching URL by host, masked path and parameter name (enrich.URLShape).
+	Shapes bool
+	// MaxShapes bounds the distinct shapes kept per project; the rest count
+	// under OtherShapes. Zero means 500.
+	MaxShapes int
 }
 
 // ErrMemoryCap means a chunk scan stopped because its memory passed the cap.
@@ -56,19 +81,22 @@ var ErrMemoryCap = errors.New("recordings: chunk scan stopped at its memory cap"
 // a whole and nothing from it is kept after its check. After every chunk the
 // process memory is measured against opts.MemoryCap; past the cap the scan
 // returns the counts so far with ErrMemoryCap.
-func (svc *RecordingService) ScanChunkURLs(ctx context.Context, projectID string, opts ChunkScanOpts) (ChunkURLScan, error) {
+func (svc *RecordingService) ScanChunkURLs(ctx context.Context, projectID string, opts ChunkScanOpts) (out ChunkURLScan, err error) {
 	batch := opts.BatchSize
 	if batch <= 0 {
 		batch = 25
 	}
-	var out ChunkURLScan
+	if opts.MaxShapes <= 0 {
+		opts.MaxShapes = 500
+	}
+	defer out.finishShapes()
 	for offset := 0; ; offset += batch {
 		recs, err := svc.store.ListRecordings(ctx, projectID, repository.RecordingListOpts{Limit: batch, Offset: offset})
 		if err != nil {
 			return out, fmt.Errorf("recordings: list for chunk scan: %w", err)
 		}
 		for _, rec := range recs {
-			if err := svc.scanRecording(ctx, rec, opts.MemoryCap, &out); err != nil {
+			if err := svc.scanRecording(ctx, rec, opts, &out); err != nil {
 				return out, err
 			}
 		}
@@ -79,13 +107,14 @@ func (svc *RecordingService) ScanChunkURLs(ctx context.Context, projectID string
 }
 
 // scanRecording adds one recording's chunks to out.
-func (svc *RecordingService) scanRecording(ctx context.Context, rec repository.Recording, memCap uint64, out *ChunkURLScan) error {
+func (svc *RecordingService) scanRecording(ctx context.Context, rec repository.Recording, opts ChunkScanOpts, out *ChunkURLScan) error {
 	out.Recordings++
 	upper := rec.LastChunkIndex
 	if upper < rec.ChunkCount-1 {
 		upper = rec.ChunkCount - 1
 	}
 	matched := false
+	seen := map[enrich.URLShape]bool{}
 	defer func() {
 		if matched {
 			out.addMatch(rec.StartedAt)
@@ -96,14 +125,16 @@ func (svc *RecordingService) scanRecording(ctx context.Context, rec repository.R
 			return err
 		}
 		out.Chunks++
-		switch svc.scanChunk(ctx, chunkKey(rec.ProjectID, rec.ID, i)) {
+		res, shapes := svc.scanChunk(ctx, chunkKey(rec.ProjectID, rec.ID, i), opts.Shapes)
+		switch res {
 		case chunkUnreadable:
 			out.Unreadable++
 		case chunkMatches:
 			out.MatchingChunks++
 			matched = true
+			out.addShapes(shapes, seen, opts.MaxShapes)
 		}
-		if err := out.checkMemory(memCap); err != nil {
+		if err := out.checkMemory(opts.MemoryCap); err != nil {
 			return err
 		}
 	}
@@ -154,25 +185,100 @@ const (
 )
 
 // scanChunk reports whether the chunk at key holds a sensitive URL parameter
-// value, or that it could not be read.
-func (svc *RecordingService) scanChunk(ctx context.Context, key string) chunkScanResult {
+// value, or that it could not be read. With collect set it reads the whole
+// chunk and also returns the distinct shapes of its matching URLs.
+func (svc *RecordingService) scanChunk(ctx context.Context, key string, collect bool) (chunkScanResult, []enrich.URLShape) {
 	compressed, err := svc.storage.Get(ctx, key)
 	if err != nil {
-		return chunkUnreadable
+		return chunkUnreadable, nil
 	}
 	zr, err := gzip.NewReader(bytes.NewReader(compressed))
 	if err != nil {
-		return chunkUnreadable
+		return chunkUnreadable, nil
 	}
 	defer func() { _ = zr.Close() }()
-	changed, err := enrich.HasSensitiveURLInJSON(zr)
+	if !collect {
+		changed, err := enrich.HasSensitiveURLInJSON(zr)
+		switch {
+		case err != nil:
+			return chunkUnreadable, nil
+		case changed:
+			return chunkMatches, nil
+		}
+		return chunkClean, nil
+	}
+	return collectShapes(zr)
+}
+
+// collectShapes walks a whole chunk and returns its distinct URL shapes. A
+// chunk that fails to decode counts as unreadable and returns no shapes.
+func collectShapes(r io.Reader) (chunkScanResult, []enrich.URLShape) {
+	set := map[enrich.URLShape]bool{}
+	err := enrich.WalkSensitiveURLsInJSON(r, func(u string) {
+		for _, sh := range enrich.SensitiveURLShapes(u) {
+			set[sh] = true
+		}
+	})
 	if err != nil {
-		return chunkUnreadable
+		return chunkUnreadable, nil
 	}
-	if changed {
-		return chunkMatches
+	if len(set) == 0 {
+		return chunkClean, nil
 	}
-	return chunkClean
+	shapes := make([]enrich.URLShape, 0, len(set))
+	for sh := range set {
+		shapes = append(shapes, sh)
+	}
+	return chunkMatches, shapes
+}
+
+// addShapes counts one matching chunk's shapes, and each shape once per
+// recording through seen. Past maxShapes distinct shapes, new ones count
+// under OtherShapes.
+func (s *ChunkURLScan) addShapes(shapes []enrich.URLShape, seen map[enrich.URLShape]bool, maxShapes int) {
+	if len(shapes) == 0 {
+		return
+	}
+	if s.tally == nil {
+		s.tally = map[enrich.URLShape]*URLShapeCount{}
+	}
+	for _, sh := range shapes {
+		if _, ok := s.tally[sh]; !ok && len(s.tally) >= maxShapes {
+			sh = OtherShapes
+		}
+		c, ok := s.tally[sh]
+		if !ok {
+			c = &URLShapeCount{URLShape: sh}
+			s.tally[sh] = c
+		}
+		c.Chunks++
+		if !seen[sh] {
+			seen[sh] = true
+			c.Recordings++
+		}
+	}
+}
+
+// finishShapes turns the tally into Shapes, most recordings first.
+func (s *ChunkURLScan) finishShapes() {
+	if len(s.tally) == 0 {
+		return
+	}
+	s.Shapes = make([]URLShapeCount, 0, len(s.tally))
+	for _, c := range s.tally {
+		s.Shapes = append(s.Shapes, *c)
+	}
+	sort.Slice(s.Shapes, func(i, j int) bool {
+		a, b := s.Shapes[i], s.Shapes[j]
+		if a.Recordings != b.Recordings {
+			return a.Recordings > b.Recordings
+		}
+		if a.Chunks != b.Chunks {
+			return a.Chunks > b.Chunks
+		}
+		return a.Host+a.Path+a.Param < b.Host+b.Path+b.Param
+	})
+	s.tally = nil
 }
 
 // addMatch counts a matching recording and widens the first/last window.

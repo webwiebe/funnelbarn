@@ -17,12 +17,13 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 )
 
-const recordingsUsage = "usage: funnelbarn recordings scan-url-params [--project <slug>] [--max-memory-mib <n>]"
+const recordingsUsage = "usage: funnelbarn recordings scan-url-params [--project <slug>] [--max-memory-mib <n>] [--by-url]"
 
 // scanFlags are the options of recordings scan-url-params.
 type scanFlags struct {
 	project      string
 	maxMemoryMiB uint64
+	byURL        bool
 }
 
 func parseScanFlags(args []string) (scanFlags, error) {
@@ -31,6 +32,7 @@ func parseScanFlags(args []string) (scanFlags, error) {
 	var f scanFlags
 	fs.StringVar(&f.project, "project", "", "scan only the project with this slug")
 	fs.Uint64Var(&f.maxMemoryMiB, "max-memory-mib", 64, "stop when the scan holds more than this many MiB")
+	fs.BoolVar(&f.byURL, "by-url", false, "also count matching URLs by host, masked path and parameter name")
 	if err := fs.Parse(args); err != nil {
 		return f, fmt.Errorf("%s: %w", recordingsUsage, err)
 	}
@@ -49,7 +51,10 @@ func parseScanFlags(args []string) (scanFlags, error) {
 // many chunks hold a URL with a sensitive parameter value (see
 // enrich.HasSensitiveURLInJSON). It opens the database read-only and only
 // reads object storage. The output is counts and times: no keys, no event
-// content. The process runs under a Go memory limit of --max-memory-mib and
+// content. With --by-url each project line also lists "shapes": the host,
+// the path with identifier-like segments masked (enrich.MaskPath) and the
+// parameter name of each matching URL, with chunk and recording counts. No
+// parameter value is printed. The process runs under a Go memory limit of --max-memory-mib and
 // stops, printing the counts so far, when it holds more than that.
 func runRecordingsCmd(cfg config.Config, args []string) error {
 	if len(args) == 0 || args[0] != "scan-url-params" {
@@ -77,7 +82,7 @@ func runRecordingsCmd(cfg config.Config, args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	opts := scanOptions{project: flags.project, chunk: service.ChunkScanOpts{BatchSize: 25, MemoryCap: memCap}}
+	opts := scanOptions{project: flags.project, chunk: service.ChunkScanOpts{BatchSize: 25, MemoryCap: memCap, Shapes: flags.byURL}}
 	return scanRecordingURLParams(ctx, os.Stdout, store, service.NewRecordingService(store, store, store, r2), opts)
 }
 
