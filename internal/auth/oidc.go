@@ -253,6 +253,11 @@ func (c *OIDCClient) Refresh(ctx context.Context, refreshToken string) (Refreshe
 			}
 		}
 	}
+	source := "id_token"
+	if refreshed.Claims == nil {
+		source = c.accessTokenClaims(ctx, &refreshed)
+	}
+	span.SetAttributes(attribute.String("oidc.refresh_claims", source))
 	return refreshed, nil
 }
 
