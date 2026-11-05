@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -373,4 +374,41 @@ func TestPendingHours(t *testing.T) {
 			require.Equal(t, tc.skipped, skipped)
 		})
 	}
+}
+
+// The hourly read must split into the wait for a read connection, the rowid bound
+// and the count, under the check's span, so a slow read shows where it spent its
+// time.
+func TestVolumeDropCheck_SpansSplitTheRead(t *testing.T) {
+	exp := captureSpans(t)
+	store, err := repository.Open(repotest.Path(t, "volume-drop-spans.db"))
+	require.NoError(t, err)
+	defer store.Close()
+	start := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	seedFallingProject(t, store, start)
+	captureDefaultLog(t)
+
+	check := &volumeDropCheck{store: store, now: func() time.Time { return start }}
+	check.run(context.Background())
+
+	byName := map[string]tracetest.SpanStub{}
+	for _, s := range exp.GetSpans() {
+		byName[s.Name] = s
+	}
+	root, ok := byName["worker.volume_drop"]
+	require.True(t, ok)
+	read, ok := byName["repository.EnvironmentEventsByHour"]
+	require.True(t, ok)
+	require.Equal(t, root.SpanContext.SpanID(), read.Parent.SpanID())
+	for _, name := range []string{"repository.acquire_read_conn", "repository.events_rowid_bound", "repository.events_hourly_count"} {
+		s, ok := byName[name]
+		require.True(t, ok, name)
+		require.Equal(t, read.SpanContext.SpanID(), s.Parent.SpanID(), name)
+	}
+	attrs := map[string]int64{}
+	for _, a := range byName["repository.events_rowid_bound"].Attributes {
+		attrs[string(a.Key)] = a.Value.AsInt64()
+	}
+	require.Positive(t, attrs["lookups"])
+	require.Positive(t, attrs["rowid.from"])
 }
