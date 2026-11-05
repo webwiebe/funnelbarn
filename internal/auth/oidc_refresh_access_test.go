@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -71,6 +72,63 @@ func TestOIDCClientRefreshKeepsNoClaimsForAnUnverifiableAccessToken(t *testing.T
 			}
 			if result.RefreshToken != "new-refresh" {
 				t.Errorf("RefreshToken = %q, want the rotated one", result.RefreshToken)
+			}
+		})
+	}
+}
+
+// An access token without a roles claim takes its roles from userinfo, as
+// VerifyAccessToken does for the MCP. A userinfo failure gives no claims, so
+// an outage keeps the earlier snapshot and logs nobody out.
+func TestOIDCClientRefreshTakesRolesFromUserinfoWhenTheTokenHasNone(t *testing.T) {
+	noRoles := func(it *testIssuer) string {
+		return it.sign(t, map[string]any{
+			"iss": it.srv.URL, "aud": []string{"funnelbarn-web"}, "sub": "u1",
+			"exp": time.Now().Add(15 * time.Minute).Unix(), "iat": time.Now().Unix(),
+			"organization_id": "org-home", "token_use": "access_token",
+		})
+	}
+	cases := []struct {
+		name      string
+		userinfo  http.HandlerFunc
+		wantRoles []string // nil: no claims at all
+	}{
+		{"userinfo has the role", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"sub": "u1", "roles": []string{"organization_admin"}})
+		}, []string{"organization_admin"}},
+		{"userinfo lacks the role", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"sub": "u1", "roles": []string{"member"}})
+		}, []string{"member"}},
+		{"userinfo fails", func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "down", http.StatusBadGateway)
+		}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			it := refreshIssuer(t, noRoles)
+			var calls int
+			it.mux.HandleFunc("/userinfo", func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				tc.userinfo(w, r)
+			})
+			result, err := it.client().Refresh(context.Background(), "old-refresh")
+			if err != nil {
+				t.Fatalf("Refresh: %v", err)
+			}
+			if calls != 1 {
+				t.Errorf("userinfo calls = %d, want 1", calls)
+			}
+			if tc.wantRoles == nil {
+				if result.Claims != nil {
+					t.Errorf("Claims = %+v, want nil so the caller keeps its snapshot", result.Claims)
+				}
+				return
+			}
+			if result.Claims == nil || result.Claims.OrganizationID != "org-home" ||
+				strings.Join(result.Claims.Roles, ",") != strings.Join(tc.wantRoles, ",") {
+				t.Errorf("claims = %+v, want roles %v", result.Claims, tc.wantRoles)
 			}
 		})
 	}
