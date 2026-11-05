@@ -298,3 +298,29 @@ func toSlugLocal(name string) string {
 	s = strings.Trim(s, "-")
 	return s
 }
+
+// runSubcommand runs a one-shot CLI subcommand named by args[0]. handled is
+// false when args name none, and the caller starts the server.
+func runSubcommand(cfg config.Config, args []string) (handled bool, err error) {
+	if len(args) == 0 {
+		return false, nil
+	}
+	switch args[0] {
+	case "version", "--version", "-v":
+		fmt.Printf("funnelbarn %s (built %s)\n", Version, BuildTime)
+		return true, nil
+	case "worker-once":
+		return true, runWorkerOnce(cfg)
+	case "replay-dead-letter":
+		return true, runReplayDeadLetter(cfg, args[1:])
+	case "user":
+		return true, runUserCmd(cfg, args[1:])
+	case "project":
+		return true, runProjectCmd(cfg, args[1:])
+	case "apikey":
+		return true, runAPIKeyCmd(cfg, args[1:])
+	case "recordings":
+		return true, runRecordingsCmd(cfg, args[1:])
+	}
+	return false, nil
+}

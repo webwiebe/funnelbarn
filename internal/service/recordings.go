@@ -120,6 +120,13 @@ func (svc *RecordingService) UploadChunk(ctx context.Context, chunk RecordingChu
 		chunk.Traces[i].URL = enrich.RedactURL(chunk.Traces[i].URL)
 	}
 
+	// The rrweb events carry URLs too: a Meta event records the page href, and
+	// a DOM snapshot records link and form attributes. Same redaction. A chunk
+	// whose events do not decode is stored as sent, as before.
+	if redacted, changed, rerr := enrich.RedactURLsInJSON(chunk.Events); rerr == nil && changed {
+		chunk.Events = redacted
+	}
+
 	// Compress events.
 	compressed, err := gzipJSON(chunk.Events)
 	if err != nil {

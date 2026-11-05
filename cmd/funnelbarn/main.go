@@ -123,22 +123,8 @@ func run() error {
 		version = cfg.Version
 	}
 
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "version", "--version", "-v":
-			fmt.Printf("funnelbarn %s (built %s)\n", Version, BuildTime)
-			return nil
-		case "worker-once":
-			return runWorkerOnce(cfg)
-		case "replay-dead-letter":
-			return runReplayDeadLetter(cfg, os.Args[2:])
-		case "user":
-			return runUserCmd(cfg, os.Args[2:])
-		case "project":
-			return runProjectCmd(cfg, os.Args[2:])
-		case "apikey":
-			return runAPIKeyCmd(cfg, os.Args[2:])
-		}
+	if handled, err := runSubcommand(cfg, os.Args[1:]); handled {
+		return err
 	}
 
 	if err := cfg.ValidateMode(); err != nil {
