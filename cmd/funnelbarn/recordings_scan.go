@@ -31,7 +31,7 @@ func runRecordingsCmd(cfg config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	r2, err := storage.NewR2(cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
 	if err != nil {
 		return fmt.Errorf("recordings scan: object storage: %w", err)
