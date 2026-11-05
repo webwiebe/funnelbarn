@@ -108,6 +108,15 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 		})
 	}
 
+	// Drop the values of sensitive query parameters (one-time sign-in and
+	// reset tokens, OAuth codes) before anything reads or stores the URLs. A
+	// site that puts such a token in its address bar would otherwise have it
+	// kept in events, sessions and every export. The session's entry and exit
+	// URLs are copied from these fields, so they are covered too.
+	payload.URL = enrich.RedactURL(payload.URL)
+	payload.Referrer = enrich.RedactURL(payload.Referrer)
+	payload.Properties = enrich.RedactURLStrings(payload.Properties)
+
 	// Extract UTM from URL if not provided directly.
 	utmFromURL := enrich.ExtractUTM(payload.URL)
 	utmSource := coalesce(payload.UTMSource, utmFromURL.Source)

@@ -484,3 +484,45 @@ func TestProcessRecord_AbsentEnvironmentIsFiledAsProduction(t *testing.T) {
 		t.Errorf("Environment: want %q, got %q", environment.Production, event.Environment)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ProcessRecord — sensitive URL parameters are redacted before storage
+// ---------------------------------------------------------------------------
+
+func TestProcessRecord_RedactsSensitiveURLParams(t *testing.T) {
+	payload := EventPayload{
+		Name:     "page_view",
+		URL:      "https://id.example.com/verify?utm_source=mail&token=one-time",
+		Referrer: "https://app.example.com/callback?code=abc&state=xyz",
+		Properties: map[string]any{
+			"page_url": "https://id.example.com/reset?password_token=p",
+			"plan":     "pro",
+		},
+	}
+	event, err := ProcessRecord(makeRecord(payload))
+	if err != nil {
+		t.Fatalf("ProcessRecord: %v", err)
+	}
+	if want := "https://id.example.com/verify?utm_source=mail&token=redacted"; event.URL != want {
+		t.Errorf("URL: want %q, got %q", want, event.URL)
+	}
+	if want := "https://app.example.com/callback?code=redacted&state=redacted"; event.Referrer != want {
+		t.Errorf("Referrer: want %q, got %q", want, event.Referrer)
+	}
+	if event.ReferrerDomain != "app.example.com" {
+		t.Errorf("ReferrerDomain: want app.example.com, got %q", event.ReferrerDomain)
+	}
+	if event.UTMSource != "mail" {
+		t.Errorf("UTMSource: want mail, got %q", event.UTMSource)
+	}
+	var props map[string]any
+	if err := json.Unmarshal([]byte(event.Properties), &props); err != nil {
+		t.Fatalf("unmarshal properties: %v", err)
+	}
+	if want := "https://id.example.com/reset?password_token=redacted"; props["page_url"] != want {
+		t.Errorf("properties.page_url: want %q, got %v", want, props["page_url"])
+	}
+	if props["plan"] != "pro" {
+		t.Errorf("properties.plan: want pro, got %v", props["plan"])
+	}
+}

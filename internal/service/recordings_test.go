@@ -119,6 +119,110 @@ func TestRecordingService_IngestChunk(t *testing.T) {
 	assert.Equal(t, int64(10000), rec.DurationMs)
 }
 
+// The page URL and the trace URLs are stored with sensitive query parameter
+// values dropped.
+func TestRecordingService_IngestChunk_RedactsSensitiveURLParams(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	storage := newMemStorage()
+
+	projSvc := service.NewProjectService(store)
+	p, err := projSvc.CreateProject(ctx, "Redact", "redact")
+	require.NoError(t, err)
+
+	svc := service.NewRecordingService(store, store, store, storage)
+	chunk := service.RecordingChunk{
+		RecordingID: "rec-redact-001",
+		SessionID:   "sess-redact-001",
+		ChunkIndex:  0,
+		Events:      json.RawMessage(`[{"type":4,"data":{},"timestamp":1000}]`),
+		StartedAt:   time.Now().UTC().Truncate(time.Second),
+		DurationMs:  1000,
+		PageURL:     "https://id.example.com/verify?token=one-time&lang=nl",
+		Traces: []repository.TraceLink{{
+			TraceID:    "4bf92f3577b34da6a3ce929d0e0e4736",
+			URL:        "https://api.example.com/session?code=abc",
+			OccurredAt: time.Now().UTC().Truncate(time.Second),
+		}},
+		Environment: "testing",
+		ProjectSlug: "redact",
+		ProjectID:   p.ID,
+		UserAgent:   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)",
+	}
+	require.NoError(t, svc.IngestChunk(ctx, chunk))
+
+	rec, err := store.GetRecording(ctx, "rec-redact-001")
+	require.NoError(t, err)
+	assert.Equal(t, "https://id.example.com/verify?token=redacted&lang=nl", rec.PageURL)
+
+	traces, err := store.TracesForRecording(ctx, "rec-redact-001")
+	require.NoError(t, err)
+	require.Len(t, traces, 1)
+	assert.Equal(t, "https://api.example.com/session?code=redacted", traces[0].URL)
+}
+
+// The rrweb events are stored with sensitive URL parameter values dropped, and
+// ScanChunkURLs counts stored chunks that still hold one.
+func TestRecordingService_ChunkEventsRedactedAndScanned(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	storage := newMemStorage()
+
+	projSvc := service.NewProjectService(store)
+	p, err := projSvc.CreateProject(ctx, "Scan", "scan")
+	require.NoError(t, err)
+	svc := service.NewRecordingService(store, store, store, storage)
+
+	start := time.Now().UTC().Truncate(time.Second)
+	chunk := service.RecordingChunk{
+		RecordingID: "rec-scan-001",
+		SessionID:   "sess-scan-001",
+		ChunkIndex:  0,
+		Events:      json.RawMessage(`[{"type":4,"data":{"href":"https://id.example.com/verify?token=one-time"},"timestamp":1730000000123}]`),
+		StartedAt:   start,
+		DurationMs:  1000,
+		Environment: "testing",
+		ProjectSlug: "scan",
+		ProjectID:   p.ID,
+		UserAgent:   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)",
+	}
+	require.NoError(t, svc.IngestChunk(ctx, chunk))
+
+	stored, err := svc.GetChunk(ctx, p.ID, "rec-scan-001", 0)
+	require.NoError(t, err)
+	assert.JSONEq(t, `[{"type":4,"data":{"href":"https://id.example.com/verify?token=redacted"},"timestamp":1730000000123}]`, string(stored))
+
+	// A clean scan: the stored chunk is already redacted.
+	res, err := svc.ScanChunkURLs(ctx, p.ID, service.ChunkScanOpts{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Recordings)
+	assert.Equal(t, 1, res.Chunks)
+	assert.Equal(t, 0, res.MatchingChunks)
+
+	// A chunk stored before ingest redacted (written straight to storage), and
+	// a second chunk index that was never stored.
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, _ = zw.Write([]byte(`[{"type":4,"data":{"href":"https://id.example.com/verify?code=abc"},"timestamp":1}]`))
+	require.NoError(t, zw.Close())
+	require.NoError(t, storage.Put(ctx, "recordings/"+p.ID+"/rec-scan-001/00000.json.gz", buf.Bytes()))
+	second := chunk
+	second.ChunkIndex = 2
+	second.Events = json.RawMessage(`[{"type":3,"data":{},"timestamp":2}]`)
+	require.NoError(t, svc.IngestChunk(ctx, second))
+	require.NoError(t, storage.Delete(ctx, "recordings/"+p.ID+"/rec-scan-001/00001.json.gz"))
+
+	res, err = svc.ScanChunkURLs(ctx, p.ID, service.ChunkScanOpts{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Recordings)
+	assert.Equal(t, 3, res.Chunks)
+	assert.Equal(t, 1, res.Unreadable)
+	assert.Equal(t, 1, res.MatchingChunks)
+	assert.Equal(t, 1, res.MatchingRecordings)
+	require.NotNil(t, res.FirstMatch)
+	assert.True(t, res.FirstMatch.Equal(start))
+}
+
 // A bot chunk is dropped outright: no R2 object, no metadata row. The caller
 // still gets a nil error so the SDK sees its 202 and does not retry.
 func TestRecordingService_IngestChunk_BotChunksAreDropped(t *testing.T) {

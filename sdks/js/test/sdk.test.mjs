@@ -70,6 +70,37 @@ describe('FunnelBarnClient', () => {
     }
   });
 
+  it('tags events test in a browser under automation, whatever is configured', async () => {
+    const restoreNavigator = defineWritable(global, 'navigator', { webdriver: true });
+    try {
+      for (const environment of ['production', undefined]) {
+        requests = [];
+        const client = new FunnelBarnClient({
+          apiKey: 'test-key', endpoint: 'http://localhost:8080', environment,
+        });
+        client.track('signup');
+        await client.flush();
+        assert.equal(JSON.parse(requests[0].options.body).environment, 'test');
+      }
+    } finally {
+      restoreNavigator();
+    }
+  });
+
+  it('keeps the configured environment when navigator.webdriver is false', async () => {
+    const restoreNavigator = defineWritable(global, 'navigator', { webdriver: false });
+    try {
+      const client = new FunnelBarnClient({
+        apiKey: 'test-key', endpoint: 'http://localhost:8080', environment: 'production',
+      });
+      client.track('signup');
+      await client.flush();
+      assert.equal(JSON.parse(requests[0].options.body).environment, 'production');
+    } finally {
+      restoreNavigator();
+    }
+  });
+
   it('omits environment when it is not configured', async () => {
     const client = new FunnelBarnClient({ apiKey: 'test-key', endpoint: 'http://localhost:8080' });
     client.track('signup');

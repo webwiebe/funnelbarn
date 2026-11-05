@@ -19,9 +19,20 @@ Replica paths per environment:
 - Staging: (not configured — no Litestream env vars in staging manifest)
 - Testing: (not configured — no Litestream env vars in testing manifest)
 
-The replica keeps 6 to 7 days: `retention: 168h` with a snapshot every 24h. A
-restore starts at the newest snapshot before the target and replays the WAL after
-it, so replay stays at about a day of writes.
+From 2026-11-06 06:59Z the replica keeps 6 to 7 days: `retention: 168h` with a
+snapshot every 24h. The window is shorter until then. On 2026-11-02 at about
+14:00Z the 10-26 snapshot ages out and takes everything before the 10-31 06:59Z
+snapshot, so the window drops to about 55 hours and grows by an hour per hour
+from there. After that drop, no point before 10-31 06:59Z can be restored.
+
+A restore starts at the newest snapshot before the target and replays the WAL after
+it, so replay stays at about a day of writes. The Restore Proof workflow
+(`scripts/restore-proof.sh`) restores the replica into a throwaway Job in the
+production namespace and compares row counts with production. It runs every
+Wednesday at 11:43Z and on dispatch, and a failed run opens a `RestoreProofFailed`
+issue in BugBarn. Dispatching it with `simulate_failure` fails it before any restore
+or exec and sends the same report with `simulated: true`, to prove that path. Production
+data stays on layer7, and IP records stay out of testing.
 
 ### List available restore points
 
@@ -451,6 +462,32 @@ events are skipped rather than duplicated.
 
 > Only pass `--project` when you know the events belong to that project.
 > Attributing them to the wrong one is worse than leaving them dead-lettered.
+
+---
+
+## 4c. Volume drop alert
+
+The log line `volume drop: <project> production events under a tenth of the 7-day
+baseline` means the project's production events stored in the last 24 hours fell under a
+tenth of the median of the same 24 hours over the prior 7 days. It logs at Error, so it
+opens a BugBarn issue for that project. It logs once per drop. The writer checks once an
+hour and keeps open drops in the instance setting `volume_drop_open`, so a restart does
+not repeat the line. A drop closes once the project is back at a fifth of its baseline,
+and a later fall logs again. Losing the setting repeats the line once for each open drop.
+
+A project needs a median of at least 50 events a day and events on at least 6 of
+the 7 days. Smaller and newer projects raise nothing, and neither do test or
+development rows. `agents` is left out by name in `internal/volumedrop`, because
+it falls whenever the rig goes quiet.
+
+Check in this order:
+
+1. Whether the project's scheduled E2E ran on time. E2E rows on `pensioenfeest` and
+   `iambarn` are tagged `production` and make up most of their volume, so a late or
+   failed run looks like a drop.
+2. Whether other projects fell at the same time. One project points at its tracker
+   or site. Several point at ingest: read Traefik's log while it is happening, it
+   keeps about an hour.
 
 ---
 
