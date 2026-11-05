@@ -187,6 +187,8 @@ func (s *Server) refreshSession(ctx context.Context, idHash string) (repository.
 			return nil, err
 		}
 		span.SetAttributes(attribute.String("oidc.refresh_outcome", "rotated"))
+		slog.InfoContext(bgCtx, "session refresh: rotated",
+			"username", ws.Username, "claims_source", refreshed.ClaimsSource)
 		ws.IDToken = refreshed.IDToken
 		ws.AccessToken = refreshed.AccessToken
 		ws.RefreshToken = refreshed.RefreshToken

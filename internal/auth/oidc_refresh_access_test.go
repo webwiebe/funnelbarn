@@ -41,6 +41,9 @@ func TestOIDCClientRefreshReadsClaimsFromTheAccessToken(t *testing.T) {
 	if result.IDToken != "" {
 		t.Errorf("IDToken = %q, want empty (no id_token in the response)", result.IDToken)
 	}
+	if result.ClaimsSource != "access_token" {
+		t.Errorf("ClaimsSource = %q, want access_token", result.ClaimsSource)
+	}
 	if result.Claims == nil {
 		t.Fatal("expected claims from the access token")
 	}
@@ -67,8 +70,9 @@ func TestOIDCClientRefreshKeepsNoClaimsForAnUnverifiableAccessToken(t *testing.T
 			if err != nil {
 				t.Fatalf("Refresh: %v", err)
 			}
-			if result.Claims != nil {
-				t.Errorf("Claims = %+v, want nil so the caller keeps its snapshot", result.Claims)
+			if result.Claims != nil || result.ClaimsSource != "none" {
+				t.Errorf("Claims = %+v (source %q), want nil and none so the caller keeps its snapshot",
+					result.Claims, result.ClaimsSource)
 			}
 			if result.RefreshToken != "new-refresh" {
 				t.Errorf("RefreshToken = %q, want the rotated one", result.RefreshToken)

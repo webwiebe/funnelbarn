@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -85,6 +86,7 @@ func TestSessionRefresh_RoleGoneEndsTheSession(t *testing.T) {
 // IAMBarn's refresh carries no id_token; the access token's claims replace the
 // stored snapshot when the role is still held.
 func TestSessionRefresh_AccessTokenClaimsReplaceTheSnapshot(t *testing.T) {
+	logs := captureSlog(t)
 	f := newFakeIdP(t)
 	srv, store := oidcFlowServer(t, f, nil)
 	cookie, idHash := expiredOwnerSession(t, srv)
@@ -105,6 +107,23 @@ func TestSessionRefresh_AccessTokenClaimsReplaceTheSnapshot(t *testing.T) {
 	if ws.RefreshToken != "rt-new" || len(f.revocations()) != 0 {
 		t.Errorf("refresh token = %q, revocations = %v", ws.RefreshToken, f.revocations())
 	}
+	// The post-deploy check reads this record from SpanBarn logs.
+	if got := rotatedLogSources(logs); len(got) != 1 || got[0] != "access_token" {
+		t.Errorf("rotated log claims_source = %v, want [access_token]", got)
+	}
+}
+
+// rotatedLogSources returns the claims_source of each Info rotation record.
+func rotatedLogSources(h *recordingHandler) []any {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []any
+	for _, r := range h.recs {
+		if r.Level == slog.LevelInfo && r.Message == "session refresh: rotated" {
+			out = append(out, recordAttrs(r)["claims_source"])
+		}
+	}
+	return out
 }
 
 // A refresh with no verifiable claims keeps the session and its snapshot.
