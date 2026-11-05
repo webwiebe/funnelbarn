@@ -5,9 +5,10 @@ import type { FeatureFlag, TargetingRule } from '../../lib/api'
 import { trackEvent } from '../../lib/analytics'
 import { parseFlagFormState } from '../../pages/Flags'
 import { TargetingRuleEditor } from './TargetingRuleEditor'
+import { ConfigValueField, ConfigVariantsField } from './ConfigFields'
 import {
-  booleanShape, configShape, initialConfigValue, stringShape,
-  type StringVariantRow,
+  booleanShape, configDefaultName, configShape, initialConfigValue, initialConfigVariants, ruleVariants, stringShape,
+  type ConfigVariantRow, type StringVariantRow,
 } from './shape'
 
 const C = {
@@ -33,12 +34,15 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
   const isEdit = flag !== undefined
   const initial = isEdit ? parseFlagFormState(flag) : null
 
-  // A config flag holds one value for everyone: no bucketing, no evaluation
+  // A config flag serves one value to everyone without a matching rule: no bucketing, no evaluation
   // rows, no variant/conversion report. See the setup doc's "Two kinds of flag".
   const [flagKind, setFlagKind] = useState<'experiment' | 'config'>(
     flag?.flag_kind === 'config' ? 'config' : 'experiment'
   )
   const [configValue, setConfigValue] = useState(initialConfigValue(flag))
+  // Named values beside the default, for targeting rules to serve.
+  const [configVariants, setConfigVariants] = useState<ConfigVariantRow[]>(initialConfigVariants(flag))
+  const configDefault = configDefaultName(flag)
 
   const [flagKey, setFlagKey] = useState(flag?.flag_key ?? '')
   const [name, setName] = useState(flag?.name ?? '')
@@ -79,17 +83,17 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
   const autoKey = (n: string) => n.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
   // Variant names targeting-rule dropdowns and default-variant selectors can pick from.
-  const variantNames = flagType === 'boolean'
-    ? ['on', 'off']
-    : variants.map((v) => v.name).filter((n) => n.trim() !== '')
+  const { variantNames, newRuleVariant: defaultNewVariant } = ruleVariants({
+    flagKind, flagType, defaultBool, variants, configDefault, configVariants,
+  })
 
   // Keep defaultVariant in sync when the user removes/renames the row it pointed at.
   useEffect(() => {
-    if (flagType !== 'string') return
+    if (flagKind !== 'experiment' || flagType !== 'string') return
     if (!variantNames.includes(defaultVariant) && variantNames.length > 0) {
       setDefaultVariant(variantNames[0])
     }
-  }, [flagType, variantNames, defaultVariant])
+  }, [flagKind, flagType, variantNames, defaultVariant])
 
   const splitSum = variants.reduce((sum, v) => sum + (v.splitPct || 0), 0)
 
@@ -106,7 +110,7 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
     if (!flagKey.trim() || !name.trim()) { setError('Key and name are required'); return }
 
     const shape = flagKind === 'config'
-      ? configShape(configValue)
+      ? configShape(configValue, configVariants, configDefault)
       : booleanShape(flagType, defaultBool, rolloutEnabled, rolloutPct)
         ?? stringShape(variants, defaultVariant, validateString())
     if ('error' in shape) { setError(shape.error); return }
@@ -143,10 +147,6 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
     padding: '0.6rem 0.875rem', color: C.text, fontSize: 14,
     width: '100%', boxSizing: 'border-box' as const, outline: 'none',
   }
-
-  const defaultNewVariant = flagType === 'boolean'
-    ? (defaultBool === 'on' ? 'off' : 'on')
-    : (variantNames[0] || '')
 
   return (
     <>
@@ -190,7 +190,10 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
           <FlagKindSelector value={flagKind} onChange={setFlagKind} />
 
           {flagKind === 'config' ? (
+            <>
             <ConfigValueField value={configValue} onChange={setConfigValue} inputStyle={inputStyle} />
+            <ConfigVariantsField rows={configVariants} onChange={setConfigVariants} inputStyle={inputStyle} />
+            </>
           ) : (
           <>
           <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>
@@ -243,6 +246,8 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
             <option value="">Select an event (optional)...</option>
             {eventNames.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
+          </>
+          )}
 
           <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
             <button onClick={() => setShowRules(!showRules)} type="button" style={{
@@ -269,8 +274,6 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
               </div>
             )}
           </div>
-          </>
-          )}
         </div>
 
         <div style={{ padding: '1rem 1.5rem', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
@@ -316,34 +319,12 @@ function FlagKindSelector({ value, onChange }: {
       </div>
       <div style={{ fontSize: 12, color: C.muted, marginBottom: 16, lineHeight: 1.5 }}>
         {value === 'config'
-          ? 'One value for everyone, read by a server. No bucketing, no evaluation rows, and no variant report \u2014 change the value here and the fleet picks it up without a deploy.'
+          ? 'One value for everyone, read by a server, unless a targeting rule serves one of its named values. No bucketing, no evaluation rows, and no variant report \u2014 change the value here and the fleet picks it up without a deploy.'
           : 'Bucketed per user by targeting key. Every evaluation is recorded and reported on by variant and conversion.'}
       </div>
     </>
   )
 }
-
-// ConfigValueField edits the single value a config flag holds.
-function ConfigValueField({ value, onChange, inputStyle }: {
-  value: string
-  onChange: (v: string) => void
-  inputStyle: React.CSSProperties
-}) {
-  return (
-    <>
-      <label style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Value</label>
-      <input value={value} onChange={(e) => onChange(e.target.value)}
-        placeholder={'e.g. 250, true, or {"mode":"slow"}'}
-        style={{ ...inputStyle, marginBottom: 6, fontFamily: 'monospace' }} />
-      <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>
-        Read as JSON, so <code style={{ color: C.text }}>250</code> is a number and{' '}
-        <code style={{ color: C.text }}>true</code> is a boolean. Anything that isn&apos;t valid
-        JSON is kept as a string.
-      </div>
-    </>
-  )
-}
-
 
 // BooleanVariantFields edits a release flag: an on/off default plus an optional
 // gradual rollout that flips a percentage of users to the other side.
