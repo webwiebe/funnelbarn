@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -108,7 +109,7 @@ func (s *Server) handleClientError(w http.ResponseWriter, r *http.Request) {
 		"handled", false,
 		"error_type", truncate(body.Type, 128),
 		"stack", truncate(body.Stack, maxClientErrorField),
-		"page_url", truncate(body.URL, 2048),
+		"page_url", truncate(enrich.RedactURL(body.URL), 2048),
 		"trace_id", truncate(body.TraceID, 32),
 		"user_agent", r.Header.Get("User-Agent"),
 		"request_id", RequestIDFromContext(r.Context()),

@@ -19,7 +19,7 @@ export default async function globalSetup(_config: FullConfig) {
     ignoreHTTPSErrors: true,
   })
   const res = await apiContext.post('/api/v1/login', {
-    data: { username: 'wiebe', password: 'wiebe' },
+    data: { username: process.env.E2E_USERNAME, password: process.env.E2E_PASSWORD },
   })
   if (!res.ok()) {
     throw new Error(`E2E login failed: HTTP ${res.status()} — ${await res.text()}`)

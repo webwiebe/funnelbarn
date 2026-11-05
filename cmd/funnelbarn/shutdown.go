@@ -51,3 +51,12 @@ func drainCommands(commands command.Bus) {
 		slog.Warn("command dispatcher: drain on shutdown", "err", err, "handled", true)
 	}
 }
+
+// logShutdown runs one shutdown step and logs a failure. A store or spool that
+// fails to close can lose data, so those log at Error and reach BugBarn. A telemetry
+// exporter that cannot flush on the way out logs at Warn.
+func logShutdown(level slog.Level, name string, shutdown func() error) {
+	if err := shutdown(); err != nil {
+		slog.Log(context.Background(), level, "shutdown step failed", "step", name, "err", err)
+	}
+}

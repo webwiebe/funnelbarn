@@ -18,11 +18,11 @@ test.describe('API: health', () => {
 test.describe('API: auth', () => {
   test('POST /api/v1/login with valid credentials returns session cookie', async ({ request }) => {
     const resp = await request.post('/api/v1/login', {
-      data: { username: 'wiebe', password: 'wiebe' },
+      data: { username: process.env.E2E_USERNAME, password: process.env.E2E_PASSWORD },
     })
     expect(resp.status()).toBe(200)
     const body = await resp.json()
-    expect(body.username).toBe('wiebe')
+    expect(body.username).toBe(process.env.E2E_USERNAME)
 
     const setCookie = resp.headers()['set-cookie'] ?? ''
     expect(setCookie).toContain('funnelbarn_session')
@@ -30,7 +30,7 @@ test.describe('API: auth', () => {
 
   test('POST /api/v1/login with bad credentials returns 401', async ({ request }) => {
     const resp = await request.post('/api/v1/login', {
-      data: { username: 'wiebe', password: 'wrongpassword' },
+      data: { username: process.env.E2E_USERNAME, password: 'wrongpassword' },
     })
     expect(resp.status()).toBe(401)
     const body = await resp.json()
@@ -49,7 +49,7 @@ test.describe('API: projects', () => {
   // so callers need to pass this token as X-FunnelBarn-CSRF for those requests.
   async function loginContext(request: import('@playwright/test').APIRequestContext): Promise<string> {
     const loginResp = await request.post('/api/v1/login', {
-      data: { username: 'wiebe', password: 'wiebe' },
+      data: { username: process.env.E2E_USERNAME, password: process.env.E2E_PASSWORD },
     })
     expect(loginResp.status()).toBe(200)
     const setCookies = loginResp.headersArray().filter((h) => h.name.toLowerCase() === 'set-cookie')

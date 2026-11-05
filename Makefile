@@ -19,7 +19,7 @@ help:
 		'  lint         run linters' \
 		'  soak         run the report-only quality soaks against their baselines' \
 		'  gate-test    run the tests for the gate scripts themselves' \
-		'  secret-scan  scan git history for secrets (gitleaks, report-only until 2026-10-31)' \
+		'  secret-scan  scan git history for secrets (gitleaks, report mode here, CI enforces)' \
 		'  regress      run the regression harness (golden API, state snapshot, purge retention, reader/writer durability, architecture rules)' \
 		'  dev          start docker compose stack' \
 		'  docker-build build Docker images locally' \
@@ -68,7 +68,7 @@ regress:
 # Report-only soaks. Each compares the current measurement against a committed
 # baseline in scripts/soak-baselines/ and fails on a new violation, a worsened
 # file, or a baseline that has become beatable. Exit criteria are written into
-# scripts/quality-soak.py. Needs golangci-lint on PATH and web/node_modules.
+# scripts/quality-soak.py. Needs web/node_modules.
 soak:
 	python3 scripts/quality-soak.py all
 
