@@ -47,27 +47,35 @@ func ParseUA(ua string) UAInfo {
 	}
 }
 
+// browserRules are tried in order: most browsers also name the ones they derive
+// from, so Edge has to match before Chrome and Chrome before Safari.
+var browserRules = []struct {
+	name    string
+	anyOf   []string
+	without string
+}{
+	{name: "Edge", anyOf: []string{"edg/", "edge/"}},
+	{name: "Opera", anyOf: []string{"opr/", "opera"}},
+	{name: "Chrome", anyOf: []string{"chrome"}, without: "chromium"},
+	{name: "Chromium", anyOf: []string{"chromium"}},
+	{name: "Firefox", anyOf: []string{"firefox", "fxios"}},
+	{name: "Safari", anyOf: []string{"safari"}, without: "chrome"},
+	{name: "IE", anyOf: []string{"msie", "trident/"}},
+	{name: "curl", anyOf: []string{"curl"}},
+}
+
 func parseBrowser(lower string) string {
-	switch {
-	case strings.Contains(lower, "edg/") || strings.Contains(lower, "edge/"):
-		return "Edge"
-	case strings.Contains(lower, "opr/") || strings.Contains(lower, "opera"):
-		return "Opera"
-	case strings.Contains(lower, "chrome") && !strings.Contains(lower, "chromium"):
-		return "Chrome"
-	case strings.Contains(lower, "chromium"):
-		return "Chromium"
-	case strings.Contains(lower, "firefox") || strings.Contains(lower, "fxios"):
-		return "Firefox"
-	case strings.Contains(lower, "safari") && !strings.Contains(lower, "chrome"):
-		return "Safari"
-	case strings.Contains(lower, "msie") || strings.Contains(lower, "trident/"):
-		return "IE"
-	case strings.Contains(lower, "curl"):
-		return "curl"
-	default:
-		return "Other"
+	for _, rule := range browserRules {
+		if rule.without != "" && strings.Contains(lower, rule.without) {
+			continue
+		}
+		for _, sub := range rule.anyOf {
+			if strings.Contains(lower, sub) {
+				return rule.name
+			}
+		}
 	}
+	return "Other"
 }
 
 func parseOS(lower string) string {

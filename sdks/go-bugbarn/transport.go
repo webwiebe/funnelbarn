@@ -157,7 +157,7 @@ func (t *transport) send(env envelope) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// A 404 (wrong endpoint) or 405 (bare root, no path) used to return nil
 	// here — the whole reason this bug went unnoticed for two months. Include

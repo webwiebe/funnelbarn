@@ -32,7 +32,7 @@ CI enforces the architecture and quality rules of the codebase mechanically. The
 
 - **FR-008**: CI MUST fail on unformatted Go code, `go vet` findings and `staticcheck` findings. Issues: none. [inferred]
 - **FR-009**: CI MUST run the Go tests with `-race` and fail when per-package or total coverage falls below the floors in `scripts/coverage-baseline.txt` (`internal/service` 74, `internal/repository` 74, total 64). Issues: none. [inferred]
-- **FR-010**: CI MUST fail on any golangci-lint finding. Issues: [#273](https://github.com/webwiebe/funnelbarn/issues/273). Tests: `scripts/test_quality_soak.py`.
+- **FR-010**: CI MUST fail on any golangci-lint finding, in the root module and in the `sdks/go` and `sdks/go-bugbarn` modules. Issues: [#273](https://github.com/webwiebe/funnelbarn/issues/273). Tests: `scripts/test_quality_soak.py`.
 - **FR-011**: CI MUST run `tsc --noEmit`, `eslint` and `vitest` with coverage floors for the web app. Issues: [#196](https://github.com/webwiebe/funnelbarn/issues/196). [inferred]
 - **FR-012**: The gate scripts MUST have tests that run in CI. Issues: none. Tests: `scripts/test_quality_soak.py`, `scripts/test_deploy_graph.py`.
 - **FR-013**: The testing deploy MUST build only after a green CI run, and E2E failures block promotion to staging. Issues: none. Tests: `scripts/test_deploy_graph.py::DeployGraphTest.test_build_requires_ci_success`, `scripts/test_deploy_graph.py::DeployGraphTest.test_staging_waits_for_e2e`, `scripts/test_deploy_graph.py::SpecMatchesMechanismTest.test_spec_still_claims_e2e_blocks_staging` (this spec must keep the sentence "E2E failures block promotion to staging").

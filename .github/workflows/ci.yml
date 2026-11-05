@@ -109,6 +109,9 @@ jobs:
         run: |
           golangci-lint config verify
           golangci-lint run ./...
+          # The SDKs are modules of their own, which ./... does not reach.
+          (cd sdks/go && golangci-lint run ./...)
+          (cd sdks/go-bugbarn && golangci-lint run ./...)
 
       - name: Soak, Go cyclomatic complexity at the estate target
         # REPORT-ONLY at complexity 12, while the blocking limit in

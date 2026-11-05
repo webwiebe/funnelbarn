@@ -392,7 +392,7 @@ func (t *transport) send(e eventPayload) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// A 404 (wrong endpoint), a 401 (missing or wrong key) and a 403 (key
 	// minted for another project) are permanent, and every one of them used to
