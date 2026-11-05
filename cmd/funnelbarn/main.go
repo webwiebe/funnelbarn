@@ -138,6 +138,8 @@ func run() error {
 			return runProjectCmd(cfg, os.Args[2:])
 		case "apikey":
 			return runAPIKeyCmd(cfg, os.Args[2:])
+		case "recordings":
+			return runRecordingsCmd(cfg, os.Args[2:])
 		}
 	}
 

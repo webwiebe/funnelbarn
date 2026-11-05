@@ -1,7 +1,9 @@
 package enrich
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -95,4 +97,62 @@ func TestRedactURLStrings(t *testing.T) {
 	if RedactURLStrings(nil) != nil {
 		t.Error("RedactURLStrings(nil) should stay nil")
 	}
+}
+
+func TestRedactURLsInJSON(t *testing.T) {
+	t.Run("no marker returns input unchanged", func(t *testing.T) {
+		in := []byte(`[{"type":4,"data":{"href":"https://e.com/p?x=1"},"timestamp":1730000000000}]`)
+		out, changed, err := RedactURLsInJSON(in)
+		if err != nil || changed || string(out) != string(in) {
+			t.Fatalf("got %q changed=%v err=%v", out, changed, err)
+		}
+	})
+	t.Run("marker without a sensitive URL returns input unchanged", func(t *testing.T) {
+		in := []byte(`{"text":"enter your token below","href":"https://e.com/p?x=1"}`)
+		out, changed, err := RedactURLsInJSON(in)
+		if err != nil || changed || string(out) != string(in) {
+			t.Fatalf("got %q changed=%v err=%v", out, changed, err)
+		}
+	})
+	t.Run("meta href and nested attributes redacted, numbers and markup kept", func(t *testing.T) {
+		in := []byte(`[{"type":4,"data":{"href":"https://id.e.com/verify?token=abc&lang=nl","width":1440},"timestamp":1730000000123},` +
+			`{"type":2,"data":{"node":{"attributes":{"href":"/reset?password_token=p"},"textContent":"<b>a & b</b>"}},"timestamp":1730000000124}]`)
+		out, changed, err := RedactURLsInJSON(in)
+		if err != nil || !changed {
+			t.Fatalf("changed=%v err=%v", changed, err)
+		}
+		var got []map[string]any
+		if err := json.Unmarshal(out, &got); err != nil {
+			t.Fatalf("output is not JSON: %v", err)
+		}
+		s := string(out)
+		for _, want := range []string{
+			`"href":"https://id.e.com/verify?token=redacted&lang=nl"`,
+			`"href":"/reset?password_token=redacted"`,
+			`"timestamp":1730000000123`,
+			`"width":1440`,
+			`"textContent":"<b>a & b</b>"`,
+		} {
+			if !strings.Contains(s, want) {
+				t.Errorf("output lacks %s:\n%s", want, s)
+			}
+		}
+		if strings.Contains(s, "abc") {
+			t.Errorf("token value still present:\n%s", s)
+		}
+	})
+	t.Run("already redacted is unchanged", func(t *testing.T) {
+		in := []byte(`{"href":"https://e.com/v?token=redacted"}`)
+		_, changed, err := RedactURLsInJSON(in)
+		if err != nil || changed {
+			t.Fatalf("changed=%v err=%v", changed, err)
+		}
+	})
+	t.Run("invalid JSON with a marker reports an error and returns input", func(t *testing.T) {
+		in := []byte(`{"href":"https://e.com/v?token=x"`)
+		out, changed, err := RedactURLsInJSON(in)
+		if err == nil || changed || string(out) != string(in) {
+			t.Fatalf("got %q changed=%v err=%v", out, changed, err)
+		}
+	})
 }

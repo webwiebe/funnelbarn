@@ -1,6 +1,8 @@
 package enrich
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/url"
 	"strings"
 )
@@ -139,4 +141,77 @@ func looksLikeURL(s string) bool {
 		return false
 	}
 	return strings.Contains(s, "://") || strings.HasPrefix(s, "/")
+}
+
+// sensitiveMarkers are cheap byte checks that come before decoding a JSON
+// document. A document without any of them has no sensitive URL parameter, so
+// the common case skips the decode.
+var sensitiveMarkers = [][]byte{
+	[]byte("token"), []byte("secret"), []byte("password"),
+	[]byte("code="), []byte("state="), []byte("invite="),
+}
+
+// RedactURLsInJSON redacts every URL-shaped string value in a JSON document,
+// at any depth, with the same rules as RedactURL. It reports whether anything
+// changed. An unchanged document is returned as given, byte for byte. A changed
+// one is re-encoded with its numbers kept exactly (json.Number) and without
+// HTML escaping, so markup inside string values stays as it was.
+func RedactURLsInJSON(raw []byte) ([]byte, bool, error) {
+	lower := bytes.ToLower(raw)
+	marked := false
+	for _, m := range sensitiveMarkers {
+		if bytes.Contains(lower, m) {
+			marked = true
+			break
+		}
+	}
+	if !marked {
+		return raw, false, nil
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var doc any
+	if err := dec.Decode(&doc); err != nil {
+		return raw, false, err
+	}
+	changed := false
+	doc = redactJSONValue(doc, &changed)
+	if !changed {
+		return raw, false, nil
+	}
+
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(doc); err != nil {
+		return raw, false, err
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n"), true, nil
+}
+
+func redactJSONValue(v any, changed *bool) any {
+	switch t := v.(type) {
+	case string:
+		if !looksLikeURL(t) {
+			return t
+		}
+		r := RedactURL(t)
+		if r != t {
+			*changed = true
+		}
+		return r
+	case map[string]any:
+		for k, child := range t {
+			t[k] = redactJSONValue(child, changed)
+		}
+		return t
+	case []any:
+		for i := range t {
+			t[i] = redactJSONValue(t[i], changed)
+		}
+		return t
+	default:
+		return v
+	}
 }
