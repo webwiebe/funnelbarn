@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"net/url"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -12,6 +13,42 @@ import (
 // handlePageFlows returns the Sankey flow graph for a project, centered on the
 // given page. Accepts the same ?range/from/to params as the dashboard, plus
 // ?page= (URL of the focused page) and ?depth= (1-10, default 5).
+// parseFlowsRange returns the page-flows window ending at now. range picks 24h,
+// 7d or 30d (the default); from and to, as RFC 3339 times, override either end.
+// A value that does not parse is ignored.
+func parseFlowsRange(q url.Values, now time.Time) (from, to time.Time) {
+	to = now
+	from = to.AddDate(0, 0, -30)
+	switch q.Get("range") {
+	case "24h":
+		from = to.Add(-24 * time.Hour)
+	case "7d":
+		from = to.AddDate(0, 0, -7)
+	}
+	if t, err := time.Parse(time.RFC3339, q.Get("from")); err == nil {
+		from = t
+	}
+	if t, err := time.Parse(time.RFC3339, q.Get("to")); err == nil {
+		to = t
+	}
+	return from, to
+}
+
+// parseFlowsDepth reads the flow depth from its digits, ignoring any other
+// character. It returns 5 unless the result is 1 to 10.
+func parseFlowsDepth(v string) int {
+	n := 0
+	for _, c := range v {
+		if c >= '0' && c <= '9' {
+			n = n*10 + int(c-'0')
+		}
+	}
+	if n >= 1 && n <= 10 {
+		return n
+	}
+	return 5
+}
+
 func (s *Server) handlePageFlows(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
@@ -19,43 +56,11 @@ func (s *Server) handlePageFlows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	to := time.Now().UTC()
-	from := to.AddDate(0, 0, -30)
-	rangeParam := r.URL.Query().Get("range")
-	switch rangeParam {
-	case "24h":
-		from = to.Add(-24 * time.Hour)
-	case "7d":
-		from = to.AddDate(0, 0, -7)
-	case "30d":
-		from = to.AddDate(0, 0, -30)
-	}
-	if v := r.URL.Query().Get("from"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			from = t
-		}
-	}
-	if v := r.URL.Query().Get("to"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			to = t
-		}
-	}
-
-	page := r.URL.Query().Get("page")
-	env := r.URL.Query().Get("environment")
-
-	depth := 5
-	if v := r.URL.Query().Get("depth"); v != "" {
-		n := 0
-		for _, c := range v {
-			if c >= '0' && c <= '9' {
-				n = n*10 + int(c-'0')
-			}
-		}
-		if n >= 1 && n <= 10 {
-			depth = n
-		}
-	}
+	q := r.URL.Query()
+	from, to := parseFlowsRange(q, time.Now().UTC())
+	page := q.Get("page")
+	env := q.Get("environment")
+	depth := parseFlowsDepth(q.Get("depth"))
 
 	ctx, span := tracing.StartSpan(r.Context(), "flows.pageFlows",
 		attribute.String("project.id", projectID),

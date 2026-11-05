@@ -39,6 +39,20 @@ type EventPayload struct {
 	Environment    string         `json:"environment"`
 }
 
+// resolveSessionID returns the client's session ID when it is one of ours, and
+// otherwise a fingerprint of in, counting why the client's own was not used.
+func resolveSessionID(sent string, in session.FingerprintInput) string {
+	if sent != "" && session.IsValidSessionID(sent) {
+		return sent
+	}
+	reason := "missing"
+	if sent != "" {
+		reason = "invalid"
+	}
+	metrics.SessionsFingerprinted.WithLabelValues(reason).Inc()
+	return session.Fingerprint(in)
+}
+
 // ProcessRecord decodes and enriches a spool record into a repository.Event.
 // It does not touch the database.
 func ProcessRecord(record spool.Record) (repository.Event, error) {
@@ -92,21 +106,13 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 
 	// Derive session ID. A client that sends none of its own — or sends
 	// something that is not one of ours — gets a fingerprint instead.
-	sessionID := payload.SessionID
-	if sessionID == "" || !session.IsValidSessionID(sessionID) {
-		reason := "missing"
-		if sessionID != "" {
-			reason = "invalid"
-		}
-		metrics.SessionsFingerprinted.WithLabelValues(reason).Inc()
-		sessionID = session.Fingerprint(session.FingerprintInput{
-			ClientIP:    clientIP,
-			UserAgent:   ua,
-			ProjectSlug: record.ProjectSlug,
-			Environment: env,
-			At:          occurredAt,
-		})
-	}
+	sessionID := resolveSessionID(payload.SessionID, session.FingerprintInput{
+		ClientIP:    clientIP,
+		UserAgent:   ua,
+		ProjectSlug: record.ProjectSlug,
+		Environment: env,
+		At:          occurredAt,
+	})
 
 	// Drop the values of sensitive query parameters (one-time sign-in and
 	// reset tokens, OAuth codes) before anything reads or stores the URLs. A

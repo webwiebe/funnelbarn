@@ -443,22 +443,37 @@ func applyConfigFile(path string) error {
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		idx := strings.IndexByte(line, '=')
-		if idx < 0 {
-			continue
-		}
-		key := strings.TrimSpace(line[:idx])
-		val := strings.TrimSpace(line[idx+1:])
-		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
-			val = val[1 : len(val)-1]
-		}
-		if key != "" && os.Getenv(key) == "" {
+		key, val, ok := parseConfigLine(scanner.Text())
+		if ok && os.Getenv(key) == "" {
 			os.Setenv(key, val) //nolint:errcheck
 		}
 	}
 	return scanner.Err()
+}
+
+// parseConfigLine splits one KEY=VALUE line of a config file. It reports false
+// for a blank line, a # comment, a line without '=' and an empty key. Matching
+// single or double quotes around the value are removed.
+func parseConfigLine(raw string) (key, val string, ok bool) {
+	line := strings.TrimSpace(raw)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return "", "", false
+	}
+	key, val, found := strings.Cut(line, "=")
+	if !found {
+		return "", "", false
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", "", false
+	}
+	return key, unquote(strings.TrimSpace(val)), true
+}
+
+// unquote removes one pair of matching single or double quotes around v.
+func unquote(v string) string {
+	if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] {
+		return v[1 : len(v)-1]
+	}
+	return v
 }
