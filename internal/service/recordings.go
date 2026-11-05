@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -110,6 +111,13 @@ func (svc *RecordingService) UploadChunk(ctx context.Context, chunk RecordingChu
 			"recording_id", chunk.RecordingID, "project_id", chunk.ProjectID,
 			"user_agent", chunk.UserAgent)
 		return ChunkMeta{}, false, nil
+	}
+
+	// The page URL and trace URLs are stored in the database; drop the values
+	// of sensitive query parameters first, as event ingest does.
+	chunk.PageURL = enrich.RedactURL(chunk.PageURL)
+	for i := range chunk.Traces {
+		chunk.Traces[i].URL = enrich.RedactURL(chunk.Traces[i].URL)
 	}
 
 	// Compress events.
