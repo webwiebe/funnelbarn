@@ -42,7 +42,8 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 				jsonError(w, "too many requests", http.StatusTooManyRequests)
 				return
 			}
-			next(w, r)
+			// No sign-in exists here, so there is no less-trusted caller either.
+			next(w, r.WithContext(withSessionAdmin(r.Context(), true)))
 			return
 		}
 
@@ -100,7 +101,8 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		slog.Debug("session valid", "username", ws.Username)
-		next(w, r.WithContext(withSessionUser(r.Context(), ws.Username)))
+		ctx := withSessionUser(r.Context(), ws.Username)
+		next(w, r.WithContext(withSessionAdmin(ctx, s.sessionIsAdmin(ws))))
 	}
 }
 

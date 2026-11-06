@@ -592,6 +592,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/AdminRequired"
 
     post:
       summary: Create an API key
@@ -642,6 +644,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/AdminRequired"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -869,6 +873,15 @@ components:
             $ref: "#/components/schemas/Error"
     Unauthorized:
       description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    AdminRequired:
+      description: |
+        The session is valid but not an admin. API key routes need a local
+        session, or an IAMBarn session whose roles include owner,
+        organization_admin or operator in the configured organization.
       content:
         application/json:
           schema:
