@@ -1,3 +1,7 @@
 creation_rules:
   - path_regex: deploy/k8s/.*secret.*\.yaml$
     age: age1r7mrwf30q8g6glmngn2cnlzm9vrj6a9arz0t4mwxp6upc0m6tqwskvh295
+  # The FunnelBarn member test account (iambarn#449). Kept outside deploy/,
+  # which is copied to the production host on every deploy.
+  - path_regex: e2e/secrets/.*\.sops\.yaml$
+    age: age1r7mrwf30q8g6glmngn2cnlzm9vrj6a9arz0t4mwxp6upc0m6tqwskvh295

@@ -1,0 +1,64 @@
+name: Member sign-in refusal (production)
+
+# Manual. Signs in to production FunnelBarn through IAMBarn as the member test
+# account (iambarn#449) and checks that the OIDC callback answers 403 and
+# starts no session. The account is SOPS ciphertext in
+# e2e/secrets/production-member.sops.yaml, decrypted here in CI with the
+# production key the deploys use. No screenshots, traces or videos are kept.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: member-signin-refusal
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, build]
+    timeout-minutes: 10
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c"
+            rm -rf "$c"
+          fi
+
+      - uses: actions/checkout@v6
+
+      - name: Require the member account file
+        run: |
+          if [ ! -f e2e/secrets/production-member.sops.yaml ]; then
+            echo "e2e/secrets/production-member.sops.yaml is missing; see e2e/secrets/README.md" >&2
+            exit 1
+          fi
+
+      - name: Install Node deps
+        run: pnpm install --frozen-lockfile --filter funnelbarn
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install chromium
+
+      - name: Run the member sign-in refusal check
+        env:
+          E2E_BASE_URL: https://funnelbarn.wiebe.xyz
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY_PRODUCTION }}
+        run: |
+          set -euo pipefail
+          f=e2e/secrets/production-member.sops.yaml
+          E2E_MEMBER_EMAIL="$(sops -d --extract '["e2e_member"]["email"]' "$f")"
+          E2E_MEMBER_PASSWORD="$(sops -d --extract '["e2e_member"]["password"]' "$f")"
+          echo "::add-mask::${E2E_MEMBER_EMAIL}"
+          echo "::add-mask::${E2E_MEMBER_PASSWORD}"
+          export E2E_MEMBER_EMAIL E2E_MEMBER_PASSWORD
+          unset SOPS_AGE_KEY
+          pnpm exec playwright test -c e2e/member/playwright.config.ts

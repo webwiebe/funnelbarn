@@ -1,0 +1,55 @@
+name: Check an organization id against FunnelBarn sign-in
+
+# Manual. Prints match=yes when the given IAMBarn organization id is the one
+# the chosen environment trusts for OIDC sign-in (FUNNELBARN_OIDC_ORGANIZATION_ID),
+# and match=no otherwise. It decrypts in CI the way the deploys do and never
+# prints the configured id. See deploy/iambarn/oidc-org-match.sh.
+
+on:
+  workflow_dispatch:
+    inputs:
+      organization_id:
+        description: 'IAMBarn organization id to check (from the iambarn dry-run log)'
+        required: true
+        type: string
+      environment:
+        description: 'FunnelBarn environment to check against'
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - staging
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oidc-org-match
+  cancel-in-progress: false
+
+jobs:
+  match:
+    runs-on: [self-hosted, build]
+    timeout-minutes: 5
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c"
+            rm -rf "$c"
+          fi
+
+      - uses: actions/checkout@v6
+
+      - name: Compare with the configured organization id
+        env:
+          SOPS_AGE_KEY: ${{ inputs.environment == 'production' && secrets.SOPS_AGE_KEY_PRODUCTION || secrets.SOPS_AGE_KEY_STAGING }}
+          GIVEN_ORGANIZATION_ID: ${{ inputs.organization_id }}
+          TARGET_ENV: ${{ inputs.environment }}
+        run: deploy/iambarn/oidc-org-match.sh "deploy/k8s/${TARGET_ENV}/secret.yaml"
