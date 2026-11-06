@@ -67,14 +67,48 @@ func newAsync(t *testing.T, inner command.Bus, buf, workers int) *command.Async 
 	return a
 }
 
+// stepClock moves only when the test steps it. Every read is announced on
+// reads, so a test can wait until a Submit has taken its start time.
+type stepClock struct {
+	mu    sync.Mutex
+	t     time.Time
+	reads chan struct{}
+}
+
+func newStepClock() *stepClock {
+	return &stepClock{t: time.Unix(0, 0), reads: make(chan struct{}, 64)}
+}
+
+func (c *stepClock) Now() time.Time {
+	c.mu.Lock()
+	t := c.t
+	c.mu.Unlock()
+	c.reads <- struct{}{}
+	return t
+}
+
+func (c *stepClock) Step(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
+func newClockedAsync(t *testing.T, inner command.Bus, buf, workers int, clock *stepClock) *command.Async {
+	t.Helper()
+	a := command.NewAsync(inner, command.AsyncOptions{Buffer: buf, Workers: workers, Now: clock.Now})
+	a.Start(context.Background())
+	return a
+}
+
 func TestAsyncSubmitDoesNotWaitForTheInnerBus(t *testing.T) {
 	inner := newGatedBus()
-	a := newAsync(t, inner, 8, 2)
+	clock := newStepClock()
+	a := newClockedAsync(t, inner, 8, 2, clock)
 
-	start := time.Now()
+	// The inner bus stays blocked until close(inner.gate), so Submit returning
+	// here at all shows it did not wait for it.
 	waited := a.Submit(context.Background(), noop("eval"))
-	require.Less(t, time.Since(start), 100*time.Millisecond, "Submit waited on the blocked inner bus")
-	require.Less(t, waited, 100*time.Millisecond)
+	require.Zero(t, waited, "a free buffer slot reports no wait")
 	require.Equal(t, 0, inner.count(), "the inner bus is still blocked")
 
 	close(inner.gate)
@@ -85,22 +119,32 @@ func TestAsyncSubmitDoesNotWaitForTheInnerBus(t *testing.T) {
 
 func TestAsyncBackpressureBlocksAndNeverDrops(t *testing.T) {
 	inner := newGatedBus()
-	a := newAsync(t, inner, 2, 1)
+	clock := newStepClock()
+	a := newClockedAsync(t, inner, 2, 1, clock)
 
-	// One command on the worker, two in the buffer: the fourth must block.
+	// Three Submits returned with a buffer of 2, so the one worker holds a
+	// command, blocked on the gate, and the buffer is full: the fourth blocks.
 	for i := 0; i < 3; i++ {
 		a.Submit(context.Background(), noop("eval"))
 	}
-	fourth := make(chan time.Duration)
+	for i := 0; i < 6; i++ { // a start and an end read per Submit
+		<-clock.reads
+	}
+	fourth := make(chan time.Duration, 1)
 	go func() { fourth <- a.Submit(context.Background(), noop("eval")) }()
+	<-clock.reads // the fourth Submit has taken its start time
+
+	// Its end read needs a free slot, which needs the gate open, so the step
+	// lands inside the blocked wait every time.
+	clock.Step(50 * time.Millisecond)
 	select {
 	case <-fourth:
 		t.Fatal("Submit returned while the buffer was full")
-	case <-time.After(50 * time.Millisecond):
+	default:
 	}
 
 	close(inner.gate)
-	require.GreaterOrEqual(t, <-fourth, 50*time.Millisecond, "the blocked wait is reported")
+	require.Equal(t, 50*time.Millisecond, <-fourth, "the blocked wait is reported")
 	require.NoError(t, a.Flush(context.Background()))
 	require.Equal(t, 4, inner.count(), "every command reached the inner bus")
 }

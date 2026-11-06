@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -25,6 +26,19 @@ const (
 	// is open, as JSON. It is a setting because a release with a migration gets no
 	// automatic rollback.
 	volumeDropOpenKey = "volume_drop_open"
+
+	// volumeDropLastKey is the instance setting holding the last clock hour
+	// evaluated, in volumedrop.HourFormat, so the hours a failed read or a restart
+	// missed are evaluated on the next good read.
+	volumeDropLastKey = "volume_drop_last_hour"
+
+	// volumeDropCatchUp is how many hours one good read evaluates. Older missed
+	// hours are reported as skipped.
+	volumeDropCatchUp = 24
+
+	// volumeDropStallAfter is how long the check may go without evaluating an hour
+	// before it logs an Error.
+	volumeDropStallAfter = 3 * time.Hour
 )
 
 // volumeDropTimeout bounds one evaluation. The check shares the worker loop with
@@ -35,20 +49,25 @@ var volumeDropTimeout = 30 * time.Second
 // volumeDropCheck logs one Error per project at the start of a volume drop, which
 // opens its BugBarn issue. lastHour only stops repeat evaluations within an hour;
 // the open drops in the instance setting stop repeat lines, across restarts too.
+// failingSince and stallReported belong to the stall alarm.
 type volumeDropCheck struct {
-	store    *repository.Store
-	now      func() time.Time
-	lastHour time.Time
+	store         *repository.Store
+	now           func() time.Time
+	lastHour      time.Time
+	failingSince  time.Time
+	stallReported bool
 }
 
 func newVolumeDropCheck(store *repository.Store) *volumeDropCheck {
 	return &volumeDropCheck{store: store, now: time.Now}
 }
 
-// run evaluates the current clock hour unless it already did. Test and
-// development rows follow deploys and agent work, so only production rows count.
-// A failed read leaves the hour open for the next interval. The line goes out
-// before the setting is saved, so a failed save repeats a line and loses none.
+// run evaluates every clock hour since the last one evaluated, up to the current
+// hour, unless it already did this hour. Test and development rows follow deploys
+// and agent work, so only production rows count. A failed read logs Warn and
+// leaves the hours for the next interval; the Error comes from the stall alarm.
+// The lines go out before the settings are saved, so a failed save repeats a line
+// and loses none.
 func (c *volumeDropCheck) run(ctx context.Context) {
 	now := c.now().UTC().Truncate(time.Hour)
 	if now.Equal(c.lastHour) {
@@ -59,19 +78,37 @@ func (c *volumeDropCheck) run(ctx context.Context) {
 	ctx, span := tracing.StartSpan(ctx, "worker.volume_drop")
 	defer span.End()
 
-	open, err := c.readOpen(ctx)
+	last, err := c.evaluate(ctx, span, now)
 	if err != nil {
 		tracing.RecordError(span, err)
-		slog.Error("volume drop: read open drops", "err", err)
-		return
-	}
-	rows, err := c.store.EnvironmentEventsByHour(ctx, environment.Production, volumedrop.Since(now))
-	if err != nil {
-		tracing.RecordError(span, err)
-		slog.Error("volume drop: read hourly event counts", "err", err)
+		c.failed(last, err)
 		return
 	}
 	c.lastHour = now
+	c.failingSince = time.Time{}
+	c.stallReported = false
+}
+
+// evaluate reads the state and the hourly counts and evaluates the pending
+// hours. On a failed read it returns the last hour evaluated, zero if unknown.
+func (c *volumeDropCheck) evaluate(ctx context.Context, span trace.Span, now time.Time) (time.Time, error) {
+	open, err := c.readOpen(ctx)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("read open drops: %w", err)
+	}
+	last, err := c.readLast(ctx)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("read last hour: %w", err)
+	}
+	pending, skipped := pendingHours(last, now)
+	rows, err := c.store.EnvironmentEventsByHour(ctx, environment.Production, volumedrop.Since(pending[0]))
+	if err != nil {
+		return last, fmt.Errorf("read hourly event counts: %w", err)
+	}
+	if skipped > 0 {
+		slog.Error("volume drop: hours skipped past the catch-up limit", "hours", skipped,
+			"first_evaluated", pending[0].Format(volumedrop.HourFormat))
+	}
 
 	hours := make(map[string]map[string]int64)
 	for _, r := range rows {
@@ -80,20 +117,88 @@ func (c *volumeDropCheck) run(ctx context.Context) {
 		}
 		hours[r.Project][r.Hour] = r.Count
 	}
-	started, stillOpen := volumedrop.Evaluate(hours, open, now)
-	span.SetAttributes(attribute.Int("projects", len(hours)), attribute.Int("drops", len(started)), attribute.Int("open", len(stillOpen)))
-	for _, d := range started {
-		// The project is in the message so each gets its own BugBarn issue.
-		slog.Error(fmt.Sprintf("volume drop: %s production events under a tenth of the 7-day baseline", d.Project),
-			"project", d.Project, "baseline_24h", d.Baseline, "current_24h", d.Current)
+	stillOpen := open
+	drops := 0
+	for _, h := range pending {
+		var started []volumedrop.Drop
+		started, stillOpen = volumedrop.Evaluate(hours, stillOpen, h)
+		drops += len(started)
+		for _, d := range started {
+			// The project is in the message so each gets its own BugBarn issue.
+			slog.Error(fmt.Sprintf("volume drop: %s production events under a tenth of the 7-day baseline", d.Project),
+				"project", d.Project, "baseline_24h", d.Baseline, "current_24h", d.Current,
+				"hour", h.Format(volumedrop.HourFormat))
+		}
 	}
-	if slices.Equal(open, stillOpen) {
+	span.SetAttributes(attribute.Int("projects", len(hours)), attribute.Int("hours", len(pending)),
+		attribute.Int("skipped", skipped), attribute.Int("drops", drops), attribute.Int("open", len(stillOpen)))
+	c.save(ctx, open, stillOpen, now)
+	return now, nil
+}
+
+// pendingHours returns the hours after last up to now, oldest first, and how many
+// older ones fall past volumeDropCatchUp. With no last hour only now is pending.
+func pendingHours(last, now time.Time) (pending []time.Time, skipped int) {
+	first := now
+	if !last.IsZero() && last.Before(now) {
+		first = last.Add(time.Hour)
+	}
+	if n := int(now.Sub(first)/time.Hour) + 1; n > volumeDropCatchUp {
+		skipped = n - volumeDropCatchUp
+		first = now.Add(-(volumeDropCatchUp - 1) * time.Hour)
+	}
+	for h := first; !h.After(now); h = h.Add(time.Hour) {
+		pending = append(pending, h)
+	}
+	return pending, skipped
+}
+
+// failed logs a failed evaluation at Warn, and an Error once when no hour has
+// been evaluated for volumeDropStallAfter. The outage starts at the hour after
+// last, or at this process's first failure when last is unknown or later.
+func (c *volumeDropCheck) failed(last time.Time, err error) {
+	slog.Warn("volume drop: evaluation failed, retrying next interval", "err", err)
+	now := c.now().UTC()
+	if c.failingSince.IsZero() {
+		c.failingSince = now
+	}
+	since := c.failingSince
+	if !last.IsZero() && last.Add(time.Hour).Before(since) {
+		since = last.Add(time.Hour)
+	}
+	if c.stallReported || now.Sub(since) < volumeDropStallAfter {
 		return
 	}
-	if err := c.writeOpen(ctx, stillOpen); err != nil {
-		tracing.RecordError(span, err)
-		slog.Error("volume drop: save open drops", "err", err)
+	c.stallReported = true
+	slog.Error("volume drop: check has evaluated no hour for 3 hours",
+		"since", since.Format(time.RFC3339), "err", err)
+}
+
+// save stores the open drops when they changed and the hour just evaluated.
+func (c *volumeDropCheck) save(ctx context.Context, open, stillOpen []string, now time.Time) {
+	if !slices.Equal(open, stillOpen) {
+		if err := c.writeOpen(ctx, stillOpen); err != nil {
+			slog.Warn("volume drop: save open drops", "err", err)
+		}
 	}
+	if err := c.store.SetInstanceSetting(ctx, volumeDropLastKey, now.Format(volumedrop.HourFormat)); err != nil {
+		slog.Warn("volume drop: save last hour", "err", err)
+	}
+}
+
+// readLast returns the last hour evaluated, zero when none is stored. A value it
+// cannot parse counts as none, which evaluates only the current hour.
+func (c *volumeDropCheck) readLast(ctx context.Context) (time.Time, error) {
+	value, ok, err := c.store.GetInstanceSetting(ctx, volumeDropLastKey)
+	if err != nil || !ok {
+		return time.Time{}, err
+	}
+	last, err := time.ParseInLocation(volumedrop.HourFormat, value, time.UTC)
+	if err != nil {
+		slog.Warn("volume drop: ignoring unreadable last hour", "err", err)
+		return time.Time{}, nil
+	}
+	return last, nil
 }
 
 // readOpen returns the projects whose drop is open. A value it cannot parse counts

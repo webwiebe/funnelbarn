@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
+	"github.com/wiebe-xyz/funnelbarn/internal/volumedrop"
 )
 
 // captureDefaultLog routes the default logger to a buffer for one test.
@@ -189,7 +191,8 @@ func TestVolumeDropCheck_QuietWhenOnlyTestRowsFall(t *testing.T) {
 	require.Empty(t, logsAtLevel(t, logs, "ERROR"))
 }
 
-// A failed read reports the error and leaves the hour open for a retry.
+// A failed read logs Warn and leaves the hour open for a retry; the Error waits
+// for the stall alarm.
 func TestVolumeDropCheck_RetriesAfterAFailedRead(t *testing.T) {
 	store := repotest.Open(t)
 	logs := captureDefaultLog(t)
@@ -200,7 +203,8 @@ func TestVolumeDropCheck_RetriesAfterAFailedRead(t *testing.T) {
 	check := &volumeDropCheck{store: store, now: func() time.Time { return start }}
 	check.run(cancelled)
 
-	require.Len(t, logsAtLevel(t, logs, "ERROR"), 1)
+	require.Len(t, logsAtLevel(t, logs, "WARN"), 1)
+	require.Empty(t, logsAtLevel(t, logs, "ERROR"))
 	require.True(t, check.lastHour.IsZero())
 
 	check.run(context.Background())
@@ -222,12 +226,189 @@ func TestVolumeDropCheck_DeadlineEndsTheEvaluation(t *testing.T) {
 	check := &volumeDropCheck{store: store, now: func() time.Time { return start }}
 	check.run(context.Background())
 
-	errs := logsAtLevel(t, logs, "ERROR")
-	require.Len(t, errs, 1)
-	require.Contains(t, errs[0]["msg"], "read open drops")
+	warns := logsAtLevel(t, logs, "WARN")
+	require.Len(t, warns, 1)
+	require.Contains(t, warns[0]["err"], "read open drops")
+	require.Empty(t, logsAtLevel(t, logs, "ERROR"))
 	require.True(t, check.lastHour.IsZero())
 
 	volumeDropTimeout = prev
 	check.run(context.Background())
 	require.Equal(t, start, check.lastHour)
+}
+
+func setLastHour(t *testing.T, store *repository.Store, h time.Time) {
+	t.Helper()
+	require.NoError(t, store.SetInstanceSetting(context.Background(), volumeDropLastKey, h.Format(volumedrop.HourFormat)))
+}
+
+func lastHourSetting(t *testing.T, store *repository.Store) string {
+	t.Helper()
+	value, ok, err := store.GetInstanceSetting(context.Background(), volumeDropLastKey)
+	require.NoError(t, err)
+	require.True(t, ok)
+	return value
+}
+
+// A drop that starts in an hour the check missed is still reported: evaluated
+// at start+3h alone, the 3 events an hour from start lift the window over a
+// tenth of the baseline and the drop would go unseen.
+func TestVolumeDropCheck_CatchUpReportsADropInAMissedHour(t *testing.T) {
+	store := repotest.Open(t)
+	start := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	p := seedFallingProject(t, store, start)
+	seedHours(t, store, p.ID, environment.Production, start, start.Add(3*time.Hour), 3)
+	setLastHour(t, store, start.Add(-time.Hour))
+	logs := captureDefaultLog(t)
+
+	check := &volumeDropCheck{store: store, now: func() time.Time { return start.Add(3*time.Hour + 5*time.Minute) }}
+	check.run(context.Background())
+
+	errs := logsAtLevel(t, logs, "ERROR")
+	require.Len(t, errs, 1)
+	require.Equal(t, "shop", errs[0]["project"])
+	require.Equal(t, start.Format(volumedrop.HourFormat), errs[0]["hour"])
+	require.Equal(t, start.Add(3*time.Hour).Format(volumedrop.HourFormat), lastHourSetting(t, store))
+}
+
+// Hours older than the catch-up limit are reported once, and the rest evaluated.
+func TestVolumeDropCheck_ReportsHoursPastTheLimit(t *testing.T) {
+	store := repotest.Open(t)
+	start := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	setLastHour(t, store, start.Add(-30*time.Hour))
+	logs := captureDefaultLog(t)
+
+	check := &volumeDropCheck{store: store, now: func() time.Time { return start }}
+	check.run(context.Background())
+
+	errs := logsAtLevel(t, logs, "ERROR")
+	require.Len(t, errs, 1)
+	require.Contains(t, errs[0]["msg"], "hours skipped")
+	require.EqualValues(t, 30-volumeDropCatchUp, errs[0]["hours"])
+	require.Equal(t, start.Add(-(volumeDropCatchUp-1)*time.Hour).Format(volumedrop.HourFormat), errs[0]["first_evaluated"])
+	require.Equal(t, start.Format(volumedrop.HourFormat), lastHourSetting(t, store))
+
+	check.lastHour = time.Time{}
+	check.run(context.Background())
+	require.Len(t, logsAtLevel(t, logs, "ERROR"), 1, "the skip is reported once")
+}
+
+// When the hourly read keeps failing, the stored last hour dates the outage, so
+// the alarm fires after 3 hours even in a process that just started. It fires
+// once per outage and resets after a good read.
+func TestVolumeDropCheck_StallAlarmFromTheStoredHour(t *testing.T) {
+	store := repotest.Open(t)
+	start := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	setLastHour(t, store, start.Add(-4*time.Hour))
+	_, err := store.DB().Exec(`ALTER TABLE events RENAME TO events_away`)
+	require.NoError(t, err)
+	logs := captureDefaultLog(t)
+
+	clock := start.Add(-time.Minute)
+	check := &volumeDropCheck{store: store, now: func() time.Time { return clock }}
+	check.run(context.Background())
+	require.Empty(t, logsAtLevel(t, logs, "ERROR"), "2h59m since the first missed hour")
+
+	clock = start
+	check.run(context.Background())
+	errs := logsAtLevel(t, logs, "ERROR")
+	require.Len(t, errs, 1)
+	require.Contains(t, errs[0]["msg"], "no hour for 3 hours")
+	require.Equal(t, start.Add(-3*time.Hour).Format(time.RFC3339), errs[0]["since"])
+
+	clock = start.Add(10 * time.Minute)
+	check.run(context.Background())
+	require.Len(t, logsAtLevel(t, logs, "ERROR"), 1, "once per outage")
+
+	_, err = store.DB().Exec(`ALTER TABLE events_away RENAME TO events`)
+	require.NoError(t, err)
+	clock = start.Add(20 * time.Minute)
+	check.run(context.Background())
+	require.False(t, check.stallReported)
+	require.Equal(t, start.Format(volumedrop.HourFormat), lastHourSetting(t, store))
+}
+
+// With nothing stored, the process's first failure dates the outage.
+func TestVolumeDropCheck_StallAlarmInMemory(t *testing.T) {
+	store := repotest.Open(t)
+	logs := captureDefaultLog(t)
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	clock := start
+	check := &volumeDropCheck{store: store, now: func() time.Time { return clock }}
+	for _, at := range []time.Duration{0, time.Hour, 2*time.Hour + 50*time.Minute} {
+		clock = start.Add(at)
+		check.run(cancelled)
+	}
+	require.Empty(t, logsAtLevel(t, logs, "ERROR"))
+
+	clock = start.Add(3 * time.Hour)
+	check.run(cancelled)
+	require.Len(t, logsAtLevel(t, logs, "ERROR"), 1)
+}
+
+func TestPendingHours(t *testing.T) {
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	hour := func(n int) time.Time { return now.Add(time.Duration(n) * time.Hour) }
+	for _, tc := range []struct {
+		name    string
+		last    time.Time
+		first   time.Time
+		n       int
+		skipped int
+	}{
+		{"nothing stored", time.Time{}, now, 1, 0},
+		{"previous hour", hour(-1), now, 1, 0},
+		{"three missed", hour(-4), hour(-3), 4, 0},
+		{"at the limit", hour(-volumeDropCatchUp), hour(-volumeDropCatchUp + 1), volumeDropCatchUp, 0},
+		{"past the limit", hour(-30), hour(-volumeDropCatchUp + 1), volumeDropCatchUp, 30 - volumeDropCatchUp},
+		{"stored hour ahead", hour(2), now, 1, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pending, skipped := pendingHours(tc.last, now)
+			require.Len(t, pending, tc.n)
+			require.Equal(t, tc.first, pending[0])
+			require.Equal(t, now, pending[len(pending)-1])
+			require.Equal(t, tc.skipped, skipped)
+		})
+	}
+}
+
+// The hourly read must split into the wait for a read connection, the rowid bound
+// and the count, under the check's span, so a slow read shows where it spent its
+// time.
+func TestVolumeDropCheck_SpansSplitTheRead(t *testing.T) {
+	exp := captureSpans(t)
+	store, err := repository.Open(repotest.Path(t, "volume-drop-spans.db"))
+	require.NoError(t, err)
+	defer store.Close()
+	start := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	seedFallingProject(t, store, start)
+	captureDefaultLog(t)
+
+	check := &volumeDropCheck{store: store, now: func() time.Time { return start }}
+	check.run(context.Background())
+
+	byName := map[string]tracetest.SpanStub{}
+	for _, s := range exp.GetSpans() {
+		byName[s.Name] = s
+	}
+	root, ok := byName["worker.volume_drop"]
+	require.True(t, ok)
+	read, ok := byName["repository.EnvironmentEventsByHour"]
+	require.True(t, ok)
+	require.Equal(t, root.SpanContext.SpanID(), read.Parent.SpanID())
+	for _, name := range []string{"repository.acquire_read_conn", "repository.events_rowid_bound", "repository.events_hourly_count"} {
+		s, ok := byName[name]
+		require.True(t, ok, name)
+		require.Equal(t, read.SpanContext.SpanID(), s.Parent.SpanID(), name)
+	}
+	attrs := map[string]int64{}
+	for _, a := range byName["repository.events_rowid_bound"].Attributes {
+		attrs[string(a.Key)] = a.Value.AsInt64()
+	}
+	require.Positive(t, attrs["lookups"])
+	require.Positive(t, attrs["rowid.from"])
 }
