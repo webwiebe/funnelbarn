@@ -58,7 +58,29 @@ class DeployProductionTest(unittest.TestCase):
         smoke = self.steps[self._index("Smoke check production")]
         self.assertIn("scripts/smoke.sh", smoke["run"])
         self.assertIn("https://funnelbarn.wiebe.xyz", smoke["run"])
-        self.assertIn("inputs.production_version", smoke["run"])
+        self.assertIn("needs.preflight.outputs.version", smoke["run"])
+
+    def test_preflight_resolves_the_release_tag(self):
+        # Issue #489: promote passes the commit SHA, and the deploy reports the
+        # release tag on that commit.
+        preflight = self.jobs["preflight"]
+        self.assertEqual(preflight["outputs"]["version"], "${{ steps.release.outputs.version }}")
+        release = next(s for s in preflight["steps"] if s.get("id") == "release")
+        self.assertIn('deploy/release-tag.sh "${PRODUCTION_VERSION}"', release["run"])
+        self.assertEqual(release["env"]["PRODUCTION_VERSION"], "${{ inputs.production_version }}")
+        checkout = next(s for s in preflight["steps"] if "actions/checkout" in str(s.get("uses", "")))
+        self.assertEqual(checkout["with"]["fetch-depth"], 0)
+
+    def test_deploy_reports_the_release_tag_never_the_input(self):
+        # Every consumer in the deploy job (pin, assert-version, smoke, BugBarn
+        # marker, summary) takes the resolved tag; the raw input may be a SHA.
+        for step in self.steps:
+            with self.subTest(step=step.get("name")):
+                self.assertNotIn("inputs.production_version", str(step))
+        pin = self.steps[self._index("Pin manifests to this release")]["run"]
+        self.assertIn('"${{ needs.preflight.outputs.sha }}" "${{ needs.preflight.outputs.version }}"', pin)
+        marker = self.steps[self._index("Post release marker to BugBarn")]["run"]
+        self.assertIn("releases/tag/${{ needs.preflight.outputs.version }}", marker)
 
     def test_preflight_resolves_digests_and_deploy_pins_them(self):
         outputs = self.jobs["preflight"]["outputs"]
