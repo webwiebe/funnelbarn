@@ -24,6 +24,9 @@ type AsyncOptions struct {
 	Workers int
 	// Logger receives submits after Close. Nil means slog.Default().
 	Logger *slog.Logger
+	// Now is the clock Submit measures its wait with. Nil means time.Now;
+	// tests set it to report an exact wait.
+	Now func() time.Time
 }
 
 // asyncItem is one queue entry: a command, or one worker's share of a flush.
@@ -56,6 +59,7 @@ type Async struct {
 	ch      chan asyncItem
 	workers int
 	logger  *slog.Logger
+	now     func() time.Time
 
 	mu      sync.Mutex
 	closed  bool
@@ -79,11 +83,16 @@ func NewAsync(inner Bus, opts AsyncOptions) *Async {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	now := opts.Now
+	if now == nil {
+		now = time.Now
+	}
 	return &Async{
 		inner:   inner,
 		ch:      make(chan asyncItem, size),
 		workers: workers,
 		logger:  logger,
+		now:     now,
 		done:    make(chan struct{}),
 	}
 }
@@ -123,9 +132,9 @@ func (a *Async) Submit(ctx context.Context, c Command) time.Duration {
 	defer a.senders.Done()
 
 	detached := trace.ContextWithSpan(context.WithoutCancel(ctx), trace.SpanFromContext(context.Background()))
-	start := time.Now()
+	start := a.now()
 	a.ch <- asyncItem{ctx: detached, cmd: c}
-	waited := time.Since(start)
+	waited := a.now().Sub(start)
 
 	trace.SpanFromContext(ctx).SetAttributes(
 		attribute.Float64("command.submit_wait_ms", float64(waited)/float64(time.Millisecond)))
