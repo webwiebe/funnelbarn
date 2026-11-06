@@ -182,3 +182,23 @@ func (c *OIDCClient) userinfoGroups(ctx context.Context, raw string, exp time.Ti
 	c.userinfoCache[key] = userinfoEntry{groups: extra.Groups, roles: extra.Roles, expires: exp}
 	return extra.Groups, extra.Roles, nil
 }
+
+// accessTokenClaims fills refreshed.Claims from the new access token when the
+// refresh response carried no id_token. IAMBarn's refresh grant returns none,
+// while its access token (aud = this client) carries organization_id and the
+// roles under the same scope rule as the login id_token; VerifyAccessToken
+// reads roles from userinfo when the token lacks them. It returns where the
+// claims came from: "access_token", or "none" when the token did not verify,
+// in which case the caller keeps the earlier snapshot.
+func (c *OIDCClient) accessTokenClaims(ctx context.Context, refreshed *RefreshedTokens) string {
+	if refreshed.AccessToken == "" {
+		return "none"
+	}
+	at, err := c.VerifyAccessToken(ctx, refreshed.AccessToken, c.cfg.ClientID)
+	if err != nil {
+		return "none"
+	}
+	claims := at.OIDCClaims
+	refreshed.Claims = &claims
+	return "access_token"
+}

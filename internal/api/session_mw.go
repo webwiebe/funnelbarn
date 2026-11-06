@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -124,6 +125,8 @@ func accessTokenExpired(ws repository.WebSession, now time.Time) bool {
 // Outcomes:
 //   - success: tokens rotated + claims re-snapshotted in the row
 //   - invalid_grant: the session is dead centrally → row deleted, error
+//   - new claims fail the sign-in role check (role removed in IAMBarn):
+//     row deleted, the new refresh token revoked, error
 //   - transient failure (IdP down): serve stale within the grace window
 //     measured from the FIRST failure; past the window → row deleted, error
 func (s *Server) refreshSession(ctx context.Context, idHash string) (repository.WebSession, error) {
@@ -158,28 +161,13 @@ func (s *Server) refreshSession(ctx context.Context, idHash string) (repository.
 			return nil, err
 		}
 		if err != nil {
-			// Transient (network, IdP 5xx): serve stale within the grace
-			// window, measured from the first failure.
-			failingSince := ws.RefreshFailingSince
-			if failingSince == 0 {
-				failingSince = now.Unix()
-				if markErr := s.webSessions.MarkWebSessionRefreshFailing(bgCtx, idHash, failingSince); markErr != nil {
-					slog.WarnContext(bgCtx, "session refresh: mark failing", "err", markErr)
-				}
-				ws.RefreshFailingSince = failingSince
-			}
-			if now.Unix()-failingSince > int64(s.oidcRefreshGrace.Seconds()) {
-				span.SetAttributes(attribute.String("oidc.refresh_outcome", "grace_exceeded"))
-				tracing.RecordError(span, err)
-				slog.WarnContext(bgCtx, "session refresh: grace exceeded, session cut off",
-					"username", ws.Username, "failing_for", now.Unix()-failingSince)
-				_ = s.webSessions.DeleteWebSession(bgCtx, idHash)
-				return nil, err
-			}
-			span.SetAttributes(attribute.String("oidc.refresh_outcome", "stale_within_grace"))
-			slog.WarnContext(bgCtx, "session refresh failed, serving stale within grace",
-				"err", err, "username", ws.Username)
-			return ws, nil
+			return s.refreshFailed(bgCtx, span, idHash, ws, now, err)
+		}
+
+		if refreshed.Claims != nil && !s.oidc.Allowed(*refreshed.Claims) {
+			span.SetAttributes(attribute.String("oidc.refresh_outcome", "access_revoked"))
+			s.endSessionWithoutAccess(bgCtx, idHash, ws, refreshed.RefreshToken)
+			return nil, errSessionAccessRevoked
 		}
 
 		claimsJSON := ""
@@ -201,6 +189,8 @@ func (s *Server) refreshSession(ctx context.Context, idHash string) (repository.
 			return nil, err
 		}
 		span.SetAttributes(attribute.String("oidc.refresh_outcome", "rotated"))
+		slog.InfoContext(bgCtx, "session refresh: rotated",
+			"username", ws.Username, "claims_source", refreshed.ClaimsSource)
 		ws.IDToken = refreshed.IDToken
 		ws.AccessToken = refreshed.AccessToken
 		ws.RefreshToken = refreshed.RefreshToken
@@ -216,4 +206,52 @@ func (s *Server) refreshSession(ctx context.Context, idHash string) (repository.
 		return repository.WebSession{}, err
 	}
 	return v.(repository.WebSession), nil
+}
+
+// errSessionAccessRevoked ends a session whose refreshed claims no longer pass
+// the sign-in role check.
+var errSessionAccessRevoked = errors.New("session refresh: sign-in role no longer held")
+
+// endSessionWithoutAccess deletes a session whose refreshed claims fail the
+// sign-in role check, and revokes the refresh token the IdP just issued so it
+// cannot outlive the session. Both steps are best-effort; the caller answers
+// 401 either way.
+func (s *Server) endSessionWithoutAccess(ctx context.Context, idHash string, ws repository.WebSession, refreshToken string) {
+	slog.InfoContext(ctx, "session refresh: sign-in role no longer held, session ended",
+		"username", ws.Username, "sub", ws.IdpSub)
+	if err := s.webSessions.DeleteWebSession(ctx, idHash); err != nil {
+		slog.WarnContext(ctx, "session refresh: delete session without access", "err", err)
+	}
+	if refreshToken == "" {
+		return
+	}
+	if err := s.oidc.RevokeRefreshToken(ctx, refreshToken); err != nil {
+		slog.WarnContext(ctx, "session refresh: revoke refresh token", "err", err)
+	}
+}
+
+// refreshFailed handles a transient refresh failure (network, IdP 5xx): it
+// serves the stale session within the grace window, measured from the first
+// failure, and deletes the row once the window has passed.
+func (s *Server) refreshFailed(ctx context.Context, span trace.Span, idHash string, ws repository.WebSession, now time.Time, err error) (any, error) {
+	failingSince := ws.RefreshFailingSince
+	if failingSince == 0 {
+		failingSince = now.Unix()
+		if markErr := s.webSessions.MarkWebSessionRefreshFailing(ctx, idHash, failingSince); markErr != nil {
+			slog.WarnContext(ctx, "session refresh: mark failing", "err", markErr)
+		}
+		ws.RefreshFailingSince = failingSince
+	}
+	if now.Unix()-failingSince > int64(s.oidcRefreshGrace.Seconds()) {
+		span.SetAttributes(attribute.String("oidc.refresh_outcome", "grace_exceeded"))
+		tracing.RecordError(span, err)
+		slog.WarnContext(ctx, "session refresh: grace exceeded, session cut off",
+			"username", ws.Username, "failing_for", now.Unix()-failingSince)
+		_ = s.webSessions.DeleteWebSession(ctx, idHash)
+		return nil, err
+	}
+	span.SetAttributes(attribute.String("oidc.refresh_outcome", "stale_within_grace"))
+	slog.WarnContext(ctx, "session refresh failed, serving stale within grace",
+		"err", err, "username", ws.Username)
+	return ws, nil
 }

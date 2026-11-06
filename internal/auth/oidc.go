@@ -190,12 +190,14 @@ type RefreshedTokens struct {
 	AccessToken  string
 	RefreshToken string
 	ExpiresAt    time.Time
-	// IDToken and Claims are set when the token response included a fresh
-	// id_token (iambarn does on refresh). Claims lets the caller re-snapshot
-	// groups/roles so central role changes propagate on the next refresh
-	// instead of the next login.
+	// IDToken is set when the token response included a fresh id_token.
+	// Claims comes from that id_token, or else from the verified access token
+	// (iambarn sends no id_token on refresh), so the caller can re-check the
+	// sign-in role and re-snapshot the claims at every refresh.
 	IDToken string
 	Claims  *OIDCClaims
+	// ClaimsSource says where Claims came from: id_token, access_token or none.
+	ClaimsSource string
 }
 
 // Refresh exchanges a refresh_token for a new access/refresh token pair.
@@ -253,6 +255,12 @@ func (c *OIDCClient) Refresh(ctx context.Context, refreshToken string) (Refreshe
 			}
 		}
 	}
+	source := "id_token"
+	if refreshed.Claims == nil {
+		source = c.accessTokenClaims(ctx, &refreshed)
+	}
+	refreshed.ClaimsSource = source
+	span.SetAttributes(attribute.String("oidc.refresh_claims", source))
 	return refreshed, nil
 }
 

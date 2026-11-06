@@ -22,6 +22,7 @@ import (
 // client can be exercised without a live issuer.
 type testIssuer struct {
 	srv  *httptest.Server
+	mux  *http.ServeMux // for extra endpoints such as /userinfo
 	priv ed25519.PrivateKey
 	kid  string
 }
@@ -35,6 +36,7 @@ func newTestIssuer(t *testing.T, tokenHandler http.HandlerFunc, revokeHandler ht
 	it := &testIssuer{priv: priv, kid: "k1"}
 
 	mux := http.NewServeMux()
+	it.mux = mux
 	it.srv = httptest.NewServer(mux)
 	t.Cleanup(it.srv.Close)
 	issuer := it.srv.URL
@@ -47,6 +49,7 @@ func newTestIssuer(t *testing.T, tokenHandler http.HandlerFunc, revokeHandler ht
 			"token_endpoint":                        issuer + "/oauth2/token",
 			"jwks_uri":                              issuer + "/jwks",
 			"revocation_endpoint":                   issuer + "/oauth2/revoke",
+			"userinfo_endpoint":                     issuer + "/userinfo",
 			"id_token_signing_alg_values_supported": []string{"EdDSA"},
 			"response_types_supported":              []string{"code"},
 			"subject_types_supported":               []string{"public"},
