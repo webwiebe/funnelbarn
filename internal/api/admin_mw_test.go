@@ -148,7 +148,8 @@ func TestAPIKeyRoutes_AllowALocalSession(t *testing.T) {
 }
 
 // When a refresh returns claims without the role, key access ends at that
-// refresh, because the check reads the re-snapshotted claims.
+// refresh: the refresh re-checks the sign-in role and ends the session, so
+// the key route answers 401 and the session stays gone.
 func TestAPIKeyRoutes_RefreshedClaimsWithoutTheRoleEndAccess(t *testing.T) {
 	fx := newAdminFixture(t)
 	cookie, _ := insertOIDCSession(t, fx.srv, repository.WebSession{
@@ -163,7 +164,9 @@ func TestAPIKeyRoutes_RefreshedClaimsWithoutTheRoleEndAccess(t *testing.T) {
 	fx.f.setTokenHandler(func(tw http.ResponseWriter, _ *http.Request) {
 		tokenResponse(tw, "at-new", "rt-new", fx.f.idToken(t, "", map[string]any{"roles": []string{"member"}}), 900)
 	})
-	if w := fx.call(t, "list", cookie, ""); w.Code != http.StatusForbidden {
-		t.Fatalf("list after demotion = %d, want 403 (body: %s)", w.Code, w.Body.String())
+	for i := 0; i < 2; i++ {
+		if w := fx.call(t, "list", cookie, ""); w.Code != http.StatusUnauthorized {
+			t.Fatalf("list %d after demotion = %d, want 401 (body: %s)", i+1, w.Code, w.Body.String())
+		}
 	}
 }
