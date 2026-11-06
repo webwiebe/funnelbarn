@@ -36,7 +36,7 @@ export interface FeatureFlag {
   last_evaluated_at?: string
   /**
    * 'experiment' — bucketed per user, every read recorded and reported on.
-   * 'config' — one value for everyone, no evaluation rows, no variant report.
+   * 'config' — one value for everyone unless a targeting rule matches, no evaluation rows, no variant report.
    */
   flag_kind: string
 }

@@ -283,7 +283,7 @@ func buildSetupMarkdown(project repository.Project, apiKey, publicURL string, fl
 	fmt.Fprintf(b, "`reason` is one of:\n\n")
 	fmt.Fprintf(b, "- `SPLIT` — no targeting rule matched, bucketed by `targeting_key` against the split percentages.\n")
 	fmt.Fprintf(b, "- `TARGETING_MATCH` — a rule matched. `flag_metadata.evaluated_rule_name` tells you which one.\n")
-	fmt.Fprintf(b, "- `STATIC` — a **config** flag: one value for everyone, no bucketing. See below.\n")
+	fmt.Fprintf(b, "- `STATIC` — a **config** flag with no matching rule: its default value, no bucketing. See below.\n")
 	fmt.Fprintf(b, "- `DISABLED` — the flag is paused or not yet activated. You get **the flag's own default variant value**, not the `default_value` you sent. The two differ, and the difference is the point: an auto-registered flag is configurable from the dashboard before anyone activates it.\n")
 	fmt.Fprintf(b, "- `ERROR` — something went wrong; check `error_code` (e.g. `FLAG_NOT_FOUND`, `AUTO_REGISTER_LIMIT`). `value` echoes back the `default_value` you supplied.\n\n")
 	fmt.Fprintf(b, "Errors are returned as HTTP 200 with `reason: ERROR` and the supplied\n")

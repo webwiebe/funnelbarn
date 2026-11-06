@@ -39,15 +39,35 @@ export type FlagShape = {
   resolvedType: string
 }
 
-// configShape: one variant at 100%. Anything else is noise — a config value
-// is the same for everyone by definition, so the default variant always wins.
-export function configShape(raw: string): FlagShape | { error: string } {
+// ConfigVariantRow is a named value a config flag holds beside its default,
+// for a targeting rule to serve. value is the raw text of the field.
+export interface ConfigVariantRow {
+  name: string
+  value: string
+}
+
+// configShape: the default variant at 100%, plus the named variants a targeting
+// rule can serve. Without a matching rule everyone gets the default, so the
+// split never names the others. defaultName is the stored default variant, kept
+// so rules and clients that name it keep working.
+export function configShape(
+  raw: string, extras: ConfigVariantRow[] = [], defaultName = 'default',
+): FlagShape | { error: string } {
   const parsed = parseConfigValue(raw)
   if ('error' in parsed) return parsed
+  const variantsObj: Record<string, unknown> = { [defaultName]: parsed.value }
+  for (const row of extras) {
+    const name = row.name.trim()
+    if (!name) return { error: 'All variants need a name' }
+    if (name in variantsObj) return { error: `Variant names must be unique ("${name}")` }
+    const value = parseConfigValue(row.value)
+    if ('error' in value) return { error: `Variant "${name}": ${value.error}` }
+    variantsObj[name] = value.value
+  }
   return {
-    variantsObj: { default: parsed.value },
-    splitObj: { default: 100 },
-    resolvedDefault: 'default',
+    variantsObj,
+    splitObj: { [defaultName]: 100 },
+    resolvedDefault: defaultName,
     resolvedType: configFlagType(parsed.value),
   }
 }
@@ -97,4 +117,47 @@ export function initialConfigValue(flag?: FeatureFlag): string {
   } catch {
     return ''
   }
+}
+
+// configDefaultName is the variant a config flag serves without a rule: the
+// stored one when editing, "default" for a new flag.
+export function configDefaultName(flag?: FeatureFlag): string {
+  return flag?.flag_kind === 'config' && flag.default_variant ? flag.default_variant : 'default'
+}
+
+// initialConfigVariants pre-fills the named variants of a config flag: every
+// stored variant except the default, in stored order.
+export function initialConfigVariants(flag?: FeatureFlag): ConfigVariantRow[] {
+  if (flag?.flag_kind !== 'config') return []
+  try {
+    const variants = JSON.parse(flag.variants) as Record<string, unknown>
+    return Object.entries(variants)
+      .filter(([name]) => name !== flag.default_variant)
+      .map(([name, value]) => ({ name, value: typeof value === 'string' ? value : JSON.stringify(value) }))
+  } catch {
+    return []
+  }
+}
+
+// ruleVariants returns the variant names a targeting rule can serve, and the one
+// a new rule starts on. A config flag offers its default and its named values,
+// and a new rule starts on the first named value, since serving the default
+// changes nothing.
+export function ruleVariants(f: {
+  flagKind: 'experiment' | 'config'
+  flagType: string
+  defaultBool: 'on' | 'off'
+  variants: StringVariantRow[]
+  configDefault: string
+  configVariants: ConfigVariantRow[]
+}): { variantNames: string[]; newRuleVariant: string } {
+  if (f.flagKind === 'config') {
+    const named = f.configVariants.map((v) => v.name.trim()).filter((n) => n !== '')
+    return { variantNames: [f.configDefault, ...named], newRuleVariant: named[0] ?? f.configDefault }
+  }
+  if (f.flagType === 'boolean') {
+    return { variantNames: ['on', 'off'], newRuleVariant: f.defaultBool === 'on' ? 'off' : 'on' }
+  }
+  const names = f.variants.map((v) => v.name).filter((n) => n.trim() !== '')
+  return { variantNames: names, newRuleVariant: names[0] || '' }
 }

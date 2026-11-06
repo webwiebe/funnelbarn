@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseConfigValue, configFlagType, configShape, booleanShape, stringShape, initialConfigValue,
+  configDefaultName, initialConfigVariants, ruleVariants,
 } from './shape'
 import type { FeatureFlag } from '../../lib/api'
 
@@ -51,6 +52,30 @@ describe('configShape', () => {
 
   it('passes the parse error through instead of saving garbage', () => {
     expect(configShape('')).toEqual({ error: 'Value is required' })
+  })
+
+  it('keeps named values for rules beside the default, and splits only on the default', () => {
+    expect(configShape('false', [{ name: ' on ', value: 'true' }], 'default')).toEqual({
+      variantsObj: { default: false, on: true },
+      splitObj: { default: 100 },
+      resolvedDefault: 'default',
+      resolvedType: 'boolean',
+    })
+  })
+
+  it('keeps a stored default name other than "default"', () => {
+    expect(configShape('1', [{ name: 'fast', value: '5' }], 'base')).toMatchObject({
+      variantsObj: { base: 1, fast: 5 },
+      splitObj: { base: 100 },
+      resolvedDefault: 'base',
+    })
+  })
+
+  it('rejects an empty, repeated or unparsable named value', () => {
+    expect(configShape('1', [{ name: ' ', value: '2' }])).toEqual({ error: 'All variants need a name' })
+    expect(configShape('1', [{ name: 'default', value: '2' }])).toEqual({ error: 'Variant names must be unique ("default")' })
+    expect(configShape('1', [{ name: 'a', value: '2' }, { name: 'a', value: '3' }])).toEqual({ error: 'Variant names must be unique ("a")' })
+    expect(configShape('1', [{ name: 'a', value: '{"x":' }])).toEqual({ error: 'Variant "a": Value looks like JSON but does not parse' })
   })
 })
 
@@ -123,5 +148,47 @@ describe('initialConfigValue', () => {
 
   it('falls back to empty rather than throwing on unparseable variants', () => {
     expect(initialConfigValue(flag('not json'))).toBe('')
+  })
+})
+
+describe('config flag variants', () => {
+  const config = {
+    id: 'f', project_id: 'p', flag_key: 'k', name: 'n', flag_type: 'boolean',
+    variants: '{"default":false,"on":true,"label":"x"}', default_variant: 'default', split: '{"default":100}',
+    targeting_rules: '[]', status: 'active', created_at: '', origin: 'manual', flag_kind: 'config',
+  } as FeatureFlag
+
+  it('reads every stored variant except the default', () => {
+    expect(initialConfigVariants(config)).toEqual([{ name: 'on', value: 'true' }, { name: 'label', value: 'x' }])
+    expect(initialConfigVariants({ ...config, flag_kind: 'experiment' })).toEqual([])
+    expect(initialConfigVariants({ ...config, variants: 'not json' })).toEqual([])
+    expect(initialConfigVariants(undefined)).toEqual([])
+  })
+
+  it('keeps the stored default name, and uses "default" for a new flag', () => {
+    expect(configDefaultName({ ...config, default_variant: 'base' })).toBe('base')
+    expect(configDefaultName({ ...config, flag_kind: 'experiment', default_variant: 'on' })).toBe('default')
+    expect(configDefaultName(undefined)).toBe('default')
+  })
+})
+
+describe('ruleVariants', () => {
+  const base = {
+    flagKind: 'experiment' as const, flagType: 'boolean', defaultBool: 'off' as const,
+    variants: [{ name: 'control', returnValue: 'control', splitPct: 50 }, { name: ' ', returnValue: '', splitPct: 50 }],
+    configDefault: 'default', configVariants: [{ name: ' on ', value: 'true' }, { name: '', value: '' }],
+  }
+
+  it('offers a config flag its default and named values, starting a rule on the first named one', () => {
+    expect(ruleVariants({ ...base, flagKind: 'config' })).toEqual({ variantNames: ['default', 'on'], newRuleVariant: 'on' })
+    expect(ruleVariants({ ...base, flagKind: 'config', configVariants: [] })).toEqual({ variantNames: ['default'], newRuleVariant: 'default' })
+  })
+
+  it('starts a boolean rule on the opposite of the default', () => {
+    expect(ruleVariants(base)).toEqual({ variantNames: ['on', 'off'], newRuleVariant: 'on' })
+  })
+
+  it('offers a string flag its named variants', () => {
+    expect(ruleVariants({ ...base, flagType: 'string' })).toEqual({ variantNames: ['control'], newRuleVariant: 'control' })
   })
 })
