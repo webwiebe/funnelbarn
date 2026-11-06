@@ -4,6 +4,7 @@ import { Replayer, ReplayerEvents } from 'rrweb'
 import 'rrweb/dist/style.css'
 import { api, type Recording, type FlagEvaluationEntry } from '../../lib/api'
 import { C } from '../../lib/theme'
+import { recordedSize, replayScale } from './replayScale'
 
 interface Props {
   projectId: string
@@ -114,13 +115,7 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
           return
         }
 
-        // Read recorded viewport dimensions from the meta event (type 4).
-        // rrweb v2's raw Replayer sets the iframe to these exact pixel dimensions
-        // with no built-in scaling, so we must scale manually.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const metaEvent = allEvents.find((e: any) => e?.type === 4) as any
-        const recordedWidth: number = metaEvent?.data?.width ?? 1280
-        const recordedHeight: number = metaEvent?.data?.height ?? 720
+        const size = recordedSize(allEvents)
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const replayer = new Replayer(allEvents as any, {
@@ -135,10 +130,11 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
           if (!container) return
           const wrapper = container.querySelector<HTMLElement>('.replayer-wrapper')
           if (!wrapper) return
-          const scale = Math.min(
-            container.clientWidth / recordedWidth,
-            container.clientHeight / recordedHeight,
-          )
+          const scale = replayScale(container.clientWidth, container.clientHeight, size)
+          // The E2E check reads these when the scale is wrong.
+          container.dataset.recordedWidth = String(size.width)
+          container.dataset.recordedHeight = String(size.height)
+          container.dataset.recordedSize = size.fallback ? 'fallback' : 'meta'
           wrapper.style.transformOrigin = 'top left'
           wrapper.style.transform = `scale(${scale})`
           wrapper.style.position = 'absolute'
