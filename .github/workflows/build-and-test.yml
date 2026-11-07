@@ -343,7 +343,9 @@ jobs:
     # branch without reaching staging or the promote job behind it.
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: [self-hosted, build]
-    timeout-minutes: 15
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.release.outputs.version }}
     env:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -367,9 +369,22 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.build.outputs.sha }}
+          # Tags, for the release tag lookup below.
+          fetch-depth: 0
+
+      # Staging reports the release tag binary-release put on this commit, the
+      # same version production will report (#489). It waits for the tag and
+      # fails without one. Images stay addressed by the SHA.
+      - name: Resolve the release tag
+        id: release
+        run: |
+          set -euo pipefail
+          RELEASE=$(deploy/release-tag.sh "${IMAGE_TAG}")
+          echo "Release tag for ${IMAGE_TAG}: ${RELEASE}"
+          echo "version=${RELEASE}" >> "$GITHUB_OUTPUT"
 
       - name: Pin manifests to this release
-        run: deploy/pin-release.sh staging "${IMAGE_TAG}" "${IMAGE_TAG}"
+        run: deploy/pin-release.sh staging "${IMAGE_TAG}" "${{ steps.release.outputs.version }}"
 
       - name: Transfer manifests
         run: |
@@ -431,8 +446,8 @@ jobs:
             kubectl -n ${NAMESPACE} rollout status statefulset/funnelbarn-reader --timeout=360s
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=360s
             # Smoke: the writer and the first reader report the version and commit that were deployed.
-            sh /tmp/funnelbarn-deploy-staging/deploy/assert-version.sh ${NAMESPACE} deploy/funnelbarn funnelbarn ${IMAGE_TAG} ${IMAGE_TAG}
-            sh /tmp/funnelbarn-deploy-staging/deploy/assert-version.sh ${NAMESPACE} pod/funnelbarn-reader-0 funnelbarn ${IMAGE_TAG} ${IMAGE_TAG}
+            sh /tmp/funnelbarn-deploy-staging/deploy/assert-version.sh ${NAMESPACE} deploy/funnelbarn funnelbarn ${{ steps.release.outputs.version }} ${IMAGE_TAG}
+            sh /tmp/funnelbarn-deploy-staging/deploy/assert-version.sh ${NAMESPACE} pod/funnelbarn-reader-0 funnelbarn ${{ steps.release.outputs.version }} ${IMAGE_TAG}
           "
 
       - name: Post release marker to BugBarn
@@ -446,10 +461,10 @@ jobs:
             -H "X-BugBarn-Api-Key: ${BUGBARN_API_KEY}" \
             -H "X-BugBarn-Project: funnelbarn" \
             -d "{
-              \"name\": \"${IMAGE_TAG:0:7}\",
+              \"name\": \"${{ steps.release.outputs.version }}\",
               \"environment\": \"staging\",
-              \"version\": \"${IMAGE_TAG}\",
-              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${IMAGE_TAG}\",
+              \"version\": \"${{ steps.release.outputs.version }}\",
+              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${{ steps.release.outputs.version }}\",
               \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
             }" || echo "BugBarn release marker skipped"
 
@@ -478,12 +493,13 @@ jobs:
           ref: ${{ needs.build.outputs.sha }}
 
       - name: Smoke check staging
-        run: scripts/smoke.sh https://funnelbarn.staging.wiebe.xyz "${{ needs.build.outputs.sha }}"
+        run: scripts/smoke.sh https://funnelbarn.staging.wiebe.xyz "${{ needs.deploy-staging.outputs.version }}"
 
   promote:
     # Production ships on green gates: CI, testing, E2E, the staging rollout and
     # the staging smoke check all passed for this exact commit. The called
-    # workflow runs preflight (images in GHCR), deploys by SHA tag, smoke checks
+    # workflow runs preflight (images in GHCR, and the release tag on this SHA),
+    # deploys by SHA tag, reports the release tag as the version, smoke checks
     # production and rolls back on failure.
     needs: [build, deploy-staging, smoke-staging]
     uses: ./.github/workflows/deploy-production.yml

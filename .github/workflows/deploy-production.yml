@@ -5,7 +5,10 @@ name: Deploy Production
 #     E2E, the staging rollout and the staging smoke check. This is the normal path.
 #   - workflow_dispatch, kept for a manual rollback or redeploy of a known version.
 # `production_version` is a version tag or a commit SHA; both resolve to the SHA
-# the images are tagged with.
+# the images are tagged with. Preflight also resolves it to the release tag
+# (deploy/release-tag.sh), which the pods, the smoke checks and the BugBarn
+# marker report as the version, so a promote that passes the SHA still reports
+# vX.Y.Z (#489).
 on:
   workflow_call:
     inputs:
@@ -47,9 +50,11 @@ env:
 jobs:
   preflight:
     runs-on: [self-hosted, build]
-    timeout-minutes: 5
+    # Ten minutes: the release tag lookup may wait up to five for binary-release.
+    timeout-minutes: 10
     outputs:
       sha: ${{ steps.resolve.outputs.sha }}
+      version: ${{ steps.release.outputs.version }}
       service_digest: ${{ steps.resolve.outputs.service_digest }}
       web_digest: ${{ steps.resolve.outputs.web_digest }}
     env:
@@ -76,6 +81,19 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      # The version the deploy reports. promote passes the commit SHA, and
+      # binary-release tags that commit on the same push, so this waits for the
+      # tag and fails without one: production never reports a bare SHA.
+      - name: Resolve the release tag
+        id: release
+        env:
+          PRODUCTION_VERSION: ${{ inputs.production_version }}
+        run: |
+          set -euo pipefail
+          RELEASE=$(deploy/release-tag.sh "${PRODUCTION_VERSION}")
+          echo "Release tag for ${PRODUCTION_VERSION}: ${RELEASE}"
+          echo "version=${RELEASE}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve version tag to SHA and verify images in GHCR
         id: resolve
@@ -135,7 +153,7 @@ jobs:
 
       - name: Pin manifests to this release
         run: |
-          deploy/pin-release.sh production "${{ needs.preflight.outputs.sha }}" "${{ inputs.production_version }}" \
+          deploy/pin-release.sh production "${{ needs.preflight.outputs.sha }}" "${{ needs.preflight.outputs.version }}" \
             "${{ needs.preflight.outputs.service_digest }}" "${{ needs.preflight.outputs.web_digest }}"
 
       - name: Transfer manifests
@@ -264,14 +282,14 @@ jobs:
             kubectl -n ${NAMESPACE} rollout status statefulset/funnelbarn-reader --timeout=180s
             kubectl -n ${NAMESPACE} rollout status deployment/funnelbarn-web --timeout=180s
             # Smoke: the stated version at the preflight commit. A failure runs the rollback step.
-            sh /tmp/funnelbarn-deploy/deploy/assert-version.sh ${NAMESPACE} deploy/funnelbarn funnelbarn ${{ inputs.production_version }} ${{ needs.preflight.outputs.sha }}
-            sh /tmp/funnelbarn-deploy/deploy/assert-version.sh ${NAMESPACE} pod/funnelbarn-reader-0 funnelbarn ${{ inputs.production_version }} ${{ needs.preflight.outputs.sha }}
+            sh /tmp/funnelbarn-deploy/deploy/assert-version.sh ${NAMESPACE} deploy/funnelbarn funnelbarn ${{ needs.preflight.outputs.version }} ${{ needs.preflight.outputs.sha }}
+            sh /tmp/funnelbarn-deploy/deploy/assert-version.sh ${NAMESPACE} pod/funnelbarn-reader-0 funnelbarn ${{ needs.preflight.outputs.version }} ${{ needs.preflight.outputs.sha }}
           "
 
       # Must stay above the rollback step: a failed smoke check fails the job and
       # so triggers the rollback below.
       - name: Smoke check production
-        run: scripts/smoke.sh https://funnelbarn.wiebe.xyz "${{ inputs.production_version }}"
+        run: scripts/smoke.sh https://funnelbarn.wiebe.xyz "${{ needs.preflight.outputs.version }}"
 
       # Written only after the smoke check passed, so a release that was rolled
       # back never leaves its SHA behind. The next deploy reads it to decide
@@ -346,7 +364,7 @@ jobs:
               },
               \"attributes\": {
                 \"environment\": \"production\",
-                \"release\": \"${{ inputs.production_version }}\",
+                \"release\": \"${{ needs.preflight.outputs.version }}\",
                 \"run_url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"
               }
             }" || { echo "::error::Could not report the refused rollback to BugBarn."; exit 1; }
@@ -362,10 +380,10 @@ jobs:
             -H "X-BugBarn-Api-Key: ${BUGBARN_API_KEY}" \
             -H "X-BugBarn-Project: funnelbarn" \
             -d "{
-              \"name\": \"${{ inputs.production_version }}\",
+              \"name\": \"${{ needs.preflight.outputs.version }}\",
               \"environment\": \"production\",
-              \"version\": \"${{ inputs.production_version }}\",
-              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${{ inputs.production_version }}\",
+              \"version\": \"${{ needs.preflight.outputs.version }}\",
+              \"url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${{ needs.preflight.outputs.version }}\",
               \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
             }" || echo "BugBarn release marker skipped"
 
@@ -375,7 +393,7 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| | |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Version | \`${{ inputs.production_version }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version | \`${{ needs.preflight.outputs.version }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| URL | https://funnelbarn.wiebe.xyz |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Namespace | \`${NAMESPACE}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Cluster | \`${K3S_HOST}\` |" >> "$GITHUB_STEP_SUMMARY"
