@@ -124,7 +124,26 @@ class DeployGraphTest(unittest.TestCase):
         steps = self.jobs["smoke-staging"]["steps"]
         smoke = next(s for s in steps if "scripts/smoke.sh" in str(s.get("run", "")))
         self.assertIn("funnelbarn.staging.wiebe.xyz", smoke["run"])
-        self.assertIn("needs.build.outputs.sha", smoke["run"])
+        self.assertIn("needs.deploy-staging.outputs.version", smoke["run"])
+
+    def test_staging_reports_the_release_tag(self):
+        """Issue #489: staging reports vX.Y.Z, the version production will report."""
+        job = self.jobs["deploy-staging"]
+        self.assertEqual(job["outputs"]["version"], "${{ steps.release.outputs.version }}")
+        self.assertEqual(self._checkout_step(job)["with"]["fetch-depth"], 0)
+        names = [s.get("name") for s in job["steps"]]
+        release = job["steps"][names.index("Resolve the release tag")]
+        self.assertEqual(release["id"], "release")
+        self.assertIn('deploy/release-tag.sh "${IMAGE_TAG}"', release["run"])
+        self.assertLess(names.index("Resolve the release tag"), names.index("Pin manifests to this release"))
+        pin = job["steps"][names.index("Pin manifests to this release")]["run"]
+        self.assertIn('"${IMAGE_TAG}" "${{ steps.release.outputs.version }}"', pin)
+        rollout = "\n".join(str(s.get("run", "")) for s in job["steps"])
+        self.assertEqual(rollout.count("assert-version.sh ${NAMESPACE}"), 2)
+        self.assertEqual(rollout.count("funnelbarn ${{ steps.release.outputs.version }} ${IMAGE_TAG}"), 2)
+        marker = job["steps"][names.index("Post release marker to BugBarn")]["run"]
+        self.assertIn("releases/tag/${{ steps.release.outputs.version }}", marker)
+        self.assertNotIn("IMAGE_TAG", marker)
 
     def test_a_running_promotion_is_never_cancelled(self):
         """Cancelling mid-rollout would leave production half deployed."""
