@@ -109,7 +109,7 @@ func TestAuthorizeURLRequestsOfflineAccessAndPKCE(t *testing.T) {
 		t.Fatalf("parse authorize url: %v", err)
 	}
 	scopes := strings.Fields(u.Query().Get("scope"))
-	want := map[string]bool{"openid": false, "profile": false, "email": false, "offline_access": false}
+	want := map[string]bool{"openid": false, "profile": false, "email": false, "offline_access": false, "groups": false, "roles": false}
 	for _, s := range scopes {
 		if _, ok := want[s]; ok {
 			want[s] = true

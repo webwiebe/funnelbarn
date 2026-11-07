@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -263,8 +264,10 @@ func TestOIDCLogin_RedirectCarriesPKCEAndOfflineAccess(t *testing.T) {
 	if q.Get("code_challenge") == "" {
 		t.Error("authorize URL missing code_challenge")
 	}
-	if !strings.Contains(q.Get("scope"), "offline_access") {
-		t.Errorf("scope %q missing offline_access", q.Get("scope"))
+	for _, want := range []string{"offline_access", "groups", "roles"} {
+		if !slices.Contains(strings.Fields(q.Get("scope")), want) {
+			t.Errorf("scope %q missing %s", q.Get("scope"), want)
+		}
 	}
 	// The state cookie stores "state|verifier"; the challenge on the URL must
 	// be the S256 hash of that verifier.

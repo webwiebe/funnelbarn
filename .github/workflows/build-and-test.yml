@@ -406,7 +406,7 @@ jobs:
               --dry-run=client -o yaml | kubectl apply -f -
           "
 
-      - name: Register MCP resource with IAMBarn
+      - name: Register MCP resource and check sign-in scopes with IAMBarn
         env:
           SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY_STAGING }}
         run: |
