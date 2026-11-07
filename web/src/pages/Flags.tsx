@@ -14,7 +14,7 @@ import { FlagList } from '../components/flags/FlagList'
 import { flagDate } from '../components/flags/flagListQuery'
 import { FlagPlayground, TargetingRulesDisplay } from '../components/flags/FlagPlayground'
 import { FlagEnvironments } from '../components/flags/FlagEnvironments'
-import { flipConfigBoolean } from '../components/flags/shape'
+import { toggleConfigBoolean } from '../components/flags/shape'
 
 // alignBooleanSplit produces a new split where the *new default* is always
 // the majority bucket. This both preserves intentional rollouts and
@@ -217,7 +217,7 @@ export function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
       // A config flag keeps its default variant and flips the value it holds:
       // renaming it to on/off points it at a variant the flag may not have.
       const updated = await api.updateFlag(projectId, flag.id, flag.flag_kind === 'config'
-        ? { ...flag, variants: flipConfigBoolean(flag.variants, flag.default_variant) }
+        ? { ...flag, ...toggleConfigBoolean(flag) }
         : { ...flag, default_variant: newDefault, split: alignBooleanSplit(flag.split, newDefault) })
       onUpdated(updated)
     } catch (e) {

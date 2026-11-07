@@ -5,11 +5,12 @@ import type { FeatureFlag, TargetingRule } from '../../lib/api'
 import { trackEvent } from '../../lib/analytics'
 import { parseFlagFormState } from '../../pages/Flags'
 import { TargetingRuleEditor } from './TargetingRuleEditor'
-import { ConfigValueField, ConfigVariantsField } from './ConfigFields'
+import { ConfigTypeField, ConfigValuesField, OnOffField } from './ConfigFields'
 import { ENVIRONMENT_SCOPE_NOTE } from './environmentScope'
 import {
-  booleanShape, configDefaultName, configShape, initialConfigValue, initialConfigVariants, ruleVariants, stringShape,
-  type ConfigVariantRow, type StringVariantRow,
+  booleanRuleChoices, booleanShape, storedConfigDefault, configBooleanValue, configDefaultName, configTypeOf, initialConfigValue,
+  initialConfigVariants, resolveConfigShape, ruleVariants, stringShape,
+  type ConfigType, type ConfigVariantRow, type StringVariantRow,
 } from './shape'
 
 const C = {
@@ -44,6 +45,11 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
   // Named values beside the default, for targeting rules to serve.
   const [configVariants, setConfigVariants] = useState<ConfigVariantRow[]>(initialConfigVariants(flag))
   const configDefault = configDefaultName(flag)
+  // A new config flag chooses its type first; a stored one keeps it.
+  const [configType, setConfigType] = useState<ConfigType | null>(configTypeOf(flag))
+  const [configBool, setConfigBool] = useState(configBooleanValue(flag))
+  // The stored default name of a boolean flag, kept when it is not on or off.
+  const storedDefault = storedConfigDefault(flag)
 
   const [flagKey, setFlagKey] = useState(flag?.flag_key ?? '')
   const [name, setName] = useState(flag?.name ?? '')
@@ -84,9 +90,13 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
   const autoKey = (n: string) => n.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
   // Variant names targeting-rule dropdowns and default-variant selectors can pick from.
-  const { variantNames, newRuleVariant: defaultNewVariant } = ruleVariants({
+  const ruleChoices = ruleVariants({
     flagKind, flagType, defaultBool, variants, configDefault, configVariants,
   })
+  // A boolean config flag offers On and Off, and a stored default under another name its rules may use.
+  const { variantNames, newRuleVariant: defaultNewVariant } = flagKind === 'config' && configType === 'boolean'
+    ? booleanRuleChoices(configBool, storedDefault)
+    : ruleChoices
 
   // Keep defaultVariant in sync when the user removes/renames the row it pointed at.
   useEffect(() => {
@@ -111,7 +121,7 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
     if (!flagKey.trim() || !name.trim()) { setError('Key and name are required'); return }
 
     const shape = flagKind === 'config'
-      ? configShape(configValue, configVariants, configDefault, flag?.flag_kind === 'config' && flag.flag_type === 'boolean')
+      ? resolveConfigShape({ type: configType, bool: configBool, storedDefault, value: configValue, rows: configVariants, defaultName: configDefault })
       : booleanShape(flagType, defaultBool, rolloutEnabled, rolloutPct)
         ?? stringShape(variants, defaultVariant, validateString())
     if ('error' in shape) { setError(shape.error); return }
@@ -192,8 +202,12 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
 
           {flagKind === 'config' ? (
             <>
-            <ConfigValueField value={configValue} onChange={setConfigValue} inputStyle={inputStyle} />
-            <ConfigVariantsField rows={configVariants} onChange={setConfigVariants} inputStyle={inputStyle} />
+            <ConfigTypeField value={configType} locked={configTypeOf(flag) !== null} onChange={setConfigType} />
+            {configType === 'boolean' && <OnOffField value={configBool} onChange={setConfigBool} />}
+            {configType !== null && configType !== 'boolean' && (
+              <ConfigValuesField type={configType} defaultName={configDefault} value={configValue} onValue={setConfigValue}
+                rows={configVariants} onRows={setConfigVariants} inputStyle={inputStyle} />
+            )}
             </>
           ) : (
           <>

@@ -4,7 +4,6 @@ import type { FeatureFlag } from '../../lib/api'
 import { FlagDetail } from '../../pages/Flags'
 import { FlagFormModal } from './FlagFormModal'
 import { ruleEnvironments, servedText } from './environmentScope'
-import { flipConfigBoolean } from './shape'
 
 const mockUpdate = vi.fn()
 const mockEvaluate = vi.fn()
@@ -49,9 +48,9 @@ describe('flag console: environments (#491)', () => {
   it('says saves apply to every environment and shows what each environment serves', async () => {
     render(<FlagDetail flag={configFlag()} projectId="p1" onUpdated={() => {}} onDeleted={() => {}} />)
     expect(screen.getByTestId('flag-environments')).toHaveTextContent('apply to every environment')
-    await waitFor(() => expect(screen.getByTestId('flag-environments')).toHaveTextContent('test: true'))
+    await waitFor(() => expect(screen.getByTestId('flag-environments')).toHaveTextContent('production: false'))
+    expect(screen.getByTestId('flag-environments')).toHaveTextContent('test: true')
     expect(screen.getByTestId('flag-environments')).toHaveTextContent('staging: true')
-    expect(screen.getByTestId('flag-environments')).toHaveTextContent('production: false')
     expect(mockEvaluate.mock.calls.map((c) => c[1].context)).toContainEqual({ environment: 'staging' })
   })
 
@@ -81,36 +80,13 @@ describe('flag console: boolean config value (#491)', () => {
     expect(screen.getByTestId('config-value-missing')).toHaveTextContent('"off" does not exist')
   })
 
-  it('flips the value and keeps the default variant when the header toggle is used', async () => {
+  it('switches a boolean config flag without ever naming a variant it lacks', async () => {
     mockUpdate.mockResolvedValue(configFlag())
-    render(<FlagDetail flag={configFlag({ default_variant: 'off' })} projectId="p1" onUpdated={() => {}} onDeleted={() => {}} />)
+    render(<FlagDetail flag={configFlag({ default_variant: 'off', variants: '{"on":true,"off":false}' })} projectId="p1" onUpdated={() => {}} onDeleted={() => {}} />)
     fireEvent.click(screen.getByText('off', { selector: 'span' }).closest('button')!)
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1))
     const body = mockUpdate.mock.calls[0][2]
-    expect(body.default_variant).toBe('off')
-    expect(JSON.parse(body.variants)).toEqual({ default: false, on: true, off: true })
-  })
-
-  it('flipConfigBoolean inverts, creates a missing value as true and survives bad JSON', () => {
-    expect(JSON.parse(flipConfigBoolean('{"default":true}', 'default'))).toEqual({ default: false })
-    expect(JSON.parse(flipConfigBoolean('{"default":false}', 'default'))).toEqual({ default: true })
-    expect(JSON.parse(flipConfigBoolean('{}', 'default'))).toEqual({ default: true })
-    expect(JSON.parse(flipConfigBoolean('nope', 'default'))).toEqual({ default: true })
-  })
-
-  it.each(['""', 'yes', '1', '{"a":1}'])('refuses %s as the value of a boolean config flag', async (value) => {
-    render(<FlagFormModal projectId="p1" flag={configFlag()} onClose={() => {}} onSaved={() => {}} />)
-    fireEvent.change(screen.getByLabelText('Value'), { target: { value } })
-    fireEvent.click(screen.getByText('Save changes'))
-    expect(await screen.findByText(/must be true or false|required/)).toBeInTheDocument()
-    expect(mockUpdate).not.toHaveBeenCalled()
-  })
-
-  it('accepts false for a boolean config flag', async () => {
-    mockUpdate.mockResolvedValue(configFlag())
-    render(<FlagFormModal projectId="p1" flag={configFlag()} onClose={() => {}} onSaved={() => {}} />)
-    fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'false' } })
-    fireEvent.click(screen.getByText('Save changes'))
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1))
+    expect(body.default_variant).toBe('on')
+    expect(JSON.parse(body.variants)).toEqual({ on: true, off: false })
   })
 })
