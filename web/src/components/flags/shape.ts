@@ -51,24 +51,106 @@ export interface ConfigVariantRow {
 // split never names the others. defaultName is the stored default variant, kept
 // so rules and clients that name it keep working.
 export function configShape(
-  raw: string, extras: ConfigVariantRow[] = [], defaultName = 'default',
+  raw: string, extras: ConfigVariantRow[] = [], defaultName = 'default', type?: ValueConfigType,
 ): FlagShape | { error: string } {
-  const parsed = parseConfigValue(raw)
+  const read = (text: string) => (type ? parseTypedValue(type, text) : parseConfigValue(text))
+  const parsed = read(raw)
   if ('error' in parsed) return parsed
   const variantsObj: Record<string, unknown> = { [defaultName]: parsed.value }
-  for (const row of extras) {
+  // Row 1 is the default; the named values follow, so an error can name the row it collides with.
+  const rowOf: Record<string, number> = { [defaultName]: 1 }
+  for (const [i, row] of extras.entries()) {
     const name = row.name.trim()
     if (!name) return { error: 'All variants need a name' }
-    if (name in variantsObj) return { error: `Variant names must be unique ("${name}")` }
-    const value = parseConfigValue(row.value)
+    if (name in rowOf) {
+      const first = rowOf[name]
+      return { error: `Row ${i + 2} repeats the name "${name}" of row ${first}${first === 1 ? ' (the default value)' : ''}` }
+    }
+    const value = read(row.value)
     if ('error' in value) return { error: `Variant "${name}": ${value.error}` }
     variantsObj[name] = value.value
+    rowOf[name] = i + 2
   }
   return {
     variantsObj,
     splitObj: { [defaultName]: 100 },
     resolvedDefault: defaultName,
-    resolvedType: configFlagType(parsed.value),
+    resolvedType: type ? CONFIG_FLAG_TYPE[type] : configFlagType(parsed.value),
+  }
+}
+
+// ConfigType is what a config flag's value is. A boolean is one On/Off switch
+// with the fixed variants on and off; the others hold a value and named values.
+export type ConfigType = 'boolean' | 'text' | 'number' | 'json'
+export type ValueConfigType = Exclude<ConfigType, 'boolean'>
+
+const CONFIG_FLAG_TYPE: Record<ConfigType, string> = {
+  boolean: 'boolean', text: 'string', number: 'number', json: 'json',
+}
+
+// configTypeOf is the type of a stored config flag, or null for a new flag or
+// an experiment, which has not chosen one yet.
+export function configTypeOf(flag?: FeatureFlag): ConfigType | null {
+  if (flag?.flag_kind !== 'config') return null
+  switch (flag.flag_type) {
+    case 'boolean': return 'boolean'
+    case 'number': return 'number'
+    case 'json': return 'json'
+    default: return 'text'
+  }
+}
+
+// parseTypedValue reads the text of a value field as the chosen type.
+export function parseTypedValue(type: ValueConfigType, raw: string): { value: unknown } | { error: string } {
+  const trimmed = raw.trim()
+  if (type === 'text') return raw === '' ? { error: 'Value is required' } : { value: raw }
+  if (trimmed === '') return { error: 'Value is required' }
+  if (type === 'number') {
+    const n = Number(trimmed)
+    return Number.isFinite(n) ? { value: n } : { error: 'Value must be a number' }
+  }
+  try {
+    return { value: JSON.parse(trimmed) }
+  } catch {
+    return { error: 'Value must be valid JSON' }
+  }
+}
+
+// configBooleanValue is what a boolean config flag serves without a matching
+// rule: the value its default variant holds, off when the variant is missing.
+export function configBooleanValue(flag?: FeatureFlag): boolean {
+  if (!flag) return false
+  try {
+    return (JSON.parse(flag.variants) as Record<string, unknown>)[flag.default_variant] === true
+  } catch {
+    return false
+  }
+}
+
+// booleanConfigShape stores a boolean config flag as the fixed variants on: true
+// and off: false. The no-rule value is the default variant: on or off, or, when
+// the flag's default has another name that clients and rules use, that name
+// holding the chosen value.
+export function booleanConfigShape(on: boolean, defaultName: string): FlagShape {
+  const custom = defaultName !== '' && defaultName !== 'on' && defaultName !== 'off'
+  const name = custom ? defaultName : (on ? 'on' : 'off')
+  return {
+    variantsObj: { on: true, off: false, ...(custom ? { [defaultName]: on } : {}) },
+    splitObj: { [name]: 100 },
+    resolvedDefault: name,
+    resolvedType: 'boolean',
+  }
+}
+
+// toggleConfigBoolean flips what a boolean config flag serves without a rule,
+// as the fields the header toggle writes. The variants stay the fixed on/off
+// pair and the default never points at a variant the flag does not have.
+export function toggleConfigBoolean(flag: FeatureFlag): { variants: string; default_variant: string; split: string } {
+  const shape = booleanConfigShape(!configBooleanValue(flag), flag.default_variant)
+  return {
+    variants: JSON.stringify(shape.variantsObj),
+    default_variant: shape.resolvedDefault,
+    split: JSON.stringify(shape.splitObj),
   }
 }
 
@@ -160,4 +242,27 @@ export function ruleVariants(f: {
   }
   const names = f.variants.map((v) => v.name).filter((n) => n.trim() !== '')
   return { variantNames: names, newRuleVariant: names[0] || '' }
+}
+
+// booleanRuleChoices lists the names a targeting rule of a boolean config flag can
+// serve, and the one a new rule starts on (the opposite of the default).
+export function booleanRuleChoices(on: boolean, storedDefault: string) {
+  const custom = storedDefault && storedDefault !== 'on' && storedDefault !== 'off' ? [storedDefault] : []
+  return { variantNames: ['on', 'off', ...custom], newRuleVariant: on ? 'off' : 'on' }
+}
+
+// resolveConfigShape builds the stored shape of a config flag from the dialog state.
+export function resolveConfigShape(a: {
+  type: ConfigType | null; bool: boolean; storedDefault: string
+  value: string; rows: ConfigVariantRow[]; defaultName: string
+}) {
+  if (a.type === null) return { error: 'Choose the value type first' }
+  return a.type === 'boolean'
+    ? booleanConfigShape(a.bool, a.storedDefault)
+    : configShape(a.value, a.rows, a.defaultName, a.type)
+}
+
+// storedConfigDefault is the default variant name a stored config flag carries.
+export function storedConfigDefault(flag?: FeatureFlag): string {
+  return flag?.flag_kind === 'config' ? flag.default_variant : ''
 }

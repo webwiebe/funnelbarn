@@ -34,57 +34,133 @@ const docsPublic: FeatureFlag = {
   status: 'active', created_at: '2026-11-04 10:00:00', origin: 'manual', flag_kind: 'config',
 }
 
+// The owner's case: registered by the app as a boolean with the variants on and
+// off and the default off.
+const storedOff: FeatureFlag = {
+  ...docsPublic, variants: '{"on":true,"off":false}', default_variant: 'off', split: '{"off":100}', targeting_rules: '[]',
+}
+
+const textFlag: FeatureFlag = {
+  ...docsPublic, flag_type: 'string', variants: '{"base":"a","fast":"b"}', default_variant: 'base', split: '{"base":100}', targeting_rules: '[]',
+}
+
 describe('FlagFormModal, config flags', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('keeps the rule and the variant it serves when the default value changes', async () => {
-    mockUpdate.mockResolvedValue(docsPublic)
+  it('shows a boolean flag as one On/Off control with no value field and no rule-value rows', () => {
     render(<FlagFormModal projectId="p1" flag={docsPublic} onClose={() => {}} onSaved={() => {}} />)
+    expect(screen.getByRole('button', { name: 'On' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Off' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByLabelText('Value')).toBeNull()
+    expect(screen.queryByLabelText('Variant 1 name')).toBeNull()
+    expect(screen.queryByText('Add rule value')).toBeNull()
+  })
 
-    expect(screen.getByLabelText('Variant 1 name')).toHaveValue('on')
-    fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'true' } })
+  it('opens a flag stored with the default off, switches it to On and saves without an error', async () => {
+    mockUpdate.mockResolvedValue(storedOff)
+    render(<FlagFormModal projectId="p1" flag={storedOff} onClose={() => {}} onSaved={() => {}} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'On' }))
     fireEvent.click(screen.getByText('Save changes'))
 
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1))
     const [, , body] = mockUpdate.mock.calls[0]
-    expect(JSON.parse(body.variants)).toEqual({ default: true, on: true })
+    expect(JSON.parse(body.variants)).toEqual({ on: true, off: false })
+    expect(body.default_variant).toBe('on')
+    expect(body.flag_type).toBe('boolean')
+    expect(screen.queryByText(/must be unique|repeats the name/)).toBeNull()
+  })
+
+  it('keeps the rule, the fixed variants and a default stored under another name', async () => {
+    mockUpdate.mockResolvedValue(docsPublic)
+    render(<FlagFormModal projectId="p1" flag={docsPublic} onClose={() => {}} onSaved={() => {}} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'On' }))
+    fireEvent.click(screen.getByText('Save changes'))
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1))
+    const [, , body] = mockUpdate.mock.calls[0]
+    expect(JSON.parse(body.variants)).toEqual({ on: true, off: false, default: true })
     expect(body.default_variant).toBe('default')
-    expect(JSON.parse(body.split)).toEqual({ default: 100 })
     expect(JSON.parse(body.targeting_rules)).toEqual([testingRule])
     expect(body.flag_kind).toBe('config')
   })
 
-  it('builds a new config flag with a rule that serves a named value', async () => {
+  it('lets a targeting rule choose On or Off', () => {
+    render(<FlagFormModal projectId="p1" flag={storedOff} onClose={() => {}} onSaved={() => {}} />)
+    fireEvent.click(screen.getByText(/Targeting Rules/))
+    fireEvent.click(screen.getByText('+ Add rule'))
+    const options = Array.from(screen.getAllByRole('option')).map((o) => o.textContent)
+    expect(options).toEqual(expect.arrayContaining(['on', 'off']))
+  })
+
+  it('asks for the type of a new config flag before it shows value fields', async () => {
     mockCreate.mockResolvedValue(docsPublic)
     render(<FlagFormModal projectId="p1" onClose={() => {}} onSaved={() => {}} />)
 
     fireEvent.change(screen.getByPlaceholderText('e.g. Checkout Redesign'), { target: { value: 'Docs public' } })
     fireEvent.click(screen.getByText('Config value'))
-    fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'false' } })
-    fireEvent.click(screen.getByText('Add rule value'))
-    fireEvent.change(screen.getByLabelText('Variant 1 name'), { target: { value: 'on' } })
-    fireEvent.change(screen.getByLabelText('Variant 1 value'), { target: { value: 'true' } })
+    expect(screen.getByRole('group', { name: 'Value type' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Value')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'On' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Boolean' }))
+    fireEvent.click(screen.getByRole('button', { name: 'On' }))
     fireEvent.click(screen.getByText(/Targeting Rules/))
     fireEvent.click(screen.getByText('+ Add rule'))
     fireEvent.click(screen.getByRole('button', { name: 'Create Flag' }))
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     const [, body] = mockCreate.mock.calls[0]
-    expect(JSON.parse(body.variants)).toEqual({ default: false, on: true })
-    const rules = JSON.parse(body.targeting_rules)
-    expect(rules).toHaveLength(1)
-    expect(rules[0].variant).toBe('on')
+    expect(JSON.parse(body.variants)).toEqual({ on: true, off: false })
+    expect(body.default_variant).toBe('on')
+    expect(JSON.parse(body.targeting_rules)[0].variant).toBe('off')
   })
 
-  it('refuses a named value that repeats the default name', async () => {
-    render(<FlagFormModal projectId="p1" flag={docsPublic} onClose={() => {}} onSaved={() => {}} />)
+  it('refuses to create a config flag before its type is chosen', async () => {
+    render(<FlagFormModal projectId="p1" onClose={() => {}} onSaved={() => {}} />)
+    fireEvent.change(screen.getByPlaceholderText('e.g. Checkout Redesign'), { target: { value: 'Speed' } })
+    fireEvent.click(screen.getByText('Config value'))
+    fireEvent.click(screen.getByRole('button', { name: 'Create Flag' }))
+    expect(await screen.findByText('Choose the value type first')).toBeInTheDocument()
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
 
-    fireEvent.change(screen.getByLabelText('Variant 1 name'), { target: { value: 'default' } })
+  it('lists the default of a text flag as the first row with a read-only name', () => {
+    render(<FlagFormModal projectId="p1" flag={textFlag} onClose={() => {}} onSaved={() => {}} />)
+    const name = screen.getByLabelText('Default name')
+    expect(name).toHaveValue('base')
+    expect(name).toHaveAttribute('readonly')
+    expect(screen.getByLabelText('Value')).toHaveValue('a')
+    expect(screen.getByLabelText('Variant 1 name')).toHaveValue('fast')
+  })
+
+  it('names the row a duplicate collides with', async () => {
+    render(<FlagFormModal projectId="p1" flag={textFlag} onClose={() => {}} onSaved={() => {}} />)
+
+    fireEvent.change(screen.getByLabelText('Variant 1 name'), { target: { value: 'base' } })
     fireEvent.click(screen.getByText('Save changes'))
 
-    expect(await screen.findByText('Variant names must be unique ("default")')).toBeInTheDocument()
+    expect(await screen.findByText('Row 2 repeats the name "base" of row 1 (the default value)')).toBeInTheDocument()
     expect(mockUpdate).not.toHaveBeenCalled()
+  })
+
+  it('keeps a text value as typed and refuses a non-number in a number flag', async () => {
+    mockUpdate.mockResolvedValue(textFlag)
+    const { unmount } = render(<FlagFormModal projectId="p1" flag={textFlag} onClose={() => {}} onSaved={() => {}} />)
+    fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'true' } })
+    fireEvent.click(screen.getByText('Save changes'))
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1))
+    expect(JSON.parse(mockUpdate.mock.calls[0][2].variants).base).toBe('true')
+    unmount()
+
+    const numberFlag = { ...textFlag, flag_type: 'number', variants: '{"base":5}' }
+    render(<FlagFormModal projectId="p1" flag={numberFlag} onClose={() => {}} onSaved={() => {}} />)
+    fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'abc' } })
+    fireEvent.click(screen.getByText('Save changes'))
+    expect(await screen.findByText('Value must be a number')).toBeInTheDocument()
+    expect(mockUpdate).toHaveBeenCalledTimes(1)
   })
 })

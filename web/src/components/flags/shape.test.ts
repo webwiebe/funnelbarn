@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  parseConfigValue, configFlagType, configShape, booleanShape, stringShape, initialConfigValue,
+  parseConfigValue, configFlagType, configShape, parseTypedValue, booleanConfigShape, toggleConfigBoolean, configBooleanValue, configTypeOf, booleanShape, stringShape, initialConfigValue,
   configDefaultName, initialConfigVariants, ruleVariants,
 } from './shape'
 import type { FeatureFlag } from '../../lib/api'
@@ -73,8 +73,8 @@ describe('configShape', () => {
 
   it('rejects an empty, repeated or unparsable named value', () => {
     expect(configShape('1', [{ name: ' ', value: '2' }])).toEqual({ error: 'All variants need a name' })
-    expect(configShape('1', [{ name: 'default', value: '2' }])).toEqual({ error: 'Variant names must be unique ("default")' })
-    expect(configShape('1', [{ name: 'a', value: '2' }, { name: 'a', value: '3' }])).toEqual({ error: 'Variant names must be unique ("a")' })
+    expect(configShape('1', [{ name: 'default', value: '2' }])).toEqual({ error: 'Row 2 repeats the name "default" of row 1 (the default value)' })
+    expect(configShape('1', [{ name: 'a', value: '2' }, { name: 'a', value: '3' }])).toEqual({ error: 'Row 3 repeats the name "a" of row 2' })
     expect(configShape('1', [{ name: 'a', value: '{"x":' }])).toEqual({ error: 'Variant "a": Value looks like JSON but does not parse' })
   })
 })
@@ -190,5 +190,65 @@ describe('ruleVariants', () => {
 
   it('offers a string flag its named variants', () => {
     expect(ruleVariants({ ...base, flagType: 'string' })).toEqual({ variantNames: ['control'], newRuleVariant: 'control' })
+  })
+})
+
+const cfg = (over: Partial<FeatureFlag>): FeatureFlag => ({
+  id: 'f', project_id: 'p', flag_key: 'k', name: 'n', flag_type: 'boolean', variants: '{"on":true,"off":false}',
+  default_variant: 'off', split: '{"off":100}', targeting_rules: '[]', status: 'active', created_at: '', origin: 'manual',
+  flag_kind: 'config', ...over,
+})
+
+describe('typed config values', () => {
+  it('reads each type strictly', () => {
+    expect(parseTypedValue('text', 'true')).toEqual({ value: 'true' })
+    expect(parseTypedValue('text', '')).toEqual({ error: 'Value is required' })
+    expect(parseTypedValue('number', ' 2.5 ')).toEqual({ value: 2.5 })
+    expect(parseTypedValue('number', 'abc')).toEqual({ error: 'Value must be a number' })
+    expect(parseTypedValue('json', '{"a":1}')).toEqual({ value: { a: 1 } })
+    expect(parseTypedValue('json', 'slow')).toEqual({ error: 'Value must be valid JSON' })
+  })
+
+  it('stores a text value as text even when it reads like JSON', () => {
+    expect(configShape('true', [], 'default', 'text')).toMatchObject({ variantsObj: { default: 'true' }, resolvedType: 'string' })
+  })
+
+  it('names the type of a stored config flag', () => {
+    expect(configTypeOf(cfg({}))).toBe('boolean')
+    expect(configTypeOf(cfg({ flag_type: 'string' }))).toBe('text')
+    expect(configTypeOf(cfg({ flag_type: 'json' }))).toBe('json')
+    expect(configTypeOf(cfg({ flag_kind: 'experiment' }))).toBeNull()
+    expect(configTypeOf(undefined)).toBeNull()
+  })
+})
+
+describe('boolean config flags', () => {
+  it('reads the no-rule value, off when the default variant is missing', () => {
+    expect(configBooleanValue(cfg({}))).toBe(false)
+    expect(configBooleanValue(cfg({ default_variant: 'on' }))).toBe(true)
+    expect(configBooleanValue(cfg({ default_variant: 'gone' }))).toBe(false)
+    expect(configBooleanValue(cfg({ variants: 'nope' }))).toBe(false)
+    expect(configBooleanValue(undefined)).toBe(false)
+  })
+
+  it('keeps on: true and off: false and points the default at on or off', () => {
+    expect(booleanConfigShape(true, 'off')).toEqual({
+      variantsObj: { on: true, off: false }, splitObj: { on: 100 }, resolvedDefault: 'on', resolvedType: 'boolean',
+    })
+    expect(booleanConfigShape(false, '')).toMatchObject({ resolvedDefault: 'off' })
+  })
+
+  it('keeps a default under another name and gives it the chosen value', () => {
+    expect(booleanConfigShape(true, 'default')).toEqual({
+      variantsObj: { on: true, off: false, default: true }, splitObj: { default: 100 }, resolvedDefault: 'default', resolvedType: 'boolean',
+    })
+  })
+
+  it('toggles by writing fields the flag can serve, never a missing variant', () => {
+    expect(toggleConfigBoolean(cfg({ default_variant: 'gone', variants: '{"default":false,"on":true}' }))).toEqual({
+      variants: '{"on":true,"off":false,"gone":true}', default_variant: 'gone', split: '{"gone":100}',
+    })
+    expect(toggleConfigBoolean(cfg({ default_variant: 'on' })).default_variant).toBe('off')
+    expect(toggleConfigBoolean(cfg({})).default_variant).toBe('on')
   })
 })

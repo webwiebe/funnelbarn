@@ -5,10 +5,12 @@ import type { FeatureFlag, TargetingRule } from '../../lib/api'
 import { trackEvent } from '../../lib/analytics'
 import { parseFlagFormState } from '../../pages/Flags'
 import { TargetingRuleEditor } from './TargetingRuleEditor'
-import { ConfigValueField, ConfigVariantsField } from './ConfigFields'
+import { ConfigTypeField, ConfigValuesField, OnOffField } from './ConfigFields'
+import { ENVIRONMENT_SCOPE_NOTE } from './environmentScope'
 import {
-  booleanShape, configDefaultName, configShape, initialConfigValue, initialConfigVariants, ruleVariants, stringShape,
-  type ConfigVariantRow, type StringVariantRow,
+  booleanRuleChoices, booleanShape, storedConfigDefault, configBooleanValue, configDefaultName, configTypeOf, initialConfigValue,
+  initialConfigVariants, resolveConfigShape, ruleVariants, stringShape,
+  type ConfigType, type ConfigVariantRow, type StringVariantRow,
 } from './shape'
 
 const C = {
@@ -43,6 +45,11 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
   // Named values beside the default, for targeting rules to serve.
   const [configVariants, setConfigVariants] = useState<ConfigVariantRow[]>(initialConfigVariants(flag))
   const configDefault = configDefaultName(flag)
+  // A new config flag chooses its type first; a stored one keeps it.
+  const [configType, setConfigType] = useState<ConfigType | null>(configTypeOf(flag))
+  const [configBool, setConfigBool] = useState(configBooleanValue(flag))
+  // The stored default name of a boolean flag, kept when it is not on or off.
+  const storedDefault = storedConfigDefault(flag)
 
   const [flagKey, setFlagKey] = useState(flag?.flag_key ?? '')
   const [name, setName] = useState(flag?.name ?? '')
@@ -83,9 +90,13 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
   const autoKey = (n: string) => n.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
   // Variant names targeting-rule dropdowns and default-variant selectors can pick from.
-  const { variantNames, newRuleVariant: defaultNewVariant } = ruleVariants({
+  const ruleChoices = ruleVariants({
     flagKind, flagType, defaultBool, variants, configDefault, configVariants,
   })
+  // A boolean config flag offers On and Off, and a stored default under another name its rules may use.
+  const { variantNames, newRuleVariant: defaultNewVariant } = flagKind === 'config' && configType === 'boolean'
+    ? booleanRuleChoices(configBool, storedDefault)
+    : ruleChoices
 
   // Keep defaultVariant in sync when the user removes/renames the row it pointed at.
   useEffect(() => {
@@ -110,7 +121,7 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
     if (!flagKey.trim() || !name.trim()) { setError('Key and name are required'); return }
 
     const shape = flagKind === 'config'
-      ? configShape(configValue, configVariants, configDefault)
+      ? resolveConfigShape({ type: configType, bool: configBool, storedDefault, value: configValue, rows: configVariants, defaultName: configDefault })
       : booleanShape(flagType, defaultBool, rolloutEnabled, rolloutPct)
         ?? stringShape(variants, defaultVariant, validateString())
     if ('error' in shape) { setError(shape.error); return }
@@ -191,8 +202,12 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
 
           {flagKind === 'config' ? (
             <>
-            <ConfigValueField value={configValue} onChange={setConfigValue} inputStyle={inputStyle} />
-            <ConfigVariantsField rows={configVariants} onChange={setConfigVariants} inputStyle={inputStyle} />
+            <ConfigTypeField value={configType} locked={configTypeOf(flag) !== null} onChange={setConfigType} />
+            {configType === 'boolean' && <OnOffField value={configBool} onChange={setConfigBool} />}
+            {configType !== null && configType !== 'boolean' && (
+              <ConfigValuesField type={configType} defaultName={configDefault} value={configValue} onValue={setConfigValue}
+                rows={configVariants} onRows={setConfigVariants} inputStyle={inputStyle} />
+            )}
             </>
           ) : (
           <>
@@ -276,7 +291,10 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
           </div>
         </div>
 
-        <div style={{ padding: '1rem 1.5rem', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <div data-testid="flag-scope-note" style={{ padding: '0.75rem 1.5rem 0', fontSize: 12, color: C.muted, borderTop: `1px solid ${C.border}` }}>
+          {ENVIRONMENT_SCOPE_NOTE}
+        </div>
+        <div style={{ padding: '0.75rem 1.5rem 1rem', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button onClick={onClose} style={{ padding: '0.5rem 1rem', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             Cancel
           </button>
