@@ -482,13 +482,7 @@ func (c *OIDCClient) ensureReady(ctx context.Context) error {
 		ClientSecret: c.cfg.ClientSecret,
 		Endpoint:     prov.Endpoint(),
 		RedirectURL:  c.cfg.RedirectURL,
-		// offline_access asks iambarn for a refresh_token alongside the
-		// short-lived (15m) access_token, so the session can be renewed
-		// silently instead of forcing a full re-login every 15 minutes.
-		// Requesting it here is required even though it's allowed on the
-		// client record — iambarn only grants what's both allowed AND
-		// explicitly requested.
-		Scopes: []string{oidcv3.ScopeOpenID, "profile", "email", "offline_access"},
+		Scopes:       requestedScopes(),
 	}
 	return nil
 }

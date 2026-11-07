@@ -23,14 +23,15 @@ test.describe('API: OIDC client-config', () => {
 })
 
 test.describe('API: OIDC login redirect', () => {
-  test('redirects to the issuer with PKCE + offline_access', async ({ request }) => {
+  test('redirects to the issuer with PKCE, offline_access, groups and roles', async ({ request }) => {
     const resp = await request.get('/api/v1/oidc/login', { maxRedirects: 0 })
     expect(resp.status()).toBe(302)
     const location = resp.headers()['location'] ?? ''
     expect(location).toContain('/oauth2/authorize')
     expect(location).toContain('code_challenge=')
     expect(location).toContain('code_challenge_method=S256')
-    expect(location).toContain('offline_access')
+    const scopes = (new URL(location).searchParams.get('scope') ?? '').split(' ')
+    expect(scopes).toEqual(expect.arrayContaining(['openid', 'offline_access', 'groups', 'roles']))
     // State cookie carries "state|verifier" for the callback.
     const setCookies = resp.headers()['set-cookie'] ?? ''
     expect(setCookies).toContain('funnelbarn_oidc_state')

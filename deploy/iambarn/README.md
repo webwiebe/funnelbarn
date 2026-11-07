@@ -29,6 +29,14 @@ audit event each time). It fails loudly (exit non-zero) on a missing input, a
 non-200 response, or a mismatch in the returned client. It never prints the
 admin token or a client secret.
 
+It also checks the returned client's registered `scopes` against
+`REQUIRED_SCOPES` (`openid profile email groups roles`), the scopes dashboard
+sign-in requests apart from `offline_access`. IAMBarn rejects an authorize
+request for an unregistered scope, so a missing one fails the deploy here,
+before the rollout, with the missing scope names. A Go test
+(`internal/auth/scopes_script_test.go`) keeps `REQUIRED_SCOPES` in step with
+`requestedScopes()` in `internal/auth/oidc.go`.
+
 ## Required token
 
 `IAMBARN_ADMIN_TOKEN` needs the `admin:clients:write` scope on the IAMBarn

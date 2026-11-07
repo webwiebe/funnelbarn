@@ -266,6 +266,16 @@ If it fails after a deploy, MCP clients get a working OAuth discovery/authorize 
 exchange fails because the token's `resource` does not match any client. Re-run the script by
 hand with the same inputs the workflow uses (see `deploy/SECRETS.md` for `IAMBARN_ADMIN_TOKEN`).
 
+**Sign-in scopes.** Dashboard sign-in requests `openid profile email offline_access groups roles`
+(`requestedScopes()` in `internal/auth/oidc.go`). `groups` and `roles` carry the claims the sign-in
+check and the admin routes read; IAMBarn stops emitting them without the scope once
+`IAM_STRICT_CLAIM_SCOPES` is on. IAMBarn rejects an authorize request for a scope the client has not
+registered (`offline_access` is exempt), which would turn every sign-in into an error page. The same
+script therefore checks that the client lists `openid profile email groups roles` and fails the
+deploy before the rollout, naming the missing scopes. IAMBarn migration 00052 registered `groups`
+and `roles` on every interactive client that existed then. A client created later, or one that
+fails this check, needs those scopes added on its IAMBarn client record before the deploy is re-run.
+
 ---
 
 ## 3. Rollback

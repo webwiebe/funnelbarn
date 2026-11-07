@@ -12,6 +12,14 @@
 # run on every deploy. It never prints the admin token or a client secret; the
 # PUT response does not include secrets.
 #
+# The same response lists the client's registered scopes. IAMBarn refuses an
+# authorize request that asks for a scope the client has not registered, so a
+# missing one would break every dashboard sign-in after the rollout. The script
+# checks REQUIRED_SCOPES against that list and fails before the rollout,
+# naming only the missing scopes. REQUIRED_SCOPES must match requestedScopes()
+# in internal/auth/oidc.go, minus offline_access, which IAMBarn grants to any
+# client that may hold a refresh token (a Go test keeps the two in step).
+#
 # Required environment variables:
 #   IAMBARN_ADMIN_TOKEN  PAT or M2M token with scope admin:clients:write, for
 #                         the IAMBarn organization that owns the FunnelBarn
@@ -44,6 +52,8 @@ command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 
 IAM="${IAMBARN_URL%/}"
 
+REQUIRED_SCOPES="openid profile email groups roles"
+
 echo "[$ENV] setting resource_identifier on IAMBarn client $CLIENT_ID"
 
 body="$(jq -n --arg resource_identifier "$RESOURCE_URL" '{resource_identifier: $resource_identifier}')"
@@ -70,3 +80,16 @@ if [[ "$after" != "$RESOURCE_URL" ]]; then
 fi
 
 echo "[$ENV] OK: resource_identifier registered"
+
+missing=()
+for scope in $REQUIRED_SCOPES; do
+  if ! jq -e --arg s "$scope" '(.scopes // []) | index($s) != null' "$response_file" >/dev/null; then
+    missing+=("$scope")
+  fi
+done
+if (( ${#missing[@]} > 0 )); then
+  echo "[$ENV] FAIL: the client lacks registered scopes the dashboard sign-in requests: ${missing[*]}" >&2
+  exit 1
+fi
+
+echo "[$ENV] OK: sign-in scopes registered ($REQUIRED_SCOPES)"

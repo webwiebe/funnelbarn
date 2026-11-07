@@ -238,7 +238,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Register MCP resource with IAMBarn
+      - name: Register MCP resource and check sign-in scopes with IAMBarn
         env:
           SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY_PRODUCTION }}
         run: |
