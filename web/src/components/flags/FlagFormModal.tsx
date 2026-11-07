@@ -6,6 +6,7 @@ import { trackEvent } from '../../lib/analytics'
 import { parseFlagFormState } from '../../pages/Flags'
 import { TargetingRuleEditor } from './TargetingRuleEditor'
 import { ConfigValueField, ConfigVariantsField } from './ConfigFields'
+import { ENVIRONMENT_SCOPE_NOTE } from './environmentScope'
 import {
   booleanShape, configDefaultName, configShape, initialConfigValue, initialConfigVariants, ruleVariants, stringShape,
   type ConfigVariantRow, type StringVariantRow,
@@ -110,7 +111,7 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
     if (!flagKey.trim() || !name.trim()) { setError('Key and name are required'); return }
 
     const shape = flagKind === 'config'
-      ? configShape(configValue, configVariants, configDefault)
+      ? configShape(configValue, configVariants, configDefault, flag?.flag_kind === 'config' && flag.flag_type === 'boolean')
       : booleanShape(flagType, defaultBool, rolloutEnabled, rolloutPct)
         ?? stringShape(variants, defaultVariant, validateString())
     if ('error' in shape) { setError(shape.error); return }
@@ -276,7 +277,10 @@ export function FlagFormModal({ projectId, flag, onClose, onSaved }: FlagFormMod
           </div>
         </div>
 
-        <div style={{ padding: '1rem 1.5rem', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <div data-testid="flag-scope-note" style={{ padding: '0.75rem 1.5rem 0', fontSize: 12, color: C.muted, borderTop: `1px solid ${C.border}` }}>
+          {ENVIRONMENT_SCOPE_NOTE}
+        </div>
+        <div style={{ padding: '0.75rem 1.5rem 1rem', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button onClick={onClose} style={{ padding: '0.5rem 1rem', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             Cancel
           </button>

@@ -13,6 +13,8 @@ import { FlagFormModal } from '../components/flags/FlagFormModal'
 import { FlagList } from '../components/flags/FlagList'
 import { flagDate } from '../components/flags/flagListQuery'
 import { FlagPlayground, TargetingRulesDisplay } from '../components/flags/FlagPlayground'
+import { FlagEnvironments } from '../components/flags/FlagEnvironments'
+import { flipConfigBoolean } from '../components/flags/shape'
 
 // alignBooleanSplit produces a new split where the *new default* is always
 // the majority bucket. This both preserves intentional rollouts and
@@ -172,7 +174,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   )
 }
 
-function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
+export function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
   flag: FeatureFlag; projectId: string
   onUpdated: (f: FeatureFlag) => void
   onDeleted: () => void
@@ -212,11 +214,11 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
     const newDefault: 'on' | 'off' = flag.default_variant === 'on' ? 'off' : 'on'
     setTogglingDefault(true)
     try {
-      const updated = await api.updateFlag(projectId, flag.id, {
-        ...flag,
-        default_variant: newDefault,
-        split: alignBooleanSplit(flag.split, newDefault),
-      })
+      // A config flag keeps its default variant and flips the value it holds:
+      // renaming it to on/off points it at a variant the flag may not have.
+      const updated = await api.updateFlag(projectId, flag.id, flag.flag_kind === 'config'
+        ? { ...flag, variants: flipConfigBoolean(flag.variants, flag.default_variant) }
+        : { ...flag, default_variant: newDefault, split: alignBooleanSplit(flag.split, newDefault) })
       onUpdated(updated)
     } catch (e) {
       reportError(e instanceof Error ? e : new Error(String(e)), { source: 'Flags.toggleDefault' })
@@ -269,7 +271,7 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
           {flag.flag_type === 'boolean' && (
-            <DefaultToggle value={flag.default_variant === 'on'} onChange={toggleDefault} disabled={togglingDefault} />
+            <DefaultToggle value={isConfig ? configValue === true : flag.default_variant === 'on'} onChange={toggleDefault} disabled={togglingDefault} />
           )}
           {originBadge(flag.origin)}
           {statusBadge(flag.status)}
@@ -332,11 +334,19 @@ function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
           padding: '1rem 1.25rem', marginBottom: 16,
         }}>
           <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Current value</div>
-          <code style={{ fontSize: 20, color: C.amber, fontWeight: 700, overflowWrap: 'anywhere' }}>
-            {JSON.stringify(configValue)}
-          </code>
+          {configValue === undefined ? (
+            <div data-testid="config-value-missing" style={{ color: C.error, fontSize: 14 }}>
+              No value: the default variant &quot;{flag.default_variant}&quot; does not exist on this flag. Edit the flag to set one.
+            </div>
+          ) : (
+            <code style={{ fontSize: 20, color: C.amber, fontWeight: 700, overflowWrap: 'anywhere' }}>
+              {JSON.stringify(configValue)}
+            </code>
+          )}
         </div>
       )}
+
+      <FlagEnvironments projectId={projectId} flag={flag} />
 
       <TargetingRulesDisplay rulesJSON={flag.targeting_rules} />
 

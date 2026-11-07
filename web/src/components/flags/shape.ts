@@ -51,10 +51,13 @@ export interface ConfigVariantRow {
 // split never names the others. defaultName is the stored default variant, kept
 // so rules and clients that name it keep working.
 export function configShape(
-  raw: string, extras: ConfigVariantRow[] = [], defaultName = 'default',
+  raw: string, extras: ConfigVariantRow[] = [], defaultName = 'default', booleanOnly = false,
 ): FlagShape | { error: string } {
   const parsed = parseConfigValue(raw)
   if ('error' in parsed) return parsed
+  if (booleanOnly && typeof parsed.value !== 'boolean') {
+    return { error: 'This flag is a boolean: the value must be true or false' }
+  }
   const variantsObj: Record<string, unknown> = { [defaultName]: parsed.value }
   for (const row of extras) {
     const name = row.name.trim()
@@ -160,4 +163,13 @@ export function ruleVariants(f: {
   }
   const names = f.variants.map((v) => v.name).filter((n) => n.trim() !== '')
   return { variantNames: names, newRuleVariant: names[0] || '' }
+}
+
+// flipConfigBoolean returns the variants JSON of a boolean config flag with the
+// value its default variant holds inverted. A default variant the flag does not
+// have is created as true, so the toggle never leaves the flag without a value.
+export function flipConfigBoolean(variantsJSON: string, defaultVariant: string): string {
+  let variants: Record<string, unknown>
+  try { variants = JSON.parse(variantsJSON) as Record<string, unknown> } catch { variants = {} }
+  return JSON.stringify({ ...variants, [defaultVariant]: variants[defaultVariant] !== true })
 }
