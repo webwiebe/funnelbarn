@@ -26,7 +26,7 @@ FROM alpine:3.20
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates sqlite
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates sqlite
 # Pin a stable, predictable uid/gid for the non-root service user.
 RUN addgroup -g 101 -S funnelbarn && adduser -u 100 -S funnelbarn -G funnelbarn
 
