@@ -6,23 +6,22 @@ import type { FlagEvaluationResult } from '../../lib/api'
 export const ENVIRONMENT_SCOPE_NOTE =
   'Saves apply to every environment of this project. Only a targeting rule on the environment key limits a value to one.'
 
+type RuleCondition = { context_key?: string; operator?: string; value?: string }
+
+// environmentNames reads the environment values one condition names.
+function environmentNames(c: RuleCondition): string[] {
+  const isEnvironment = c.context_key === 'environment' && (c.operator === 'eq' || c.operator === 'in')
+  if (!isEnvironment || !c.value) return []
+  return c.value.split(',').map((v) => v.trim()).filter(Boolean)
+}
+
 // ruleEnvironments lists the environment values a flag's targeting rules name,
 // so the panel also evaluates an environment no event has been recorded for.
 export function ruleEnvironments(rulesJSON: string): string[] {
   try {
-    const rules = JSON.parse(rulesJSON) as Array<{ conditions?: Array<{ context_key?: string; operator?: string; value?: string }> }>
-    const out: string[] = []
-    for (const rule of rules ?? []) {
-      for (const c of rule.conditions ?? []) {
-        if (c.context_key !== 'environment' || !c.value) continue
-        if (c.operator !== 'eq' && c.operator !== 'in') continue
-        for (const v of c.value.split(',')) {
-          const name = v.trim()
-          if (name && !out.includes(name)) out.push(name)
-        }
-      }
-    }
-    return out
+    const rules = (JSON.parse(rulesJSON) ?? []) as Array<{ conditions?: RuleCondition[] }>
+    const names = rules.flatMap((r) => (r.conditions ?? []).flatMap(environmentNames))
+    return [...new Set(names)]
   } catch {
     return []
   }

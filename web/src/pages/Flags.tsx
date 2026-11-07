@@ -14,6 +14,7 @@ import { FlagList } from '../components/flags/FlagList'
 import { flagDate } from '../components/flags/flagListQuery'
 import { FlagPlayground, TargetingRulesDisplay } from '../components/flags/FlagPlayground'
 import { FlagEnvironments } from '../components/flags/FlagEnvironments'
+import { ConfigCurrentValue } from '../components/flags/ConfigCurrentValue'
 import { toggleConfigBoolean } from '../components/flags/shape'
 
 // alignBooleanSplit produces a new split where the *new default* is always
@@ -328,23 +329,7 @@ export function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
         )
       })()}
 
-      {isConfig && (
-        <div style={{
-          background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10,
-          padding: '1rem 1.25rem', marginBottom: 16,
-        }}>
-          <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 6 }}>Current value</div>
-          {configValue === undefined ? (
-            <div data-testid="config-value-missing" style={{ color: C.error, fontSize: 14 }}>
-              No value: the default variant &quot;{flag.default_variant}&quot; does not exist on this flag. Edit the flag to set one.
-            </div>
-          ) : (
-            <code style={{ fontSize: 20, color: C.amber, fontWeight: 700, overflowWrap: 'anywhere' }}>
-              {JSON.stringify(configValue)}
-            </code>
-          )}
-        </div>
-      )}
+      {isConfig && <ConfigCurrentValue value={configValue} defaultVariant={flag.default_variant} />}
 
       <FlagEnvironments projectId={projectId} flag={flag} />
 
