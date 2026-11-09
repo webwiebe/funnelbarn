@@ -73,6 +73,7 @@ func (c *volumeDropCheck) run(ctx context.Context) {
 	if now.Equal(c.lastHour) {
 		return
 	}
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, volumeDropTimeout)
 	defer cancel()
 	ctx, span := tracing.StartSpan(ctx, "worker.volume_drop")
@@ -80,6 +81,11 @@ func (c *volumeDropCheck) run(ctx context.Context) {
 
 	last, err := c.evaluate(ctx, span, now)
 	if err != nil {
+		if parent.Err() != nil {
+			// The process is shutting down. The hour stays open and the next
+			// process evaluates it; this is no failed evaluation.
+			return
+		}
 		tracing.RecordError(span, err)
 		c.failed(last, err)
 		return

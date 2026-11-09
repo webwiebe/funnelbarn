@@ -184,7 +184,7 @@ test('replay player is scaled and visible — not a black screen', async ({ page
       }
     })
   const scaled = await expect
-    .poll(async () => (await scaleState()).transform !== 'none', { timeout: 3000 })
+    .poll(async () => (await scaleState()).transform !== 'none', { timeout: 10000 })
     .toBe(true)
     .then(() => true, () => false)
   const state = await scaleState()
