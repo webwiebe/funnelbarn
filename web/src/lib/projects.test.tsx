@@ -3,6 +3,13 @@ import { render, screen, waitFor, act } from '@testing-library/react'
 import { ProjectProvider, useEffectiveProjectId, useProjects } from './projects'
 import type { Project } from './api'
 
+// ProjectProvider reads the signed-in user from the auth context.
+let mockUser: { id: string } | null = { id: 'u1' }
+let mockAuthLoading = false
+vi.mock('./auth', () => ({
+  useAuth: () => ({ user: mockUser, isLoading: mockAuthLoading }),
+}))
+
 // ---------------------------------------------------------------------------
 // Mock the API so ProjectProvider doesn't make real HTTP calls
 // ---------------------------------------------------------------------------
@@ -61,8 +68,31 @@ const projectB: Project = { id: 'proj-b', name: 'Beta', slug: 'beta', status: 'a
 // Tests
 // ---------------------------------------------------------------------------
 
+describe('ProjectProvider signed out', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUser = null
+    mockAuthLoading = false
+  })
+
+  it('does not request the project list without a session', async () => {
+    renderWithProjects([projectA])
+    await waitFor(() => expect(screen.getByTestId('result').textContent).toBe('undefined'))
+    expect(mockListProjects).not.toHaveBeenCalled()
+  })
+
+  it('waits for the auth check before requesting the list', async () => {
+    mockUser = { id: 'u1' }
+    mockAuthLoading = true
+    renderWithProjects([projectA])
+    expect(mockListProjects).not.toHaveBeenCalled()
+  })
+})
+
 describe('useEffectiveProjectId', () => {
   beforeEach(() => {
+    mockUser = { id: 'u1' }
+    mockAuthLoading = false
     delete store['funnelbarn_default_project']
     delete store['funnelbarn:lastProjectId']
     vi.clearAllMocks()

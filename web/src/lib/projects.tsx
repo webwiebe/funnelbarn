@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react'
 import { api, Project } from './api'
 import { reportError } from './bugbarn'
+import { useAuth } from './auth'
 import { readLastProjectId, resolveProjectId, subscribeLastProjectId, writeLastProjectId } from './selectedProject'
 
 const STORAGE_KEY = 'funnelbarn_default_project'
@@ -22,6 +23,8 @@ interface ProjectContextValue {
 const ProjectContext = createContext<ProjectContextValue | null>(null)
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
+  const { user, isLoading: authLoading } = useAuth()
+  const signedIn = user !== null
   const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [defaultProjectId, setDefaultProjectIdState] = useState<string | null>(
@@ -54,6 +57,12 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const refetch = useCallback(() => {
+    // The project list needs a session; a signed-out visit would only collect a 401.
+    if (!signedIn) {
+      setProjects([])
+      setIsLoading(false)
+      return
+    }
     setIsLoading(true)
     api.listProjects()
       .then((d) => setProjects(d.projects || []))
@@ -63,9 +72,12 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         setProjects([])
       })
       .finally(() => setIsLoading(false))
-  }, [])
+  }, [signedIn])
 
-  useEffect(() => { refetch() }, [refetch])
+  useEffect(() => {
+    if (authLoading) return
+    refetch()
+  }, [authLoading, refetch])
 
   // The header picker writes the selection directly, so mirror it back into
   // state — otherwise a page reading selectedProjectId would keep acting on the
