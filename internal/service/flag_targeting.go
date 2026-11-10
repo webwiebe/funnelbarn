@@ -195,7 +195,7 @@ func (r *missingVariantReports) due(flagID string, now time.Time) bool {
 func (svc *FlagService) ruleVariantMissing(ctx context.Context, span trace.Span, flag repository.FeatureFlag, ruleName string, cause error) FlagEvalResult {
 	span.SetAttributes(
 		attribute.String("flag.reason", "ERROR"),
-		attribute.String("flag.error_code", "GENERAL"),
+		attribute.String("flag.error_code", string(EvalVariantNotFound)),
 		attribute.String("flag.rule_name", ruleName),
 	)
 	if svc.missingVariants.due(flag.ID, time.Now()) {
@@ -209,7 +209,7 @@ func (svc *FlagService) ruleVariantMissing(ctx context.Context, span trace.Span,
 		Variant:      flag.DefaultVariant,
 		Reason:       "ERROR",
 		FlagKey:      flag.FlagKey,
-		ErrorCode:    "GENERAL",
+		ErrorCode:    string(EvalVariantNotFound),
 		FlagMetadata: map[string]any{"evaluated_rule_name": ruleName},
 	}
 }

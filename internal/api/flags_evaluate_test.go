@@ -533,8 +533,8 @@ func TestSDKEvaluate_StoredRuleNamingMissingVariant(t *testing.T) {
 	w := postEvaluateSDK(t, srv, apiKey, map[string]any{"flag_key": "outreach", "default_value": false, "context": evalContext})
 	var resp map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp["reason"] != "ERROR" || resp["error_code"] != "GENERAL" {
-		t.Fatalf("want ERROR/GENERAL, got %v", resp)
+	if resp["reason"] != "ERROR" || resp["error_code"] != "VARIANT_NOT_FOUND" {
+		t.Fatalf("want ERROR/VARIANT_NOT_FOUND, got %v", resp)
 	}
 	if resp["value"] != false {
 		t.Errorf("value: want the caller's default false, got %v", resp["value"])

@@ -223,11 +223,9 @@ func (svc *FlagService) evaluateFlag(ctx context.Context, projectID, flagKey str
 		// of an unregistered flag look like a fault in SpanBarn.
 		if errors.Is(err, sql.ErrNoRows) {
 			span.SetAttributes(attribute.String("flag.reason", "FLAG_NOT_FOUND"))
-			return FlagEvalResult{}, fmt.Errorf("flag not found: %w", err)
+			return FlagEvalResult{}, fmt.Errorf("%w: %w", domain.ErrFlagNotFound, err)
 		}
 		// Any other failure (a database error) is a fault, not a missing flag.
-		// The text keeps "flag not found" out of it so the handler does not
-		// answer FLAG_NOT_FOUND.
 		tracing.RecordError(span, err)
 		return FlagEvalResult{}, fmt.Errorf("read flag %s: %w", flagKey, err)
 	}
@@ -403,7 +401,7 @@ func (svc *FlagService) EvaluateOrRegisterFlag(ctx context.Context, projectID, f
 		svc.touchEvaluated(ctx, projectID, flagKey)
 		return res, nil
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	if !errors.Is(err, domain.ErrFlagNotFound) {
 		return FlagEvalResult{}, err // a real lookup failure, not a missing flag
 	}
 	if maxAuto <= 0 || projectID == "" || !validFlagKey(flagKey) {

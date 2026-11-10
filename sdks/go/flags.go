@@ -36,7 +36,7 @@ type EvalResult struct {
 	// STATIC, DISABLED — or ERROR when the value is the caller's default.
 	Reason string
 	// ErrorCode is set when Reason is ERROR (FLAG_NOT_FOUND,
-	// AUTO_REGISTER_LIMIT, GENERAL) or when the SDK itself could not reach
+	// AUTO_REGISTER_LIMIT, VARIANT_NOT_FOUND, GENERAL) or when the SDK itself could not reach
 	// the server (TRANSPORT).
 	ErrorCode string
 	// CacheMaxAgeSeconds is the server's advertised cache hint, if any.

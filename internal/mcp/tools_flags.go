@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -392,11 +391,9 @@ func evaluateFlag(ctx context.Context, c *Call, in evaluateFlagIn) (evaluateFlag
 	// dry run leaves the flag's analytics untouched.
 	res, err := c.Deps.Flags.PreviewFlag(ctx, p.ID, in.FlagKey, evalContext)
 	if err != nil {
-		// PreviewFlag's not-found error wraps sql.ErrNoRows, not
-		// domain.ErrNotFound (see FlagService.EvaluateFlag): translate it here
-		// so toolError logs it at Warn and returns "not found" instead of
-		// treating a routine unknown key as an unexpected server error.
-		if errors.Is(err, sql.ErrNoRows) {
+		// An unknown key is a routine not-found: toolError logs it at Warn and
+		// returns "not found" instead of an unexpected server error.
+		if errors.Is(err, domain.ErrFlagNotFound) {
 			return evaluateFlagOut{}, fmt.Errorf("%w: flag %s", domain.ErrNotFound, in.FlagKey)
 		}
 		return evaluateFlagOut{}, err

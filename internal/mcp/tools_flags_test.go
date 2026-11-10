@@ -439,8 +439,8 @@ func TestEvaluateFlagTool_StoredRuleNamingMissingVariant(t *testing.T) {
 		"flag_key": "beta_banner",
 		"context":  map[string]any{"targetingKey": "user-1", "plan": "staff"},
 	}, &out)
-	if out.Reason != "ERROR" || out.ErrorCode != "GENERAL" || out.Value != false {
-		t.Errorf("got %+v, want reason=ERROR error_code=GENERAL value=false", out)
+	if out.Reason != "ERROR" || out.ErrorCode != "VARIANT_NOT_FOUND" || out.Value != false {
+		t.Errorf("got %+v, want reason=ERROR error_code=VARIANT_NOT_FOUND value=false", out)
 	}
 }
 

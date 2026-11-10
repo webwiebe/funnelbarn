@@ -857,7 +857,7 @@ func TestFlagService_EvaluateFlag_StoredRuleNamingMissingVariant(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.Equal(t, "ERROR", result.Reason)
-			require.Equal(t, "GENERAL", result.ErrorCode)
+			require.Equal(t, "VARIANT_NOT_FOUND", result.ErrorCode)
 			require.Equal(t, "default", result.Variant)
 			require.Equal(t, false, result.Value, "the flag's default, never nil")
 			require.Equal(t, "testing sends", result.FlagMetadata["evaluated_rule_name"])

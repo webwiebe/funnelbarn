@@ -1,7 +1,7 @@
 {
   "body": {
     "cache_max_age_seconds": 0,
-    "error_code": "GENERAL",
+    "error_code": "VARIANT_NOT_FOUND",
     "flag_key": "stale_rule",
     "flag_metadata": {
       "evaluated_rule_name": "testers"
