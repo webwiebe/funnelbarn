@@ -365,3 +365,36 @@ func TestHandleFlagAnalysis_ConfigKindReportsUnavailable(t *testing.T) {
 		t.Errorf("want an empty results list, got %v", resp["results"])
 	}
 }
+
+// A rule naming a variant the flag lacks can never be served, so create and
+// update refuse it with a 422 and nothing is stored (#447).
+func TestHandleFlagWrite_RejectsRuleNamingMissingVariant(t *testing.T) {
+	srv, store := newAuthedServer(t)
+	ctx := context.Background()
+	p, _ := store.CreateProject(ctx, "RuleVariant", "rulevariant")
+	cookie, csrf := sessionAndCSRF(t, srv, "u")
+	rule := `[{"name":"testing sends","match":"all","conditions":[{"context_key":"environment","operator":"eq","value":"testing"}],"variant":"on"}]`
+
+	w := postJSONWithCSRF(t, srv, "/api/v1/projects/"+p.ID+"/flags", map[string]any{
+		"flag_key": "outreach", "name": "Outreach", "variants": `{"default":false}`,
+		"default_variant": "default", "targeting_rules": rule,
+	}, cookie, csrf)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("create: want 422, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	if flags, _ := store.ListFlags(ctx, p.ID); len(flags) != 0 {
+		t.Errorf("a rejected create must store nothing, got %d flags", len(flags))
+	}
+
+	flag, err := store.CreateFlag(ctx, repository.FeatureFlag{
+		ProjectID: p.ID, FlagKey: "ok", Name: "Ok", FlagType: "boolean",
+		Variants: `{"default":false}`, DefaultVariant: "default", Split: "{}", TargetingRules: "[]", Status: "active",
+	})
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	w = putJSONWithCSRF(t, srv, "/api/v1/projects/"+p.ID+"/flags/"+flag.ID, map[string]any{"targeting_rules": rule}, cookie, csrf)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("update: want 422, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}

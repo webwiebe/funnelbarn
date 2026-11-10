@@ -857,7 +857,7 @@ func TestFlagService_EvaluateFlag_StoredRuleNamingMissingVariant(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.Equal(t, "ERROR", result.Reason)
-			require.Equal(t, "GENERAL", result.ErrorCode)
+			require.Equal(t, "VARIANT_NOT_FOUND", result.ErrorCode)
 			require.Equal(t, "default", result.Variant)
 			require.Equal(t, false, result.Value, "the flag's default, never nil")
 			require.Equal(t, "testing sends", result.FlagMetadata["evaluated_rule_name"])
@@ -875,10 +875,10 @@ func TestFlagService_EvaluateFlag_StoredRuleNamingMissingVariant(t *testing.T) {
 	}
 }
 
-func TestFlagService_EvaluateFlag_MissingVariantLogsErrorOncePerFlag(t *testing.T) {
+func TestFlagService_EvaluateFlag_MissingVariantLogsWarnOncePerFlag(t *testing.T) {
 	var logs bytes.Buffer
 	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelError})))
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
 	ctx := context.Background()
@@ -901,11 +901,14 @@ func TestFlagService_EvaluateFlag_MissingVariantLogsErrorOncePerFlag(t *testing.
 	evaluate("outreach")
 	evaluate("outreach")
 	evaluate("outreach")
-	require.Equal(t, 1, strings.Count(logs.String(), "level=ERROR"), "repeated reads of one flag log once: %s", logs.String())
+	// A rule naming a missing variant is stored configuration to repair, not a
+	// service fault: Warn, so selflog does not open a BugBarn issue (#447).
+	require.Equal(t, 1, strings.Count(logs.String(), "level=WARN"), "repeated reads of one flag log once: %s", logs.String())
+	require.NotContains(t, logs.String(), "level=ERROR")
 	require.Contains(t, logs.String(), "flag_key=outreach")
 	require.Contains(t, logs.String(), `err="flag \"outreach\" rule \"testing sends\": variant \"on\" not found"`,
 		"the error text is the BugBarn title, so it names the flag")
 
 	evaluate("other")
-	require.Equal(t, 2, strings.Count(logs.String(), "level=ERROR"), "a second flag gets its own report: %s", logs.String())
+	require.Equal(t, 2, strings.Count(logs.String(), "level=WARN"), "a second flag gets its own report: %s", logs.String())
 }

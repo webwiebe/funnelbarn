@@ -1,6 +1,9 @@
 package domain
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 // Sentinel errors that the service layer returns.
 // Handlers map these to HTTP status codes.
@@ -12,6 +15,9 @@ var (
 	// ErrAutoRegisterLimit is returned when a project has reached its cap on
 	// auto-created feature flags and a new key cannot be registered.
 	ErrAutoRegisterLimit = errors.New("auto-register limit reached")
+	// ErrFlagNotFound is returned when a flag evaluation names a key no flag
+	// has. It wraps ErrNotFound, so callers that map not-found keep working.
+	ErrFlagNotFound = fmt.Errorf("flag %w", ErrNotFound)
 )
 
 // ValidationError wraps a field-level validation message.

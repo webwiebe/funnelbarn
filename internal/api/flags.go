@@ -1,16 +1,13 @@
 package api
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -368,36 +365,24 @@ func (s *Server) evaluateFlagInProject(w http.ResponseWriter, r *http.Request, p
 		result, err = s.flags.EvaluateFlag(ctx, projectID, body.FlagKey, body.Context)
 	}
 	if err != nil {
-		errorCode := "GENERAL"
-		switch {
-		case errors.Is(err, domain.ErrAutoRegisterLimit):
-			errorCode = "AUTO_REGISTER_LIMIT"
-		case strings.Contains(err.Error(), "flag not found"):
-			errorCode = "FLAG_NOT_FOUND"
-		}
+		code := service.EvalErrorCodeOf(err)
+		errorCode := string(code)
 		span.SetAttributes(attribute.String("flag.error_code", errorCode))
 		metrics.FlagEvaluations.WithLabelValues("ERROR").Inc()
 
-		// FLAG_NOT_FOUND is normal client behaviour; AUTO_REGISTER_LIMIT is a
-		// possible-abuse signal worth a warning; everything else (DB failure,
+		// The code decides the level and the span: a missing flag is routine,
+		// a project at its cap is worth a warning, anything else (DB failure,
 		// JSON corruption) is a real server problem to surface.
-		switch errorCode {
-		case "FLAG_NOT_FOUND":
-			slog.DebugContext(ctx, "flag evaluate: not found",
-				"project_id", projectID, "flag_key", body.FlagKey)
-		case "AUTO_REGISTER_LIMIT":
-			slog.WarnContext(ctx, "flag auto-register limit reached",
-				"handled", true, "project_id", projectID, "flag_key", body.FlagKey)
-		default:
+		if code.IsFault() {
 			tracing.RecordError(span, err)
-			slog.ErrorContext(ctx, "flag evaluate failed",
-				"err", err, "handled", false,
-				"project_id", projectID,
-				"flag_key", body.FlagKey,
-				"error_code", errorCode,
-				"request_id", RequestIDFromContext(ctx),
-			)
 		}
+		slog.Log(ctx, code.LogLevel(), code.LogMessage(),
+			"err", err, "handled", !code.IsFault(),
+			"project_id", projectID,
+			"flag_key", body.FlagKey,
+			"error_code", errorCode,
+			"request_id", RequestIDFromContext(ctx),
+		)
 		// An error result is the caller's own default, not a resolved value —
 		// never let it be cached.
 		w.Header().Set("Cache-Control", "no-store")
