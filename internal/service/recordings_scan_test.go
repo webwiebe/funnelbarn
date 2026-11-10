@@ -184,3 +184,35 @@ func TestScanChunkURLs_NoShapesByDefault(t *testing.T) {
 	assert.Equal(t, 1, res.MatchingChunks)
 	assert.Empty(t, res.Shapes)
 }
+
+// A run that is cut off leaves the counts reported so far: Progress gets a
+// growing copy of them while the project is read, and never any shapes.
+func TestScanChunkURLs_ReportsProgress(t *testing.T) {
+	match := bigChunk(t, 1<<10, true)
+	svc, projectID := seedRecordings(t, 3, [][]byte{match, match})
+
+	var seen []service.ChunkURLScan
+	res, err := svc.ScanChunkURLs(context.Background(), projectID, service.ChunkScanOpts{
+		Shapes:        true,
+		ProgressEvery: time.Nanosecond,
+		Progress:      func(part service.ChunkURLScan) { seen = append(seen, part) },
+	})
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(seen), 2, "the first chunk starts the clock, later chunks report")
+	for i, part := range seen {
+		assert.Empty(t, part.Shapes, "progress carries counts only")
+		assert.LessOrEqual(t, part.Chunks, res.Chunks)
+		if i > 0 {
+			assert.Greater(t, part.Chunks, seen[i-1].Chunks)
+		}
+	}
+	assert.Equal(t, 6, res.Chunks)
+}
+
+// Without a Progress function nothing is reported and nothing breaks.
+func TestScanChunkURLs_NoProgressByDefault(t *testing.T) {
+	svc, projectID := seedRecordings(t, 1, [][]byte{bigChunk(t, 1<<10, false)})
+	res, err := svc.ScanChunkURLs(context.Background(), projectID, service.ChunkScanOpts{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Chunks)
+}

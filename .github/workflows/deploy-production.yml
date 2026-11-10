@@ -307,8 +307,20 @@ jobs:
             set -u
             NS=${NAMESPACE}
             if kubectl -n \$NS get job recordings-url-scan >/dev/null 2>&1; then
-              echo 'recordings-url-scan exists, skipping'
-              exit 0
+              DONE=\$(kubectl -n \$NS get job recordings-url-scan -o jsonpath='{range .status.conditions[?(@.status==\"True\")]}{.type} {end}')
+              case \" \$DONE\" in
+                *' Failed '*)
+                  echo \"--- logs of the Failed Job (kept here before it is deleted)\"
+                  kubectl -n \$NS logs job/recordings-url-scan --tail=500 || echo '(no pod logs left)'
+                  echo \"deleting the Failed Job before running it again\"
+                  kubectl -n \$NS delete job recordings-url-scan --wait=true --timeout=120s || exit 6
+                  ;;
+                *)
+                  echo \"recordings-url-scan exists (\${DONE:-running}), skipping\"
+                  kubectl -n \$NS logs job/recordings-url-scan --tail=20 || true
+                  exit 0
+                  ;;
+              esac
             fi
             IMAGE=\$(kubectl -n \$NS get deployment funnelbarn -o jsonpath='{.spec.template.spec.containers[0].image}') || exit 3
             sed \"s#image: funnelbarn/service.*#image: \$IMAGE#\" /tmp/funnelbarn-deploy/deploy/k8s/production/jobs/recordings-url-scan.yaml | kubectl apply -f - || exit 4
@@ -323,7 +335,8 @@ jobs:
             case "$rc" in
               3) why="could not read the running image" ;;
               4) why="could not apply the Job" ;;
-              5) why="the scan did not finish within 120 s or failed; the Job keeps running (deadline 900 s) and its logs stay for seven days: kubectl -n funnelbarn-production logs job/recordings-url-scan" ;;
+              6) why="could not delete the Failed Job" ;;
+              5) why="the scan did not finish within 120 s or failed; the Job keeps running (deadline 3600 s) and its logs stay for seven days: kubectl -n funnelbarn-production logs job/recordings-url-scan" ;;
               *) why="ssh or kubectl failed (exit $rc)" ;;
             esac
             echo "::warning title=Replay chunk scan::${why}"
