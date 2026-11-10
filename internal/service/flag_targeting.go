@@ -157,10 +157,11 @@ func (svc *FlagService) validateUpdatedRules(ctx context.Context, f repository.F
 	return err
 }
 
-// missingVariantReportInterval limits the Error for a rule naming a missing
+// missingVariantReportInterval limits the Warn for a rule naming a missing
 // variant to one per flag per hour on each instance. The rule stays broken until
-// someone repairs it and a poller can hit it on every read, while BugBarn needs
-// only enough events to keep the issue current.
+// someone repairs it and a poller can hit it on every read. It is a Warn, not an
+// Error, because it is stored configuration to repair and selflog would open a
+// BugBarn issue for every Error (#447).
 const missingVariantReportInterval = time.Hour
 
 // missingVariantReports is that limit's state. The zero value is ready.
@@ -169,7 +170,7 @@ type missingVariantReports struct {
 	at map[string]time.Time
 }
 
-// due reports whether this flag is due for an Error, recording the decision so
+// due reports whether this flag is due for a Warn, recording the decision so
 // the next evaluation within the interval skips it. The map is bounded the same
 // way as the touch throttle.
 func (r *missingVariantReports) due(flagID string, now time.Time) bool {
@@ -199,7 +200,7 @@ func (svc *FlagService) ruleVariantMissing(ctx context.Context, span trace.Span,
 		attribute.String("flag.rule_name", ruleName),
 	)
 	if svc.missingVariants.due(flag.ID, time.Now()) {
-		slog.ErrorContext(ctx, "flag: targeting rule names a missing variant",
+		slog.WarnContext(ctx, "flag: targeting rule names a missing variant",
 			"err", fmt.Errorf("flag %q rule %q: %w", flag.FlagKey, ruleName, cause), "handled", true,
 			"project_id", flag.ProjectID, "flag_key", flag.FlagKey, "rule", ruleName)
 	}

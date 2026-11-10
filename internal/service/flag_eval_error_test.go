@@ -45,6 +45,7 @@ func TestEvalErrorCodeOf(t *testing.T) {
 		})
 	}
 	require.Equal(t, "VARIANT_NOT_FOUND", string(service.EvalVariantNotFound))
-	require.True(t, service.EvalVariantNotFound.IsFault())
-	require.Equal(t, slog.LevelError, service.EvalVariantNotFound.LogLevel())
+	// Stored configuration to repair: logged at Warn, not a fault of ours.
+	require.False(t, service.EvalVariantNotFound.IsFault())
+	require.Equal(t, slog.LevelWarn, service.EvalVariantNotFound.LogLevel())
 }

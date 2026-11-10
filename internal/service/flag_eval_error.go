@@ -38,19 +38,21 @@ func EvalErrorCodeOf(err error) EvalErrorCode {
 
 // IsFault reports whether the code marks a defect of ours: it is logged at
 // Error and recorded as a span error. FLAG_NOT_FOUND and AUTO_REGISTER_LIMIT
-// are expected outcomes a client can cause.
+// are expected outcomes a client can cause, and VARIANT_NOT_FOUND is stored
+// configuration someone has to repair.
 func (c EvalErrorCode) IsFault() bool {
-	return c != EvalFlagNotFound && c != EvalAutoRegisterLimit
+	return c == EvalGeneral
 }
 
 // LogLevel is the level an evaluation error with this code is logged at.
 // A missing flag is routine (Debug); a project at its cap is a possible-abuse
-// signal worth a Warn; everything else is a server problem.
+// signal and a rule naming a missing variant is a stored-config fault, both
+// worth a Warn; everything else is a server problem.
 func (c EvalErrorCode) LogLevel() slog.Level {
 	switch c {
 	case EvalFlagNotFound:
 		return slog.LevelDebug
-	case EvalAutoRegisterLimit:
+	case EvalAutoRegisterLimit, EvalVariantNotFound:
 		return slog.LevelWarn
 	default:
 		return slog.LevelError
