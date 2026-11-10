@@ -17,6 +17,9 @@ Run with:  python3 -m unittest discover -s scripts -p 'test_*.py'
 
 from __future__ import annotations
 
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -53,6 +56,38 @@ class DeployProductionTest(unittest.TestCase):
         self.assertLess(
             self._index("Smoke check production"), self._index("Rollback on failure")
         )
+
+    def test_scan_step_never_fails_the_deploy(self):
+        """The scan only reports. The runner starts steps with bash -e and
+        -o pipefail; a failing ssh (the wait timing out, exit 5) once ended the
+        script before the warning and the final exit 0 (run 42820270235)."""
+        script = self.steps[self._index("Scan stored replay chunks")]["run"]
+        for code in ("0", "3", "4", "5", "255"):
+            with self.subTest(ssh_exit=code), tempfile.TemporaryDirectory() as tmp:
+                tmp = Path(tmp)
+                fake = tmp / "ssh"
+                fake.write_text(f"#!/bin/sh\necho scan output\nexit {code}\n")
+                fake.chmod(0o755)
+                body = tmp / "step.sh"
+                body.write_text(script)
+                summary = tmp / "summary.md"
+                env = {
+                    **os.environ,
+                    "PATH": f"{tmp}:{os.environ['PATH']}",
+                    "K3S_USER": "u",
+                    "K3S_HOST": "h",
+                    "NAMESPACE": "funnelbarn-production",
+                    "GITHUB_STEP_SUMMARY": str(summary),
+                }
+                run = subprocess.run(
+                    ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", str(body)],
+                    env=env, capture_output=True, text=True,
+                )
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                warned = "::warning title=Replay chunk scan::" in run.stdout
+                self.assertEqual(warned, code != "0", run.stdout)
+                self.assertIn("scan output", summary.read_text())
+
 
     def test_smoke_checks_the_released_version(self):
         smoke = self.steps[self._index("Smoke check production")]
