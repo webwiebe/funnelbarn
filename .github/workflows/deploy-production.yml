@@ -294,10 +294,10 @@ jobs:
       # One-shot read-only scan of the stored replay chunks (#462): counts per
       # project in the step summary, nothing deleted. It runs in its own pod,
       # never in the writer, and is skipped while its Job still exists (the Job
-      # is kept for seven days). A failed scan must not roll back a good
-      # release, so the step does not fail the job.
+      # is kept for seven days). The step always ends 0, so a failed scan never
+      # rolls back a good release; a failure or timeout shows as a warning on
+      # the run.
       - name: Scan stored replay chunks
-        continue-on-error: true
         run: |
           set -uo pipefail
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
@@ -307,12 +307,24 @@ jobs:
               echo 'recordings-url-scan exists, skipping'
               exit 0
             fi
-            IMAGE=\$(kubectl -n \$NS get deployment funnelbarn -o jsonpath='{.spec.template.spec.containers[0].image}')
-            sed \"s#image: funnelbarn/service.*#image: \$IMAGE#\" /tmp/funnelbarn-deploy/deploy/k8s/production/jobs/recordings-url-scan.yaml | kubectl apply -f -
-            kubectl -n \$NS wait --for=condition=complete job/recordings-url-scan --timeout=480s || true
+            IMAGE=\$(kubectl -n \$NS get deployment funnelbarn -o jsonpath='{.spec.template.spec.containers[0].image}') || exit 3
+            sed \"s#image: funnelbarn/service.*#image: \$IMAGE#\" /tmp/funnelbarn-deploy/deploy/k8s/production/jobs/recordings-url-scan.yaml | kubectl apply -f - || exit 4
+            kubectl -n \$NS wait --for=condition=complete job/recordings-url-scan --timeout=480s || RC=5
             echo '--- scan output'
             kubectl -n \$NS logs job/recordings-url-scan --tail=200 || true
-          " | tee /tmp/recordings-url-scan.out
+            exit \${RC:-0}
+          " > /tmp/recordings-url-scan.out 2>&1
+          rc=$?
+          cat /tmp/recordings-url-scan.out
+          if [ "$rc" -ne 0 ]; then
+            case "$rc" in
+              3) why="could not read the running image" ;;
+              4) why="could not apply the Job" ;;
+              5) why="the scan did not finish within 480 s or failed; the Job and its logs stay for seven days" ;;
+              *) why="ssh or kubectl failed (exit $rc)" ;;
+            esac
+            echo "::warning title=Replay chunk scan::${why}"
+          fi
           {
             echo "### Replay chunk URL scan (counts only)"
             echo ""
@@ -320,6 +332,7 @@ jobs:
             cat /tmp/recordings-url-scan.out
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
 
       # Written only after the smoke check passed, so a release that was rolled
       # back never leaves its SHA behind. The next deploy reads it to decide
