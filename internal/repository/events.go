@@ -650,27 +650,26 @@ func (s *ReadStore) DistinctPropertyValues(ctx context.Context, projectID, event
 }
 
 // PopulatedMetadataColumns returns only metadata columns that have at least
-// one non-empty value for the given project and event name.
+// one non-empty value among the newest 1000 events of the given
+// project and event name. Reading a sample keeps the call cheap on a project
+// with millions of events, and the newest events show what the SDK sends now.
 func (s *ReadStore) PopulatedMetadataColumns(ctx context.Context, projectID, eventName string) ([]string, error) {
 	q := `SELECT `
 	for i, col := range metadataColumns {
 		if i > 0 {
 			q += `, `
 		}
-		q += fmt.Sprintf(`MAX(CASE WHEN %s IS NOT NULL AND %s != '' THEN 1 ELSE 0 END)`, col, col)
+		// An aggregate over no rows is NULL, not an empty result.
+		q += fmt.Sprintf(`COALESCE(MAX(CASE WHEN %s IS NOT NULL AND %s != '' THEN 1 ELSE 0 END), 0)`, col, col)
 	}
-	q += ` FROM events WHERE project_id = ? AND name = ? LIMIT 1000`
+	q += ` FROM (SELECT * FROM events WHERE project_id = ? AND name = ? ORDER BY occurred_at DESC LIMIT 1000)`
 
-	row := s.rdb.QueryRowContext(ctx, q, projectID, eventName)
 	flags := make([]int, len(metadataColumns))
 	ptrs := make([]any, len(metadataColumns))
 	for i := range flags {
 		ptrs[i] = &flags[i]
 	}
-	if err := row.Scan(ptrs...); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
+	if err := s.rdb.QueryRowContext(ctx, q, projectID, eventName).Scan(ptrs...); err != nil {
 		return nil, err
 	}
 

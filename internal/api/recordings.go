@@ -1,17 +1,14 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -65,15 +62,6 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 		)
 		jsonError(w, "recording requires a project-scoped API key — use the key from the project settings page, not the global FUNNELBARN_API_KEY", http.StatusUnauthorized)
 		return
-	}
-
-	if s.projectHealth != nil {
-		pid := projectID
-		bblog.Go("recordings-health", func() {
-			if err := s.projectHealth.MarkRecordingsReceived(context.Background(), pid); err != nil {
-				slog.Warn("recording chunk: mark health", "project_id", pid, "err", err)
-			}
-		})
 	}
 
 	proj, err := s.projects.GetProject(ctx, projectID)
@@ -162,6 +150,9 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 		jsonError(w, "failed to ingest chunk", http.StatusInternalServerError)
 		return
 	}
+	// Only a stored chunk counts: marking before validation would show a
+	// project whose chunks are all rejected as receiving recordings.
+	s.markRecordingsReceived(projectID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true})
 }
 
@@ -272,8 +263,7 @@ func (s *Server) handleGetRecordingChunk(w http.ResponseWriter, r *http.Request)
 
 	data, err := s.recordings.GetChunk(ctx, projectID, recordingID, index)
 	if err != nil {
-		errStr := err.Error()
-		if errors.Is(err, domain.ErrNotFound) || strings.Contains(errStr, "NoSuchKey") || strings.Contains(errStr, "404") {
+		if isChunkNotFound(err) {
 			jsonError(w, "not found", http.StatusNotFound)
 			return
 		}
@@ -463,8 +453,7 @@ func (s *Server) handleGetRecordingChunkByKey(w http.ResponseWriter, r *http.Req
 
 	data, err := s.recordings.GetChunk(ctx, projectID, recordingID, index)
 	if err != nil {
-		errStr := err.Error()
-		if errors.Is(err, domain.ErrNotFound) || strings.Contains(errStr, "NoSuchKey") || strings.Contains(errStr, "404") {
+		if isChunkNotFound(err) {
 			jsonError(w, "not found", http.StatusNotFound)
 			return
 		}
