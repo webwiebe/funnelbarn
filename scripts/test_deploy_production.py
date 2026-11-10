@@ -17,9 +17,6 @@ Run with:  python3 -m unittest discover -s scripts -p 'test_*.py'
 
 from __future__ import annotations
 
-import os
-import subprocess
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -57,102 +54,12 @@ class DeployProductionTest(unittest.TestCase):
             self._index("Smoke check production"), self._index("Rollback on failure")
         )
 
-    def test_scan_step_never_fails_the_deploy(self):
-        """The scan only reports. The runner starts steps with bash -e and
-        -o pipefail; a failing ssh (the wait timing out, exit 5) once ended the
-        script before the warning and the final exit 0 (run 42820270235)."""
-        script = self.steps[self._index("Scan stored replay chunks")]["run"]
-        for code in ("0", "3", "4", "5", "255"):
-            with self.subTest(ssh_exit=code), tempfile.TemporaryDirectory() as tmp:
-                tmp = Path(tmp)
-                fake = tmp / "ssh"
-                fake.write_text(f"#!/bin/sh\necho scan output\nexit {code}\n")
-                fake.chmod(0o755)
-                body = tmp / "step.sh"
-                body.write_text(script)
-                summary = tmp / "summary.md"
-                env = {
-                    **os.environ,
-                    "PATH": f"{tmp}:{os.environ['PATH']}",
-                    "K3S_USER": "u",
-                    "K3S_HOST": "h",
-                    "NAMESPACE": "funnelbarn-production",
-                    "GITHUB_STEP_SUMMARY": str(summary),
-                }
-                run = subprocess.run(
-                    ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", str(body)],
-                    env=env, capture_output=True, text=True,
-                )
-                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
-                warned = "::warning title=Replay chunk scan::" in run.stdout
-                self.assertEqual(warned, code != "0", run.stdout)
-                self.assertIn("scan output", summary.read_text())
-
-
-    def _run_scan_step(self, job_state: str):
-        """Runs the scan step with an ssh that executes its command locally
-        against a fake kubectl, and returns the process and the kubectl calls.
-        job_state is "absent", "running", "Complete" or "Failed"."""
-        script = self.steps[self._index("Scan stored replay chunks")]["run"]
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp = Path(tmp)
-            calls = tmp / "calls.txt"
-            (tmp / "ssh").write_text('#!/bin/sh\nfor a; do c="$a"; done\nexec sh -c "$c"\n')
-            (tmp / "kubectl").write_text(
-                "#!/bin/sh\n"
-                'echo "$*" >> "$CALLS"\n'
-                'case "$*" in\n'
-                '  *"get job"*jsonpath*) [ "$STATE" = Complete -o "$STATE" = Failed ] && echo "$STATE " ; exit 0 ;;\n'
-                '  *"get job"*) [ "$STATE" = absent ] && exit 1; exit 0 ;;\n'
-                '  *"get deployment"*) echo ghcr.io/x/service@sha256:abc ;;\n'
-                '  *apply*) cat > /dev/null ;;\n'
-                "esac\n"
-                "exit 0\n"
-            )
-            for name in ("ssh", "kubectl"):
-                (tmp / name).chmod(0o755)
-            body = tmp / "step.sh"
-            body.write_text(script)
-            env = {
-                **os.environ,
-                "PATH": f"{tmp}:{os.environ['PATH']}",
-                "K3S_USER": "u", "K3S_HOST": "h", "NAMESPACE": "ns",
-                "GITHUB_STEP_SUMMARY": str(tmp / "summary.md"),
-                "CALLS": str(calls), "STATE": job_state,
-            }
-            run = subprocess.run(
-                ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", str(body)],
-                env=env, capture_output=True, text=True,
-            )
-            return run, calls.read_text() if calls.exists() else ""
-
-    def test_scan_step_reruns_only_a_failed_job(self):
-        for state, deletes, applies in (
-            ("absent", False, True),
-            ("Complete", False, False),
-            ("Failed", True, True),
-            ("running", False, False),
-        ):
-            with self.subTest(job=state):
-                run, calls = self._run_scan_step(state)
-                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
-                self.assertEqual("delete job recordings-url-scan" in calls.replace("-n ns ", ""), deletes, calls)
-                self.assertEqual("apply -f -" in calls, applies, calls)
-                if deletes:
-                    # The Failed Job's logs reach the output (and so the step
-                    # summary) before the Job and its pod are deleted.
-                    self.assertLess(
-                        calls.index("logs job/recordings-url-scan --tail=500"),
-                        calls.index("delete job recordings-url-scan"),
-                        calls,
-                    )
-                    self.assertIn("logs of the Failed Job", run.stdout)
-
-    def test_scan_job_deadline_is_capped_at_one_hour(self):
-        job = (WORKFLOW.parent.parent.parent / "deploy/k8s/production/jobs/recordings-url-scan.yaml").read_text()
-        spec = yaml.safe_load(job)["spec"]
-        self.assertLessEqual(spec["activeDeadlineSeconds"], 3600)
-        self.assertEqual(spec["backoffLimit"], 0)
+    def test_no_replay_scan_runs_in_the_deploy(self):
+        # The one-shot scan of stored replay chunks (#462) was stopped by the
+        # owner; a deploy must not start it again.
+        names = [step.get("name", "") for step in self.steps]
+        self.assertFalse([n for n in names if "scan" in n.lower()], names)
+        self.assertNotIn("recordings-url-scan", WORKFLOW.read_text())
 
     def test_smoke_checks_the_released_version(self):
         smoke = self.steps[self._index("Smoke check production")]
