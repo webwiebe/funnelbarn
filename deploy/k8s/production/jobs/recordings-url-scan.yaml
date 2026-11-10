@@ -1,0 +1,64 @@
+# One-shot, read-only scan of the stored replay chunks for sensitive URL
+# parameter values (#462). It prints counts per project and deletes nothing.
+# The production deploy runs it once (see "Scan stored replay chunks" in
+# .github/workflows/deploy-production.yml) and skips it while a Job of this
+# name still exists. It is not part of kustomization.yaml: a Job's spec cannot
+# be updated, so the workflow applies it by itself and sets the image.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: recordings-url-scan
+  namespace: funnelbarn-production
+  labels:
+    app.kubernetes.io/name: funnelbarn-recordings-url-scan
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: funnelbarn-recordings-url-scan
+    spec:
+      restartPolicy: Never
+      # The database is on a ReadWriteOnce volume that the writer and the
+      # readers already mount on this node.
+      nodeSelector:
+        kubernetes.io/hostname: layer7-prod
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: scan
+          image: funnelbarn/service # replaced by the workflow with the running image
+          # The image entrypoint starts the server, so the command is set here.
+          command: ["funnelbarn"]
+          args: ["recordings", "scan-url-params", "--by-url", "--max-memory-mib", "96"]
+          env:
+            - name: FUNNELBARN_DB_PATH
+              value: /var/lib/funnelbarn/funnelbarn.db
+            - name: FUNNELBARN_R2_ENDPOINT
+              valueFrom:
+                secretKeyRef: {name: funnelbarn-secrets, key: FUNNELBARN_R2_ENDPOINT}
+            - name: FUNNELBARN_R2_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef: {name: funnelbarn-secrets, key: FUNNELBARN_R2_ACCESS_KEY_ID}
+            - name: FUNNELBARN_R2_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: {name: funnelbarn-secrets, key: FUNNELBARN_R2_SECRET_ACCESS_KEY}
+            - name: FUNNELBARN_R2_BUCKET
+              valueFrom:
+                secretKeyRef: {name: funnelbarn-secrets, key: FUNNELBARN_R2_BUCKET}
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 192Mi
+          volumeMounts:
+            - name: funnelbarn-data
+              mountPath: /var/lib/funnelbarn
+      volumes:
+        - name: funnelbarn-data
+          persistentVolumeClaim:
+            claimName: funnelbarn-data
