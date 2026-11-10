@@ -123,15 +123,17 @@ func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
 	flagID := existing.ID
 
 	var body struct {
-		Name            string `json:"name"`
-		FlagType        string `json:"flag_type"`
-		Variants        string `json:"variants"`
-		DefaultVariant  string `json:"default_variant"`
-		Split           string `json:"split"`
-		ConversionEvent string `json:"conversion_event"`
-		TargetingRules  string `json:"targeting_rules"`
-		Status          string `json:"status"`
-		Kind            string `json:"flag_kind"`
+		Name           string `json:"name"`
+		FlagType       string `json:"flag_type"`
+		Variants       string `json:"variants"`
+		DefaultVariant string `json:"default_variant"`
+		Split          string `json:"split"`
+		// A pointer: omitted keeps the stored event, "" clears it. The edit form
+		// sends the field on every save, a status toggle sends only the status.
+		ConversionEvent *string `json:"conversion_event"`
+		TargetingRules  string  `json:"targeting_rules"`
+		Status          string  `json:"status"`
+		Kind            string  `json:"flag_kind"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid json", http.StatusBadRequest)
@@ -166,6 +168,10 @@ func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
 	if body.Status == "" {
 		body.Status = existing.Status
 	}
+	conversionEvent := existing.ConversionEvent
+	if body.ConversionEvent != nil {
+		conversionEvent = *body.ConversionEvent
+	}
 
 	// Targeting rule syntax and flag_kind validation live in
 	// FlagService.UpdateFlag now, same as create; a bad merged value comes
@@ -177,7 +183,7 @@ func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
 		Variants:        body.Variants,
 		DefaultVariant:  body.DefaultVariant,
 		Split:           body.Split,
-		ConversionEvent: body.ConversionEvent,
+		ConversionEvent: conversionEvent,
 		TargetingRules:  body.TargetingRules,
 		Status:          body.Status,
 		Kind:            body.Kind,
