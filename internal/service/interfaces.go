@@ -59,6 +59,8 @@ type Flags interface {
 	GetFlagByKey(ctx context.Context, projectID, flagKey string) (repository.FeatureFlag, error)
 	ListFlags(ctx context.Context, projectID string) ([]repository.FeatureFlag, error)
 	UpdateFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error)
+	CreateFromRequest(ctx context.Context, projectID string, req FlagRequest) (repository.FeatureFlag, error)
+	PatchFlag(ctx context.Context, existing repository.FeatureFlag, req FlagRequest) (repository.FeatureFlag, error)
 	DeleteFlag(ctx context.Context, id string) error
 	EvaluateFlag(ctx context.Context, projectID, flagKey string, evalContext map[string]any) (FlagEvalResult, error)
 	PreviewFlag(ctx context.Context, projectID, flagKey string, evalContext map[string]any) (FlagEvalResult, error)
