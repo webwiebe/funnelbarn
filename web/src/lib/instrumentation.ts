@@ -92,8 +92,16 @@ function getCookie(name: string): string {
   return match ? decodeURIComponent(match[2]) : ''
 }
 
+// The telemetry and client-error endpoints need a session. The CSRF cookie is
+// set at sign-in with the session's expiry and cleared at sign-out, so its
+// absence means the visitor is signed out and the server would answer 401 (a
+// console error per request). Those spans and errors are dropped here.
+function signedIn(): boolean {
+  return getCookie('funnelbarn_csrf') !== ''
+}
+
 function sendBatch(spans: SpanPayload[]): void {
-  if (spans.length === 0) return
+  if (spans.length === 0 || !signedIn()) return
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   // The endpoint is session-authed, so mutating requests carry CSRF like the
   // rest of the API client.
@@ -182,6 +190,7 @@ function flushSpans(): void {
  */
 function reportClientError(error: Error, extra?: Record<string, string>): void {
   markTraceError()
+  if (!signedIn()) return
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   const csrf = getCookie('funnelbarn_csrf')
   if (csrf) headers['X-FunnelBarn-CSRF'] = csrf

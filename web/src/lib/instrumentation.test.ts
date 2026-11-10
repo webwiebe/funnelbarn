@@ -134,6 +134,19 @@ describe('fetch instrumentation', () => {
     expect(call).toBeDefined()
     expect((call![1] as RequestInit).headers).toMatchObject({ 'X-FunnelBarn-CSRF': 'tok' })
   })
+
+  // Signed out, the endpoint answers 401 and the browser logs a console error
+  // per request, so nothing is sent.
+  it('sends nothing while signed out', async () => {
+    document.cookie = 'funnelbarn_csrf=; max-age=0'
+    const impl = installFetch()
+    initInstrumentation()
+    markTraceError()
+    await window.fetch('/api/v1/funnels')
+
+    const posts = impl.mock.calls.filter(([input]) => requestURL(input as RequestInfo) === '/api/v1/telemetry')
+    expect(posts).toHaveLength(0)
+  })
 })
 
 describe('navigation', () => {
