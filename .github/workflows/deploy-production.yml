@@ -299,6 +299,9 @@ jobs:
       # the run.
       - name: Scan stored replay chunks
         run: |
+          # The runner starts steps with bash -e, and -o pipefail leaves -e on.
+          # This step reports and never fails the deploy, so turn -e off.
+          set +e
           set -uo pipefail
           ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
             set -u
@@ -309,18 +312,18 @@ jobs:
             fi
             IMAGE=\$(kubectl -n \$NS get deployment funnelbarn -o jsonpath='{.spec.template.spec.containers[0].image}') || exit 3
             sed \"s#image: funnelbarn/service.*#image: \$IMAGE#\" /tmp/funnelbarn-deploy/deploy/k8s/production/jobs/recordings-url-scan.yaml | kubectl apply -f - || exit 4
-            kubectl -n \$NS wait --for=condition=complete job/recordings-url-scan --timeout=480s || RC=5
+            kubectl -n \$NS wait --for=condition=complete job/recordings-url-scan --timeout=120s || RC=5
             echo '--- scan output'
             kubectl -n \$NS logs job/recordings-url-scan --tail=200 || true
             exit \${RC:-0}
           " > /tmp/recordings-url-scan.out 2>&1
           rc=$?
-          cat /tmp/recordings-url-scan.out
+          cat /tmp/recordings-url-scan.out || true
           if [ "$rc" -ne 0 ]; then
             case "$rc" in
               3) why="could not read the running image" ;;
               4) why="could not apply the Job" ;;
-              5) why="the scan did not finish within 480 s or failed; the Job and its logs stay for seven days" ;;
+              5) why="the scan did not finish within 120 s or failed; the Job keeps running (deadline 900 s) and its logs stay for seven days: kubectl -n funnelbarn-production logs job/recordings-url-scan" ;;
               *) why="ssh or kubectl failed (exit $rc)" ;;
             esac
             echo "::warning title=Replay chunk scan::${why}"
