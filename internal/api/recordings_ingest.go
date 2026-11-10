@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -18,4 +20,17 @@ func (s *Server) ingestChunkDetached(ctx context.Context, chunk service.Recordin
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordingIngestTimeout)
 	defer cancel()
 	return s.recordings.IngestChunk(ctx, chunk)
+}
+
+// markRecordingsReceived records, off the request path, that the project has
+// stored a recording chunk.
+func (s *Server) markRecordingsReceived(projectID string) {
+	if s.projectHealth == nil {
+		return
+	}
+	bblog.Go("recordings-health", func() {
+		if err := s.projectHealth.MarkRecordingsReceived(context.Background(), projectID); err != nil {
+			slog.Warn("recording chunk: mark health", "project_id", projectID, "err", err)
+		}
+	})
 }
