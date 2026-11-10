@@ -291,6 +291,36 @@ jobs:
       - name: Smoke check production
         run: scripts/smoke.sh https://funnelbarn.wiebe.xyz "${{ needs.preflight.outputs.version }}"
 
+      # One-shot read-only scan of the stored replay chunks (#462): counts per
+      # project in the step summary, nothing deleted. It runs in its own pod,
+      # never in the writer, and is skipped while its Job still exists (the Job
+      # is kept for seven days). A failed scan must not roll back a good
+      # release, so the step does not fail the job.
+      - name: Scan stored replay chunks
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" "
+            set -u
+            NS=${NAMESPACE}
+            if kubectl -n \$NS get job recordings-url-scan >/dev/null 2>&1; then
+              echo 'recordings-url-scan exists, skipping'
+              exit 0
+            fi
+            IMAGE=\$(kubectl -n \$NS get deployment funnelbarn -o jsonpath='{.spec.template.spec.containers[0].image}')
+            sed \"s#image: funnelbarn/service.*#image: \$IMAGE#\" /tmp/funnelbarn-deploy/deploy/k8s/production/jobs/recordings-url-scan.yaml | kubectl apply -f -
+            kubectl -n \$NS wait --for=condition=complete job/recordings-url-scan --timeout=480s || true
+            echo '--- scan output'
+            kubectl -n \$NS logs job/recordings-url-scan --tail=200 || true
+          " | tee /tmp/recordings-url-scan.out
+          {
+            echo "### Replay chunk URL scan (counts only)"
+            echo ""
+            echo '```'
+            cat /tmp/recordings-url-scan.out
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # Written only after the smoke check passed, so a release that was rolled
       # back never leaves its SHA behind. The next deploy reads it to decide
       # whether its rollback is safe. Annotating the Deployment metadata does not
