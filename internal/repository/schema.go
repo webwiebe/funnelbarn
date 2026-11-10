@@ -27,6 +27,11 @@ func (s *ReadStore) SchemaVersion(ctx context.Context) (int64, error) {
 	return v, nil
 }
 
+// goMigrationVersions lists the migrations written in Go (files NNNNN_*.go in
+// this package). Each registers its version here, because the embedded SQL
+// files do not include them.
+var goMigrationVersions []int64
+
 // EmbeddedSchemaVersion returns the newest migration built into this binary,
 // which is the version Open migrates to.
 func EmbeddedSchemaVersion() (int64, error) {
@@ -44,6 +49,9 @@ func EmbeddedSchemaVersion() (int64, error) {
 		if err != nil {
 			return 0, fmt.Errorf("migration %s: %w", e.Name(), err)
 		}
+		newest = max(newest, v)
+	}
+	for _, v := range goMigrationVersions {
 		newest = max(newest, v)
 	}
 	return newest, nil

@@ -25,6 +25,7 @@ import (
 // outside this migration.
 func init() {
 	goose.AddMigrationContext(up00041RedactStoredURLs, nil)
+	goMigrationVersions = append(goMigrationVersions, 41)
 }
 
 // storedURLTable names the URL-bearing columns of one table. JSONCols hold a
@@ -63,7 +64,16 @@ type storedURLUpdate struct {
 
 func redactStoredURLTable(ctx context.Context, tx *sql.Tx, t storedURLTable) error {
 	cols := append(append([]string{}, t.Cols...), t.JSONCols...)
+	updates, err := collectStoredURLUpdates(ctx, tx, t, cols)
+	if err != nil {
+		return err
+	}
+	return applyStoredURLUpdates(ctx, tx, t.Table, cols, updates)
+}
 
+// collectStoredURLUpdates reads the candidate rows of one table and returns
+// the changes enrich.RedactURL makes to them.
+func collectStoredURLUpdates(ctx context.Context, tx *sql.Tx, t storedURLTable, cols []string) ([]storedURLUpdate, error) {
 	var where []string
 	var args []any
 	for _, c := range cols {
@@ -74,51 +84,54 @@ func redactStoredURLTable(ctx context.Context, tx *sql.Tx, t storedURLTable) err
 	}
 	query := fmt.Sprintf("SELECT rowid, %s FROM %s WHERE %s", strings.Join(cols, ", "), t.Table, strings.Join(where, " OR "))
 
-	var updates []storedURLUpdate
-	err := func() error {
-		rows, err := tx.QueryContext(ctx, query, args...)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var rowid int64
-			vals := make([]sql.NullString, len(cols))
-			dest := make([]any, 0, len(cols)+1)
-			dest = append(dest, &rowid)
-			for i := range vals {
-				dest = append(dest, &vals[i])
-			}
-			if err := rows.Scan(dest...); err != nil {
-				return err
-			}
-			set := map[string]string{}
-			for i, c := range cols {
-				if !vals[i].Valid {
-					continue
-				}
-				var next string
-				var changed bool
-				if i < len(t.Cols) {
-					next = enrich.RedactURL(vals[i].String)
-					changed = next != vals[i].String
-				} else {
-					next, changed = redactJSONObject(vals[i].String)
-				}
-				if changed {
-					set[c] = next
-				}
-			}
-			if len(set) > 0 {
-				updates = append(updates, storedURLUpdate{rowid: rowid, set: set})
-			}
-		}
-		return rows.Err()
-	}()
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	defer rows.Close()
+	var updates []storedURLUpdate
+	for rows.Next() {
+		var rowid int64
+		vals := make([]sql.NullString, len(cols))
+		dest := make([]any, 0, len(cols)+1)
+		dest = append(dest, &rowid)
+		for i := range vals {
+			dest = append(dest, &vals[i])
+		}
+		if err := rows.Scan(dest...); err != nil {
+			return nil, err
+		}
+		if set := redactedColumns(vals, cols, len(t.Cols)); len(set) > 0 {
+			updates = append(updates, storedURLUpdate{rowid: rowid, set: set})
+		}
+	}
+	return updates, rows.Err()
+}
 
+// redactedColumns returns the new value of every column that redaction
+// changes. The first plain columns are URLs; the rest hold JSON objects.
+func redactedColumns(vals []sql.NullString, cols []string, plain int) map[string]string {
+	set := map[string]string{}
+	for i, c := range cols {
+		if !vals[i].Valid {
+			continue
+		}
+		var next string
+		var changed bool
+		if i < plain {
+			next = enrich.RedactURL(vals[i].String)
+			changed = next != vals[i].String
+		} else {
+			next, changed = redactJSONObject(vals[i].String)
+		}
+		if changed {
+			set[c] = next
+		}
+	}
+	return set
+}
+
+func applyStoredURLUpdates(ctx context.Context, tx *sql.Tx, table string, cols []string, updates []storedURLUpdate) error {
 	for _, u := range updates {
 		var sets []string
 		var uargs []any
@@ -129,7 +142,7 @@ func redactStoredURLTable(ctx context.Context, tx *sql.Tx, t storedURLTable) err
 			}
 		}
 		uargs = append(uargs, u.rowid)
-		stmt := fmt.Sprintf("UPDATE %s SET %s WHERE rowid = ?", t.Table, strings.Join(sets, ", "))
+		stmt := fmt.Sprintf("UPDATE %s SET %s WHERE rowid = ?", table, strings.Join(sets, ", "))
 		if _, err := tx.ExecContext(ctx, stmt, uargs...); err != nil {
 			return err
 		}
