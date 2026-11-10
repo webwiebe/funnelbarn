@@ -12,13 +12,15 @@ vi.mock('../lib/auth', () => ({
   useAuth: () => ({ user: { id: 'u1', username: 'admin' }, isLoading: false }),
 }))
 
+const env = vi.hoisted(() => ({ value: '' }))
+
 vi.mock('../lib/projects', () => ({
   useProjects: () => ({
     projects: [{ id: 'p1', name: 'My Site', slug: 'my-site', status: 'active' }],
     isLoading: false,
     refetch: vi.fn(),
     defaultProjectId: 'p1',
-    selectedEnvironment: '',
+    selectedEnvironment: env.value,
     setSelectedEnvironment: vi.fn(),
   }),
 }))
@@ -89,6 +91,7 @@ describe('Dashboard', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    env.value = ''
     mockLoadedApi()
   })
 
@@ -131,5 +134,37 @@ describe('Dashboard', () => {
   it('calls listFunnels with the correct project id', async () => {
     renderDashboard('p1')
     await waitFor(() => expect(mockApi.listFunnels).toHaveBeenCalledWith('p1'))
+  })
+
+  describe('top funnel card', () => {
+    const steps = { results: [{ count: 100 }, { count: 40 }] }
+    beforeEach(() => {
+      mockApi.listFunnels.mockResolvedValue({ funnels: [{ id: 'f1', name: 'Signup' }] })
+      mockApi.getFunnelAnalysis.mockResolvedValue(steps)
+    })
+
+    it('asks for the analysis of the selected environment', async () => {
+      env.value = 'staging'
+      renderDashboard('p1')
+      await waitFor(() =>
+        expect(mockApi.getFunnelAnalysis).toHaveBeenCalledWith('p1', 'f1', undefined, undefined, 'staging'),
+      )
+    })
+
+    it('refreshes when the environment changes', async () => {
+      const view = renderDashboard('p1')
+      await waitFor(() => expect(mockApi.getFunnelAnalysis).toHaveBeenCalledTimes(1))
+      env.value = 'production'
+      view.rerender(
+        <MemoryRouter initialEntries={['/dashboard/p1']}>
+          <Routes>
+            <Route path="/dashboard/:projectId" element={<Dashboard />} />
+          </Routes>
+        </MemoryRouter>,
+      )
+      await waitFor(() =>
+        expect(mockApi.getFunnelAnalysis).toHaveBeenLastCalledWith('p1', 'f1', undefined, undefined, 'production'),
+      )
+    })
   })
 })
