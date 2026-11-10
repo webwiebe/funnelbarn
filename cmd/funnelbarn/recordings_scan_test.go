@@ -11,6 +11,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
@@ -216,7 +217,8 @@ func TestScanRecordingURLParams_TimeBudgetKeepsFinishedProjectsAndResumes(t *tes
 	}
 
 	// Second run: geobarn now finishes (a scanner that no longer runs out).
-	scanner["budget"] = service.ChunkURLScan{Recordings: 3, Chunks: 11}
+	projects[1].ID = "p2" // the same project, now with a scanner that finishes
+	scanner["p2"] = service.ChunkURLScan{Recordings: 3, Chunks: 11}
 	delete(scanner, "p1") // iambarn must come from the state, not from a new scan
 	var second bytes.Buffer
 	if err := scanRecordingURLParams(context.Background(), &second, projects, scanner, stateOptions(objects, saved)); err != nil {
@@ -270,5 +272,45 @@ func TestParseScanFlags_BudgetAndFresh(t *testing.T) {
 	f, err := parseScanFlags([]string{"--max-duration", "55m", "--fresh"})
 	if err != nil || f.maxDuration != 55*time.Minute || !f.fresh {
 		t.Errorf("flags: %+v, %v", f, err)
+	}
+}
+
+// The saved state is a record in a bucket that outlives the run, so it must
+// hold no query value: shapes built from URLs that carry a secret keep the
+// host, the masked path and the parameter name, and the object never holds the
+// value, in any of its keys.
+func TestScanState_HoldsNoQueryValues(t *testing.T) {
+	const secret = "s3cr3t-token-value-0042"
+	var shapes []service.URLShapeCount
+	for _, raw := range []string{
+		"https://id.example.com/verify/0b1c2d3e-aaaa-bbbb-cccc-1234567890ab?token=" + secret + "&tab=1",
+		"https://id.example.com/callback?code=" + secret + "&state=" + secret + "#invite=" + secret,
+	} {
+		for _, sh := range enrich.SensitiveURLShapes(raw) {
+			shapes = append(shapes, service.URLShapeCount{URLShape: sh, Chunks: 1, Recordings: 1})
+		}
+	}
+	if len(shapes) == 0 {
+		t.Fatal("the fixture URLs must yield shapes")
+	}
+
+	objects := &memObjects{}
+	scanner := fakeScanner{"p1": {Recordings: 1, Chunks: 2, MatchingChunks: 2, MatchingRecordings: 1, Shapes: shapes}}
+	opts := stateOptions(objects, &scanState{})
+	var out bytes.Buffer
+	if err := scanRecordingURLParams(context.Background(), &out, fakeProjects{{ID: "p1", Slug: "iambarn"}}, scanner, opts); err != nil {
+		t.Fatal(err)
+	}
+	saved := string(objects.data[scanStateKey])
+	if saved == "" {
+		t.Fatal("the state was not saved")
+	}
+	if strings.Contains(saved, secret) || strings.Contains(out.String(), secret) {
+		t.Errorf("a query value reached the state or the output:\n%s", saved)
+	}
+	for _, want := range []string{`"host":"id.example.com"`, `"param":"token"`} {
+		if !strings.Contains(saved, want) {
+			t.Errorf("the state lacks the shape %s:\n%s", want, saved)
+		}
 	}
 }
