@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"syscall"
+	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -80,9 +82,9 @@ func runRecordingsCmd(cfg config.Config, args []string) error {
 	memCap := flags.maxMemoryMiB << 20
 	debug.SetMemoryLimit(int64(memCap))
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	opts := scanOptions{project: flags.project, chunk: service.ChunkScanOpts{BatchSize: 25, MemoryCap: memCap, Shapes: flags.byURL}}
+	opts := scanOptions{project: flags.project, chunk: service.ChunkScanOpts{BatchSize: 25, MemoryCap: memCap, Shapes: flags.byURL}, started: time.Now()}
 	return scanRecordingURLParams(ctx, os.Stdout, store, service.NewRecordingService(store, store, store, r2), opts)
 }
 
@@ -90,6 +92,7 @@ func runRecordingsCmd(cfg config.Config, args []string) error {
 type scanOptions struct {
 	project string // a slug; empty scans every project
 	chunk   service.ChunkScanOpts
+	started time.Time // when the run began; zero leaves elapsed_s out of the lines
 }
 
 // projectLister is the one store method the scan needs besides the service.
@@ -104,7 +107,12 @@ type chunkScanner interface {
 // scanLine is one line of output: a project's counts, or the total.
 type scanLine struct {
 	Project string `json:"project"`
-	Stopped string `json:"stopped,omitempty"`
+	// Progress marks a partial count printed while the project is still being
+	// read. The project's final line follows, unless the run is cut off first.
+	Progress bool   `json:"progress,omitempty"`
+	Stopped  string `json:"stopped,omitempty"`
+	// ElapsedSeconds is the time since the run began, to read a rate from.
+	ElapsedSeconds int `json:"elapsed_s,omitempty"`
 	service.ChunkURLScan
 }
 
@@ -128,19 +136,31 @@ func selectProjects(ctx context.Context, projects projectLister, slug string) ([
 // scanRecordingURLParams writes one JSON line per project that has
 // recordings, then a total line. A scan that stops at its memory cap still
 // writes the counts it has, marked "stopped", and then returns the error.
+// While a project is read, progress lines carry the counts so far, so a run
+// that is killed still leaves partial results.
 func scanRecordingURLParams(ctx context.Context, w io.Writer, projects projectLister, scanner chunkScanner, opts scanOptions) error {
 	list, err := selectProjects(ctx, projects, opts.project)
 	if err != nil {
 		return err
 	}
 	enc := json.NewEncoder(w)
+	elapsed := func() int {
+		if opts.started.IsZero() {
+			return 0
+		}
+		return int(time.Since(opts.started).Seconds())
+	}
 	var total service.ChunkURLScan
 	for _, p := range list {
-		res, err := scanner.ScanChunkURLs(ctx, p.ID, opts.chunk)
-		if errors.Is(err, service.ErrMemoryCap) {
+		chunk := opts.chunk
+		chunk.Progress = func(part service.ChunkURLScan) {
+			_ = enc.Encode(scanLine{Project: p.Slug, Progress: true, ElapsedSeconds: elapsed(), ChunkURLScan: part})
+		}
+		res, err := scanner.ScanChunkURLs(ctx, p.ID, chunk)
+		if why := stopReason(err); why != "" {
 			addScan(&total, res)
-			_ = enc.Encode(scanLine{Project: p.Slug, Stopped: "memory cap", ChunkURLScan: res})
-			_ = enc.Encode(scanLine{Project: "(total)", Stopped: "memory cap", ChunkURLScan: total})
+			_ = enc.Encode(scanLine{Project: p.Slug, Stopped: why, ElapsedSeconds: elapsed(), ChunkURLScan: res})
+			_ = enc.Encode(scanLine{Project: "(total)", Stopped: why, ElapsedSeconds: elapsed(), ChunkURLScan: total})
 			return fmt.Errorf("recordings scan: project %s: %w", p.Slug, err)
 		}
 		if err != nil {
@@ -149,12 +169,25 @@ func scanRecordingURLParams(ctx context.Context, w io.Writer, projects projectLi
 		if res.Recordings == 0 {
 			continue
 		}
-		if err := enc.Encode(scanLine{Project: p.Slug, ChunkURLScan: res}); err != nil {
+		if err := enc.Encode(scanLine{Project: p.Slug, ElapsedSeconds: elapsed(), ChunkURLScan: res}); err != nil {
 			return err
 		}
 		addScan(&total, res)
 	}
-	return enc.Encode(scanLine{Project: "(total)", ChunkURLScan: total})
+	return enc.Encode(scanLine{Project: "(total)", ElapsedSeconds: elapsed(), ChunkURLScan: total})
+}
+
+// stopReason names why a scan ended early, or returns "" for a real failure
+// or no error. The memory cap and a signal (SIGTERM at the Job's deadline)
+// both leave the counts so far.
+func stopReason(err error) string {
+	switch {
+	case errors.Is(err, service.ErrMemoryCap):
+		return "memory cap"
+	case errors.Is(err, context.Canceled):
+		return "interrupted"
+	}
+	return ""
 }
 
 // addScan adds one project's counts to the total.

@@ -1,8 +1,11 @@
 # One-shot, read-only scan of the stored replay chunks for sensitive URL
 # parameter values (#462). It prints counts per project and deletes nothing.
 # The production deploy runs it once (see "Scan stored replay chunks" in
-# .github/workflows/deploy-production.yml) and skips it while a Job of this
-# name still exists. It is not part of kustomization.yaml: a Job's spec cannot
+# .github/workflows/deploy-production.yml). The step skips it while a Job of
+# this name is still running and deletes a Complete or Failed one before
+# applying, so every deploy reruns it until this file is removed. It prints a
+# progress line every 30 s (counts, elapsed_s), and SIGTERM at the deadline
+# prints the stopped project and the total. It is not part of kustomization.yaml: a Job's spec cannot
 # be updated, so the workflow applies it by itself and sets the image.
 apiVersion: batch/v1
 kind: Job
@@ -13,7 +16,10 @@ metadata:
     app.kubernetes.io/name: funnelbarn-recordings-url-scan
 spec:
   backoffLimit: 0
-  activeDeadlineSeconds: 900
+  # The cap: one hour. The deploy no longer waits for the scan, so the cap
+  # costs it nothing; a run that needs more is read from the progress lines
+  # (chunks against elapsed_s) before the cap is raised.
+  activeDeadlineSeconds: 3600
   ttlSecondsAfterFinished: 604800
   template:
     metadata:

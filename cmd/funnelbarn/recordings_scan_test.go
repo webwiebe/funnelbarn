@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -18,10 +19,15 @@ func (f fakeProjects) ListProjects(context.Context) ([]repository.Project, error
 
 type fakeScanner map[string]service.ChunkURLScan
 
-func (f fakeScanner) ScanChunkURLs(_ context.Context, projectID string, _ service.ChunkScanOpts) (service.ChunkURLScan, error) {
+func (f fakeScanner) ScanChunkURLs(_ context.Context, projectID string, opts service.ChunkScanOpts) (service.ChunkURLScan, error) {
 	switch projectID {
 	case "broken":
 		return service.ChunkURLScan{}, errors.New("boom")
+	case "slow":
+		if opts.Progress != nil {
+			opts.Progress(service.ChunkURLScan{Recordings: 1, Chunks: 5, MatchingChunks: 2})
+		}
+		return service.ChunkURLScan{Recordings: 2, Chunks: 9, MatchingChunks: 2}, fmt.Errorf("scan: %w", context.Canceled)
 	case "capped":
 		return service.ChunkURLScan{Recordings: 2, Chunks: 7, MatchingChunks: 1, PeakMemoryBytes: 70 << 20}, service.ErrMemoryCap
 	}
@@ -116,5 +122,33 @@ func TestParseScanFlags(t *testing.T) {
 		if _, err := parseScanFlags(bad); err == nil {
 			t.Errorf("%v: want an error", bad)
 		}
+	}
+}
+
+// A scan cut off by a signal (SIGTERM at the Job's deadline) prints what it
+// has: progress lines while it ran, then the stopped project and the total.
+func TestScanRecordingURLParams_InterruptedKeepsProgressAndCounts(t *testing.T) {
+	projects := fakeProjects{{ID: "p1", Slug: "iambarn"}, {ID: "slow", Slug: "geobarn"}, {ID: "p3", Slug: "later"}}
+	scanner := fakeScanner{"p1": {Recordings: 4, Chunks: 10}, "p3": {Recordings: 1, Chunks: 2}}
+	var out bytes.Buffer
+	err := scanRecordingURLParams(context.Background(), &out, projects, scanner, scanOptions{started: time.Now().Add(-90 * time.Second)})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("want context.Canceled, got %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 4 {
+		t.Fatalf("want iambarn, a geobarn progress line, the stopped geobarn line and a total:\n%s", out.String())
+	}
+	if !strings.Contains(lines[1], `"project":"geobarn"`) || !strings.Contains(lines[1], `"progress":true`) || !strings.Contains(lines[1], `"chunks":5`) {
+		t.Errorf("progress line: %s", lines[1])
+	}
+	if !strings.Contains(lines[2], `"stopped":"interrupted"`) || !strings.Contains(lines[2], `"chunks":9`) || !strings.Contains(lines[2], `"elapsed_s":90`) {
+		t.Errorf("stopped line: %s", lines[2])
+	}
+	if !strings.Contains(lines[3], `"project":"(total)"`) || !strings.Contains(lines[3], `"chunks":19`) || !strings.Contains(lines[3], `"stopped":"interrupted"`) {
+		t.Errorf("total line: %s", lines[3])
+	}
+	if strings.Contains(out.String(), "later") {
+		t.Error("the scan must stop at the interrupted project")
 	}
 }

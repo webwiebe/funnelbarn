@@ -35,7 +35,8 @@ type ChunkURLScan struct {
 	// counts, most recordings first. It never holds a parameter value.
 	Shapes []URLShapeCount `json:"shapes,omitempty"`
 
-	tally map[enrich.URLShape]*URLShapeCount
+	tally    map[enrich.URLShape]*URLShapeCount
+	reported time.Time // when Progress last ran
 }
 
 // URLShapeCount counts the chunks and recordings in which one URL shape held
@@ -64,6 +65,12 @@ type ChunkScanOpts struct {
 	// MaxShapes bounds the distinct shapes kept per project; the rest count
 	// under OtherShapes. Zero means 500.
 	MaxShapes int
+	// Progress, when set, receives a copy of the counts so far (without
+	// shapes) at most once per ProgressEvery, checked after each chunk. A run
+	// that is cut off still leaves these counts behind.
+	Progress func(ChunkURLScan)
+	// ProgressEvery spaces the Progress calls. Zero means 30 seconds.
+	ProgressEvery time.Duration
 }
 
 // ErrMemoryCap means a chunk scan stopped because its memory passed the cap.
@@ -137,8 +144,34 @@ func (svc *RecordingService) scanRecording(ctx context.Context, rec repository.R
 		if err := out.checkMemory(opts.MemoryCap); err != nil {
 			return err
 		}
+		out.report(opts)
 	}
 	return nil
+}
+
+// report hands opts.Progress a copy of the counts when ProgressEvery has
+// passed since the last call. The first chunk starts the clock.
+func (s *ChunkURLScan) report(opts ChunkScanOpts) {
+	if opts.Progress == nil {
+		return
+	}
+	every := opts.ProgressEvery
+	if every <= 0 {
+		every = 30 * time.Second
+	}
+	now := time.Now()
+	if s.reported.IsZero() {
+		s.reported = now
+		return
+	}
+	if now.Sub(s.reported) < every {
+		return
+	}
+	s.reported = now
+	snap := *s
+	snap.tally = nil
+	snap.Shapes = nil
+	opts.Progress(snap)
 }
 
 // checkMemory records the process memory and reports ErrMemoryCap when it
