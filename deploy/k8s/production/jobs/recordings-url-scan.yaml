@@ -17,9 +17,15 @@ metadata:
     app.kubernetes.io/name: funnelbarn-recordings-url-scan
 spec:
   backoffLimit: 0
-  # The cap: one hour. The deploy no longer waits for the scan, so the cap
-  # costs it nothing; a run that needs more is read from the progress lines
-  # (chunks against elapsed_s) before the cap is raised.
+  # The scan ends itself after 55 minutes (--max-duration), prints the stopped
+  # project and the total, and exits with an error. That keeps the pod and its
+  # logs: Kubernetes deletes a pod it kills at this deadline, which is how the
+  # first totals were lost. The deadline is only the backstop. Each finished
+  # project is saved as counts in the bucket (scans/url-params/state.json), so
+  # the next run, after the pipeline deletes this Failed Job, continues with the
+  # projects that are left. The deploy does not wait for the scan, so the
+  # hour costs it nothing; the progress lines (chunks against elapsed_s) show
+  # whether one project alone needs more.
   activeDeadlineSeconds: 3600
   ttlSecondsAfterFinished: 604800
   template:
@@ -39,7 +45,7 @@ spec:
           image: funnelbarn/service # replaced by the workflow with the running image
           # The image entrypoint starts the server, so the command is set here.
           command: ["funnelbarn"]
-          args: ["recordings", "scan-url-params", "--by-url", "--max-memory-mib", "96"]
+          args: ["recordings", "scan-url-params", "--by-url", "--max-memory-mib", "96", "--max-duration", "55m"]
           env:
             - name: FUNNELBARN_DB_PATH
               value: /var/lib/funnelbarn/funnelbarn.db

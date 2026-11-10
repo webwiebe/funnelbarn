@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -19,13 +20,15 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 )
 
-const recordingsUsage = "usage: funnelbarn recordings scan-url-params [--project <slug>] [--max-memory-mib <n>] [--by-url]"
+const recordingsUsage = "usage: funnelbarn recordings scan-url-params [--project <slug>] [--max-memory-mib <n>] [--by-url] [--max-duration <d>] [--fresh]"
 
 // scanFlags are the options of recordings scan-url-params.
 type scanFlags struct {
 	project      string
 	maxMemoryMiB uint64
 	byURL        bool
+	maxDuration  time.Duration
+	fresh        bool
 }
 
 func parseScanFlags(args []string) (scanFlags, error) {
@@ -35,6 +38,8 @@ func parseScanFlags(args []string) (scanFlags, error) {
 	fs.StringVar(&f.project, "project", "", "scan only the project with this slug")
 	fs.Uint64Var(&f.maxMemoryMiB, "max-memory-mib", 64, "stop when the scan holds more than this many MiB")
 	fs.BoolVar(&f.byURL, "by-url", false, "also count matching URLs by host, masked path and parameter name")
+	fs.DurationVar(&f.maxDuration, "max-duration", 0, "stop after this long, keep the totals and exit with an error (0 means no limit)")
+	fs.BoolVar(&f.fresh, "fresh", false, "ignore the saved totals of finished projects and scan every project again")
 	if err := fs.Parse(args); err != nil {
 		return f, fmt.Errorf("%s: %w", recordingsUsage, err)
 	}
@@ -84,7 +89,23 @@ func runRecordingsCmd(cfg config.Config, args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if flags.maxDuration > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, flags.maxDuration)
+		defer cancel()
+	}
 	opts := scanOptions{project: flags.project, chunk: service.ChunkScanOpts{BatchSize: 25, MemoryCap: memCap, Shapes: flags.byURL}, started: time.Now()}
+	if flags.project == "" {
+		// Resuming only makes sense for the whole run: a single-project scan is
+		// a spot check and neither reads nor writes the saved totals.
+		opts.state = &scanState{}
+		if !flags.fresh {
+			if opts.state, err = loadScanState(ctx, r2); err != nil {
+				return err
+			}
+		}
+		opts.save = func(st *scanState) error { return saveScanState(context.WithoutCancel(ctx), r2, st) }
+	}
 	return scanRecordingURLParams(ctx, os.Stdout, store, service.NewRecordingService(store, store, store, r2), opts)
 }
 
@@ -93,6 +114,10 @@ type scanOptions struct {
 	project string // a slug; empty scans every project
 	chunk   service.ChunkScanOpts
 	started time.Time // when the run began; zero leaves elapsed_s out of the lines
+	// state holds the projects an earlier run finished; they are not scanned
+	// again. save writes it after each project. Both are nil for a spot check.
+	state *scanState
+	save  func(*scanState) error
 }
 
 // projectLister is the one store method the scan needs besides the service.
@@ -111,6 +136,9 @@ type scanLine struct {
 	// read. The project's final line follows, unless the run is cut off first.
 	Progress bool   `json:"progress,omitempty"`
 	Stopped  string `json:"stopped,omitempty"`
+	// FromPreviousRun marks the final line of a project that an earlier run
+	// finished; this run did not read it again.
+	FromPreviousRun bool `json:"from_previous_run,omitempty"`
 	// ElapsedSeconds is the time since the run began, to read a rate from.
 	ElapsedSeconds int `json:"elapsed_s,omitempty"`
 	service.ChunkURLScan
@@ -152,6 +180,16 @@ func scanRecordingURLParams(ctx context.Context, w io.Writer, projects projectLi
 	}
 	var total service.ChunkURLScan
 	for _, p := range list {
+		if prev, ok := opts.state.done(p.Slug); ok {
+			if prev.Recordings > 0 {
+				prev.FromPreviousRun = true
+				if err := enc.Encode(prev); err != nil {
+					return err
+				}
+				addScan(&total, prev.ChunkURLScan)
+			}
+			continue
+		}
 		chunk := opts.chunk
 		chunk.Progress = func(part service.ChunkURLScan) {
 			_ = enc.Encode(scanLine{Project: p.Slug, Progress: true, ElapsedSeconds: elapsed(), ChunkURLScan: part})
@@ -166,15 +204,30 @@ func scanRecordingURLParams(ctx context.Context, w io.Writer, projects projectLi
 		if err != nil {
 			return fmt.Errorf("recordings scan: project %s: %w", p.Slug, err)
 		}
-		if res.Recordings == 0 {
-			continue
+		final := scanLine{Project: p.Slug, ElapsedSeconds: elapsed(), ChunkURLScan: res}
+		if res.Recordings > 0 {
+			if err := enc.Encode(final); err != nil {
+				return err
+			}
+			addScan(&total, res)
 		}
-		if err := enc.Encode(scanLine{Project: p.Slug, ElapsedSeconds: elapsed(), ChunkURLScan: res}); err != nil {
-			return err
-		}
-		addScan(&total, res)
+		saveFinished(opts, enc, p.Slug, final)
 	}
 	return enc.Encode(scanLine{Project: "(total)", ElapsedSeconds: elapsed(), ChunkURLScan: total})
+}
+
+// saveFinished keeps a finished project's line in the state. A failed save does
+// not stop the scan: the line has been printed, and the next run reads the
+// project again.
+func saveFinished(opts scanOptions, enc *json.Encoder, slug string, line scanLine) {
+	if opts.state == nil || opts.save == nil {
+		return
+	}
+	opts.state.record(slug, line)
+	if err := opts.save(opts.state); err != nil {
+		slog.Warn("recordings scan: could not save the finished project", "project", slug, "err", err)
+		_ = enc.Encode(map[string]string{"project": slug, "warning": "state not saved"})
+	}
 }
 
 // stopReason names why a scan ended early, or returns "" for a real failure
@@ -186,6 +239,8 @@ func stopReason(err error) string {
 		return "memory cap"
 	case errors.Is(err, context.Canceled):
 		return "interrupted"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "time budget"
 	}
 	return ""
 }
