@@ -89,24 +89,41 @@ func runRecordingsCmd(cfg config.Config, args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if flags.maxDuration > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, flags.maxDuration)
-		defer cancel()
-	}
-	opts := scanOptions{project: flags.project, chunk: service.ChunkScanOpts{BatchSize: 25, MemoryCap: memCap, Shapes: flags.byURL}, started: time.Now()}
-	if flags.project == "" {
-		// Resuming only makes sense for the whole run: a single-project scan is
-		// a spot check and neither reads nor writes the saved totals.
-		opts.state = &scanState{}
-		if !flags.fresh {
-			if opts.state, err = loadScanState(ctx, r2); err != nil {
-				return err
-			}
-		}
-		opts.save = func(st *scanState) error { return saveScanState(context.WithoutCancel(ctx), r2, st) }
+	ctx, cancel := withScanBudget(ctx, flags.maxDuration)
+	defer cancel()
+	opts, err := newScanOptions(ctx, flags, memCap, r2)
+	if err != nil {
+		return err
 	}
 	return scanRecordingURLParams(ctx, os.Stdout, store, service.NewRecordingService(store, store, store, r2), opts)
+}
+
+// withScanBudget bounds ctx by the time budget; zero leaves it unbounded.
+func withScanBudget(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	if d <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, d)
+}
+
+// newScanOptions builds the run's options. Resuming only makes sense for the
+// whole run: a single-project scan is a spot check and neither reads nor
+// writes the saved totals.
+func newScanOptions(ctx context.Context, flags scanFlags, memCap uint64, objects scanObjects) (scanOptions, error) {
+	opts := scanOptions{project: flags.project, chunk: service.ChunkScanOpts{BatchSize: 25, MemoryCap: memCap, Shapes: flags.byURL}, started: time.Now()}
+	if flags.project != "" {
+		return opts, nil
+	}
+	opts.state = &scanState{}
+	if !flags.fresh {
+		st, err := loadScanState(ctx, objects)
+		if err != nil {
+			return opts, err
+		}
+		opts.state = st
+	}
+	opts.save = func(st *scanState) error { return saveScanState(context.WithoutCancel(ctx), objects, st) }
+	return opts, nil
 }
 
 // scanOptions selects the projects to scan and bounds each scan.
@@ -181,12 +198,8 @@ func scanRecordingURLParams(ctx context.Context, w io.Writer, projects projectLi
 	var total service.ChunkURLScan
 	for _, p := range list {
 		if prev, ok := opts.state.done(p.Slug); ok {
-			if prev.Recordings > 0 {
-				prev.FromPreviousRun = true
-				if err := enc.Encode(prev); err != nil {
-					return err
-				}
-				addScan(&total, prev.ChunkURLScan)
+			if err := replayFinished(enc, &total, prev); err != nil {
+				return err
 			}
 			continue
 		}
@@ -205,15 +218,30 @@ func scanRecordingURLParams(ctx context.Context, w io.Writer, projects projectLi
 			return fmt.Errorf("recordings scan: project %s: %w", p.Slug, err)
 		}
 		final := scanLine{Project: p.Slug, ElapsedSeconds: elapsed(), ChunkURLScan: res}
-		if res.Recordings > 0 {
-			if err := enc.Encode(final); err != nil {
-				return err
-			}
-			addScan(&total, res)
+		if err := printFinished(enc, &total, final); err != nil {
+			return err
 		}
 		saveFinished(opts, enc, p.Slug, final)
 	}
 	return enc.Encode(scanLine{Project: "(total)", ElapsedSeconds: elapsed(), ChunkURLScan: total})
+}
+
+// printFinished prints a project's line when it has recordings and counts it.
+func printFinished(enc *json.Encoder, total *service.ChunkURLScan, line scanLine) error {
+	if line.Recordings == 0 {
+		return nil
+	}
+	if err := enc.Encode(line); err != nil {
+		return err
+	}
+	addScan(total, line.ChunkURLScan)
+	return nil
+}
+
+// replayFinished prints a project finished by an earlier run and counts it.
+func replayFinished(enc *json.Encoder, total *service.ChunkURLScan, prev scanLine) error {
+	prev.FromPreviousRun = true
+	return printFinished(enc, total, prev)
 }
 
 // saveFinished keeps a finished project's line in the state. A failed save does
