@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { Flag, Plus, Pause, Play, Pencil, Trash2 } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api } from '../lib/api'
-import type { FeatureFlag, FlagAnalysis, TargetingRule } from '../lib/api'
+import type { FeatureFlag, TargetingRule } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { reportError } from '../lib/bugbarn'
 import { trackEvent } from '../lib/analytics'
@@ -16,6 +16,7 @@ import { FlagPlayground, TargetingRulesDisplay } from '../components/flags/FlagP
 import { FlagEnvironments } from '../components/flags/FlagEnvironments'
 import { ConfigCurrentValue } from '../components/flags/ConfigCurrentValue'
 import { toggleConfigBoolean } from '../components/flags/shape'
+import { useFlagAnalysis } from '../components/flags/useFlagAnalysis'
 
 // alignBooleanSplit produces a new split where the *new default* is always
 // the majority bucket. This both preserves intentional rollouts and
@@ -180,21 +181,12 @@ export function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
   onUpdated: (f: FeatureFlag) => void
   onDeleted: () => void
 }) {
-  const [analysis, setAnalysis] = useState<FlagAnalysis | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { analysis, loading } = useFlagAnalysis(projectId, flag.id)
   const [toggling, setToggling] = useState(false)
   const [togglingDefault, setTogglingDefault] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [tab, setTab] = useState<'analytics' | 'tryit'>('analytics')
   const [editing, setEditing] = useState(false)
-
-  useEffect(() => {
-    setLoading(true)
-    api.getFlagAnalysis(projectId, flag.id)
-      .then(setAnalysis)
-      .catch((e) => { console.error(e); reportError(e, { source: 'Flags' }) })
-      .finally(() => setLoading(false))
-  }, [projectId, flag.id])
 
   const toggleStatus = async () => {
     setToggling(true)
