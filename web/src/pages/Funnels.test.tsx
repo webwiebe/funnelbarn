@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { trackEvent } from '../lib/analytics'
 import Funnels from './Funnels'
 import type { Funnel, FunnelAnalysis } from '../lib/api'
 
@@ -453,5 +454,30 @@ describe('Funnels', () => {
       fireEvent.click(await screen.findByText('Signup flow'))
       await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\?funnel=f1$/))
     })
+  })
+
+  it('ignores a late analysis for a funnel that is no longer selected', async () => {
+    const resolvers: Record<string, (a: FunnelAnalysis) => void> = {}
+    mockApi.getFunnelAnalysis.mockImplementation((_p: string, id: string) =>
+      new Promise<FunnelAnalysis>((res) => { resolvers[id] = res }))
+    renderFunnels()
+    await waitFor(() => expect(screen.getByText('Signup flow')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByText('Signup flow'))
+    await waitFor(() => expect(resolvers.f1).toBeDefined())
+    fireEvent.click(screen.getByText('Checkout'))
+    await waitFor(() => expect(resolvers.f2).toBeDefined())
+
+    const analysisB: FunnelAnalysis = {
+      ...analysisWithData,
+      funnel: funnelB,
+      results: [{ step_order: 0, event_name: 'page_view', count: 777, conversion: 1, drop_off: 0 }],
+    }
+    await act(async () => { resolvers.f2(analysisB) })
+    await act(async () => { resolvers.f1(analysisWithData) })
+
+    const analyzed = vi.mocked(trackEvent).mock.calls.filter(([n]) => n === 'funnel_analyzed')
+    expect(analyzed.map(([, p]) => (p as { funnel_name: string }).funnel_name)).toEqual(['Checkout'])
+    expect(screen.getAllByText('777').length).toBeGreaterThan(0)
   })
 })

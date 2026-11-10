@@ -196,6 +196,29 @@ func TestVolumeDropCheck_QuietWhenOnlyTestRowsFall(t *testing.T) {
 func TestVolumeDropCheck_RetriesAfterAFailedRead(t *testing.T) {
 	store := repotest.Open(t)
 	logs := captureDefaultLog(t)
+
+	prev := volumeDropTimeout
+	volumeDropTimeout = time.Nanosecond
+	t.Cleanup(func() { volumeDropTimeout = prev })
+
+	start := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	check := &volumeDropCheck{store: store, now: func() time.Time { return start }}
+	check.run(context.Background())
+
+	require.Len(t, logsAtLevel(t, logs, "WARN"), 1)
+	require.Empty(t, logsAtLevel(t, logs, "ERROR"))
+	require.True(t, check.lastHour.IsZero())
+
+	volumeDropTimeout = prev
+	check.run(context.Background())
+	require.Equal(t, start, check.lastHour)
+}
+
+// A cancelled process context is a shutdown. It records no failure, so a
+// rollout leaves neither a warning nor an error span, and the hour stays open.
+func TestVolumeDropCheck_ShutdownIsNotAFailure(t *testing.T) {
+	store := repotest.Open(t)
+	logs := captureDefaultLog(t)
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -203,9 +226,10 @@ func TestVolumeDropCheck_RetriesAfterAFailedRead(t *testing.T) {
 	check := &volumeDropCheck{store: store, now: func() time.Time { return start }}
 	check.run(cancelled)
 
-	require.Len(t, logsAtLevel(t, logs, "WARN"), 1)
+	require.Empty(t, logsAtLevel(t, logs, "WARN"))
 	require.Empty(t, logsAtLevel(t, logs, "ERROR"))
 	require.True(t, check.lastHour.IsZero())
+	require.True(t, check.failingSince.IsZero())
 
 	check.run(context.Background())
 	require.Equal(t, start, check.lastHour)
@@ -332,20 +356,21 @@ func TestVolumeDropCheck_StallAlarmFromTheStoredHour(t *testing.T) {
 func TestVolumeDropCheck_StallAlarmInMemory(t *testing.T) {
 	store := repotest.Open(t)
 	logs := captureDefaultLog(t)
-	cancelled, cancel := context.WithCancel(context.Background())
-	cancel()
+	prev := volumeDropTimeout
+	volumeDropTimeout = time.Nanosecond
+	t.Cleanup(func() { volumeDropTimeout = prev })
 
 	start := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 	clock := start
 	check := &volumeDropCheck{store: store, now: func() time.Time { return clock }}
 	for _, at := range []time.Duration{0, time.Hour, 2*time.Hour + 50*time.Minute} {
 		clock = start.Add(at)
-		check.run(cancelled)
+		check.run(context.Background())
 	}
 	require.Empty(t, logsAtLevel(t, logs, "ERROR"))
 
 	clock = start.Add(3 * time.Hour)
-	check.run(cancelled)
+	check.run(context.Background())
 	require.Len(t, logsAtLevel(t, logs, "ERROR"), 1)
 }
 
