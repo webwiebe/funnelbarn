@@ -309,12 +309,12 @@ jobs:
             if kubectl -n \$NS get job recordings-url-scan >/dev/null 2>&1; then
               DONE=\$(kubectl -n \$NS get job recordings-url-scan -o jsonpath='{range .status.conditions[?(@.status==\"True\")]}{.type} {end}')
               case \" \$DONE\" in
-                *' Complete '*|*' Failed '*)
-                  echo \"deleting the finished Job (\$DONE) before running it again\"
+                *' Failed '*)
+                  echo \"deleting the Failed Job before running it again\"
                   kubectl -n \$NS delete job recordings-url-scan --wait=true --timeout=120s || exit 6
                   ;;
                 *)
-                  echo 'recordings-url-scan is still running, skipping'
+                  echo \"recordings-url-scan exists (\${DONE:-running}), skipping\"
                   kubectl -n \$NS logs job/recordings-url-scan --tail=20 || true
                   exit 0
                   ;;
@@ -333,7 +333,7 @@ jobs:
             case "$rc" in
               3) why="could not read the running image" ;;
               4) why="could not apply the Job" ;;
-              6) why="could not delete the finished Job" ;;
+              6) why="could not delete the Failed Job" ;;
               5) why="the scan did not finish within 120 s or failed; the Job keeps running (deadline 3600 s) and its logs stay for seven days: kubectl -n funnelbarn-production logs job/recordings-url-scan" ;;
               *) why="ssh or kubectl failed (exit $rc)" ;;
             esac

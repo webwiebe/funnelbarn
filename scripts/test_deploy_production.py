@@ -126,10 +126,10 @@ class DeployProductionTest(unittest.TestCase):
             )
             return run, calls.read_text() if calls.exists() else ""
 
-    def test_scan_step_reruns_a_finished_job_and_leaves_a_running_one(self):
+    def test_scan_step_reruns_only_a_failed_job(self):
         for state, deletes, applies in (
             ("absent", False, True),
-            ("Complete", True, True),
+            ("Complete", False, False),
             ("Failed", True, True),
             ("running", False, False),
         ):
