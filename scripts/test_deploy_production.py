@@ -138,6 +138,15 @@ class DeployProductionTest(unittest.TestCase):
                 self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
                 self.assertEqual("delete job recordings-url-scan" in calls.replace("-n ns ", ""), deletes, calls)
                 self.assertEqual("apply -f -" in calls, applies, calls)
+                if deletes:
+                    # The Failed Job's logs reach the output (and so the step
+                    # summary) before the Job and its pod are deleted.
+                    self.assertLess(
+                        calls.index("logs job/recordings-url-scan --tail=500"),
+                        calls.index("delete job recordings-url-scan"),
+                        calls,
+                    )
+                    self.assertIn("logs of the Failed Job", run.stdout)
 
     def test_scan_job_deadline_is_capped_at_one_hour(self):
         job = (WORKFLOW.parent.parent.parent / "deploy/k8s/production/jobs/recordings-url-scan.yaml").read_text()

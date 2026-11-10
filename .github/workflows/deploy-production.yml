@@ -310,6 +310,8 @@ jobs:
               DONE=\$(kubectl -n \$NS get job recordings-url-scan -o jsonpath='{range .status.conditions[?(@.status==\"True\")]}{.type} {end}')
               case \" \$DONE\" in
                 *' Failed '*)
+                  echo \"--- logs of the Failed Job (kept here before it is deleted)\"
+                  kubectl -n \$NS logs job/recordings-url-scan --tail=500 || echo '(no pod logs left)'
                   echo \"deleting the Failed Job before running it again\"
                   kubectl -n \$NS delete job recordings-url-scan --wait=true --timeout=120s || exit 6
                   ;;
