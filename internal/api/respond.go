@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -9,9 +10,15 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
+// statusClientClosedRequest is the non-standard 499 that proxies use for a
+// client that gave up before the response.
+const statusClientClosedRequest = 499
+
 // mapServiceError maps domain/service errors to appropriate HTTP status codes.
 // It never leaks internal error details to the client.
 // Expected errors (not-found, conflict, validation) are logged at Warn level with handled=true.
+// A request the client cancelled (context.Canceled) is logged at Debug and
+// answered 499: nobody is left to read it and nothing failed on our side.
 // Unexpected errors are logged at Error level with handled=false.
 func mapServiceError(w http.ResponseWriter, err error, op string) {
 	switch {
@@ -29,6 +36,9 @@ func mapServiceError(w http.ResponseWriter, err error, op string) {
 		} else {
 			jsonError(w, "invalid request", http.StatusUnprocessableEntity)
 		}
+	case errors.Is(err, context.Canceled):
+		slog.Debug("service error: client closed the request", "op", op, "error", err, "handled", true)
+		jsonError(w, "client closed request", statusClientClosedRequest)
 	default:
 		slog.Error("unexpected service error", "op", op, "error", err, "handled", false)
 		jsonError(w, "internal server error", http.StatusInternalServerError)
