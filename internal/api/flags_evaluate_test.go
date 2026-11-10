@@ -103,6 +103,35 @@ func TestPlaygroundEvaluate_FlagNotFound_ReturnsErrorReason(t *testing.T) {
 	}
 }
 
+// A database failure while reading the flag is a server problem. It used to be
+// wrapped as "flag not found" and answered FLAG_NOT_FOUND, logged at debug (#495).
+func TestPlaygroundEvaluate_DatabaseError_IsNotFlagNotFound(t *testing.T) {
+	srv, store := newAuthedServer(t)
+	p, flag, cookie, csrf := playgroundFlag(t, srv, store, "dberr")
+
+	if _, err := store.DB().Exec(`ALTER TABLE feature_flags RENAME TO feature_flags_away`); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+
+	w := postJSONWithCSRF(t, srv, "/api/v1/projects/"+p.ID+"/flags/evaluate", map[string]any{
+		"flag_key":      flag.FlagKey,
+		"default_value": "fallback",
+		"context":       map[string]any{},
+	}, cookie, csrf)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 with an error reason, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["reason"] != "ERROR" {
+		t.Errorf("reason: want ERROR, got %v", resp["reason"])
+	}
+	if resp["error_code"] == "FLAG_NOT_FOUND" {
+		t.Errorf("error_code: a database failure must not read as FLAG_NOT_FOUND, got %v", resp["error_code"])
+	}
+}
+
 func TestPlaygroundEvaluate_MissingFlagKey_Returns422(t *testing.T) {
 	srv, store := newAuthedServer(t)
 	p, _, cookie, csrf := playgroundFlag(t, srv, store, "missingkey")

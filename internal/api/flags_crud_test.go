@@ -236,6 +236,71 @@ func TestHandleUpdateFlag_PreservesKind(t *testing.T) {
 	}
 }
 
+// A service toggling a gate sends {"status": "paused"} and nothing else. The
+// flag's conversion event has to survive it, or flag analysis reports no
+// conversions from then on (#495).
+func TestHandleUpdateFlag_StatusOnlyKeepsConversionEvent(t *testing.T) {
+	srv, store := newAuthedServer(t)
+	ctx := context.Background()
+	p, _ := store.CreateProject(ctx, "ConvKeep", "convkeep")
+	f, err := store.CreateFlag(ctx, repository.FeatureFlag{
+		ProjectID: p.ID, FlagKey: "gate", Name: "Gate", FlagType: "boolean",
+		Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":50,"off":50}`,
+		ConversionEvent: "signup", TargetingRules: "[]", Status: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateFlag: %v", err)
+	}
+	cookie, csrf := sessionAndCSRF(t, srv, "u")
+
+	w := putJSONWithCSRF(t, srv, "/api/v1/projects/"+p.ID+"/flags/"+f.ID, map[string]any{"status": "paused"}, cookie, csrf)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["conversion_event"] != "signup" {
+		t.Errorf("conversion_event: want signup kept through a status-only update, got %v", resp["conversion_event"])
+	}
+	got, err := store.Reader().FlagByID(ctx, f.ID)
+	if err != nil {
+		t.Fatalf("GetFlag: %v", err)
+	}
+	if got.ConversionEvent != "signup" {
+		t.Errorf("stored conversion_event: want signup, got %q", got.ConversionEvent)
+	}
+}
+
+// An explicit empty conversion_event still clears it: the edit form sends the
+// field on every save, so the merge has to tell an omitted field from an empty
+// one.
+func TestHandleUpdateFlag_EmptyConversionEventClearsIt(t *testing.T) {
+	srv, store := newAuthedServer(t)
+	ctx := context.Background()
+	p, _ := store.CreateProject(ctx, "ConvClear", "convclear")
+	f, err := store.CreateFlag(ctx, repository.FeatureFlag{
+		ProjectID: p.ID, FlagKey: "gate", Name: "Gate", FlagType: "boolean",
+		Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":50,"off":50}`,
+		ConversionEvent: "signup", TargetingRules: "[]", Status: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateFlag: %v", err)
+	}
+	cookie, csrf := sessionAndCSRF(t, srv, "u")
+
+	w := putJSONWithCSRF(t, srv, "/api/v1/projects/"+p.ID+"/flags/"+f.ID, map[string]any{"conversion_event": ""}, cookie, csrf)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	got, err := store.Reader().FlagByID(ctx, f.ID)
+	if err != nil {
+		t.Fatalf("GetFlag: %v", err)
+	}
+	if got.ConversionEvent != "" {
+		t.Errorf("stored conversion_event: want cleared, got %q", got.ConversionEvent)
+	}
+}
+
 // A typo would otherwise create a flag whose evaluation semantics nobody can
 // predict, so an unknown kind is refused outright.
 func TestHandleCreateFlag_RejectsUnknownKind(t *testing.T) {
