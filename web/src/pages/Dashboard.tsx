@@ -12,6 +12,7 @@ import { trackEvent } from '../lib/analytics'
 import { reportError } from '../lib/bugbarn'
 import { C } from '../lib/theme'
 import { Skeleton } from '../components/ui/Skeleton'
+import { useTopFunnelRate } from '../lib/useTopFunnelRate'
 
 const PIE_COLORS = ['#f59e0b', '#10b981', '#6366f1', '#ec4899', '#3b82f6', '#8b5cf6']
 
@@ -87,7 +88,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [range, setRange] = useState('7d')
-  const [topFunnelRate, setTopFunnelRate] = useState<number | null>(null)
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [creatingProject, setCreatingProject] = useState(false)
@@ -121,23 +121,7 @@ export default function Dashboard() {
       .finally(() => setLoading(false))
   }, [projectId, range, selectedEnvironment])
 
-  useEffect(() => {
-    if (!projectId) return
-    setTopFunnelRate(null)
-    api.listFunnels(projectId)
-      .then(async (d) => {
-        const funnels = d.funnels || []
-        if (funnels.length === 0) return
-        const analysis = await api.getFunnelAnalysis(projectId, funnels[0].id)
-        const steps = analysis.results || []
-        if (steps.length < 2) return
-        const first = steps[0]?.count ?? 0
-        const last = steps[steps.length - 1]?.count ?? 0
-        if (first === 0) return
-        setTopFunnelRate((last / first) * 100)
-      })
-      .catch(() => setTopFunnelRate(null))
-  }, [projectId])
+  const topFunnelRate = useTopFunnelRate(projectId, selectedEnvironment)
 
   // Format time series for chart — hourly labels for 24h/7d, daily for 30d
   const chartData = data?.events_time_series?.map((pt) => {
