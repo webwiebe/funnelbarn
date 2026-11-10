@@ -115,79 +115,77 @@ func (s *Server) handleGetFlag(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, flag)
 }
 
+// flagUpdateBody is the JSON a flag update accepts. Every field is optional.
+type flagUpdateBody struct {
+	Name           string `json:"name"`
+	FlagType       string `json:"flag_type"`
+	Variants       string `json:"variants"`
+	DefaultVariant string `json:"default_variant"`
+	Split          string `json:"split"`
+	// A pointer: omitted keeps the stored event, "" clears it. The edit form
+	// sends the field on every save, a status toggle sends only the status.
+	ConversionEvent *string `json:"conversion_event"`
+	TargetingRules  string  `json:"targeting_rules"`
+	Status          string  `json:"status"`
+	Kind            string  `json:"flag_kind"`
+}
+
+// mergeOnto preserves the fields the caller omits, so a partial update can't
+// silently turn a config flag back into an experiment (and start writing
+// evaluation rows again) or blank out its value. A service toggling a gate
+// sends {"status": "paused"} and nothing else.
+func (b flagUpdateBody) mergeOnto(existing repository.FeatureFlag) repository.FeatureFlag {
+	merged := repository.FeatureFlag{
+		ID:              existing.ID,
+		Name:            existing.Name,
+		FlagType:        existing.FlagType,
+		Variants:        existing.Variants,
+		DefaultVariant:  existing.DefaultVariant,
+		Split:           existing.Split,
+		ConversionEvent: existing.ConversionEvent,
+		TargetingRules:  existing.TargetingRules,
+		Status:          existing.Status,
+		Kind:            existing.Kind,
+	}
+	for _, f := range []struct {
+		dst *string
+		in  string
+	}{
+		{&merged.Name, b.Name},
+		{&merged.FlagType, b.FlagType},
+		{&merged.Variants, b.Variants},
+		{&merged.DefaultVariant, b.DefaultVariant},
+		{&merged.Split, b.Split},
+		{&merged.TargetingRules, b.TargetingRules},
+		{&merged.Status, b.Status},
+		{&merged.Kind, b.Kind},
+	} {
+		if f.in != "" {
+			*f.dst = f.in
+		}
+	}
+	if b.ConversionEvent != nil {
+		merged.ConversionEvent = *b.ConversionEvent
+	}
+	return merged
+}
+
 func (s *Server) handleUpdateFlag(w http.ResponseWriter, r *http.Request) {
 	existing, ok := s.flagInProject(w, r, "handleUpdateFlag.get")
 	if !ok {
 		return
 	}
-	flagID := existing.ID
-
-	var body struct {
-		Name           string `json:"name"`
-		FlagType       string `json:"flag_type"`
-		Variants       string `json:"variants"`
-		DefaultVariant string `json:"default_variant"`
-		Split          string `json:"split"`
-		// A pointer: omitted keeps the stored event, "" clears it. The edit form
-		// sends the field on every save, a status toggle sends only the status.
-		ConversionEvent *string `json:"conversion_event"`
-		TargetingRules  string  `json:"targeting_rules"`
-		Status          string  `json:"status"`
-		Kind            string  `json:"flag_kind"`
-	}
+	var body flagUpdateBody
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-
-	// Preserve fields the caller omits, so a partial update can't silently turn
-	// a config flag back into an experiment (and start writing evaluation rows
-	// again) or blank out its value. A service toggling a gate sends
-	// {"status": "paused"} and nothing else.
-	if body.FlagType == "" {
-		body.FlagType = existing.FlagType
-	}
-	if body.Kind == "" {
-		body.Kind = existing.Kind
-	}
-	if body.Name == "" {
-		body.Name = existing.Name
-	}
-	if body.Variants == "" {
-		body.Variants = existing.Variants
-	}
-	if body.DefaultVariant == "" {
-		body.DefaultVariant = existing.DefaultVariant
-	}
-	if body.Split == "" {
-		body.Split = existing.Split
-	}
-	if body.TargetingRules == "" {
-		body.TargetingRules = existing.TargetingRules
-	}
-	if body.Status == "" {
-		body.Status = existing.Status
-	}
-	conversionEvent := existing.ConversionEvent
-	if body.ConversionEvent != nil {
-		conversionEvent = *body.ConversionEvent
-	}
+	merged := body.mergeOnto(existing)
 
 	// Targeting rule syntax and flag_kind validation live in
 	// FlagService.UpdateFlag now, same as create; a bad merged value comes
 	// back as a *domain.ValidationError, which mapServiceError turns into 422.
-	flag, err := s.flags.UpdateFlag(r.Context(), repository.FeatureFlag{
-		ID:              flagID,
-		Name:            body.Name,
-		FlagType:        body.FlagType,
-		Variants:        body.Variants,
-		DefaultVariant:  body.DefaultVariant,
-		Split:           body.Split,
-		ConversionEvent: conversionEvent,
-		TargetingRules:  body.TargetingRules,
-		Status:          body.Status,
-		Kind:            body.Kind,
-	})
+	flag, err := s.flags.UpdateFlag(r.Context(), merged)
 	if err != nil {
 		mapServiceError(w, err, "handleUpdateFlag")
 		return
