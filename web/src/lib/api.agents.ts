@@ -8,18 +8,18 @@ export interface DurationStats {
   p90_seconds: number
 }
 
-export interface AgentWeekStats extends DurationStats {
+interface AgentWeekStats extends DurationStats {
   week: string
 }
 
-export interface AgentRepoCI {
+interface AgentRepoCI {
   repo: string
   prs: number
   first_pass_green: number
   rate: number
 }
 
-export interface AgentOpenWait {
+interface AgentOpenWait {
   issue_ref: string
   since: string
   waiting_seconds: number
@@ -37,7 +37,7 @@ export interface AgentLeadTimes {
   open_waits: AgentOpenWait[] | null
 }
 
-export interface AgentSessionScore {
+interface AgentSessionScore {
   session_id: string
   points: number
   entries: number
@@ -46,7 +46,7 @@ export interface AgentSessionScore {
   best_first_pass_streak: number
 }
 
-export interface AgentUnscoredRule {
+interface AgentUnscoredRule {
   rule: string
   reason: string
 }
