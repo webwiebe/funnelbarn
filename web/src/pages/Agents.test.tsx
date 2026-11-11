@@ -18,7 +18,8 @@ const stats = { count: 3, median_seconds: 7200, p90_seconds: 90000 }
 const lead = {
   from: '2026-10-12T00:00:00Z', to: '2026-11-11T00:00:00Z',
   issue_to_prod: stats, pr_to_merge: { count: 0, median_seconds: 0, p90_seconds: 0 }, owner_wait: stats,
-  weekly: null,
+  weekly: [{ week: '2026-W45', count: 3, median_seconds: 7200, p90_seconds: 90000 }],
+  shipped_per_day: [{ date: '2026-11-09', count: 2 }, { date: '2026-11-10', count: 1 }],
   first_pass_ci: [{ repo: 'funnelbarn', prs: 4, first_pass_green: 3, rate: 0.75 }],
   open_waits: [{ issue_ref: 'vibecortex#134', since: '2026-11-10T00:00:00Z', waiting_seconds: 3600 }],
 }
@@ -56,6 +57,9 @@ describe('Agents page', () => {
     expect(screen.getByTestId('ci-funnelbarn').textContent).toContain('75%')
     expect(screen.getByText(/vibecortex#134/)).toBeTruthy()
     expect(screen.getByText(/No rollback events yet/)).toBeTruthy()
+    expect(screen.getByTestId('week-2026-W45').textContent).toContain('1 d 1 h')
+    expect(screen.getByTestId('shipped-per-day').children).toHaveLength(2)
+    expect(screen.getByText(/3 issues from 2026-11-09 to 2026-11-10/)).toBeTruthy()
     expect(mockApi.getAgentLeadTimes).toHaveBeenCalledWith('p1')
   })
 

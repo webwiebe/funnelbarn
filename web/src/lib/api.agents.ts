@@ -25,6 +25,11 @@ interface AgentOpenWait {
   waiting_seconds: number
 }
 
+interface AgentDayCount {
+  date: string
+  count: number
+}
+
 export interface AgentLeadTimes {
   from: string
   to: string
@@ -35,6 +40,7 @@ export interface AgentLeadTimes {
   weekly: AgentWeekStats[] | null
   first_pass_ci: AgentRepoCI[] | null
   open_waits: AgentOpenWait[] | null
+  shipped_per_day: AgentDayCount[] | null
 }
 
 interface AgentSessionScore {
