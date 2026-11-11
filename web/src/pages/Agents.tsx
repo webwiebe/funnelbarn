@@ -55,6 +55,46 @@ function CiTable({ rows }: { rows: AgentLeadTimes['first_pass_ci'] }) {
   )
 }
 
+function WeeklyTable({ weeks }: { weeks: AgentLeadTimes['weekly'] }) {
+  const list = weeks ?? []
+  if (list.length === 0) return null
+  return (
+    <div style={card}>
+      <h2 style={{ fontSize: 15, margin: '0 0 0.5rem' }}>Issue to production per week</h2>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead><tr><th style={th}>Week</th><th style={th}>Issues</th><th style={th}>Median</th><th style={th}>p90</th></tr></thead>
+        <tbody>
+          {list.map((w) => (
+            <tr key={w.week} data-testid={`week-${w.week}`}>
+              <td style={td}>{w.week}</td><td style={td}>{w.count}</td>
+              <td style={td}>{formatSeconds(w.median_seconds)}</td><td style={td}>{formatSeconds(w.p90_seconds)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function ShippedPerDay({ days }: { days: AgentLeadTimes['shipped_per_day'] }) {
+  const list = days ?? []
+  if (list.length === 0) return null
+  const max = Math.max(...list.map((d) => d.count), 1)
+  return (
+    <div style={card}>
+      <h2 style={{ fontSize: 15, margin: '0 0 0.5rem' }}>Issues shipped per day</h2>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 80 }} data-testid="shipped-per-day">
+        {list.map((d) => (
+          <div key={d.date} title={`${d.date}: ${d.count}`} style={{ flex: 1, minWidth: 2, background: C.amber, height: `${(d.count / max) * 100}%` }} />
+        ))}
+      </div>
+      <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>
+        {list.reduce((n, d) => n + d.count, 0)} issues from {list[0].date} to {list[list.length - 1].date}
+      </div>
+    </div>
+  )
+}
+
 function OpenWaits({ waits }: { waits: AgentLeadTimes['open_waits'] }) {
   const list = waits ?? []
   if (list.length === 0) return null
@@ -111,6 +151,8 @@ function Report({ lead, board }: { lead: AgentLeadTimes; board: AgentScoreboard 
         <Stat id="pr-to-merge" label="PR to merge" stats={lead.pr_to_merge} />
         <Stat id="owner-wait" label="Owner wait" stats={lead.owner_wait} />
       </div>
+      <WeeklyTable weeks={lead.weekly} />
+      <ShippedPerDay days={lead.shipped_per_day} />
       <CiTable rows={lead.first_pass_ci} />
       <OpenWaits waits={lead.open_waits} />
       <Scoreboard board={board} />
