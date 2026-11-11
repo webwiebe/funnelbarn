@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -24,11 +25,6 @@ import (
 const maxRecordingChunkBytes = 10 << 20 // 10 MiB
 
 func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Request) {
-	if s.recordings == nil {
-		jsonError(w, "session recording not configured (R2 credentials missing)", http.StatusServiceUnavailable)
-		return
-	}
-
 	projectID, _, ok := s.ingest.APIKeyProjectScope(r)
 	if !ok {
 		// Warn, not Error: a caller presenting a key we do not accept is not a
@@ -197,10 +193,6 @@ func parseRecordingListOpts(q url.Values) repository.RecordingListOpts {
 }
 
 func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
-	if s.recordings == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"recordings": []any{}, "limit": 50, "offset": 0})
-		return
-	}
 	projectID := r.PathValue("id")
 	if projectID == "" {
 		jsonError(w, "project id required", http.StatusBadRequest)
@@ -210,8 +202,7 @@ func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 	opts := parseRecordingListOpts(r.URL.Query())
 	limit, offset := opts.Limit, opts.Offset
 
-	ctx, span := tracing.StartSpan(r.Context(), "recordings.list",
-		attribute.String("project.id", projectID),
+	ctx, span := startRecordingSpan(r, "recordings.list", projectID, "",
 		attribute.Int("limit", limit),
 		attribute.Int("offset", offset),
 		attribute.Bool("human_only", opts.HumanOnly),
@@ -220,8 +211,7 @@ func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 
 	recordings, err := s.recordings.ListRecordings(ctx, projectID, opts)
 	if err != nil {
-		tracing.RecordError(span, err)
-		mapServiceError(w, err, "handleListRecordings")
+		failRecording(w, span, err, "handleListRecordings")
 		return
 	}
 	if recordings == nil {
@@ -237,125 +227,57 @@ func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetRecordingChunk(w http.ResponseWriter, r *http.Request) {
-	if s.recordings == nil {
-		jsonError(w, "session recording not configured", http.StatusServiceUnavailable)
+	projectID, recordingID, ok := recordingPathIDs(w, r)
+	if !ok {
 		return
 	}
-	projectID := r.PathValue("id")
-	recordingID := r.PathValue("rid")
-	indexStr := r.PathValue("index")
-	if projectID == "" || recordingID == "" || indexStr == "" {
-		jsonError(w, "project id, recording id, and chunk index are required", http.StatusBadRequest)
-		return
-	}
-	index, err := strconv.Atoi(indexStr)
-	if err != nil || index < 0 {
-		jsonError(w, "invalid chunk index", http.StatusBadRequest)
+	index, ok := chunkIndexParam(w, r)
+	if !ok {
 		return
 	}
 
-	ctx, span := tracing.StartSpan(r.Context(), "recordings.get_chunk",
-		attribute.String("project.id", projectID),
-		attribute.String("recording.id", recordingID),
-		attribute.Int("chunk.index", index),
-	)
+	ctx, span := startRecordingSpan(r, "recordings.get_chunk", projectID, recordingID,
+		attribute.Int("chunk.index", index))
 	defer span.End()
 
-	data, err := s.recordings.GetChunk(ctx, projectID, recordingID, index)
-	if err != nil {
-		if isChunkNotFound(err) {
-			jsonError(w, "not found", http.StatusNotFound)
-			return
-		}
-		tracing.RecordError(span, err)
-		slog.ErrorContext(ctx, "fetch recording chunk failed",
-			"error", err.Error(), "handled", false,
-			"recording_id", recordingID,
-			"project_id", projectID,
-			"chunk_index", index,
-			"request_id", RequestIDFromContext(ctx),
-		)
-		jsonError(w, "failed to fetch chunk", http.StatusInternalServerError)
-		return
-	}
-	span.SetAttributes(attribute.Int("chunk.bytes", len(data)))
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "private, max-age=3600")
-	w.WriteHeader(http.StatusOK)
-	w.Write(data) //nolint:errcheck
+	s.serveRecordingChunk(w, ctx, span, projectID, recordingID, index, "fetch recording chunk failed")
 }
 
 func (s *Server) handleDeleteRecording(w http.ResponseWriter, r *http.Request) {
-	if s.recordings == nil {
-		jsonError(w, "session recording not configured", http.StatusServiceUnavailable)
-		return
-	}
-	projectID := r.PathValue("id")
-	recordingID := r.PathValue("rid")
-	if projectID == "" || recordingID == "" {
-		jsonError(w, "project id and recording id are required", http.StatusBadRequest)
+	projectID, recordingID, ok := recordingPathIDs(w, r)
+	if !ok {
 		return
 	}
 
-	ctx, span := tracing.StartSpan(r.Context(), "recordings.delete",
-		attribute.String("project.id", projectID),
-		attribute.String("recording.id", recordingID),
-	)
+	ctx, span := startRecordingSpan(r, "recordings.delete", projectID, recordingID)
 	defer span.End()
 
 	if err := s.recordings.DeleteRecording(ctx, projectID, recordingID); err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			jsonError(w, "not found", http.StatusNotFound)
-			return
-		}
-		tracing.RecordError(span, err)
-		slog.ErrorContext(ctx, "delete recording failed",
-			"error", err.Error(), "handled", false,
-			"recording_id", recordingID,
-			"project_id", projectID,
-			"request_id", RequestIDFromContext(ctx),
-		)
-		jsonError(w, "failed to delete recording", http.StatusInternalServerError)
+		failRecording(w, span, err, "handleDeleteRecording")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetRecordingFlags(w http.ResponseWriter, r *http.Request) {
-	if s.recordings == nil {
-		jsonError(w, "session recording not configured", http.StatusServiceUnavailable)
-		return
-	}
-	projectID := r.PathValue("id")
-	recordingID := r.PathValue("rid")
-	if projectID == "" || recordingID == "" {
-		jsonError(w, "project id and recording id are required", http.StatusBadRequest)
+	projectID, recordingID, ok := recordingPathIDs(w, r)
+	if !ok {
 		return
 	}
 
-	ctx, span := tracing.StartSpan(r.Context(), "recordings.get_flags",
-		attribute.String("project.id", projectID),
-		attribute.String("recording.id", recordingID),
-	)
+	ctx, span := startRecordingSpan(r, "recordings.get_flags", projectID, recordingID)
 	defer span.End()
 
 	sessionID, err := s.recordings.GetRecordingSessionID(ctx, projectID, recordingID)
 	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			jsonError(w, "not found", http.StatusNotFound)
-			return
-		}
-		tracing.RecordError(span, err)
-		mapServiceError(w, err, "handleGetRecordingFlags")
+		failRecording(w, span, err, "handleGetRecordingFlags")
 		return
 	}
 	span.SetAttributes(attribute.String("session.id", sessionID))
 
 	evals, err := s.recordings.FlagEvaluationsForSession(ctx, projectID, sessionID)
 	if err != nil {
-		tracing.RecordError(span, err)
-		mapServiceError(w, err, "handleGetRecordingFlags")
+		failRecording(w, span, err, "handleGetRecordingFlags")
 		return
 	}
 	if evals == nil {
@@ -365,25 +287,29 @@ func (s *Server) handleGetRecordingFlags(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"evaluations": evals})
 }
 
+// fullScopeProject resolves the API key to its project and requires a
+// full-scope key. Ingest-scoped keys are the public ones embedded in a site's
+// page source, and replay data and trace lookups are private reads.
+func (s *Server) fullScopeProject(w http.ResponseWriter, r *http.Request) (string, bool) {
+	projectID, scope, ok := s.ingest.APIKeyProjectScope(r)
+	if !ok {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return "", false
+	}
+	if scope != repository.APIKeyScopeFull {
+		jsonError(w, "forbidden: full-scope API key required", http.StatusForbidden)
+		return "", false
+	}
+	return projectID, true
+}
+
 // handleLookupTrace resolves a W3C trace_id (as seen in SpanBarn/BugBarn) to the
 // FunnelBarn session + recording that captured it, plus the seek offset. This is
 // the cross-stack deep-link: given an error trace, find the replayable session.
 // Auth is by API key (project scope) so a trace only resolves within its project.
 func (s *Server) handleLookupTrace(w http.ResponseWriter, r *http.Request) {
-	if s.recordings == nil {
-		jsonError(w, "session recording not configured", http.StatusServiceUnavailable)
-		return
-	}
-	projectID, scope, ok := s.ingest.APIKeyProjectScope(r)
+	projectID, ok := s.fullScopeProject(w, r)
 	if !ok {
-		jsonError(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	// Reject ingest-scoped keys: those are the public keys embedded in a site's
-	// page source. Resolving a trace to a session recording is a read of private
-	// replay data and must require a full-scope key.
-	if scope != repository.APIKeyScopeFull {
-		jsonError(w, "forbidden: full-scope API key required", http.StatusForbidden)
 		return
 	}
 	traceID := r.PathValue("trace_id")
@@ -392,16 +318,13 @@ func (s *Server) handleLookupTrace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, span := tracing.StartSpan(r.Context(), "recordings.lookup_trace",
-		attribute.String("project.id", projectID),
-		attribute.String("trace.id", traceID),
-	)
+	ctx, span := startRecordingSpan(r, "recordings.lookup_trace", projectID, "",
+		attribute.String("trace.id", traceID))
 	defer span.End()
 
 	lookup, found, err := s.recordings.LookupTrace(ctx, projectID, traceID)
 	if err != nil {
-		tracing.RecordError(span, err)
-		mapServiceError(w, err, "handleLookupTrace")
+		failRecording(w, span, err, "handleLookupTrace")
 		return
 	}
 	span.SetAttributes(attribute.Bool("trace.found", found))
@@ -417,90 +340,41 @@ func (s *Server) handleLookupTrace(w http.ResponseWriter, r *http.Request) {
 // chunk endpoint but lets a programmatic consumer fetch replay data with the same
 // credential it used for the trace lookup. GetChunk verifies project ownership.
 func (s *Server) handleGetRecordingChunkByKey(w http.ResponseWriter, r *http.Request) {
-	if s.recordings == nil {
-		jsonError(w, "session recording not configured", http.StatusServiceUnavailable)
-		return
-	}
-	projectID, scope, ok := s.ingest.APIKeyProjectScope(r)
+	projectID, ok := s.fullScopeProject(w, r)
 	if !ok {
-		jsonError(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	// Session replay chunks are private data — an ingest-scoped (public) key must
-	// not be able to read them. Require a full-scope key.
-	if scope != repository.APIKeyScopeFull {
-		jsonError(w, "forbidden: full-scope API key required", http.StatusForbidden)
 		return
 	}
 	recordingID := r.PathValue("rid")
-	indexStr := r.PathValue("index")
-	if recordingID == "" || indexStr == "" {
+	if recordingID == "" || r.PathValue("index") == "" {
 		jsonError(w, "recording id and chunk index are required", http.StatusBadRequest)
 		return
 	}
-	index, err := strconv.Atoi(indexStr)
-	if err != nil || index < 0 {
-		jsonError(w, "invalid chunk index", http.StatusBadRequest)
+	index, ok := chunkIndexParam(w, r)
+	if !ok {
 		return
 	}
 
-	ctx, span := tracing.StartSpan(r.Context(), "recordings.get_chunk_by_key",
-		attribute.String("project.id", projectID),
-		attribute.String("recording.id", recordingID),
-		attribute.Int("chunk.index", index),
-	)
+	ctx, span := startRecordingSpan(r, "recordings.get_chunk_by_key", projectID, recordingID,
+		attribute.Int("chunk.index", index))
 	defer span.End()
 
-	data, err := s.recordings.GetChunk(ctx, projectID, recordingID, index)
-	if err != nil {
-		if isChunkNotFound(err) {
-			jsonError(w, "not found", http.StatusNotFound)
-			return
-		}
-		tracing.RecordError(span, err)
-		slog.ErrorContext(ctx, "fetch recording chunk (api key) failed",
-			"error", err.Error(), "handled", false,
-			"recording_id", recordingID, "project_id", projectID, "chunk_index", index,
-			"request_id", RequestIDFromContext(ctx),
-		)
-		jsonError(w, "failed to fetch chunk", http.StatusInternalServerError)
-		return
-	}
-	span.SetAttributes(attribute.Int("chunk.bytes", len(data)))
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "private, max-age=3600")
-	w.WriteHeader(http.StatusOK)
-	w.Write(data) //nolint:errcheck
+	s.serveRecordingChunk(w, ctx, span, projectID, recordingID, index, "fetch recording chunk (api key) failed")
 }
 
 // handleGetRecordingTraces returns the ordered trace timeline for a recording so
 // the replay UI can overlay trace markers on the scrubber.
 func (s *Server) handleGetRecordingTraces(w http.ResponseWriter, r *http.Request) {
-	if s.recordings == nil {
-		jsonError(w, "session recording not configured", http.StatusServiceUnavailable)
-		return
-	}
-	projectID := r.PathValue("id")
-	recordingID := r.PathValue("rid")
-	if projectID == "" || recordingID == "" {
-		jsonError(w, "project id and recording id are required", http.StatusBadRequest)
+	projectID, recordingID, ok := recordingPathIDs(w, r)
+	if !ok {
 		return
 	}
 
-	ctx, span := tracing.StartSpan(r.Context(), "recordings.get_traces",
-		attribute.String("project.id", projectID),
-		attribute.String("recording.id", recordingID),
-	)
+	ctx, span := startRecordingSpan(r, "recordings.get_traces", projectID, recordingID)
 	defer span.End()
 
 	traces, err := s.recordings.TracesForRecording(ctx, projectID, recordingID)
 	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			jsonError(w, "not found", http.StatusNotFound)
-			return
-		}
-		tracing.RecordError(span, err)
-		mapServiceError(w, err, "handleGetRecordingTraces")
+		failRecording(w, span, err, "handleGetRecordingTraces")
 		return
 	}
 	if traces == nil {
@@ -511,10 +385,6 @@ func (s *Server) handleGetRecordingTraces(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleFunnelStepSessions(w http.ResponseWriter, r *http.Request) {
-	if s.recordings == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"session_ids": []any{}})
-		return
-	}
 	projectID := r.PathValue("id")
 	funnelID := r.PathValue("fid")
 	stepStr := r.PathValue("step")
@@ -532,8 +402,7 @@ func (s *Server) handleFunnelStepSessions(w http.ResponseWriter, r *http.Request
 	// environment keeps every environment.
 	from, to, env := parseOverviewRange(r)
 
-	ctx, span := tracing.StartSpan(r.Context(), "recordings.funnel_step_sessions",
-		attribute.String("project.id", projectID),
+	ctx, span := startRecordingSpan(r, "recordings.funnel_step_sessions", projectID, "",
 		attribute.String("funnel.id", funnelID),
 		attribute.Int("funnel.step", step),
 		attribute.String("environment", env),
@@ -542,22 +411,13 @@ func (s *Server) handleFunnelStepSessions(w http.ResponseWriter, r *http.Request
 
 	sessionIDs, err := s.recordings.SessionsAtStep(ctx, funnelID, projectID, step, from, to, env)
 	if err != nil {
-		tracing.RecordError(span, err)
-		mapServiceError(w, err, "handleFunnelStepSessions")
+		failRecording(w, span, err, "handleFunnelStepSessions")
 		return
 	}
-	if sessionIDs == nil {
-		sessionIDs = []string{}
-	}
-	span.SetAttributes(attribute.Int("session_ids.count", len(sessionIDs)))
-	writeJSON(w, http.StatusOK, map[string]any{"session_ids": sessionIDs})
+	writeSessionIDs(w, span, sessionIDs)
 }
 
 func (s *Server) handleFlowPageSessions(w http.ResponseWriter, r *http.Request) {
-	if s.recordings == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"session_ids": []any{}})
-		return
-	}
 	projectID := r.PathValue("id")
 	if projectID == "" {
 		jsonError(w, "project id required", http.StatusBadRequest)
@@ -571,18 +431,20 @@ func (s *Server) handleFlowPageSessions(w http.ResponseWriter, r *http.Request) 
 
 	from, to, _ := parseOverviewRange(r)
 
-	ctx, span := tracing.StartSpan(r.Context(), "recordings.flow_page_sessions",
-		attribute.String("project.id", projectID),
-		attribute.String("page", page),
-	)
+	ctx, span := startRecordingSpan(r, "recordings.flow_page_sessions", projectID, "",
+		attribute.String("page", page))
 	defer span.End()
 
 	sessionIDs, err := s.recordings.SessionsForPage(ctx, projectID, page, from, to)
 	if err != nil {
-		tracing.RecordError(span, err)
-		mapServiceError(w, err, "handleFlowPageSessions")
+		failRecording(w, span, err, "handleFlowPageSessions")
 		return
 	}
+	writeSessionIDs(w, span, sessionIDs)
+}
+
+// writeSessionIDs answers a list of session ids, never null.
+func writeSessionIDs(w http.ResponseWriter, span trace.Span, sessionIDs []string) {
 	if sessionIDs == nil {
 		sessionIDs = []string{}
 	}

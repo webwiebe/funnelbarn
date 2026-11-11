@@ -322,12 +322,12 @@ func (s *Server) registerRoutes() {
 
 	// Ingest (API key required)
 	s.mux.Handle("POST /api/v1/events", s.limit(s.eventsLimiter, s.ingest))
-	s.mux.Handle("POST /api/v1/recordings/chunk", s.limit(s.eventsLimiter, http.HandlerFunc(s.handleIngestRecordingChunk)))
+	s.mux.Handle("POST /api/v1/recordings/chunk", s.limit(s.eventsLimiter, s.withRecordingsIngest(s.handleIngestRecordingChunk)))
 	// Cross-stack trace lookup (API key required): trace_id -> session/recording.
 	// Consumed by SpanBarn/BugBarn deep-links and the replay CLI.
-	s.mux.HandleFunc("GET /api/v1/traces/{trace_id}", s.handleLookupTrace)
+	s.mux.HandleFunc("GET /api/v1/traces/{trace_id}", s.withRecordings(s.handleLookupTrace))
 	// API-key-authed replay-read for programmatic consumers (the replay CLI).
-	s.mux.HandleFunc("GET /api/v1/recordings/{rid}/chunks/{index}", s.handleGetRecordingChunkByKey)
+	s.mux.HandleFunc("GET /api/v1/recordings/{rid}/chunks/{index}", s.withRecordings(s.handleGetRecordingChunkByKey))
 
 	// Auth
 	s.mux.Handle("POST /api/v1/login", s.limit(s.loginLimiter, http.HandlerFunc(s.handleLogin)))
@@ -445,13 +445,13 @@ func (s *Server) registerRoutes() {
 	s.registerAgentRoutes()
 
 	// Recordings
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/recordings", s.requireSession(s.handleListRecordings))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/recordings/{rid}/chunks/{index}", s.requireSession(s.handleGetRecordingChunk))
-	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/recordings/{rid}", s.requireSession(s.handleDeleteRecording))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/recordings/{rid}/flags", s.requireSession(s.handleGetRecordingFlags))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/recordings/{rid}/traces", s.requireSession(s.handleGetRecordingTraces))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels/{fid}/steps/{step}/sessions", s.requireSession(s.handleFunnelStepSessions))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/flows/sessions", s.requireSession(s.handleFlowPageSessions))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/recordings", s.requireSession(s.withRecordingsOr(emptyRecordingList, s.handleListRecordings)))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/recordings/{rid}/chunks/{index}", s.requireSession(s.withRecordings(s.handleGetRecordingChunk)))
+	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/recordings/{rid}", s.requireSession(s.withRecordings(s.handleDeleteRecording)))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/recordings/{rid}/flags", s.requireSession(s.withRecordings(s.handleGetRecordingFlags)))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/recordings/{rid}/traces", s.requireSession(s.withRecordings(s.handleGetRecordingTraces)))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels/{fid}/steps/{step}/sessions", s.requireSession(s.withRecordingsOr(emptySessionIDs, s.handleFunnelStepSessions)))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flows/sessions", s.requireSession(s.withRecordingsOr(emptySessionIDs, s.handleFlowPageSessions)))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/recording-settings", s.requireSession(s.handleGetProjectRecordingSettings))
 	s.mux.HandleFunc("PUT /api/v1/projects/{id}/recording-settings", s.requireSession(s.handleUpdateProjectRecordingSettings))
 
