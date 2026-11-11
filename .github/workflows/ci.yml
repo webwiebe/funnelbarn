@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.27.3'
+          go-version: '1.27.4'
           # Host Go caches are ~25 GB and shared by every runner. cache: true tars
           # them and uploads on each key miss (20+ min in Post Set up Go); the host
           # keeps them warm, so the action does not cache.
@@ -97,7 +97,7 @@ jobs:
       - name: Install pinned lint tooling
         # Pinned, not @latest: a gate whose tool version can change without a
         # commit is a gate whose green run stops meaning anything.
-        # golangci-lint v2.13.2 cannot load Go 1.27.3's export data (typecheck error
+        # golangci-lint v2.13.2 cannot load Go 1.27's export data (typecheck error
         # on stdlib imports, so every finding vanishes); v2.15.0 matches the baseline.
         run: |
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
@@ -143,7 +143,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.27.3'
+          go-version: '1.27.4'
           # Host Go caches are ~25 GB and shared by every runner. cache: true tars
           # them and uploads on each key miss (20+ min in Post Set up Go); the host
           # keeps them warm, so the action does not cache.
@@ -210,7 +210,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.27.3'
+          go-version: '1.27.4'
           # The SDK has no third-party dependencies, so there is no go.sum for
           # setup-go's cache to key on.
           cache: false
