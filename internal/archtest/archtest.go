@@ -149,6 +149,39 @@ func findGoMod(startPath string) string {
 
 // Rules returns the architecture rules that must hold.
 func Rules() []*Rule {
+	return append(baseRules(), layerRules()...)
+}
+
+// layerRules states the layering as "package may not import these": the
+// innermost packages import nothing above them. Each line holds today; a new
+// import that crosses one fails TestArchitecture.
+func layerRules() []*Rule {
+	forbidden := []struct {
+		from   string
+		reason string
+		not    []string
+	}{
+		{"internal/domain", "domain holds the types every layer shares; it imports no other internal package",
+			[]string{"internal/api", "internal/service", "internal/ports", "internal/command", "internal/mcp", "internal/auth", "internal/spool", "internal/storage", "internal/worker"}},
+		{"internal/enrich", "enrich holds pure functions over event data; it imports no application layer",
+			[]string{"internal/api", "internal/service", "internal/repository", "internal/ports", "internal/command"}},
+		{"internal/auth", "auth is below the HTTP, service and storage layers",
+			[]string{"internal/api", "internal/service", "internal/repository", "internal/mcp"}},
+		{"internal/service", "services are called by transports and never import them",
+			[]string{"internal/api", "internal/mcp"}},
+		{"internal/mcp", "the MCP server and the HTTP API are sibling transports",
+			[]string{"internal/api"}},
+	}
+	var rules []*Rule
+	for _, f := range forbidden {
+		for _, not := range f.not {
+			rules = append(rules, &Rule{From: f.from, MustNotImport: not, Reason: f.reason})
+		}
+	}
+	return rules
+}
+
+func baseRules() []*Rule {
 	return []*Rule{
 		{
 			From:          "internal/repository",
