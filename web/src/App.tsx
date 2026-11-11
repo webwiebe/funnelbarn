@@ -15,6 +15,7 @@ import FlagUsage from './pages/FlagUsage'
 import Insights from './pages/Insights'
 import Flows from './pages/Flows'
 import Sessions from './pages/Sessions'
+import Agents from './pages/Agents'
 import Overview from './pages/Overview'
 import OverviewEvents from './pages/OverviewEvents'
 import OverviewFunnels from './pages/OverviewFunnels'
@@ -253,6 +254,14 @@ function AppRoutes() {
         <Route
           path="/sessions/:projectId"
           element={<ProtectedRoute><Sessions /></ProtectedRoute>}
+        />
+        <Route
+          path="/agents"
+          element={<ProtectedRoute><DefaultProjectRoute base="/agents" /></ProtectedRoute>}
+        />
+        <Route
+          path="/agents/:projectId"
+          element={<ProtectedRoute><Agents /></ProtectedRoute>}
         />
         <Route
           path="/integrations"

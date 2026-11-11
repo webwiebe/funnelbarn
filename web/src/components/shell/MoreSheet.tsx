@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Settings, LogOut, User, UserCog, Flag, Radio, Lightbulb, PlugZap, Globe, ListOrdered, Filter, Shuffle } from 'lucide-react'
+import { Settings, LogOut, User, UserCog, Flag, Radio, Lightbulb, PlugZap, Globe, ListOrdered, Filter, Shuffle, Bot } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { ProjectPicker } from '../ui/ProjectPicker'
 import { type Project } from '../../lib/api'
@@ -119,6 +119,7 @@ export function MoreSheet({ projectId, projects, iambarn, iambarnReady, onClose,
           { to: projectId ? `/flags/${projectId}` : '/flags', label: 'Flags', icon: Flag },
           { to: projectId ? `/live/${projectId}` : '/live', label: 'Live', icon: Radio },
           { to: projectId ? `/insights/${projectId}` : '/insights', label: 'Insights', icon: Lightbulb },
+          { to: projectId ? `/agents/${projectId}` : '/agents', label: 'Agents', icon: Bot },
           { to: '/integrations', label: 'Integrations', icon: PlugZap },
         ].map(({ to, label, icon: Icon }) => (
           <Link
