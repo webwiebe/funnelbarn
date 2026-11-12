@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -79,46 +80,11 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxRecordingChunkBytes)
-	var chunk service.RecordingChunk
-	if err := readJSON(r, &chunk); err != nil {
-		var maxBytesErr *http.MaxBytesError
-		if errors.As(err, &maxBytesErr) {
-			// Surface 413s to BugBarn — this used to be the silent failure
-			// mode where the SDK retried/abandoned and we never knew.
-			tracing.RecordError(span, err)
-			slog.ErrorContext(ctx, "recording chunk rejected: body too large",
-				"err", err, "handled", false,
-				"project_id", projectID,
-				"content_length", r.ContentLength,
-				"limit_bytes", int64(maxRecordingChunkBytes),
-				"user_agent", r.Header.Get("User-Agent"),
-				"request_id", RequestIDFromContext(ctx),
-			)
-			jsonError(w, "recording chunk too large", http.StatusRequestEntityTooLarge)
-			return
-		}
-		// JSON parse errors on this endpoint are unusual (the SDK is the only
-		// producer); log them so we can spot SDK regressions.
-		slog.WarnContext(ctx, "recording chunk rejected: invalid json",
-			"err", err, "handled", true,
-			"project_id", projectID,
-			"content_length", r.ContentLength,
-			"user_agent", r.Header.Get("User-Agent"),
-			"request_id", RequestIDFromContext(ctx),
-		)
-		jsonError(w, "invalid json", http.StatusBadRequest)
+	chunk, ok := readRecordingChunk(ctx, span, w, r, projectID)
+	if !ok {
 		return
 	}
-	if chunk.RecordingID == "" || chunk.SessionID == "" || len(chunk.Events) == 0 {
-		jsonError(w, "recording_id, session_id, and events are required", http.StatusUnprocessableEntity)
-		return
-	}
-	// recording_id and session_id are interpolated into R2 object keys
-	// (recordings/<project>/<recording_id>/<index>). Reject anything that could
-	// inject or traverse a key path ('/', '..', control chars) before it reaches
-	// storage — see chunkKey in internal/service/recordings.go.
-	if !isValidStorageID(chunk.RecordingID) || !isValidStorageID(chunk.SessionID) {
-		jsonError(w, "recording_id and session_id must be alphanumeric (with '-' or '_'), max 64 chars", http.StatusUnprocessableEntity)
+	if !validRecordingChunk(w, chunk) {
 		return
 	}
 
@@ -150,6 +116,58 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 	// project whose chunks are all rejected as receiving recordings.
 	s.markRecordingsReceived(projectID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true})
+}
+
+func readRecordingChunk(ctx context.Context, span trace.Span, w http.ResponseWriter, r *http.Request, projectID string) (service.RecordingChunk, bool) {
+	var chunk service.RecordingChunk
+	if err := readJSON(r, &chunk); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			// Surface 413s to BugBarn — this used to be the silent failure
+			// mode where the SDK retried/abandoned and we never knew.
+			tracing.RecordError(span, err)
+			slog.ErrorContext(ctx, "recording chunk rejected: body too large",
+				"err", err, "handled", false,
+				"project_id", projectID,
+				"content_length", r.ContentLength,
+				"limit_bytes", int64(maxRecordingChunkBytes),
+				"user_agent", r.Header.Get("User-Agent"),
+				"request_id", RequestIDFromContext(ctx),
+			)
+			jsonError(w, "recording chunk too large", http.StatusRequestEntityTooLarge)
+			return service.RecordingChunk{}, false
+		}
+		// JSON parse errors on this endpoint are unusual (the SDK is the only
+		// producer); log them so we can spot SDK regressions.
+		slog.WarnContext(ctx, "recording chunk rejected: invalid json",
+			"err", err, "handled", true,
+			"project_id", projectID,
+			"content_length", r.ContentLength,
+			"user_agent", r.Header.Get("User-Agent"),
+			"request_id", RequestIDFromContext(ctx),
+		)
+		jsonError(w, "invalid json", http.StatusBadRequest)
+		return service.RecordingChunk{}, false
+	}
+	return chunk, true
+}
+
+// validRecordingChunk writes the 422 and returns false when the chunk lacks
+// required fields or carries an id that is unsafe as an object-storage key.
+func validRecordingChunk(w http.ResponseWriter, chunk service.RecordingChunk) bool {
+	if chunk.RecordingID == "" || chunk.SessionID == "" || len(chunk.Events) == 0 {
+		jsonError(w, "recording_id, session_id, and events are required", http.StatusUnprocessableEntity)
+		return false
+	}
+	// recording_id and session_id are interpolated into R2 object keys
+	// (recordings/<project>/<recording_id>/<index>). Reject anything that could
+	// inject or traverse a key path ('/', '..', control chars) before it reaches
+	// storage — see chunkKey in internal/service/recordings.go.
+	if !isValidStorageID(chunk.RecordingID) || !isValidStorageID(chunk.SessionID) {
+		jsonError(w, "recording_id and session_id must be alphanumeric (with '-' or '_'), max 64 chars", http.StatusUnprocessableEntity)
+		return false
+	}
+	return true
 }
 
 // isValidStorageID guards IDs that become object-storage key segments. It
