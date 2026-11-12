@@ -74,6 +74,36 @@ func (s *Server) handleCreateABTest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, test)
 }
 
+// abTestRange reads the analysis window: the last 30 days unless range
+// (24h, 7d, 30d) or explicit RFC 3339 from and to say otherwise.
+func abTestRange(r *http.Request) (from, to time.Time) {
+	to = time.Now().UTC()
+	from = to.AddDate(0, 0, -30)
+	switch r.URL.Query().Get("range") {
+	case "24h":
+		from = to.Add(-24 * time.Hour)
+	case "7d":
+		from = to.AddDate(0, 0, -7)
+	}
+	return overrideWindow(r, from, to)
+}
+
+// splitABResults maps the per-variant results into the flat control and
+// variant totals the UI expects.
+func splitABResults(results []repository.ABTestResult) (controlSample, controlConversions, variantSample, variantConversions int64) {
+	for _, r := range results {
+		switch r.Variant {
+		case "control":
+			controlSample = r.Total
+			controlConversions = r.Conversions
+		case "variant":
+			variantSample = r.Total
+			variantConversions = r.Conversions
+		}
+	}
+	return
+}
+
 // handleABTestAnalysis computes variant conversion rates for an A/B test.
 func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
@@ -93,27 +123,7 @@ func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse time range (default: last 30 days).
-	to := time.Now().UTC()
-	from := to.AddDate(0, 0, -30)
-	switch r.URL.Query().Get("range") {
-	case "24h":
-		from = to.Add(-24 * time.Hour)
-	case "7d":
-		from = to.AddDate(0, 0, -7)
-	case "30d":
-		from = to.AddDate(0, 0, -30)
-	}
-	if v := r.URL.Query().Get("from"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			from = t
-		}
-	}
-	if v := r.URL.Query().Get("to"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			to = t
-		}
-	}
+	from, to := abTestRange(r)
 
 	ctx, span := tracing.StartSpan(r.Context(), "abtests.analyze",
 		attribute.String("project.id", test.ProjectID),
@@ -128,18 +138,7 @@ func (s *Server) handleABTestAnalysis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Map results into the flat shape the UI expects.
-	var controlSample, controlConversions, variantSample, variantConversions int64
-	for _, r := range results {
-		switch r.Variant {
-		case "control":
-			controlSample = r.Total
-			controlConversions = r.Conversions
-		case "variant":
-			variantSample = r.Total
-			variantConversions = r.Conversions
-		}
-	}
+	controlSample, controlConversions, variantSample, variantConversions := splitABResults(results)
 
 	// Two-proportion z-test for statistical significance.
 	zScore, significant := service.ZTestTwoProportions(controlSample, controlConversions, variantSample, variantConversions)

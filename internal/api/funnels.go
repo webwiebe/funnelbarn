@@ -200,6 +200,43 @@ func parseSegment(name string) *repository.SegmentFilter {
 	}
 }
 
+// overrideWindow replaces from and to with the RFC 3339 query values when
+// present and parseable; anything else keeps the defaults.
+func overrideWindow(r *http.Request, from, to time.Time) (time.Time, time.Time) {
+	if v := r.URL.Query().Get("from"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			from = t
+		}
+	}
+	if v := r.URL.Query().Get("to"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			to = t
+		}
+	}
+	return from, to
+}
+
+// storedSegmentRules returns the rules of the stored segment named by
+// segment_id, or nil. A failed lookup is non-fatal: the analysis runs without
+// the segment filter, and the warning makes a stale UI dropdown visible.
+func (s *Server) storedSegmentRules(r *http.Request, projectID string) []repository.SegmentRule {
+	segID := r.URL.Query().Get("segment_id")
+	if segID == "" || s.segments == nil {
+		return nil
+	}
+	stored, err := s.segments.GetSegment(r.Context(), segID)
+	if err != nil {
+		slog.WarnContext(r.Context(), "funnel: segment lookup failed",
+			"err", err, "handled", true,
+			"segment_id", segID, "project_id", projectID)
+		return nil
+	}
+	if stored.ProjectID != projectID {
+		return nil
+	}
+	return stored.Rules
+}
+
 // handleFunnelAnalysis runs funnel analysis and returns step conversion rates.
 func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
@@ -219,37 +256,13 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse time range from query params (default: last 30 days).
 	to := time.Now().UTC()
 	from := to.AddDate(0, 0, -30)
-	if v := r.URL.Query().Get("from"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			from = t
-		}
-	}
-	if v := r.URL.Query().Get("to"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			to = t
-		}
-	}
+	from, to = overrideWindow(r, from, to)
 
 	// Parse optional preset segment filter.
 	seg := parseSegment(r.URL.Query().Get("segment"))
-
-	// Look up stored segment rules if segment_id provided.
-	var segRules []repository.SegmentRule
-	if segID := r.URL.Query().Get("segment_id"); segID != "" && s.segments != nil {
-		stored, err := s.segments.GetSegment(r.Context(), segID)
-		if err != nil {
-			// Non-fatal: analyse without the segment filter. Warn so a
-			// broken UI dropdown (e.g. stale segment_id) is visible.
-			slog.WarnContext(r.Context(), "funnel: segment lookup failed",
-				"err", err, "handled", true,
-				"segment_id", segID, "project_id", projectID)
-		} else if stored.ProjectID == projectID {
-			segRules = stored.Rules
-		}
-	}
+	segRules := s.storedSegmentRules(r, projectID)
 
 	// Optional environment: empty keeps every environment.
 	env := r.URL.Query().Get("environment")
