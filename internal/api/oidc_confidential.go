@@ -14,6 +14,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -62,6 +63,43 @@ func (s *Server) handleOIDCConfidentialLogin(w http.ResponseWriter, r *http.Requ
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
+// oidcCallbackInput is what the callback needs from the request once the
+// state, nonce and code have been checked.
+type oidcCallbackInput struct{ code, nonce, verifier string }
+
+// readOIDCCallbackInput checks the state cookie against the state query value
+// and reads the nonce cookie and the authorization code. ok is false when a
+// 400 has been written.
+func readOIDCCallbackInput(w http.ResponseWriter, r *http.Request, span trace.Span) (oidcCallbackInput, bool) {
+	stateCookie, err := r.Cookie(oidcConfStateCookie)
+	if err != nil || stateCookie.Value == "" {
+		tracing.RecordError(span, errors.New("oidc: state cookie missing"))
+		slog.WarnContext(r.Context(), "oidc: state cookie missing")
+		jsonError(w, "oidc state mismatch", http.StatusBadRequest)
+		return oidcCallbackInput{}, false
+	}
+	state, verifier, ok := parseStateCookie(stateCookie.Value)
+	if !ok || state != r.URL.Query().Get("state") {
+		tracing.RecordError(span, errors.New("oidc: state mismatch"))
+		slog.WarnContext(r.Context(), "oidc: state mismatch")
+		jsonError(w, "oidc state mismatch", http.StatusBadRequest)
+		return oidcCallbackInput{}, false
+	}
+	nonceCookie, err := r.Cookie(oidcConfNonceCookie)
+	if err != nil || nonceCookie.Value == "" {
+		tracing.RecordError(span, errors.New("oidc: nonce cookie missing"))
+		jsonError(w, "oidc nonce missing", http.StatusBadRequest)
+		return oidcCallbackInput{}, false
+	}
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		tracing.RecordError(span, errors.New("oidc: code missing"))
+		jsonError(w, "oidc code missing", http.StatusBadRequest)
+		return oidcCallbackInput{}, false
+	}
+	return oidcCallbackInput{code: code, nonce: nonceCookie.Value, verifier: verifier}, true
+}
+
 // handleOIDCConfidentialCallback handles the redirect back from the issuer. On
 // success it persists the iambarn token set in a server-side session row and
 // hands the browser an opaque session handle.
@@ -74,33 +112,12 @@ func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.R
 	defer span.End()
 	r = r.WithContext(ctx)
 
-	stateCookie, err := r.Cookie(oidcConfStateCookie)
-	if err != nil || stateCookie.Value == "" {
-		tracing.RecordError(span, errors.New("oidc: state cookie missing"))
-		slog.WarnContext(r.Context(), "oidc: state cookie missing")
-		jsonError(w, "oidc state mismatch", http.StatusBadRequest)
+	in, ok := readOIDCCallbackInput(w, r, span)
+	if !ok {
 		return
 	}
-	state, verifier, ok := parseStateCookie(stateCookie.Value)
-	if !ok || state != r.URL.Query().Get("state") {
-		tracing.RecordError(span, errors.New("oidc: state mismatch"))
-		slog.WarnContext(r.Context(), "oidc: state mismatch")
-		jsonError(w, "oidc state mismatch", http.StatusBadRequest)
-		return
-	}
-	nonceCookie, err := r.Cookie(oidcConfNonceCookie)
-	if err != nil || nonceCookie.Value == "" {
-		tracing.RecordError(span, errors.New("oidc: nonce cookie missing"))
-		jsonError(w, "oidc nonce missing", http.StatusBadRequest)
-		return
-	}
-	code := r.URL.Query().Get("code")
-	if code == "" {
-		tracing.RecordError(span, errors.New("oidc: code missing"))
-		jsonError(w, "oidc code missing", http.StatusBadRequest)
-		return
-	}
-	result, err := s.oidc.ExchangeFull(r.Context(), code, nonceCookie.Value, verifier)
+	code, nonce, verifier := in.code, in.nonce, in.verifier
+	result, err := s.oidc.ExchangeFull(r.Context(), code, nonce, verifier)
 	if err != nil {
 		tracing.RecordError(span, err)
 		slog.WarnContext(r.Context(), "oidc: exchange failed", "error", err)

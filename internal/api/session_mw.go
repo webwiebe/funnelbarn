@@ -32,12 +32,7 @@ import (
 // configured (cmd/funnelbarn), so this branch is unreachable there.
 func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// authConfigured must reflect EVERY way a user can obtain a session:
-		// the env-var admin, the confidential OIDC client, AND local/DB users.
-		// Missing any of these would leave every route below served
-		// unauthenticated on a deployment that authenticates only that way.
-		authConfigured := s.userAuth.Enabled() || s.oidc != nil || s.localUsersExist
-		if s.sessionManager == nil || s.webSessions == nil || !authConfigured {
+		if s.sessionManager == nil || s.webSessions == nil || !s.authConfigured() {
 			if !s.apiLimiter.allow(s.clientIP(r)) {
 				jsonError(w, "too many requests", http.StatusTooManyRequests)
 				return
@@ -52,47 +47,14 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 			jsonError(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		idHash := auth.HashSessionToken(cookie.Value)
-		ws, err := s.webSessions.GetWebSession(r.Context(), idHash)
-		if err != nil {
-			// Unknown handle: revoked, pruned, or forged. Same response either
-			// way — nothing to enumerate.
-			jsonError(w, "session expired", http.StatusUnauthorized)
-			return
-		}
-		now := time.Now()
-		// Pruning an expired session and storing refreshed tokens both write
-		// the row, so a reader lets the writer serve such a request whole. A
-		// reader that refreshed itself would burn the single-use refresh token
-		// and then fail to store its successor.
-		if s.forwarder != nil && (ws.AbsoluteExpiresAt <= now.Unix() || s.needsRefresh(ws, now)) {
-			s.forward(w, r)
-			return
-		}
-		if ws.AbsoluteExpiresAt <= now.Unix() {
-			_ = s.webSessions.DeleteWebSession(r.Context(), idHash)
-			jsonError(w, "session expired", http.StatusUnauthorized)
+		ws, ok := s.resolveSession(w, r, cookie.Value)
+		if !ok {
 			return
 		}
 
-		// OIDC sessions are refresh-gated: session validity tracks the ~15m
-		// access token, so central revocation bites at the next refresh.
-		if s.needsRefresh(ws, now) {
-			ws, err = s.refreshSession(r.Context(), idHash)
-			if err != nil {
-				jsonError(w, "session expired", http.StatusUnauthorized)
-				return
-			}
-		}
-
-		if isMutating(r.Method) {
-			expected := s.sessionManager.CSRFToken(cookie.Value)
-			got := r.Header.Get("X-FunnelBarn-CSRF")
-			// Constant-time compare so the CSRF token can't be recovered by timing.
-			if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(expected)) != 1 {
-				jsonError(w, "csrf token invalid", http.StatusForbidden)
-				return
-			}
+		if isMutating(r.Method) && !s.csrfValid(r, cookie.Value) {
+			jsonError(w, "csrf token invalid", http.StatusForbidden)
+			return
 		}
 
 		if !s.apiLimiter.allow(s.clientIP(r)) {
@@ -104,6 +66,63 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 		ctx := withSessionUser(r.Context(), ws.Username)
 		next(w, r.WithContext(withSessionAdmin(ctx, s.sessionIsAdmin(ws))))
 	}
+}
+
+// authConfigured must reflect EVERY way a user can obtain a session: the
+// env-var admin, the confidential OIDC client, AND local/DB users. Missing any
+// of these would leave every route served unauthenticated on a deployment that
+// authenticates only that way.
+func (s *Server) authConfigured() bool {
+	return s.userAuth.Enabled() || s.oidc != nil || s.localUsersExist
+}
+
+// csrfValid compares the CSRF header with the token derived from the session
+// cookie, in constant time so the token can't be recovered by timing.
+func (s *Server) csrfValid(r *http.Request, cookieValue string) bool {
+	expected := s.sessionManager.CSRFToken(cookieValue)
+	got := r.Header.Get("X-FunnelBarn-CSRF")
+	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(expected)) == 1
+}
+
+// resolveSession loads the session behind the cookie and brings it up to date:
+// a reader forwards to the writer when serving needs a write, an expired row
+// is pruned, and an OIDC session with an expired access token is refreshed.
+// ok is false when a response has already been written.
+func (s *Server) resolveSession(w http.ResponseWriter, r *http.Request, cookieValue string) (repository.WebSession, bool) {
+	idHash := auth.HashSessionToken(cookieValue)
+	ws, err := s.webSessions.GetWebSession(r.Context(), idHash)
+	if err != nil {
+		// Unknown handle: revoked, pruned, or forged. Same response either
+		// way, nothing to enumerate.
+		jsonError(w, "session expired", http.StatusUnauthorized)
+		return ws, false
+	}
+	now := time.Now()
+	expired := ws.AbsoluteExpiresAt <= now.Unix()
+	// Pruning an expired session and storing refreshed tokens both write
+	// the row, so a reader lets the writer serve such a request whole. A
+	// reader that refreshed itself would burn the single-use refresh token
+	// and then fail to store its successor.
+	if s.forwarder != nil && (expired || s.needsRefresh(ws, now)) {
+		s.forward(w, r)
+		return ws, false
+	}
+	if expired {
+		_ = s.webSessions.DeleteWebSession(r.Context(), idHash)
+		jsonError(w, "session expired", http.StatusUnauthorized)
+		return ws, false
+	}
+
+	// OIDC sessions are refresh-gated: session validity tracks the ~15m
+	// access token, so central revocation bites at the next refresh.
+	if s.needsRefresh(ws, now) {
+		ws, err = s.refreshSession(r.Context(), idHash)
+		if err != nil {
+			jsonError(w, "session expired", http.StatusUnauthorized)
+			return ws, false
+		}
+	}
+	return ws, true
 }
 
 // needsRefresh reports whether serving ws first runs the refresh_token grant.
