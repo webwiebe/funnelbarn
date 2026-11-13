@@ -179,118 +179,89 @@ func (c Config) ValidateMode() error {
 func Load() Config {
 	loadConfigFiles()
 
-	cfg := Config{
-		Addr:                getenv("FUNNELBARN_ADDR", ":8080"),
-		APIKey:              os.Getenv("FUNNELBARN_API_KEY"),
-		APIKeySHA256:        os.Getenv("FUNNELBARN_API_KEY_SHA256"),
-		AdminUsername:       os.Getenv("FUNNELBARN_ADMIN_USERNAME"),
-		AdminPassword:       os.Getenv("FUNNELBARN_ADMIN_PASSWORD"),
-		AdminPasswordBcrypt: os.Getenv("FUNNELBARN_ADMIN_PASSWORD_BCRYPT"),
-		SessionSecret:       os.Getenv("FUNNELBARN_SESSION_SECRET"),
-		SessionTTL:          12 * time.Hour,
-		SpoolDir:            getenv("FUNNELBARN_SPOOL_DIR", ".data/spool"),
-		DBPath:              getenv("FUNNELBARN_DB_PATH", ".data/funnelbarn.db"),
-		MaxBodyBytes:        1 << 20, // 1 MiB
-		PublicURL:           os.Getenv("FUNNELBARN_PUBLIC_URL"),
-		SelfEndpoint:        os.Getenv("FUNNELBARN_SELF_ENDPOINT"),
-		SelfAPIKey:          os.Getenv("FUNNELBARN_SELF_API_KEY"),
-		SelfProject:         getenv("FUNNELBARN_SELF_PROJECT", "funnelbarn"),
-		SelfEnvironment:     getenv("FUNNELBARN_ENVIRONMENT", "production"),
-		Version:             os.Getenv("FUNNELBARN_VERSION"),
-		DogfoodAPIKey:       os.Getenv("FUNNELBARN_DOGFOOD_API_KEY"),
-		DogfoodProject:      getenv("FUNNELBARN_DOGFOOD_PROJECT", "funnelbarn"),
-	}
+	var cfg Config
+	cfg.loadServer()
+	cfg.loadSelfReporting()
+	cfg.loadRetention()
+	cfg.loadRateLimits()
+	cfg.loadTelemetry()
+	cfg.loadOIDC()
+	cfg.loadStorage()
+	cfg.loadQueues()
+	cfg.loadProcessRole()
+	cfg.loadGitHub()
+	return cfg
+}
 
-	if raw := os.Getenv("FUNNELBARN_ALLOWED_ORIGINS"); raw != "" {
-		for _, o := range strings.Split(raw, ",") {
-			if trimmed := strings.TrimSpace(o); trimmed != "" {
-				cfg.AllowedOrigins = append(cfg.AllowedOrigins, trimmed)
-			}
-		}
-	}
-	if raw := os.Getenv("FUNNELBARN_MAX_BODY_BYTES"); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			cfg.MaxBodyBytes = parsed
-		}
-	}
-	if raw := os.Getenv("FUNNELBARN_MAX_SPOOL_BYTES"); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			cfg.MaxSpoolBytes = parsed
-		}
-	}
-	if raw := os.Getenv("FUNNELBARN_SESSION_TTL_SECONDS"); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			cfg.SessionTTL = time.Duration(parsed) * time.Second
-		}
-	}
+// loadServer reads the listener, credentials, session and path settings.
+func (cfg *Config) loadServer() {
+	cfg.Addr = getenv("FUNNELBARN_ADDR", ":8080")
+	cfg.APIKey = os.Getenv("FUNNELBARN_API_KEY")
+	cfg.APIKeySHA256 = os.Getenv("FUNNELBARN_API_KEY_SHA256")
+	cfg.AdminUsername = os.Getenv("FUNNELBARN_ADMIN_USERNAME")
+	cfg.AdminPassword = os.Getenv("FUNNELBARN_ADMIN_PASSWORD")
+	cfg.AdminPasswordBcrypt = os.Getenv("FUNNELBARN_ADMIN_PASSWORD_BCRYPT")
+	cfg.SessionSecret = os.Getenv("FUNNELBARN_SESSION_SECRET")
+	cfg.SessionTTL = time.Duration(envPositiveInt64("FUNNELBARN_SESSION_TTL_SECONDS", 12*3600)) * time.Second
+	cfg.AllowedOrigins = envList("FUNNELBARN_ALLOWED_ORIGINS")
+	cfg.SpoolDir = getenv("FUNNELBARN_SPOOL_DIR", ".data/spool")
+	cfg.DBPath = getenv("FUNNELBARN_DB_PATH", ".data/funnelbarn.db")
+	cfg.MaxBodyBytes = envPositiveInt64("FUNNELBARN_MAX_BODY_BYTES", 1<<20) // 1 MiB
+	cfg.MaxSpoolBytes = envPositiveInt64("FUNNELBARN_MAX_SPOOL_BYTES", 0)
+	cfg.PublicURL = os.Getenv("FUNNELBARN_PUBLIC_URL")
+	cfg.Version = os.Getenv("FUNNELBARN_VERSION")
+	cfg.MetricsToken = os.Getenv("FUNNELBARN_METRICS_TOKEN")
+	cfg.TrustedProxies = envList("FUNNELBARN_TRUSTED_PROXIES")
+}
+
+// loadSelfReporting reads where FunnelBarn reports its own events.
+func (cfg *Config) loadSelfReporting() {
+	cfg.SelfEndpoint = os.Getenv("FUNNELBARN_SELF_ENDPOINT")
+	cfg.SelfAPIKey = os.Getenv("FUNNELBARN_SELF_API_KEY")
+	cfg.SelfProject = getenv("FUNNELBARN_SELF_PROJECT", "funnelbarn")
+	cfg.SelfEnvironment = getenv("FUNNELBARN_ENVIRONMENT", "production")
+	cfg.DogfoodAPIKey = os.Getenv("FUNNELBARN_DOGFOOD_API_KEY")
+	cfg.DogfoodProject = getenv("FUNNELBARN_DOGFOOD_PROJECT", "funnelbarn")
+}
+
+// loadRetention reads the retention and flag auto-registration settings.
+// Flag auto-registration defaults to a cap of 100 per project and pruning of
+// stale never-configured auto flags after 30 days.
+func (cfg *Config) loadRetention() {
 	cfg.EventRetentionDays = envNonNegativeInt("FUNNELBARN_EVENT_RETENTION_DAYS", 90)
-
-	// Flag auto-registration — default cap 100 per project, prune stale
-	// never-configured auto flags after 30 days.
 	cfg.AutoRegisterMaxFlags = envNonNegativeInt("FUNNELBARN_FLAG_AUTOREGISTER_MAX", 100)
 	cfg.AutoRegisterTTLDays = envNonNegativeInt("FUNNELBARN_FLAG_AUTOREGISTER_TTL_DAYS", 30)
 	cfg.ConfigFlagCacheSeconds = envNonNegativeInt("FUNNELBARN_FLAG_CONFIG_CACHE_SECONDS", 60)
+}
 
-	// Login rate limit — default 20/min burst 20.
-	// Set higher (e.g. 1000) in test environments to avoid blocking E2E suites.
-	cfg.LoginRatePerMinute = 20
-	cfg.LoginRateBurst = 20
-	if raw := os.Getenv("FUNNELBARN_LOGIN_RATE_PER_MINUTE"); raw != "" {
-		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
-			cfg.LoginRatePerMinute = parsed
-		}
-	}
-	if raw := os.Getenv("FUNNELBARN_LOGIN_RATE_BURST"); raw != "" {
-		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
-			cfg.LoginRateBurst = parsed
-		}
-	}
+// loadRateLimits reads the per-route rate limits. Defaults: login 20/min burst
+// 20, API 300/min burst 60, ingest 500/min burst 100, setup 10/min burst 5.
+// Set the login limit higher (e.g. 1000) in test environments to avoid
+// blocking E2E suites.
+func (cfg *Config) loadRateLimits() {
+	cfg.LoginRatePerMinute = envPositiveFloat("FUNNELBARN_LOGIN_RATE_PER_MINUTE", 20)
+	cfg.LoginRateBurst = envPositiveFloat("FUNNELBARN_LOGIN_RATE_BURST", 20)
+	cfg.APIRatePerMinute = envPositiveFloat("FUNNELBARN_API_RATE_PER_MINUTE", 300)
+	cfg.APIRateBurst = envPositiveFloat("FUNNELBARN_API_RATE_BURST", 60)
+	cfg.IngestRatePerMinute = envPositiveFloat("FUNNELBARN_INGEST_RATE_PER_MINUTE", 500)
+	cfg.IngestRateBurst = envPositiveFloat("FUNNELBARN_INGEST_RATE_BURST", 100)
+	cfg.SetupRatePerMinute = envPositiveFloat("FUNNELBARN_SETUP_RATE_PER_MINUTE", 10)
+	cfg.SetupRateBurst = envPositiveFloat("FUNNELBARN_SETUP_RATE_BURST", 5)
+}
 
-	// API rate limit — default 300/min burst 60.
-	cfg.APIRatePerMinute = 300
-	cfg.APIRateBurst = 60
-	if raw := os.Getenv("FUNNELBARN_API_RATE_PER_MINUTE"); raw != "" {
-		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
-			cfg.APIRatePerMinute = parsed
-		}
-	}
-	if raw := os.Getenv("FUNNELBARN_API_RATE_BURST"); raw != "" {
-		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
-			cfg.APIRateBurst = parsed
-		}
-	}
-
-	cfg.MetricsToken = os.Getenv("FUNNELBARN_METRICS_TOKEN")
-
-	// Ingest rate limit — default 500/min burst 100.
-	cfg.IngestRatePerMinute = 500
-	cfg.IngestRateBurst = 100
-	if raw := os.Getenv("FUNNELBARN_INGEST_RATE_PER_MINUTE"); raw != "" {
-		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
-			cfg.IngestRatePerMinute = parsed
-		}
-	}
-	if raw := os.Getenv("FUNNELBARN_INGEST_RATE_BURST"); raw != "" {
-		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
-			cfg.IngestRateBurst = parsed
-		}
-	}
-
+// loadTelemetry reads the log levels and the SpanBarn export settings.
+func (cfg *Config) loadTelemetry() {
+	cfg.LogLevel = parseLevel(os.Getenv("FUNNELBARN_LOG_LEVEL"), slog.LevelInfo)
 	cfg.SpanBarnEndpoint = os.Getenv("FUNNELBARN_SPANBARN_ENDPOINT")
 	cfg.SpanBarnAPIKey = os.Getenv("FUNNELBARN_SPANBARN_API_KEY")
 	cfg.SpanBarnLogLevel = parseLevel(os.Getenv("FUNNELBARN_SPANBARN_LOG_LEVEL"), slog.LevelInfo)
+}
 
-	if raw := os.Getenv("FUNNELBARN_TRUSTED_PROXIES"); raw != "" {
-		for _, p := range strings.Split(raw, ",") {
-			if trimmed := strings.TrimSpace(p); trimmed != "" {
-				cfg.TrustedProxies = append(cfg.TrustedProxies, trimmed)
-			}
-		}
-	}
-
+// loadOIDC reads the IAMBarn sign-in settings and the URLs derived from the
+// public URL. It runs after loadServer, which sets PublicURL.
+func (cfg *Config) loadOIDC() {
 	cfg.PostLogoutRedirectURI = defaultPostLogoutRedirectURI(
 		os.Getenv("FUNNELBARN_POST_LOGOUT_REDIRECT_URI"), cfg.PublicURL)
-
 	cfg.OIDCIssuer = os.Getenv("FUNNELBARN_OIDC_ISSUER")
 	cfg.OIDCClientID = os.Getenv("FUNNELBARN_OIDC_CLIENT_ID")
 	cfg.OIDCClientSecret = os.Getenv("FUNNELBARN_OIDC_CLIENT_SECRET")
@@ -298,43 +269,74 @@ func Load() Config {
 	cfg.OIDCOrganizationID = os.Getenv("FUNNELBARN_OIDC_ORGANIZATION_ID")
 	cfg.OIDCRefreshGraceSeconds = envPositiveInt("FUNNELBARN_OIDC_REFRESH_GRACE_SECONDS", 3600)
 	cfg.MCPResourceURL = defaultMCPResourceURL(os.Getenv("FUNNELBARN_MCP_RESOURCE_URL"), cfg.PublicURL)
+}
 
+// loadStorage reads the GeoIP database paths and the R2 settings.
+func (cfg *Config) loadStorage() {
 	cfg.GeoIPCityDB = os.Getenv("FUNNELBARN_GEOIP_CITY_DB")
 	cfg.GeoIPASNDB = os.Getenv("FUNNELBARN_GEOIP_ASN_DB")
-
 	cfg.R2AccountID = os.Getenv("FUNNELBARN_R2_ACCOUNT_ID")
 	cfg.R2AccessKeyID = os.Getenv("FUNNELBARN_R2_ACCESS_KEY_ID")
 	cfg.R2SecretAccessKey = os.Getenv("FUNNELBARN_R2_SECRET_ACCESS_KEY")
 	cfg.R2Bucket = os.Getenv("FUNNELBARN_R2_BUCKET")
 	cfg.R2Endpoint = os.Getenv("FUNNELBARN_R2_ENDPOINT")
+}
 
+// loadQueues reads the command queue settings. The switches turn on for the
+// exact string "true".
+func (cfg *Config) loadQueues() {
 	cfg.RedisQueueURL = os.Getenv("FUNNELBARN_REDIS_QUEUE_URL")
 	cfg.IngestViaQueue = os.Getenv("FUNNELBARN_INGEST_VIA_QUEUE") == "true"
 	cfg.IngestQueueMaxLen = int64(envPositiveInt("FUNNELBARN_INGEST_QUEUE_MAX_LEN", 10000))
 	cfg.RecordingsViaQueue = os.Getenv("FUNNELBARN_RECORDINGS_VIA_QUEUE") == "true"
 	cfg.RecordingsQueueMaxLen = int64(envPositiveInt("FUNNELBARN_RECORDINGS_QUEUE_MAX_LEN", 5000))
+}
+
+// loadProcessRole reads the reader/writer split settings.
+func (cfg *Config) loadProcessRole() {
 	cfg.Mode = strings.ToLower(strings.TrimSpace(getenv("FUNNELBARN_MODE", ModeStandalone)))
 	cfg.WriterURL = strings.TrimRight(os.Getenv("FUNNELBARN_WRITER_URL"), "/")
 	cfg.InternalToken = os.Getenv("FUNNELBARN_INTERNAL_TOKEN")
+}
+
+// loadGitHub reads the GitHub webhook settings.
+func (cfg *Config) loadGitHub() {
 	cfg.GitHubWebhookSecret = os.Getenv("FUNNELBARN_GITHUB_WEBHOOK_SECRET")
 	cfg.GitHubWebhookProject = getenv("FUNNELBARN_GITHUB_WEBHOOK_PROJECT", "agents")
+}
 
-	cfg.SetupRatePerMinute = 10
-	cfg.SetupRateBurst = 5
-	if raw := os.Getenv("FUNNELBARN_SETUP_RATE_PER_MINUTE"); raw != "" {
-		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
-			cfg.SetupRatePerMinute = parsed
+// envList reads a comma-separated env var, trimming each entry and dropping
+// empty ones. Unset or all-empty returns nil.
+func envList(key string) []string {
+	var out []string
+	for _, item := range strings.Split(os.Getenv(key), ",") {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			out = append(out, trimmed)
 		}
 	}
-	if raw := os.Getenv("FUNNELBARN_SETUP_RATE_BURST"); raw != "" {
-		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
-			cfg.SetupRateBurst = parsed
+	return out
+}
+
+// envPositiveInt64 reads an int64 env var, falling back to def for unset,
+// unparseable, or non-positive values.
+func envPositiveInt64(key string, def int64) int64 {
+	if raw := os.Getenv(key); raw != "" {
+		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
+			return parsed
 		}
 	}
+	return def
+}
 
-	cfg.LogLevel = parseLevel(os.Getenv("FUNNELBARN_LOG_LEVEL"), slog.LevelInfo)
-
-	return cfg
+// envPositiveFloat reads a float env var, falling back to def for unset,
+// unparseable, or non-positive values.
+func envPositiveFloat(key string, def float64) float64 {
+	if raw := os.Getenv(key); raw != "" {
+		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	return def
 }
 
 // parseLevel maps a level string ("debug"/"info"/"warn"/"error") to a slog.Level,
