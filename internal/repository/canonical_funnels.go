@@ -249,62 +249,17 @@ func (s *ReadStore) AnalyzeCanonicalFunnel(ctx context.Context, f CanonicalFunne
 	}
 
 	// Resolve project set + names.
-	allProjects, err := s.ListProjects(ctx)
+	targetIDs, nameByID, err := s.canonicalProjectSet(ctx, projectIDs)
 	if err != nil {
 		return result, err
 	}
-	nameByID := make(map[string]string, len(allProjects))
-	for _, p := range allProjects {
-		nameByID[p.ID] = p.Name
-	}
-	var targetIDs []string
-	if len(projectIDs) > 0 {
-		targetIDs = projectIDs
-	} else {
-		for _, p := range allProjects {
-			targetIDs = append(targetIDs, p.ID)
-		}
-	}
-
 	mappings, err := s.MappingsByProject(ctx)
 	if err != nil {
 		return result, err
 	}
 
 	// Build the shared segment WHERE fragment once (identical to AnalyzeFunnel).
-	presetClause, presetArg, needJoin := segmentParam(seg)
-	ruleClause, ruleArgs, rulesNeedJoin := buildSegmentRuleClause(rules)
-	needJoin = needJoin || rulesNeedJoin
-
-	scope := f.Scope
-	if scope == "" {
-		scope = "session"
-	}
-	pageViewScope := scope == "page_view"
-	distinctCol := "e.session_id"
-	if pageViewScope {
-		distinctCol = "e.page_view_id"
-	}
-
-	var extraClauses []string
-	var extraArgs []any
-	if presetClause != "" {
-		extraClauses = append(extraClauses, presetClause)
-		if presetArg != nil {
-			extraArgs = append(extraArgs, presetArg)
-		}
-	}
-	if ruleClause != "" {
-		extraClauses = append(extraClauses, ruleClause)
-		extraArgs = append(extraArgs, ruleArgs...)
-	}
-	if pageViewScope {
-		extraClauses = append(extraClauses, "e.page_view_id IS NOT NULL")
-	}
-	extraWhere := ""
-	if len(extraClauses) > 0 {
-		extraWhere = " AND " + strings.Join(extraClauses, " AND ")
-	}
+	w := canonicalWhere(f.Scope, seg, rules)
 
 	agg := make([]int64, len(f.Steps))
 	for _, pid := range targetIDs {
@@ -312,14 +267,7 @@ func (s *ReadStore) AnalyzeCanonicalFunnel(ctx context.Context, f CanonicalFunne
 
 		// Exclusion rule: a project missing ANY step's mapping is dropped from
 		// the entire funnel and reported.
-		missingKey := ""
-		for _, step := range f.Steps {
-			if len(canonMap[step.CanonicalKey]) == 0 {
-				missingKey = step.CanonicalKey
-				break
-			}
-		}
-		if missingKey != "" {
+		if missingKey := missingCanonicalMapping(f.Steps, canonMap); missingKey != "" {
 			result.ExcludedProjects = append(result.ExcludedProjects, ExcludedProject{
 				ProjectID:   pid,
 				ProjectName: nameByID[pid],
@@ -328,37 +276,11 @@ func (s *ReadStore) AnalyzeCanonicalFunnel(ctx context.Context, f CanonicalFunne
 			continue
 		}
 
-		stepCounts := make([]int64, len(f.Steps))
-		for i, step := range f.Steps {
-			names := canonMap[step.CanonicalKey]
-			inClause, inArgs := nameInClause(names)
-
-			var q string
-			if needJoin {
-				q = fmt.Sprintf(`
-					SELECT COUNT(DISTINCT %s)
-					FROM events e
-					JOIN sessions s ON s.id = e.session_id AND s.project_id = e.project_id
-					WHERE e.project_id = ? AND %s AND e.occurred_at >= ? AND e.occurred_at <= ?%s`,
-					distinctCol, inClause, extraWhere)
-			} else {
-				q = fmt.Sprintf(`
-					SELECT COUNT(DISTINCT %s)
-					FROM events e
-					WHERE e.project_id = ? AND %s AND e.occurred_at >= ? AND e.occurred_at <= ?%s`,
-					distinctCol, inClause, extraWhere)
-			}
-			// Arg order mirrors AnalyzeFunnel: project_id, …names…, from, to, …segmentArgs…
-			args := []any{pid}
-			args = append(args, inArgs...)
-			args = append(args, from, to)
-			args = append(args, extraArgs...)
-
-			var n int64
-			if err := s.rdb.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
-				return result, fmt.Errorf("analyze canonical step %d (project %s): %w", i, pid, err)
-			}
-			stepCounts[i] = n
+		stepCounts, err := s.canonicalStepCounts(ctx, f.Steps, canonMap, pid, from, to, w)
+		if err != nil {
+			return result, err
+		}
+		for i, n := range stepCounts {
 			agg[i] += n
 		}
 		result.ByProject = append(result.ByProject, ProjectFunnelBreakdown{
@@ -370,6 +292,107 @@ func (s *ReadStore) AnalyzeCanonicalFunnel(ctx context.Context, f CanonicalFunne
 
 	result.Steps = buildStepResults(f.Steps, agg)
 	return result, nil
+}
+
+// canonicalProjectSet returns the projects to analyse (the requested ones, or
+// all when none are named) and every project's name by id.
+func (s *ReadStore) canonicalProjectSet(ctx context.Context, projectIDs []string) ([]string, map[string]string, error) {
+	allProjects, err := s.ListProjects(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	nameByID := make(map[string]string, len(allProjects))
+	for _, p := range allProjects {
+		nameByID[p.ID] = p.Name
+	}
+	if len(projectIDs) > 0 {
+		return projectIDs, nameByID, nil
+	}
+	var targetIDs []string
+	for _, p := range allProjects {
+		targetIDs = append(targetIDs, p.ID)
+	}
+	return targetIDs, nameByID, nil
+}
+
+// canonicalFilter is the segment, rule and scope part shared by every step
+// query of a canonical funnel.
+type canonicalFilter struct {
+	needJoin    bool   // the sessions table is needed for the segment or rules
+	distinctCol string // the column counted per step
+	extraWhere  string // " AND ..." fragment, empty when there is none
+	extraArgs   []any
+}
+
+// canonicalWhere builds the shared filter. An empty scope means session.
+func canonicalWhere(scope string, seg *SegmentFilter, rules []SegmentRule) canonicalFilter {
+	presetClause, presetArg, needJoin := segmentParam(seg)
+	ruleClause, ruleArgs, rulesNeedJoin := buildSegmentRuleClause(rules)
+
+	pageViewScope := scope == "page_view"
+	w := canonicalFilter{needJoin: needJoin || rulesNeedJoin, distinctCol: "e.session_id"}
+	if pageViewScope {
+		w.distinctCol = "e.page_view_id"
+	}
+
+	var clauses []string
+	if presetClause != "" {
+		clauses = append(clauses, presetClause)
+		if presetArg != nil {
+			w.extraArgs = append(w.extraArgs, presetArg)
+		}
+	}
+	if ruleClause != "" {
+		clauses = append(clauses, ruleClause)
+		w.extraArgs = append(w.extraArgs, ruleArgs...)
+	}
+	if pageViewScope {
+		clauses = append(clauses, "e.page_view_id IS NOT NULL")
+	}
+	if len(clauses) > 0 {
+		w.extraWhere = " AND " + strings.Join(clauses, " AND ")
+	}
+	return w
+}
+
+// missingCanonicalMapping returns the first step's canonical key that the
+// project has no event mapped to, or "" when every step is mapped.
+func missingCanonicalMapping(steps []CanonicalFunnelStep, canonMap map[string][]string) string {
+	for _, step := range steps {
+		if len(canonMap[step.CanonicalKey]) == 0 {
+			return step.CanonicalKey
+		}
+	}
+	return ""
+}
+
+// canonicalStepCounts counts the distinct sessions (or page views) of one
+// project per step.
+func (s *ReadStore) canonicalStepCounts(ctx context.Context, steps []CanonicalFunnelStep, canonMap map[string][]string, pid string, from, to time.Time, w canonicalFilter) ([]int64, error) {
+	counts := make([]int64, len(steps))
+	for i, step := range steps {
+		inClause, inArgs := nameInClause(canonMap[step.CanonicalKey])
+
+		join := ""
+		if w.needJoin {
+			join = "\n\t\t\t\t\tJOIN sessions s ON s.id = e.session_id AND s.project_id = e.project_id"
+		}
+		q := fmt.Sprintf(`
+					SELECT COUNT(DISTINCT %s)
+					FROM events e%s
+					WHERE e.project_id = ? AND %s AND e.occurred_at >= ? AND e.occurred_at <= ?%s`,
+			w.distinctCol, join, inClause, w.extraWhere)
+		// Arg order mirrors AnalyzeFunnel: project_id, …names…, from, to, …segmentArgs…
+		args := []any{pid}
+		args = append(args, inArgs...)
+		args = append(args, from, to)
+		args = append(args, w.extraArgs...)
+
+		if err := s.rdb.QueryRowContext(ctx, q, args...).Scan(&counts[i]); err != nil {
+			return nil, fmt.Errorf("analyze canonical step %d (project %s): %w", i, pid, err)
+		}
+	}
+	return counts, nil
 }
 
 // buildStepResults turns raw per-step distinct counts into conversion/drop-off
