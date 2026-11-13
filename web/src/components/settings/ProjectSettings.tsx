@@ -20,7 +20,8 @@ interface ProjectSettingsProps {
   refetchProjects: () => void
   defaultProjectId: string | null
   setDefaultProjectId: (id: string) => void
-  onError: (msg: string) => void
+  // A null clears the banner: each action starts by dropping the last failure.
+  onError: (msg: string | null) => void
   publicURL: string
 }
 
@@ -61,6 +62,7 @@ export function ProjectSettings({
   }
 
   const handleApproveProject = async (projectId: string) => {
+    onError(null)
     setApprovingProject(projectId)
     try {
       await api.approveProject(projectId)
@@ -76,6 +78,7 @@ export function ProjectSettings({
     const name = editedNames[projectId]?.trim()
     if (!name) return
     const domain = editedDomains[projectId]?.trim() ?? ''
+    onError(null)
     setSavingProject(projectId)
     try {
       await api.updateProject(projectId, { name, domain })
@@ -94,6 +97,7 @@ export function ProjectSettings({
       setDeleteProjectConfirm(projectId)
       return
     }
+    onError(null)
     setDeletingProject(projectId)
     try {
       await api.deleteProject(projectId)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { Video, VideoOff, Trash2, ChevronLeft, ChevronRight, Monitor, Smartphone, Tablet, Bot, User } from 'lucide-react'
 import Shell from '../components/shell/Shell'
@@ -21,6 +21,19 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
   })
+}
+
+// recordingPath shows the path of a recording's page. A stored page_url can be
+// relative or malformed, so a parse failure falls back to the raw value.
+function recordingPath(rec: Recording): string {
+  if (!rec.page_url) return rec.session_id.slice(0, 12) + '…'
+  try {
+    // A leading slash marks a relative URL; resolve it against a dummy origin
+    // only to split the path from the query.
+    return new URL(rec.page_url, rec.page_url.startsWith('/') ? 'http://relative.invalid' : undefined).pathname
+  } catch {
+    return rec.page_url
+  }
 }
 
 function DeviceIcon({ type }: { type: string }) {
@@ -77,6 +90,10 @@ export default function Sessions() {
   const [loading, setLoading] = useState(true)
   const [offset, setOffset] = useState(0)
   const [hasMore, setHasMore] = useState(false)
+  const [loadError, setLoadError] = useState(false)
+  // Each load takes a number; only the newest may write state, so a slow
+  // earlier response cannot replace the list the filters now ask for.
+  const loadSeq = useRef(0)
   const [selected, setSelected] = useState<Recording | null>(null)
   const [filters, setFilters] = useState<FilterState>({
     traffic: 'human',
@@ -92,7 +109,9 @@ export default function Sessions() {
 
   const load = useCallback(async (off: number, f: FilterState) => {
     if (!projectId) return
+    const seq = ++loadSeq.current
     setLoading(true)
+    setLoadError(false)
     try {
       let sessionIds: string[] | undefined
 
@@ -116,12 +135,17 @@ export default function Sessions() {
         environment: f.environment || undefined,
         page_url: f.pageUrl || undefined,
       })
+      if (seq !== loadSeq.current) return
       setRecordings(result.recordings)
       setHasMore(result.recordings.length === PAGE_SIZE)
-    } catch {
+    } catch (e) {
+      if (seq !== loadSeq.current) return
+      reportError(e, { source: 'Sessions.load' })
       setRecordings([])
+      setHasMore(false)
+      setLoadError(true)
     } finally {
-      setLoading(false)
+      if (seq === loadSeq.current) setLoading(false)
     }
   }, [projectId, funnelId, stepParam, pageParam])
 
@@ -347,6 +371,10 @@ export default function Sessions() {
 
         {loading ? (
           <div style={{ padding: '3rem', textAlign: 'center', color: C.muted }}>Loading…</div>
+        ) : loadError ? (
+          <div role="alert" style={{ padding: '3rem', textAlign: 'center', color: C.error }}>
+            Could not load recordings. Try again in a moment.
+          </div>
         ) : recordings.length === 0 ? (
           <div style={{
             padding: '3rem', textAlign: 'center', color: C.muted,
@@ -497,7 +525,7 @@ export default function Sessions() {
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(rec.started_at)}</div>
                       <div style={{ fontSize: 11, color: C.muted, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {rec.page_url ? new URL(rec.page_url).pathname : rec.session_id.slice(0, 12) + '…'}
+                        {recordingPath(rec)}
                       </div>
                       <div style={{ fontSize: 11, color: C.muted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
                         <span>{formatDuration(rec.duration_ms)}</span>
@@ -516,7 +544,7 @@ export default function Sessions() {
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(rec.started_at)}</div>
                       <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                        {rec.page_url ? new URL(rec.page_url).pathname : rec.session_id.slice(0, 12) + '…'}
+                        {recordingPath(rec)}
                       </div>
                     </div>
                   )}

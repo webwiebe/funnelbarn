@@ -238,4 +238,18 @@ describe('Settings', () => {
       expect(screen.getByText(/no api keys yet/i)).toBeInTheDocument(),
     )
   })
+
+  it('clears the error banner once a later save succeeds', async () => {
+    mockApi.setInstanceSettings.mockRejectedValueOnce(new Error('save failed'))
+    renderSettings()
+    await screen.findAllByText('prod-key')
+    const save = () => fireEvent.click(screen.getByRole('button', { name: /save recording settings/i }))
+
+    save()
+    expect(await screen.findByText(/save failed/)).toBeInTheDocument()
+
+    mockApi.setInstanceSettings.mockResolvedValueOnce(undefined)
+    save()
+    await waitFor(() => expect(screen.queryByText(/save failed/)).not.toBeInTheDocument())
+  })
 })
