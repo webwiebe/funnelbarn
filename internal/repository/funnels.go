@@ -350,14 +350,7 @@ func (s *ReadStore) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int,
 	if stepOrder < 1 || stepOrder > len(f.Steps) {
 		return nil, fmt.Errorf("step_order %d out of range [1, %d]", stepOrder, len(f.Steps))
 	}
-	// Find the step definition (steps are stored 1-based).
-	var targetStep FunnelStep
-	for _, st := range f.Steps {
-		if st.StepOrder == stepOrder {
-			targetStep = st
-			break
-		}
-	}
+	targetStep := funnelStepAt(f, stepOrder)
 
 	ruleClause, ruleArgs, needJoin := buildSegmentRuleClause(rules)
 	stepQuery := `
@@ -376,21 +369,8 @@ func (s *ReadStore) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int,
 	}
 
 	// Sessions that reached this step.
-	rows, err := s.rdb.QueryContext(ctx, stepQuery, stepArgs(targetStep.EventName)...)
-	if err != nil {
-		return nil, fmt.Errorf("SessionsAtStep reached: %w", err)
-	}
 	reached := make(map[string]bool)
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		reached[id] = true
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+	if err := s.scanSessionIDs(ctx, "SessionsAtStep reached", stepQuery, stepArgs(targetStep.EventName), func(id string) { reached[id] = true }); err != nil {
 		return nil, err
 	}
 
@@ -400,30 +380,41 @@ func (s *ReadStore) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int,
 	}
 
 	// Otherwise subtract sessions that also reached the next step.
-	var nextStep FunnelStep
-	for _, st := range f.Steps {
-		if st.StepOrder == stepOrder+1 {
-			nextStep = st
-			break
-		}
-	}
-	nextRows, err := s.rdb.QueryContext(ctx, stepQuery, stepArgs(nextStep.EventName)...)
-	if err != nil {
-		return nil, fmt.Errorf("SessionsAtStep next: %w", err)
-	}
-	defer nextRows.Close()
-	for nextRows.Next() {
-		var id string
-		if err := nextRows.Scan(&id); err != nil {
-			return nil, err
-		}
-		delete(reached, id)
-	}
-	if err := nextRows.Err(); err != nil {
+	nextStep := funnelStepAt(f, stepOrder+1)
+	if err := s.scanSessionIDs(ctx, "SessionsAtStep next", stepQuery, stepArgs(nextStep.EventName), func(id string) { delete(reached, id) }); err != nil {
 		return nil, err
 	}
 
 	return sortedSessionIDs(reached, limit), nil
+}
+
+// funnelStepAt returns the step with the given 1-based StepOrder, or the zero
+// step when the funnel has none.
+func funnelStepAt(f Funnel, stepOrder int) FunnelStep {
+	for _, st := range f.Steps {
+		if st.StepOrder == stepOrder {
+			return st
+		}
+	}
+	return FunnelStep{}
+}
+
+// scanSessionIDs runs a query that selects one session id per row and hands
+// each id to visit. what names the query in a query error.
+func (s *ReadStore) scanSessionIDs(ctx context.Context, what, query string, args []any, visit func(id string)) error {
+	rows, err := s.rdb.QueryContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		visit(id)
+	}
+	return rows.Err()
 }
 
 // sortedSessionIDs returns up to limit session ids in ascending order, so the
