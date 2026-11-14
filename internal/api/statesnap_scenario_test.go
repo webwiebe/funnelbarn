@@ -91,7 +91,7 @@ func newSnapStack(t *testing.T) *snapStack {
 		Widgets:             service.NewWidgetService(store),
 		UserAuth:            userAuth,
 		SessionManager:      auth.NewSessionManager("test-secret", time.Hour),
-		WebSessions:         store,
+		WebSessions:         service.NewWebSessionService(store),
 		PublicURL:           "http://localhost",
 		LoginRatePerMinute:  1000,
 		LoginRateBurst:      1000,

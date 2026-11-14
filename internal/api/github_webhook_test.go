@@ -45,7 +45,7 @@ func newWebhookStack(t *testing.T, secret string) *webhookStack {
 		Events:              service.NewEventService(store),
 		UserAuth:            userAuth,
 		SessionManager:      auth.NewSessionManager("test-secret", time.Hour),
-		WebSessions:         store,
+		WebSessions:         service.NewWebSessionService(store),
 		PublicURL:           "http://localhost",
 		IngestRatePerMinute: 1000,
 		IngestRateBurst:     1000,

@@ -26,6 +26,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
 const (
@@ -296,7 +297,7 @@ func TestOIDCLogin_RedirectCarriesPKCEAndOfflineAccess(t *testing.T) {
 func TestOIDCFullFlow_CallbackPersistsTokenBoundSession(t *testing.T) {
 	f := newFakeIdP(t)
 	srv, store := oidcFlowServer(t, f, func(cfg *ServerConfig) {
-		cfg.IAMBarnUsers = cfg.WebSessions.(*repository.Store)
+		cfg.IAMBarnUsers = service.NewIAMBarnUserService(cfg.DB.(*repository.Store))
 	})
 
 	// 1. Login: capture state/nonce cookies + authorize params.

@@ -32,3 +32,7 @@ func (svc *SessionService) ListSessions(ctx context.Context, projectID string, l
 func (svc *SessionService) ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error) {
 	return svc.store.ActiveSessionCount(ctx, projectID, withinMinutes)
 }
+
+func (svc *SessionService) SessionDistributions(ctx context.Context, projectID string) (map[string][]repository.DistributionEntry, error) {
+	return svc.store.SessionDistributions(ctx, projectID)
+}

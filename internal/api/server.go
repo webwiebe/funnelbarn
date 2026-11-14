@@ -60,7 +60,7 @@ type ServerConfig struct {
 	DogfoodAPIKey    string
 	DogfoodProject   string
 
-	IAMBarnUsers IAMBarnUserRepo
+	IAMBarnUsers service.IAMBarnUsers
 
 	// PostLogoutRedirectURI is exposed to the frontend so the hosted IAMBarn
 	// components can pass it to /oauth2/end-session. It should point at the
@@ -74,7 +74,7 @@ type ServerConfig struct {
 	// WebSessions is the server-side session store. Required whenever any
 	// authentication mechanism is configured: sessions are rows, and deleting
 	// a row revokes the session.
-	WebSessions WebSessionStore
+	WebSessions service.WebSessions
 
 	// Environment is the normalized deployment tier (internal/environment).
 	// Outside development, cookies default to Secure=true even when the TLS
@@ -91,12 +91,11 @@ type ServerConfig struct {
 	// login is a real mechanism and session-authed routes must fail closed.
 	LocalUsersExist bool
 
-	InstanceSettings  InstanceSettingsRepo
-	GeoAnonymizer     GeoAnonymizer
+	InstanceSettings  service.InstanceSettings
+	Privacy           service.Privacy
 	Segments          service.Segments
-	Distributions     DistributionRepo
 	Recordings        service.Recordings
-	RecordingSettings ProjectRecordingSettingsRepo
+	RecordingSettings service.RecordingSettings
 	ProjectHealth     service.ProjectHealth
 	Agents            service.Agents
 
@@ -170,20 +169,19 @@ type Server struct {
 	dogfoodAPIKey       string
 	dogfoodProject      string
 	trustedProxies      []string
-	iambarnUsers        IAMBarnUserRepo
+	iambarnUsers        service.IAMBarnUsers
 	postLogoutRedirect  string
 	oidc                *auth.OIDCClient
-	webSessions         WebSessionStore
+	webSessions         service.WebSessions
 	environment         string
 	oidcRefreshGrace    time.Duration
 	refreshGroup        singleflight.Group
 	localUsersExist     bool
-	instanceSettings    InstanceSettingsRepo
-	geoAnonymizer       GeoAnonymizer
+	instanceSettings    service.InstanceSettings
+	privacy             service.Privacy
 	segments            service.Segments
-	distributions       DistributionRepo
 	recordings          service.Recordings
-	recordingSettings   ProjectRecordingSettingsRepo
+	recordingSettings   service.RecordingSettings
 	projectHealth       service.ProjectHealth
 	agents              service.Agents
 	flagAutoRegisterMax int
@@ -270,9 +268,8 @@ func NewServer(cfg ServerConfig) *Server {
 		oidcRefreshGrace:    cfg.OIDCRefreshGrace,
 		localUsersExist:     cfg.LocalUsersExist,
 		instanceSettings:    cfg.InstanceSettings,
-		geoAnonymizer:       cfg.GeoAnonymizer,
+		privacy:             cfg.Privacy,
 		segments:            cfg.Segments,
-		distributions:       cfg.Distributions,
 		recordings:          cfg.Recordings,
 		recordingSettings:   cfg.RecordingSettings,
 		projectHealth:       cfg.ProjectHealth,
@@ -296,18 +293,6 @@ func NewServer(cfg ServerConfig) *Server {
 	s.githubWebhookProject = cfg.GitHubWebhookProject
 	s.registerRoutes()
 	return s
-}
-
-// WebSessionStore is the narrow interface over the web_sessions table used by
-// the session middleware, the OIDC callback, and the logout paths.
-type WebSessionStore interface {
-	CreateWebSession(ctx context.Context, ws repository.WebSession) error
-	GetWebSession(ctx context.Context, idHash string) (repository.WebSession, error)
-	UpdateWebSessionTokens(ctx context.Context, idHash, idToken, accessToken, refreshToken string, accessExpiresAt int64, claimsJSON string, lastRefreshAt int64) error
-	MarkWebSessionRefreshFailing(ctx context.Context, idHash string, since int64) error
-	DeleteWebSession(ctx context.Context, idHash string) error
-	DeleteWebSessionsByIdpSid(ctx context.Context, sid string) (int64, error)
-	DeleteWebSessionsByIdpSub(ctx context.Context, sub string) (int64, error)
 }
 
 // StartCleanup begins periodic rate limiter cleanup goroutines.

@@ -204,6 +204,7 @@ type SessionQueries interface {
 	SessionByID(ctx context.Context, projectID, id string) (repository.Session, error)
 	ListSessions(ctx context.Context, projectID string, limit, offset int) ([]repository.Session, error)
 	ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error)
+	SessionDistributions(ctx context.Context, projectID string) (map[string][]repository.DistributionEntry, error)
 }
 
 // SessionCommands is the write side of the session port.

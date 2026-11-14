@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 
@@ -10,12 +9,6 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
-
-// ProjectRecordingSettingsRepo is the narrow repo interface for per-project recording settings.
-type ProjectRecordingSettingsRepo interface {
-	GetProjectRecordingSettings(ctx context.Context, projectID string) (*repository.ProjectRecordingSettings, error)
-	UpsertProjectRecordingSettings(ctx context.Context, settings *repository.ProjectRecordingSettings) error
-}
 
 // handleGetProjectRecordingSettings returns the per-project recording settings.
 // GET /api/v1/projects/{id}/recording-settings
