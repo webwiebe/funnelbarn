@@ -238,4 +238,47 @@ describe('Settings', () => {
       expect(screen.getByText(/no api keys yet/i)).toBeInTheDocument(),
     )
   })
+  // The banner at the top of the page used to stay up until a reload: nothing
+  // cleared it, so a later successful save still showed the old failure.
+  describe('failure banner', () => {
+    it('clears after a recording save succeeds', async () => {
+      mockApi.setInstanceSettings.mockRejectedValueOnce(new Error('boom'))
+      await renderWithKeys()
+
+      fireEvent.click(screen.getByRole('button', { name: /save recording settings/i }))
+      expect(await screen.findByText(/boom/)).toBeInTheDocument()
+
+      mockApi.setInstanceSettings.mockResolvedValueOnce(undefined)
+      fireEvent.click(screen.getByRole('button', { name: /save recording settings/i }))
+      await waitFor(() => expect(screen.queryByText(/boom/)).not.toBeInTheDocument())
+    })
+
+    it('clears after a geo toggle succeeds', async () => {
+      mockApi.setInstanceSettings.mockRejectedValueOnce(new Error('geo failed'))
+      await renderWithKeys()
+
+      const toggle = screen.getByRole('button', { name: /geo enrichment/i })
+      fireEvent.click(toggle)
+      expect(await screen.findByText(/geo failed/)).toBeInTheDocument()
+
+      mockApi.setInstanceSettings.mockResolvedValueOnce(undefined)
+      fireEvent.click(toggle)
+      await waitFor(() => expect(screen.queryByText(/geo failed/)).not.toBeInTheDocument())
+    })
+
+    it('clears after an API key delete succeeds', async () => {
+      mockApi.createApiKey.mockRejectedValueOnce(new Error('create failed'))
+      const create = await renderWithKeys()
+      fireEvent.change(screen.getByPlaceholderText(/key name/i), { target: { value: 'k' } })
+      fireEvent.click(create.getByRole('button', { name: /create/i }))
+      expect(await screen.findAllByText(/create failed/)).not.toHaveLength(0)
+
+      mockApi.deleteApiKey.mockResolvedValue(undefined)
+      fireEvent.click(screen.getAllByTitle(/delete key/i)[0])
+      const confirms = screen.getAllByText(/confirm\?/i)
+      fireEvent.click(within(confirms[0].parentElement as HTMLElement).getByRole('button', { name: /^delete$/i }))
+      await waitFor(() => expect(mockApi.deleteApiKey).toHaveBeenCalled())
+      await waitFor(() => expect(screen.queryByText(/create failed/)).not.toBeInTheDocument())
+    })
+  })
 })

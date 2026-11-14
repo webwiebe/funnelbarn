@@ -69,7 +69,7 @@ interface ApiKeySettingsProps {
   projects: Project[]
   /** The project this section is showing keys for — the one the header names. */
   projectId?: string
-  onError: (msg: string) => void
+  onError: (msg: string | null) => void
 }
 
 export function ApiKeySettings({
@@ -101,6 +101,7 @@ export function ApiKeySettings({
     if (!newKeyProjectId) { setError('Select a project for this key'); return }
     setCreating(true)
     setError(null)
+    onError(null)
     try {
       const res = await api.createApiKey(newKeyName, newKeyScope, newKeyProjectId)
       trackEvent('api_key_created', { scope: newKeyScope })
@@ -127,6 +128,8 @@ export function ApiKeySettings({
       setDeleteConfirm(keyId)
       return
     }
+    setError(null)
+    onError(null)
     try {
       await api.deleteApiKey(keyId)
       setApiKeys((prev) => prev.filter((k) => k.id !== keyId))
