@@ -10,7 +10,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/timerange"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
@@ -50,7 +50,7 @@ func (s *Server) handleEventNames(w http.ResponseWriter, r *http.Request) {
 
 // parseEventCounts reads and validates the event-counts query string, apart
 // from the environment, which the handler resolves against the project.
-func parseEventCounts(q url.Values) (rng timerange.Range, limit int, f repository.EventCountFilter, err error) {
+func parseEventCounts(q url.Values) (rng timerange.Range, limit int, f domain.EventCountFilter, err error) {
 	if err = rejectUnknownParams(q, eventCountsParams); err != nil {
 		return rng, 0, f, err
 	}
@@ -108,7 +108,7 @@ func (s *Server) handleEventCounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if counts == nil {
-		counts = []repository.EventNameStat{}
+		counts = []domain.EventNameStat{}
 	}
 
 	var total int64
@@ -223,7 +223,7 @@ func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
 // parameter is rejected (see listEventsParams); "stream" is sent by the live
 // view and has no effect. The environment is resolved by the handler, which
 // needs the project's recorded environments.
-func parseListEvents(q url.Values) (f repository.EventListFilter, limit, offset int, err error) {
+func parseListEvents(q url.Values) (f domain.EventListFilter, limit, offset int, err error) {
 	if err = rejectUnknownParams(q, listEventsParams); err != nil {
 		return f, 0, 0, err
 	}

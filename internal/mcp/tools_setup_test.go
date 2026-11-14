@@ -5,13 +5,13 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func TestGetSetupGuideTool_ReturnsDoc(t *testing.T) {
-	var gotProject repository.Project
+	var gotProject domain.Project
 	env := newTestEnv(t, func(d *Deps) {
-		d.SetupDoc = func(ctx context.Context, p repository.Project) (string, error) {
+		d.SetupDoc = func(ctx context.Context, p domain.Project) (string, error) {
 			gotProject = p
 			return "# Setup: " + p.Slug, nil
 		}
@@ -33,7 +33,7 @@ func TestGetSetupGuideTool_ReturnsDoc(t *testing.T) {
 
 func TestGetSetupGuideTool_ProjectArgOverridesHeader(t *testing.T) {
 	env := newTestEnv(t, func(d *Deps) {
-		d.SetupDoc = func(ctx context.Context, p repository.Project) (string, error) {
+		d.SetupDoc = func(ctx context.Context, p domain.Project) (string, error) {
 			return "# Setup: " + p.Slug, nil
 		}
 	})
@@ -52,7 +52,7 @@ func TestGetSetupGuideTool_ProjectArgOverridesHeader(t *testing.T) {
 
 func TestGetSetupGuideTool_NoProjectSelected(t *testing.T) {
 	env := newTestEnv(t, func(d *Deps) {
-		d.SetupDoc = func(ctx context.Context, p repository.Project) (string, error) {
+		d.SetupDoc = func(ctx context.Context, p domain.Project) (string, error) {
 			return "unreachable", nil
 		}
 	})
@@ -80,7 +80,7 @@ func TestGetSetupGuideTool_NilDeps(t *testing.T) {
 
 func TestGetSetupGuideTool_ServiceErrorPassesThrough(t *testing.T) {
 	env := newTestEnv(t, func(d *Deps) {
-		d.SetupDoc = func(ctx context.Context, p repository.Project) (string, error) {
+		d.SetupDoc = func(ctx context.Context, p domain.Project) (string, error) {
 			return "", errors.New("boom")
 		}
 	})
@@ -95,7 +95,7 @@ func TestGetSetupGuideTool_ServiceErrorPassesThrough(t *testing.T) {
 
 func TestGetSetupGuideTool_WriteScopeNotRequired(t *testing.T) {
 	env := newTestEnv(t, func(d *Deps) {
-		d.SetupDoc = func(ctx context.Context, p repository.Project) (string, error) {
+		d.SetupDoc = func(ctx context.Context, p domain.Project) (string, error) {
 			return "ok", nil
 		}
 	})

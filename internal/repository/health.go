@@ -4,23 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/sqlcgen"
 )
 
-// ProjectHealth holds the integration health status for a project.
-type ProjectHealth struct {
-	ProjectID          string    `json:"project_id"`
-	SetupCalled        bool      `json:"setup_called"`
-	EventsReceived     bool      `json:"events_received"`
-	FlagsEvaluated     bool      `json:"flags_evaluated"`
-	RecordingsReceived bool      `json:"recordings_received"`
-	UpdatedAt          time.Time `json:"updated_at"`
-}
-
-func projectHealthFromGen(g sqlcgen.ProjectHealth) ProjectHealth {
-	return ProjectHealth{
+func projectHealthFromGen(g sqlcgen.ProjectHealth) domain.ProjectHealth {
+	return domain.ProjectHealth{
 		ProjectID:          g.ProjectID,
 		SetupCalled:        g.SetupCalled != 0,
 		EventsReceived:     g.EventsReceived != 0,
@@ -33,13 +23,13 @@ func projectHealthFromGen(g sqlcgen.ProjectHealth) ProjectHealth {
 // GetProjectHealth returns the health row for projectID.
 // If no row exists (project has never triggered any health event) a zeroed
 // ProjectHealth is returned with no error.
-func (r *ReadStore) GetProjectHealth(ctx context.Context, projectID string) (ProjectHealth, error) {
+func (r *ReadStore) GetProjectHealth(ctx context.Context, projectID string) (domain.ProjectHealth, error) {
 	row, err := r.rq.GetProjectHealth(ctx, projectID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return ProjectHealth{ProjectID: projectID}, nil
+		return domain.ProjectHealth{ProjectID: projectID}, nil
 	}
 	if err != nil {
-		return ProjectHealth{}, err
+		return domain.ProjectHealth{}, err
 	}
 	return projectHealthFromGen(row), nil
 }

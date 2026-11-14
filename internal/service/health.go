@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // projectHealthService implements ProjectHealth with an in-memory cache that
@@ -23,19 +23,19 @@ import (
 type projectHealthService struct {
 	repo  ports.ProjectHealthRepo
 	mu    sync.RWMutex
-	cache map[string]repository.ProjectHealth // keyed by project_id
+	cache map[string]domain.ProjectHealth // keyed by project_id
 }
 
 // NewProjectHealthService creates a new projectHealthService.
 func NewProjectHealthService(repo ports.ProjectHealthRepo) *projectHealthService {
 	return &projectHealthService{
 		repo:  repo,
-		cache: make(map[string]repository.ProjectHealth),
+		cache: make(map[string]domain.ProjectHealth),
 	}
 }
 
 // GetProjectHealth returns the current health status directly from DB (read path, infrequent).
-func (s *projectHealthService) GetProjectHealth(ctx context.Context, projectID string) (repository.ProjectHealth, error) {
+func (s *projectHealthService) GetProjectHealth(ctx context.Context, projectID string) (domain.ProjectHealth, error) {
 	return s.repo.GetProjectHealth(ctx, projectID)
 }
 
@@ -52,9 +52,9 @@ func (s *projectHealthService) ResetProjectHealth(ctx context.Context, projectID
 
 func (s *projectHealthService) MarkSetupCalled(ctx context.Context, projectID string) error {
 	_, err := s.markField(ctx, projectID,
-		func(h repository.ProjectHealth) bool { return h.SetupCalled },
+		func(h domain.ProjectHealth) bool { return h.SetupCalled },
 		s.repo.MarkProjectHealthSetupCalled,
-		func(h *repository.ProjectHealth) { h.SetupCalled = true },
+		func(h *domain.ProjectHealth) { h.SetupCalled = true },
 	)
 	return err
 }
@@ -64,26 +64,26 @@ func (s *projectHealthService) MarkSetupCalled(ctx context.Context, projectID st
 // returned bool.
 func (s *projectHealthService) MarkEventsReceived(ctx context.Context, projectID string) (bool, error) {
 	return s.markField(ctx, projectID,
-		func(h repository.ProjectHealth) bool { return h.EventsReceived },
+		func(h domain.ProjectHealth) bool { return h.EventsReceived },
 		s.repo.MarkProjectHealthEventsReceived,
-		func(h *repository.ProjectHealth) { h.EventsReceived = true },
+		func(h *domain.ProjectHealth) { h.EventsReceived = true },
 	)
 }
 
 func (s *projectHealthService) MarkFlagsEvaluated(ctx context.Context, projectID string) error {
 	_, err := s.markField(ctx, projectID,
-		func(h repository.ProjectHealth) bool { return h.FlagsEvaluated },
+		func(h domain.ProjectHealth) bool { return h.FlagsEvaluated },
 		s.repo.MarkProjectHealthFlagsEvaluated,
-		func(h *repository.ProjectHealth) { h.FlagsEvaluated = true },
+		func(h *domain.ProjectHealth) { h.FlagsEvaluated = true },
 	)
 	return err
 }
 
 func (s *projectHealthService) MarkRecordingsReceived(ctx context.Context, projectID string) error {
 	_, err := s.markField(ctx, projectID,
-		func(h repository.ProjectHealth) bool { return h.RecordingsReceived },
+		func(h domain.ProjectHealth) bool { return h.RecordingsReceived },
 		s.repo.MarkProjectHealthRecordingsReceived,
-		func(h *repository.ProjectHealth) { h.RecordingsReceived = true },
+		func(h *domain.ProjectHealth) { h.RecordingsReceived = true },
 	)
 	return err
 }
@@ -94,9 +94,9 @@ func (s *projectHealthService) MarkRecordingsReceived(ctx context.Context, proje
 func (s *projectHealthService) markField(
 	ctx context.Context,
 	projectID string,
-	isSet func(repository.ProjectHealth) bool,
+	isSet func(domain.ProjectHealth) bool,
 	dbMark func(context.Context, string) error,
-	cacheSet func(*repository.ProjectHealth),
+	cacheSet func(*domain.ProjectHealth),
 ) (bool, error) {
 	// Fast path: field already true in cache — skip all DB interaction.
 	s.mu.RLock()

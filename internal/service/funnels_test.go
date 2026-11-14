@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -21,11 +20,11 @@ func TestFunnelService_CreateListDelete(t *testing.T) {
 	p, err := projSvc.CreateProject(ctx, "Funnel Project", "funnel-project")
 	require.NoError(t, err)
 
-	f, err := funnelSvc.CreateFunnel(ctx, repository.Funnel{
+	f, err := funnelSvc.CreateFunnel(ctx, domain.Funnel{
 		ProjectID:   p.ID,
 		Name:        "Checkout Funnel",
 		Description: "Tracks checkout",
-		Steps: []repository.FunnelStep{
+		Steps: []domain.FunnelStep{
 			{EventName: "cart-viewed"},
 			{EventName: "checkout-started"},
 			{EventName: "checkout-completed"},
@@ -62,19 +61,19 @@ func TestFunnelService_UpdateFunnel(t *testing.T) {
 	p, err := projSvc.CreateProject(ctx, "Update Project", "update-project")
 	require.NoError(t, err)
 
-	f, err := funnelSvc.CreateFunnel(ctx, repository.Funnel{
+	f, err := funnelSvc.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Original Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step-1"}},
 	})
 	require.NoError(t, err)
 
-	updated, err := funnelSvc.UpdateFunnel(ctx, repository.Funnel{
+	updated, err := funnelSvc.UpdateFunnel(ctx, domain.Funnel{
 		ID:          f.ID,
 		ProjectID:   p.ID,
 		Name:        "Updated Funnel",
 		Description: "Now with more steps",
-		Steps: []repository.FunnelStep{
+		Steps: []domain.FunnelStep{
 			{EventName: "step-a"},
 			{EventName: "step-b"},
 		},
@@ -96,21 +95,21 @@ func TestFunnelService_UpdateFunnel_PreservesScopeWhenOmitted(t *testing.T) {
 	p, err := projSvc.CreateProject(ctx, "Scope Project", "scope-project")
 	require.NoError(t, err)
 
-	f, err := funnelSvc.CreateFunnel(ctx, repository.Funnel{
+	f, err := funnelSvc.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Page View Funnel",
 		Scope:     "page_view",
-		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step-1"}},
 	})
 	require.NoError(t, err)
 	require.Equal(t, "page_view", f.Scope)
 
 	// Update without setting Scope must not reset it to the "session" default.
-	updated, err := funnelSvc.UpdateFunnel(ctx, repository.Funnel{
+	updated, err := funnelSvc.UpdateFunnel(ctx, domain.Funnel{
 		ID:        f.ID,
 		ProjectID: p.ID,
 		Name:      "Page View Funnel Renamed",
-		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step-1"}},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "page_view", updated.Scope)
@@ -125,25 +124,25 @@ func TestFunnelService_UpdateFunnel_ValidatesLikeCreate(t *testing.T) {
 	p, err := projSvc.CreateProject(ctx, "Validate Project", "validate-project")
 	require.NoError(t, err)
 
-	f, err := funnelSvc.CreateFunnel(ctx, repository.Funnel{
+	f, err := funnelSvc.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step-1"}},
 	})
 	require.NoError(t, err)
 
 	// Missing name.
-	_, err = funnelSvc.UpdateFunnel(ctx, repository.Funnel{
+	_, err = funnelSvc.UpdateFunnel(ctx, domain.Funnel{
 		ID:        f.ID,
 		ProjectID: p.ID,
-		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step-1"}},
 	})
 	require.Error(t, err)
 	assert.True(t, domain.IsValidation(err))
 	assert.Contains(t, err.Error(), "name")
 
 	// No steps.
-	_, err = funnelSvc.UpdateFunnel(ctx, repository.Funnel{
+	_, err = funnelSvc.UpdateFunnel(ctx, domain.Funnel{
 		ID:        f.ID,
 		ProjectID: p.ID,
 		Name:      "Funnel",
@@ -153,11 +152,11 @@ func TestFunnelService_UpdateFunnel_ValidatesLikeCreate(t *testing.T) {
 	assert.Contains(t, err.Error(), "steps")
 
 	// Step with empty event_name.
-	_, err = funnelSvc.UpdateFunnel(ctx, repository.Funnel{
+	_, err = funnelSvc.UpdateFunnel(ctx, domain.Funnel{
 		ID:        f.ID,
 		ProjectID: p.ID,
 		Name:      "Funnel",
-		Steps:     []repository.FunnelStep{{EventName: ""}},
+		Steps:     []domain.FunnelStep{{EventName: ""}},
 	})
 	require.Error(t, err)
 	assert.True(t, domain.IsValidation(err))

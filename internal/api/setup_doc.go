@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // jsSDKVersion is the @funnelbarn/js release the setup guide installs.
@@ -21,7 +21,7 @@ const jsSDKInstallURL = "https://github.com/webwiebe/funnelbarn/releases/downloa
 // value the document depends on (the derived ingest key, the base URL, the
 // auto-register cap, whether MCP is enabled) is passed in, so it needs
 // neither the request nor the server's dependencies.
-func buildSetupMarkdown(project repository.Project, apiKey, publicURL string, flagAutoRegisterMax int, mcpEnabled bool) string {
+func buildSetupMarkdown(project domain.Project, apiKey, publicURL string, flagAutoRegisterMax int, mcpEnabled bool) string {
 
 	baseURL := publicURL
 	ingestURL := publicURL + "/api/v1/events"

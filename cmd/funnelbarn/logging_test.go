@@ -1,13 +1,9 @@
 package main
 
 import (
-	"context"
-	"errors"
 	"log/slog"
 	"testing"
 	"time"
-
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 func TestIsHealthProbeLog(t *testing.T) {
@@ -30,12 +26,5 @@ func TestIsHealthProbeLog(t *testing.T) {
 		if got := isHealthProbeLog(tc.rec); got != tc.want {
 			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
 		}
-	}
-}
-
-func TestResolveEventProject_EmptySlugIsUnresolvable(t *testing.T) {
-	_, err := resolveEventProject(context.Background(), nil, "")
-	if !errors.Is(err, repository.ErrProjectUnresolvable) {
-		t.Fatalf("got %v, want ErrProjectUnresolvable", err)
 	}
 }

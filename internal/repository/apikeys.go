@@ -4,24 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/sqlcgen"
 )
-
-// APIKey represents a stored API key.
-type APIKey struct {
-	ID        string    `json:"id"`
-	ProjectID string    `json:"project_id"`
-	Name      string    `json:"name"`
-	KeyHash   string    `json:"-"`
-	Scope     string    `json:"scope"`
-	CreatedAt time.Time `json:"created_at"`
-	// LastUsedAt is when a request last authenticated with this key. Nil means
-	// never used — which is how you tell a token that was issued and forgotten
-	// from one something depends on before revoking it.
-	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
-}
 
 // ValidAPIKeySHA256 looks up an API key by its SHA256 hex digest.
 // Returns (projectID, scope, true, nil) on match.
@@ -57,10 +43,10 @@ func (s *Store) EnsureSetupAPIKey(ctx context.Context, projectID, keySHA256 stri
 }
 
 // CreateAPIKey inserts a new API key.
-func (s *Store) CreateAPIKey(ctx context.Context, name, projectID, keySHA256, scope string) (APIKey, error) {
+func (s *Store) CreateAPIKey(ctx context.Context, name, projectID, keySHA256, scope string) (domain.APIKey, error) {
 	id, err := generateUUID()
 	if err != nil {
-		return APIKey{}, fmt.Errorf("create api key: %w", err)
+		return domain.APIKey{}, fmt.Errorf("create api key: %w", err)
 	}
 	if err := s.q.InsertAPIKey(ctx, sqlcgen.InsertAPIKeyParams{
 		ID:        id,
@@ -69,22 +55,22 @@ func (s *Store) CreateAPIKey(ctx context.Context, name, projectID, keySHA256, sc
 		KeyHash:   keySHA256,
 		Scope:     scope,
 	}); err != nil {
-		return APIKey{}, fmt.Errorf("create api key: %w", err)
+		return domain.APIKey{}, fmt.Errorf("create api key: %w", err)
 	}
 	k, err := s.q.GetAPIKeyByID(ctx, id)
 	if err != nil {
-		return APIKey{}, err
+		return domain.APIKey{}, err
 	}
 	return apiKeyFromGen(k), nil
 }
 
 // ListAPIKeys returns all API keys for a project.
-func (s *ReadStore) ListAPIKeys(ctx context.Context, projectID string) ([]APIKey, error) {
+func (s *ReadStore) ListAPIKeys(ctx context.Context, projectID string) ([]domain.APIKey, error) {
 	rows, err := s.rq.ListAPIKeysByProject(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
-	keys := make([]APIKey, 0, len(rows))
+	keys := make([]domain.APIKey, 0, len(rows))
 	for _, k := range rows {
 		keys = append(keys, apiKeyFromGen(k))
 	}
@@ -92,12 +78,12 @@ func (s *ReadStore) ListAPIKeys(ctx context.Context, projectID string) ([]APIKey
 }
 
 // ListAllAPIKeys returns all API keys across all projects, ordered by creation time.
-func (s *ReadStore) ListAllAPIKeys(ctx context.Context) ([]APIKey, error) {
+func (s *ReadStore) ListAllAPIKeys(ctx context.Context) ([]domain.APIKey, error) {
 	rows, err := s.rq.ListAllAPIKeys(ctx)
 	if err != nil {
 		return nil, err
 	}
-	keys := make([]APIKey, 0, len(rows))
+	keys := make([]domain.APIKey, 0, len(rows))
 	for _, k := range rows {
 		keys = append(keys, apiKeyFromGen(k))
 	}
@@ -114,8 +100,8 @@ func isNoRows(err error) bool {
 	return err == sql.ErrNoRows
 }
 
-func apiKeyFromGen(k sqlcgen.ApiKey) APIKey {
-	key := APIKey{
+func apiKeyFromGen(k sqlcgen.ApiKey) domain.APIKey {
+	key := domain.APIKey{
 		ID:        k.ID,
 		ProjectID: k.ProjectID,
 		Name:      k.Name,

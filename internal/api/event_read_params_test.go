@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // seedEventReads writes cta_click events across devices, environments and
@@ -24,7 +24,7 @@ func seedEventReads(t *testing.T) (*Server, string, string) {
 	add := func(id, name, session, device, env string, age time.Duration) {
 		t.Helper()
 		at := now.Add(-age)
-		if err := store.InsertEvent(ctx, repository.Event{
+		if err := store.InsertEvent(ctx, domain.Event{
 			ID: id, ProjectID: p.ID, SessionID: session, Name: name, DeviceType: device,
 			Environment: env, IngestID: "ing-" + id, OccurredAt: at, CreatedAt: at,
 		}); err != nil {
@@ -42,7 +42,7 @@ func seedEventReads(t *testing.T) (*Server, string, string) {
 	// Ingest files every value under a canonical name, but a stored row can
 	// still hold another one; a filter on it has to keep working.
 	add("9", "cta_click", "s8", "desktop", "preview-42", time.Hour)
-	key := scopedKey(t, store, p.ID, "readout-key", repository.APIKeyScopeAnalyticsRead)
+	key := scopedKey(t, store, p.ID, "readout-key", domain.APIKeyScopeAnalyticsRead)
 	return srv, p.ID, key
 }
 
@@ -58,13 +58,13 @@ func TestEventBreakdown_AcceptanceRequestWithToken(t *testing.T) {
 		t.Fatalf("want 200, got %d (%s)", w.Code, w.Body.String())
 	}
 	var resp struct {
-		Values      []repository.BreakdownRow `json:"values"`
-		TotalEvents int64                     `json:"total_events"`
+		Values      []domain.BreakdownRow `json:"values"`
+		TotalEvents int64                 `json:"total_events"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	want := []repository.BreakdownRow{{Value: "desktop", Count: 3, Sessions: 2}, {Value: "mobile", Count: 1, Sessions: 1}}
+	want := []domain.BreakdownRow{{Value: "desktop", Count: 3, Sessions: 2}, {Value: "mobile", Count: 1, Sessions: 1}}
 	if !reflect.DeepEqual(resp.Values, want) {
 		t.Errorf("values: got %+v, want %+v", resp.Values, want)
 	}
@@ -89,7 +89,7 @@ func eventReadPaths(pid string) map[string]string {
 }
 
 // Ingest stores "prod" as "production", and funnel analysis normalises its
-// environment argument the same way (repository.EnvironmentRule). The event
+// environment argument the same way (domain.EnvironmentRule). The event
 // reads compared the raw string, so environment=prod returned nothing.
 func TestEventReads_EnvironmentAliasMatchesCanonical(t *testing.T) {
 	srv, pid, key := seedEventReads(t)

@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // The columns list looks at the newest 1000 events of a name. A column only the
@@ -23,7 +23,7 @@ func TestPopulatedMetadataColumns_SamplesTheNewest1000Events(t *testing.T) {
 	const total = 1100
 	base := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Second)
 	for i := 0; i < total; i++ {
-		e := repository.Event{
+		e := domain.Event{
 			ID:         fmt.Sprintf("evt-%04d", i),
 			ProjectID:  p.ID,
 			SessionID:  "sess",

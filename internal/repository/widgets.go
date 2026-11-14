@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 var metadataColumns = []string{
@@ -21,29 +22,11 @@ func MetadataColumns() []string {
 	return metadataColumns
 }
 
-// DashboardWidget is a user-configured breakdown card on the Insights page.
-type DashboardWidget struct {
-	ID        string    `json:"id"`
-	ProjectID string    `json:"project_id"`
-	EventName string    `json:"event_name"`
-	Property  string    `json:"property"`
-	Title     string    `json:"title"`
-	Position  int       `json:"position"`
-	Size      int       `json:"size"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// PropertyBreakdown is one row of a top-N breakdown result.
-type PropertyBreakdown struct {
-	Value string `json:"value"`
-	Count int64  `json:"count"`
-}
-
-func (s *Store) CreateWidget(ctx context.Context, w DashboardWidget) (DashboardWidget, error) {
+func (s *Store) CreateWidget(ctx context.Context, w domain.DashboardWidget) (domain.DashboardWidget, error) {
 	var err error
 	w.ID, err = generateUUID()
 	if err != nil {
-		return DashboardWidget{}, fmt.Errorf("generate uuid: %w", err)
+		return domain.DashboardWidget{}, fmt.Errorf("generate uuid: %w", err)
 	}
 
 	if w.Size < 1 || w.Size > 3 {
@@ -51,26 +34,26 @@ func (s *Store) CreateWidget(ctx context.Context, w DashboardWidget) (DashboardW
 	}
 	const q = `INSERT INTO dashboard_widgets (id, project_id, event_name, property, title, position, size) VALUES (?, ?, ?, ?, ?, ?, ?)`
 	if _, err := s.db.ExecContext(ctx, q, w.ID, w.ProjectID, w.EventName, w.Property, w.Title, w.Position, w.Size); err != nil {
-		return DashboardWidget{}, fmt.Errorf("insert widget: %w", err)
+		return domain.DashboardWidget{}, fmt.Errorf("insert widget: %w", err)
 	}
 
 	return s.widgetByID(ctx, s.db, w.ID)
 }
 
-func (s *ReadStore) WidgetByID(ctx context.Context, id string) (DashboardWidget, error) {
+func (s *ReadStore) WidgetByID(ctx context.Context, id string) (domain.DashboardWidget, error) {
 	return s.widgetByID(ctx, s.rdb, id)
 }
 
-func (s *ReadStore) widgetByID(ctx context.Context, db querier, id string) (DashboardWidget, error) {
+func (s *ReadStore) widgetByID(ctx context.Context, db querier, id string) (domain.DashboardWidget, error) {
 	const q = `SELECT id, project_id, event_name, property, COALESCE(title,''), position, size, created_at FROM dashboard_widgets WHERE id = ?`
-	var w DashboardWidget
+	var w domain.DashboardWidget
 	if err := db.QueryRowContext(ctx, q, id).Scan(&w.ID, &w.ProjectID, &w.EventName, &w.Property, &w.Title, &w.Position, &w.Size, &w.CreatedAt); err != nil {
-		return DashboardWidget{}, err
+		return domain.DashboardWidget{}, err
 	}
 	return w, nil
 }
 
-func (s *ReadStore) ListWidgets(ctx context.Context, projectID string) ([]DashboardWidget, error) {
+func (s *ReadStore) ListWidgets(ctx context.Context, projectID string) ([]domain.DashboardWidget, error) {
 	const q = `SELECT id, project_id, event_name, property, COALESCE(title,''), position, size, created_at FROM dashboard_widgets WHERE project_id = ? ORDER BY position, created_at`
 	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
@@ -78,9 +61,9 @@ func (s *ReadStore) ListWidgets(ctx context.Context, projectID string) ([]Dashbo
 	}
 	defer rows.Close()
 
-	var widgets []DashboardWidget
+	var widgets []domain.DashboardWidget
 	for rows.Next() {
-		var w DashboardWidget
+		var w domain.DashboardWidget
 		if err := rows.Scan(&w.ID, &w.ProjectID, &w.EventName, &w.Property, &w.Title, &w.Position, &w.Size, &w.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -89,13 +72,13 @@ func (s *ReadStore) ListWidgets(ctx context.Context, projectID string) ([]Dashbo
 	return widgets, rows.Err()
 }
 
-func (s *Store) UpdateWidget(ctx context.Context, w DashboardWidget) (DashboardWidget, error) {
+func (s *Store) UpdateWidget(ctx context.Context, w domain.DashboardWidget) (domain.DashboardWidget, error) {
 	if w.Size < 1 || w.Size > 3 {
 		w.Size = 1
 	}
 	const q = `UPDATE dashboard_widgets SET event_name=?, property=?, title=?, position=?, size=? WHERE id=?`
 	if _, err := s.db.ExecContext(ctx, q, w.EventName, w.Property, w.Title, w.Position, w.Size, w.ID); err != nil {
-		return DashboardWidget{}, fmt.Errorf("update widget: %w", err)
+		return domain.DashboardWidget{}, fmt.Errorf("update widget: %w", err)
 	}
 	return s.widgetByID(ctx, s.db, w.ID)
 }
@@ -109,7 +92,7 @@ func (s *Store) DeleteWidget(ctx context.Context, id string) error {
 // of the given event type. When property is empty, returns only the total count.
 // When property is a metadata column (url, browser, etc.), queries the column directly.
 // Otherwise, extracts from the JSON properties field.
-func (s *ReadStore) WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]PropertyBreakdown, error) {
+func (s *ReadStore) WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]domain.PropertyBreakdown, error) {
 	if property == "" {
 		return s.widgetCount(ctx, projectID, eventName, window)
 	}
@@ -132,7 +115,7 @@ func (s *ReadStore) WidgetBreakdown(ctx context.Context, projectID, eventName, p
 			ORDER BY cnt DESC
 			LIMIT ?`, property, property)
 	} else {
-		if !validPropertyName.MatchString(property) {
+		if !domain.ValidBreakdownProperty(property) {
 			return nil, fmt.Errorf("invalid property name: %s", property)
 		}
 		q = fmt.Sprintf(`
@@ -158,9 +141,9 @@ func (s *ReadStore) WidgetBreakdown(ctx context.Context, projectID, eventName, p
 	}
 	defer rows.Close()
 
-	var results []PropertyBreakdown
+	var results []domain.PropertyBreakdown
 	for rows.Next() {
-		var r PropertyBreakdown
+		var r domain.PropertyBreakdown
 		if err := rows.Scan(&r.Value, &r.Count); err != nil {
 			return nil, err
 		}
@@ -169,11 +152,11 @@ func (s *ReadStore) WidgetBreakdown(ctx context.Context, projectID, eventName, p
 	return results, rows.Err()
 }
 
-func (s *ReadStore) widgetCount(ctx context.Context, projectID, eventName string, window int) ([]PropertyBreakdown, error) {
+func (s *ReadStore) widgetCount(ctx context.Context, projectID, eventName string, window int) ([]domain.PropertyBreakdown, error) {
 	const q = `SELECT COUNT(*) FROM (SELECT 1 FROM events WHERE project_id = ? AND name = ? ORDER BY occurred_at DESC LIMIT ?)`
 	var count int64
 	if err := s.rdb.QueryRowContext(ctx, q, projectID, eventName, window).Scan(&count); err != nil {
 		return nil, fmt.Errorf("widget count: %w", err)
 	}
-	return []PropertyBreakdown{{Value: "_total", Count: count}}, nil
+	return []domain.PropertyBreakdown{{Value: "_total", Count: count}}, nil
 }

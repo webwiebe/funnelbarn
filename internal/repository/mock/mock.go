@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 var mockIDCounter int64
@@ -23,45 +22,45 @@ func newMockID(prefix string) string {
 // Store is a thread-safe in-memory implementation of the persistence ports.
 type Store struct {
 	mu       sync.RWMutex
-	projects map[string]repository.Project
-	apikeys  map[string]repository.APIKey // keyed by ID
-	users    map[string]repository.User   // keyed by username
-	funnels  map[string]repository.Funnel
-	abtests  map[string]repository.ABTest
-	sessions map[string]repository.Session
-	events   []repository.Event
-	widgets  map[string]repository.DashboardWidget
-	flags    map[string]repository.FeatureFlag
+	projects map[string]domain.Project
+	apikeys  map[string]domain.APIKey // keyed by ID
+	users    map[string]domain.User   // keyed by username
+	funnels  map[string]domain.Funnel
+	abtests  map[string]domain.ABTest
+	sessions map[string]domain.Session
+	events   []domain.Event
+	widgets  map[string]domain.DashboardWidget
+	flags    map[string]domain.FeatureFlag
 	// evaluations records what RecordEvaluation was asked to write, so tests can
 	// assert that config flags write nothing.
-	evaluations []repository.FlagEvaluation
+	evaluations []domain.FlagEvaluation
 }
 
 // New returns a fresh empty Store.
 func New() *Store {
 	return &Store{
-		projects: make(map[string]repository.Project),
-		apikeys:  make(map[string]repository.APIKey),
-		users:    make(map[string]repository.User),
-		funnels:  make(map[string]repository.Funnel),
-		abtests:  make(map[string]repository.ABTest),
-		sessions: make(map[string]repository.Session),
+		projects: make(map[string]domain.Project),
+		apikeys:  make(map[string]domain.APIKey),
+		users:    make(map[string]domain.User),
+		funnels:  make(map[string]domain.Funnel),
+		abtests:  make(map[string]domain.ABTest),
+		sessions: make(map[string]domain.Session),
 	}
 }
 
 // ── Projects ──────────────────────────────────────────────────────────────────
 
-func (s *Store) CreateProject(ctx context.Context, name, slug string) (repository.Project, error) {
+func (s *Store) CreateProject(ctx context.Context, name, slug string) (domain.Project, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for _, p := range s.projects {
 		if p.Slug == slug {
-			return repository.Project{}, fmt.Errorf("UNIQUE constraint failed: projects.slug: %w", domain.ErrConflict)
+			return domain.Project{}, fmt.Errorf("UNIQUE constraint failed: projects.slug: %w", domain.ErrConflict)
 		}
 	}
 
-	p := repository.Project{
+	p := domain.Project{
 		ID:        newMockID("proj"),
 		Name:      name,
 		Slug:      slug,
@@ -72,17 +71,17 @@ func (s *Store) CreateProject(ctx context.Context, name, slug string) (repositor
 	return p, nil
 }
 
-func (s *Store) ProjectByID(ctx context.Context, id string) (repository.Project, error) {
+func (s *Store) ProjectByID(ctx context.Context, id string) (domain.Project, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	p, ok := s.projects[id]
 	if !ok {
-		return repository.Project{}, sql.ErrNoRows
+		return domain.Project{}, sql.ErrNoRows
 	}
 	return p, nil
 }
 
-func (s *Store) ProjectBySlug(ctx context.Context, slug string) (repository.Project, error) {
+func (s *Store) ProjectBySlug(ctx context.Context, slug string) (domain.Project, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, p := range s.projects {
@@ -90,13 +89,13 @@ func (s *Store) ProjectBySlug(ctx context.Context, slug string) (repository.Proj
 			return p, nil
 		}
 	}
-	return repository.Project{}, sql.ErrNoRows
+	return domain.Project{}, sql.ErrNoRows
 }
 
-func (s *Store) ListProjects(ctx context.Context) ([]repository.Project, error) {
+func (s *Store) ListProjects(ctx context.Context) ([]domain.Project, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]repository.Project, 0, len(s.projects))
+	out := make([]domain.Project, 0, len(s.projects))
 	for _, p := range s.projects {
 		out = append(out, p)
 	}
@@ -104,15 +103,15 @@ func (s *Store) ListProjects(ctx context.Context) ([]repository.Project, error) 
 	return out, nil
 }
 
-func (s *Store) UpdateProject(ctx context.Context, id, name, domain string) (repository.Project, error) {
+func (s *Store) UpdateProject(ctx context.Context, id, name, siteDomain string) (domain.Project, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, ok := s.projects[id]
 	if !ok {
-		return repository.Project{}, sql.ErrNoRows
+		return domain.Project{}, sql.ErrNoRows
 	}
 	p.Name = name
-	p.Domain = domain
+	p.Domain = siteDomain
 	s.projects[id] = p
 	return p, nil
 }
@@ -124,41 +123,41 @@ func (s *Store) DeleteProject(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *Store) ApproveProject(ctx context.Context, id string) (repository.Project, error) {
+func (s *Store) ApproveProject(ctx context.Context, id string) (domain.Project, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, ok := s.projects[id]
 	if !ok {
-		return repository.Project{}, sql.ErrNoRows
+		return domain.Project{}, sql.ErrNoRows
 	}
 	p.Status = "active"
 	s.projects[id] = p
 	return p, nil
 }
 
-func (s *Store) EnsureProject(ctx context.Context, slug string) (repository.Project, error) {
+func (s *Store) EnsureProject(ctx context.Context, slug string) (domain.Project, error) {
 	p, err := s.ProjectBySlug(ctx, slug)
 	if err == nil {
 		return p, nil
 	}
 	if err != sql.ErrNoRows {
-		return repository.Project{}, err
+		return domain.Project{}, err
 	}
 	return s.CreateProject(ctx, slug, slug)
 }
 
-func (s *Store) EnsureProjectPending(ctx context.Context, name, slug string) (repository.Project, error) {
+func (s *Store) EnsureProjectPending(ctx context.Context, name, slug string) (domain.Project, error) {
 	p, err := s.ProjectBySlug(ctx, slug)
 	if err == nil {
 		return p, nil
 	}
 	if err != sql.ErrNoRows {
-		return repository.Project{}, err
+		return domain.Project{}, err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	proj := repository.Project{
+	proj := domain.Project{
 		ID:        newMockID("proj"),
 		Name:      name,
 		Slug:      slug,
@@ -185,7 +184,7 @@ func (s *Store) EnsureSetupAPIKey(ctx context.Context, projectID, keySHA256 stri
 		}
 	}
 	id := newMockID("apikey")
-	s.apikeys[id] = repository.APIKey{
+	s.apikeys[id] = domain.APIKey{
 		ID:        id,
 		ProjectID: projectID,
 		Name:      "setup",
@@ -203,7 +202,7 @@ func (s *Store) UpsertUser(ctx context.Context, username, passwordHash string) e
 	defer s.mu.Unlock()
 	u, ok := s.users[username]
 	if !ok {
-		u = repository.User{
+		u = domain.User{
 			ID:        newMockID("user"),
 			Username:  username,
 			CreatedAt: time.Now(),
@@ -214,23 +213,23 @@ func (s *Store) UpsertUser(ctx context.Context, username, passwordHash string) e
 	return nil
 }
 
-func (s *Store) UserByUsername(ctx context.Context, username string) (repository.User, error) {
+func (s *Store) UserByUsername(ctx context.Context, username string) (domain.User, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	u, ok := s.users[username]
 	if !ok {
-		return repository.User{}, sql.ErrNoRows
+		return domain.User{}, sql.ErrNoRows
 	}
 	return u, nil
 }
 
 // ── API Keys ──────────────────────────────────────────────────────────────────
 
-func (s *Store) CreateAPIKey(ctx context.Context, name, projectID, keySHA256, scope string) (repository.APIKey, error) {
+func (s *Store) CreateAPIKey(ctx context.Context, name, projectID, keySHA256, scope string) (domain.APIKey, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := newMockID("apikey")
-	k := repository.APIKey{
+	k := domain.APIKey{
 		ID:        id,
 		ProjectID: projectID,
 		Name:      name,
@@ -242,10 +241,10 @@ func (s *Store) CreateAPIKey(ctx context.Context, name, projectID, keySHA256, sc
 	return k, nil
 }
 
-func (s *Store) ListAPIKeys(ctx context.Context, projectID string) ([]repository.APIKey, error) {
+func (s *Store) ListAPIKeys(ctx context.Context, projectID string) ([]domain.APIKey, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var out []repository.APIKey
+	var out []domain.APIKey
 	for _, k := range s.apikeys {
 		if k.ProjectID == projectID {
 			out = append(out, k)
@@ -255,10 +254,10 @@ func (s *Store) ListAPIKeys(ctx context.Context, projectID string) ([]repository
 	return out, nil
 }
 
-func (s *Store) ListAllAPIKeys(ctx context.Context) ([]repository.APIKey, error) {
+func (s *Store) ListAllAPIKeys(ctx context.Context) ([]domain.APIKey, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]repository.APIKey, 0, len(s.apikeys))
+	out := make([]domain.APIKey, 0, len(s.apikeys))
 	for _, k := range s.apikeys {
 		out = append(out, k)
 	}
@@ -291,7 +290,7 @@ func (s *Store) TouchAPIKey(ctx context.Context, keySHA256 string) error {
 
 // ── Funnels ───────────────────────────────────────────────────────────────────
 
-func (s *Store) CreateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error) {
+func (s *Store) CreateFunnel(ctx context.Context, f domain.Funnel) (domain.Funnel, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	f.ID = newMockID("funnel")
@@ -305,20 +304,20 @@ func (s *Store) CreateFunnel(ctx context.Context, f repository.Funnel) (reposito
 	return f, nil
 }
 
-func (s *Store) FunnelByID(ctx context.Context, id string) (repository.Funnel, error) {
+func (s *Store) FunnelByID(ctx context.Context, id string) (domain.Funnel, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	f, ok := s.funnels[id]
 	if !ok {
-		return repository.Funnel{}, sql.ErrNoRows
+		return domain.Funnel{}, sql.ErrNoRows
 	}
 	return f, nil
 }
 
-func (s *Store) ListFunnels(ctx context.Context, projectID string) ([]repository.Funnel, error) {
+func (s *Store) ListFunnels(ctx context.Context, projectID string) ([]domain.Funnel, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var out []repository.Funnel
+	var out []domain.Funnel
 	for _, f := range s.funnels {
 		if f.ProjectID == projectID {
 			out = append(out, f)
@@ -328,12 +327,12 @@ func (s *Store) ListFunnels(ctx context.Context, projectID string) ([]repository
 	return out, nil
 }
 
-func (s *Store) UpdateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error) {
+func (s *Store) UpdateFunnel(ctx context.Context, f domain.Funnel) (domain.Funnel, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	existing, ok := s.funnels[f.ID]
 	if !ok {
-		return repository.Funnel{}, sql.ErrNoRows
+		return domain.Funnel{}, sql.ErrNoRows
 	}
 	f.ProjectID = existing.ProjectID
 	f.CreatedAt = existing.CreatedAt
@@ -353,20 +352,20 @@ func (s *Store) DeleteFunnel(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *Store) AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, _ ...repository.SegmentRule) ([]repository.FunnelStepResult, error) {
+func (s *Store) AnalyzeFunnel(ctx context.Context, f domain.Funnel, from, to time.Time, seg *domain.SegmentFilter, _ ...domain.SegmentRule) ([]domain.FunnelStepResult, error) {
 	// Complex SQL — not mocked for logic tests.
-	return []repository.FunnelStepResult{}, nil
+	return []domain.FunnelStepResult{}, nil
 }
 
-func (s *Store) AnalyzeFunnelBreakdown(_ context.Context, _ repository.Funnel, _, _ time.Time, _ *repository.SegmentFilter, _ string, _ ...repository.SegmentRule) ([]repository.FunnelBreakdownGroup, error) {
-	return []repository.FunnelBreakdownGroup{}, nil
+func (s *Store) AnalyzeFunnelBreakdown(_ context.Context, _ domain.Funnel, _, _ time.Time, _ *domain.SegmentFilter, _ string, _ ...domain.SegmentRule) ([]domain.FunnelBreakdownGroup, error) {
+	return []domain.FunnelBreakdownGroup{}, nil
 }
 
-func (s *Store) FunnelSegmentData(ctx context.Context, projectID string) (repository.FunnelSegments, error) {
-	return repository.FunnelSegments{}, nil
+func (s *Store) FunnelSegmentData(ctx context.Context, projectID string) (domain.FunnelSegments, error) {
+	return domain.FunnelSegments{}, nil
 }
 
-func (s *Store) SessionsAtStep(_ context.Context, _ repository.Funnel, _ int, _, _ time.Time, _ int, _ ...repository.SegmentRule) ([]string, error) {
+func (s *Store) SessionsAtStep(_ context.Context, _ domain.Funnel, _ int, _, _ time.Time, _ int, _ ...domain.SegmentRule) ([]string, error) {
 	return nil, nil
 }
 
@@ -376,7 +375,7 @@ func (s *Store) SessionsForPage(_ context.Context, _, _ string, _, _ time.Time, 
 
 // ── A/B Tests ─────────────────────────────────────────────────────────────────
 
-func (s *Store) CreateABTest(ctx context.Context, t repository.ABTest) (repository.ABTest, error) {
+func (s *Store) CreateABTest(ctx context.Context, t domain.ABTest) (domain.ABTest, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t.ID = newMockID("abtest")
@@ -385,10 +384,10 @@ func (s *Store) CreateABTest(ctx context.Context, t repository.ABTest) (reposito
 	return t, nil
 }
 
-func (s *Store) ListABTests(ctx context.Context, projectID string) ([]repository.ABTest, error) {
+func (s *Store) ListABTests(ctx context.Context, projectID string) ([]domain.ABTest, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var out []repository.ABTest
+	var out []domain.ABTest
 	for _, t := range s.abtests {
 		if t.ProjectID == projectID {
 			out = append(out, t)
@@ -398,18 +397,18 @@ func (s *Store) ListABTests(ctx context.Context, projectID string) ([]repository
 	return out, nil
 }
 
-func (s *Store) ABTestByID(ctx context.Context, id string) (repository.ABTest, error) {
+func (s *Store) ABTestByID(ctx context.Context, id string) (domain.ABTest, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	t, ok := s.abtests[id]
 	if !ok {
-		return repository.ABTest{}, sql.ErrNoRows
+		return domain.ABTest{}, sql.ErrNoRows
 	}
 	return t, nil
 }
 
-func (s *Store) AnalyzeABTest(ctx context.Context, t repository.ABTest, from, to time.Time) ([]repository.ABTestResult, error) {
-	return []repository.ABTestResult{}, nil
+func (s *Store) AnalyzeABTest(ctx context.Context, t domain.ABTest, from, to time.Time) ([]domain.ABTestResult, error) {
+	return []domain.ABTestResult{}, nil
 }
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
@@ -419,7 +418,7 @@ func (s *Store) AnalyzeABTest(ctx context.Context, t repository.ABTest, from, to
 // the composite key exists to prevent.
 func sessionKey(projectID, id string) string { return projectID + "\x00" + id }
 
-func (s *Store) UpsertSession(ctx context.Context, sess repository.Session) error {
+func (s *Store) UpsertSession(ctx context.Context, sess domain.Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key := sessionKey(sess.ProjectID, sess.ID)
@@ -436,23 +435,23 @@ func (s *Store) UpsertSession(ctx context.Context, sess repository.Session) erro
 	return nil
 }
 
-func (s *Store) SessionByID(ctx context.Context, projectID, id string) (repository.Session, error) {
+func (s *Store) SessionByID(ctx context.Context, projectID, id string) (domain.Session, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	sess, ok := s.sessions[sessionKey(projectID, id)]
 	if !ok {
-		return repository.Session{}, sql.ErrNoRows
+		return domain.Session{}, sql.ErrNoRows
 	}
 	return sess, nil
 }
 
-func (s *Store) ListSessions(ctx context.Context, projectID string, limit, offset int) ([]repository.Session, error) {
+func (s *Store) ListSessions(ctx context.Context, projectID string, limit, offset int) ([]domain.Session, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if limit <= 0 {
 		limit = 50
 	}
-	var all []repository.Session
+	var all []domain.Session
 	for _, sess := range s.sessions {
 		if sess.ProjectID == projectID {
 			all = append(all, sess)
@@ -460,7 +459,7 @@ func (s *Store) ListSessions(ctx context.Context, projectID string, limit, offse
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].LastSeenAt.After(all[j].LastSeenAt) })
 	if offset >= len(all) {
-		return []repository.Session{}, nil
+		return []domain.Session{}, nil
 	}
 	all = all[offset:]
 	if limit < len(all) {
@@ -475,7 +474,7 @@ func (s *Store) ActiveSessionCount(ctx context.Context, projectID string, within
 
 // ── Events ────────────────────────────────────────────────────────────────────
 
-func (s *Store) InsertEvent(ctx context.Context, e repository.Event) error {
+func (s *Store) InsertEvent(ctx context.Context, e domain.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = append(s.events, e)
@@ -485,7 +484,7 @@ func (s *Store) InsertEvent(ctx context.Context, e repository.Event) error {
 // PersistEvent mirrors repository.Store.PersistEvent: an ingest_id that is
 // already stored changes nothing, otherwise the event is stored and the
 // session upserted. Signals are not tracked by the mock.
-func (s *Store) PersistEvent(ctx context.Context, e repository.Event, sess repository.Session, _ *repository.SessionSignals) (bool, error) {
+func (s *Store) PersistEvent(ctx context.Context, e domain.Event, sess domain.Session, _ *domain.SessionSignals) (bool, error) {
 	if existing, _ := s.GetEventByIngestID(ctx, e.IngestID); existing != nil {
 		return false, nil
 	}
@@ -495,17 +494,17 @@ func (s *Store) PersistEvent(ctx context.Context, e repository.Event, sess repos
 	return true, s.UpsertSession(ctx, sess)
 }
 
-func (s *Store) ListEvents(ctx context.Context, projectID string, limit, offset int) ([]repository.Event, error) {
-	return s.ListEventsFiltered(ctx, projectID, repository.EventListFilter{}, limit, offset)
+func (s *Store) ListEvents(ctx context.Context, projectID string, limit, offset int) ([]domain.Event, error) {
+	return s.ListEventsFiltered(ctx, projectID, domain.EventListFilter{}, limit, offset)
 }
 
-func (s *Store) ListEventsFiltered(ctx context.Context, projectID string, f repository.EventListFilter, limit, offset int) ([]repository.Event, error) {
+func (s *Store) ListEventsFiltered(ctx context.Context, projectID string, f domain.EventListFilter, limit, offset int) ([]domain.Event, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if limit <= 0 {
 		limit = 50
 	}
-	var all []repository.Event
+	var all []domain.Event
 	for _, e := range s.events {
 		if e.ProjectID != projectID || !matchesEventFilter(e, f) {
 			continue
@@ -514,7 +513,7 @@ func (s *Store) ListEventsFiltered(ctx context.Context, projectID string, f repo
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].OccurredAt.After(all[j].OccurredAt) })
 	if offset >= len(all) {
-		return []repository.Event{}, nil
+		return []domain.Event{}, nil
 	}
 	all = all[offset:]
 	if limit < len(all) {
@@ -523,7 +522,7 @@ func (s *Store) ListEventsFiltered(ctx context.Context, projectID string, f repo
 	return all, nil
 }
 
-func matchesEventFilter(e repository.Event, f repository.EventListFilter) bool {
+func matchesEventFilter(e domain.Event, f domain.EventListFilter) bool {
 	switch {
 	case f.Name != "" && e.Name != f.Name:
 		return false
@@ -549,48 +548,48 @@ func (s *Store) CountEvents(ctx context.Context, projectID string, from, to time
 	return n, nil
 }
 
-func (s *Store) TopPages(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]repository.PageStat, error) {
-	return []repository.PageStat{}, nil
+func (s *Store) TopPages(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]domain.PageStat, error) {
+	return []domain.PageStat{}, nil
 }
 
-func (s *Store) TopReferrers(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]repository.ReferrerStat, error) {
-	return []repository.ReferrerStat{}, nil
+func (s *Store) TopReferrers(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]domain.ReferrerStat, error) {
+	return []domain.ReferrerStat{}, nil
 }
 
-func (s *Store) DailyEventCounts(_ context.Context, _ string, _, _ time.Time, _ string) ([]repository.TimeSeriesPoint, error) {
-	return []repository.TimeSeriesPoint{}, nil
+func (s *Store) DailyEventCounts(_ context.Context, _ string, _, _ time.Time, _ string) ([]domain.TimeSeriesPoint, error) {
+	return []domain.TimeSeriesPoint{}, nil
 }
 
-func (s *Store) HourlyEventCounts(_ context.Context, _ string, _, _ time.Time, _ string) ([]repository.TimeSeriesPoint, error) {
-	return []repository.TimeSeriesPoint{}, nil
+func (s *Store) HourlyEventCounts(_ context.Context, _ string, _, _ time.Time, _ string) ([]domain.TimeSeriesPoint, error) {
+	return []domain.TimeSeriesPoint{}, nil
 }
 
-func (s *Store) DailyUniqueSessions(_ context.Context, _ string, _, _ time.Time, _ string) ([]repository.TimeSeriesPoint, error) {
-	return []repository.TimeSeriesPoint{}, nil
+func (s *Store) DailyUniqueSessions(_ context.Context, _ string, _, _ time.Time, _ string) ([]domain.TimeSeriesPoint, error) {
+	return []domain.TimeSeriesPoint{}, nil
 }
 
-func (s *Store) TopBrowsers(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]repository.BrowserStat, error) {
-	return []repository.BrowserStat{}, nil
+func (s *Store) TopBrowsers(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]domain.BrowserStat, error) {
+	return []domain.BrowserStat{}, nil
 }
 
-func (s *Store) TopDeviceTypes(_ context.Context, _ string, _, _ time.Time, _ string) ([]repository.DeviceStat, error) {
-	return []repository.DeviceStat{}, nil
+func (s *Store) TopDeviceTypes(_ context.Context, _ string, _, _ time.Time, _ string) ([]domain.DeviceStat, error) {
+	return []domain.DeviceStat{}, nil
 }
 
-func (s *Store) TopEventNamesFiltered(_ context.Context, _ string, _, _ time.Time, _ int, _ repository.EventCountFilter) ([]repository.EventNameStat, error) {
+func (s *Store) TopEventNamesFiltered(_ context.Context, _ string, _, _ time.Time, _ int, _ domain.EventCountFilter) ([]domain.EventNameStat, error) {
 	return nil, nil
 }
 
-func (s *Store) EventBreakdown(_ context.Context, _, _, _ string, _, _ time.Time, _ int, _ repository.EventCountFilter) ([]repository.BreakdownRow, error) {
+func (s *Store) EventBreakdown(_ context.Context, _, _, _ string, _, _ time.Time, _ int, _ domain.EventCountFilter) ([]domain.BreakdownRow, error) {
 	return nil, nil
 }
 
-func (s *Store) TopEventNames(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]repository.EventNameStat, error) {
-	return []repository.EventNameStat{}, nil
+func (s *Store) TopEventNames(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]domain.EventNameStat, error) {
+	return []domain.EventNameStat{}, nil
 }
 
-func (s *Store) TopUTMSources(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]repository.UTMStat, error) {
-	return []repository.UTMStat{}, nil
+func (s *Store) TopUTMSources(_ context.Context, _ string, _, _ time.Time, _ int, _ string) ([]domain.UTMStat, error) {
+	return []domain.UTMStat{}, nil
 }
 
 func (s *Store) BounceRate(_ context.Context, _ string, _, _ time.Time, _ string) (float64, error) {
@@ -609,7 +608,7 @@ func (s *Store) DistinctEnvironments(_ context.Context, _ string) ([]string, err
 	return nil, nil
 }
 
-func (s *Store) GetEventByIngestID(ctx context.Context, ingestID string) (*repository.Event, error) {
+func (s *Store) GetEventByIngestID(ctx context.Context, ingestID string) (*domain.Event, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, e := range s.events {
@@ -637,14 +636,14 @@ func (s *Store) PopulatedMetadataColumns(_ context.Context, _, _ string) ([]stri
 	return nil, nil
 }
 
-func (s *Store) PageFlows(_ context.Context, _ string, _ string, _ int, _, _ time.Time, _ string) (repository.PageFlowResult, error) {
-	return repository.PageFlowResult{Nodes: []repository.FlowNode{}, Links: []repository.FlowLink{}}, nil
+func (s *Store) PageFlows(_ context.Context, _ string, _ string, _ int, _, _ time.Time, _ string) (domain.PageFlowResult, error) {
+	return domain.PageFlowResult{Nodes: []domain.FlowNode{}, Links: []domain.FlowLink{}}, nil
 }
 
 func (s *Store) PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var kept []repository.Event
+	var kept []domain.Event
 	var deleted int64
 	for _, e := range s.events {
 		if e.OccurredAt.Before(cutoff) {
@@ -659,7 +658,7 @@ func (s *Store) PurgeOldEvents(ctx context.Context, cutoff time.Time) (int64, er
 
 // ── Feature Flags ────────────────────────────────────────────────────────────
 
-func (s *Store) CreateFlag(_ context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error) {
+func (s *Store) CreateFlag(_ context.Context, f domain.FeatureFlag) (domain.FeatureFlag, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	f.ID = newMockID("flag")
@@ -668,16 +667,16 @@ func (s *Store) CreateFlag(_ context.Context, f repository.FeatureFlag) (reposit
 		f.Origin = "manual"
 	}
 	if f.Kind == "" {
-		f.Kind = repository.FlagKindExperiment
+		f.Kind = domain.FlagKindExperiment
 	}
 	if s.flags == nil {
-		s.flags = make(map[string]repository.FeatureFlag)
+		s.flags = make(map[string]domain.FeatureFlag)
 	}
 	s.flags[f.ID] = f
 	return f, nil
 }
 
-func (s *Store) EnsureAutoFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error) {
+func (s *Store) EnsureAutoFlag(ctx context.Context, f domain.FeatureFlag) (domain.FeatureFlag, error) {
 	s.mu.Lock()
 	for _, existing := range s.flags {
 		if existing.ProjectID == f.ProjectID && existing.FlagKey == f.FlagKey {
@@ -735,17 +734,17 @@ func (s *Store) PurgeStaleAutoFlags(_ context.Context, cutoff time.Time) (int64,
 	return deleted, nil
 }
 
-func (s *Store) FlagByID(_ context.Context, id string) (repository.FeatureFlag, error) {
+func (s *Store) FlagByID(_ context.Context, id string) (domain.FeatureFlag, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	f, ok := s.flags[id]
 	if !ok {
-		return repository.FeatureFlag{}, sql.ErrNoRows
+		return domain.FeatureFlag{}, sql.ErrNoRows
 	}
 	return f, nil
 }
 
-func (s *Store) FlagByKey(_ context.Context, projectID, flagKey string) (repository.FeatureFlag, error) {
+func (s *Store) FlagByKey(_ context.Context, projectID, flagKey string) (domain.FeatureFlag, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, f := range s.flags {
@@ -753,13 +752,13 @@ func (s *Store) FlagByKey(_ context.Context, projectID, flagKey string) (reposit
 			return f, nil
 		}
 	}
-	return repository.FeatureFlag{}, sql.ErrNoRows
+	return domain.FeatureFlag{}, sql.ErrNoRows
 }
 
-func (s *Store) ListFlags(_ context.Context, projectID string) ([]repository.FeatureFlag, error) {
+func (s *Store) ListFlags(_ context.Context, projectID string) ([]domain.FeatureFlag, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var out []repository.FeatureFlag
+	var out []domain.FeatureFlag
 	for _, f := range s.flags {
 		if f.ProjectID == projectID {
 			out = append(out, f)
@@ -769,12 +768,12 @@ func (s *Store) ListFlags(_ context.Context, projectID string) ([]repository.Fea
 	return out, nil
 }
 
-func (s *Store) UpdateFlag(_ context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error) {
+func (s *Store) UpdateFlag(_ context.Context, f domain.FeatureFlag) (domain.FeatureFlag, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	existing, ok := s.flags[f.ID]
 	if !ok {
-		return repository.FeatureFlag{}, sql.ErrNoRows
+		return domain.FeatureFlag{}, sql.ErrNoRows
 	}
 	f.ProjectID = existing.ProjectID
 	f.FlagKey = existing.FlagKey
@@ -796,15 +795,15 @@ func (s *Store) DeleteFlag(_ context.Context, id string) error {
 
 // RecordedEvaluations returns the evaluation rows RecordEvaluation was asked to
 // write, so tests can assert that a config flag writes none.
-func (s *Store) RecordedEvaluations() []repository.FlagEvaluation {
+func (s *Store) RecordedEvaluations() []domain.FlagEvaluation {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]repository.FlagEvaluation, len(s.evaluations))
+	out := make([]domain.FlagEvaluation, len(s.evaluations))
 	copy(out, s.evaluations)
 	return out
 }
 
-func (s *Store) RecordEvaluation(_ context.Context, e repository.FlagEvaluation) error {
+func (s *Store) RecordEvaluation(_ context.Context, e domain.FlagEvaluation) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.evaluations = append(s.evaluations, e)
@@ -825,32 +824,32 @@ func (s *Store) PurgeOldEvaluations(_ context.Context, cutoff time.Time) (int64,
 
 // ── Widgets ──────────────────────────────────────────────────────────────────
 
-func (s *Store) CreateWidget(_ context.Context, w repository.DashboardWidget) (repository.DashboardWidget, error) {
+func (s *Store) CreateWidget(_ context.Context, w domain.DashboardWidget) (domain.DashboardWidget, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	w.ID = newMockID("widget")
 	w.CreatedAt = time.Now()
 	if s.widgets == nil {
-		s.widgets = make(map[string]repository.DashboardWidget)
+		s.widgets = make(map[string]domain.DashboardWidget)
 	}
 	s.widgets[w.ID] = w
 	return w, nil
 }
 
-func (s *Store) WidgetByID(_ context.Context, id string) (repository.DashboardWidget, error) {
+func (s *Store) WidgetByID(_ context.Context, id string) (domain.DashboardWidget, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	w, ok := s.widgets[id]
 	if !ok {
-		return repository.DashboardWidget{}, sql.ErrNoRows
+		return domain.DashboardWidget{}, sql.ErrNoRows
 	}
 	return w, nil
 }
 
-func (s *Store) ListWidgets(_ context.Context, projectID string) ([]repository.DashboardWidget, error) {
+func (s *Store) ListWidgets(_ context.Context, projectID string) ([]domain.DashboardWidget, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var out []repository.DashboardWidget
+	var out []domain.DashboardWidget
 	for _, w := range s.widgets {
 		if w.ProjectID == projectID {
 			out = append(out, w)
@@ -865,12 +864,12 @@ func (s *Store) ListWidgets(_ context.Context, projectID string) ([]repository.D
 	return out, nil
 }
 
-func (s *Store) UpdateWidget(_ context.Context, w repository.DashboardWidget) (repository.DashboardWidget, error) {
+func (s *Store) UpdateWidget(_ context.Context, w domain.DashboardWidget) (domain.DashboardWidget, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	existing, ok := s.widgets[w.ID]
 	if !ok {
-		return repository.DashboardWidget{}, sql.ErrNoRows
+		return domain.DashboardWidget{}, sql.ErrNoRows
 	}
 	w.ProjectID = existing.ProjectID
 	w.CreatedAt = existing.CreatedAt
@@ -885,8 +884,8 @@ func (s *Store) DeleteWidget(_ context.Context, id string) error {
 	return nil
 }
 
-func (s *Store) WidgetBreakdown(_ context.Context, _, _, _ string, _, _ int) ([]repository.PropertyBreakdown, error) {
-	return []repository.PropertyBreakdown{}, nil
+func (s *Store) WidgetBreakdown(_ context.Context, _, _, _ string, _, _ int) ([]domain.PropertyBreakdown, error) {
+	return []domain.PropertyBreakdown{}, nil
 }
 
 func (s *Store) Ping(_ context.Context) error { return nil }

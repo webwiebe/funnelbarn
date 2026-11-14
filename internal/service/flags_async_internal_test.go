@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // goroutineID identifies the calling goroutine, so a fake store can tell a
@@ -39,14 +39,14 @@ type asyncFlagStore struct {
 	requestID uint64
 
 	mu      sync.Mutex
-	flags   map[string]repository.FeatureFlag
-	records []repository.FlagEvaluation
-	ensured []repository.FeatureFlag
+	flags   map[string]domain.FeatureFlag
+	records []domain.FlagEvaluation
+	ensured []domain.FeatureFlag
 	touched []string
 }
 
 func newAsyncFlagStore(t *testing.T) *asyncFlagStore {
-	return &asyncFlagStore{t: t, requestID: goroutineID(), flags: map[string]repository.FeatureFlag{}}
+	return &asyncFlagStore{t: t, requestID: goroutineID(), flags: map[string]domain.FeatureFlag{}}
 }
 
 func (s *asyncFlagStore) noSyncWrite(name string) {
@@ -55,12 +55,12 @@ func (s *asyncFlagStore) noSyncWrite(name string) {
 	}
 }
 
-func (s *asyncFlagStore) FlagByKey(_ context.Context, projectID, key string) (repository.FeatureFlag, error) {
+func (s *asyncFlagStore) FlagByKey(_ context.Context, projectID, key string) (domain.FeatureFlag, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	f, ok := s.flags[projectID+"/"+key]
 	if !ok {
-		return repository.FeatureFlag{}, sql.ErrNoRows
+		return domain.FeatureFlag{}, sql.ErrNoRows
 	}
 	return f, nil
 }
@@ -71,7 +71,7 @@ func (s *asyncFlagStore) CountAutoFlags(context.Context, string) (int, error) {
 	return len(s.ensured), nil
 }
 
-func (s *asyncFlagStore) RecordEvaluation(_ context.Context, e repository.FlagEvaluation) error {
+func (s *asyncFlagStore) RecordEvaluation(_ context.Context, e domain.FlagEvaluation) error {
 	s.noSyncWrite("RecordEvaluation")
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -79,7 +79,7 @@ func (s *asyncFlagStore) RecordEvaluation(_ context.Context, e repository.FlagEv
 	return nil
 }
 
-func (s *asyncFlagStore) EnsureAutoFlag(_ context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error) {
+func (s *asyncFlagStore) EnsureAutoFlag(_ context.Context, f domain.FeatureFlag) (domain.FeatureFlag, error) {
 	s.noSyncWrite("EnsureAutoFlag")
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -117,8 +117,8 @@ func startDispatcher(t *testing.T, store command.Store) *command.Dispatcher {
 
 func TestEvaluateFlag_NoSynchronousWrite(t *testing.T) {
 	store := newAsyncFlagStore(t)
-	store.flags["p1/exp"] = repository.FeatureFlag{
-		ID: "f1", ProjectID: "p1", FlagKey: "exp", Status: "active", Kind: repository.FlagKindExperiment,
+	store.flags["p1/exp"] = domain.FeatureFlag{
+		ID: "f1", ProjectID: "p1", FlagKey: "exp", Status: "active", Kind: domain.FlagKindExperiment,
 		Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":100,"off":0}`, TargetingRules: "[]",
 	}
 	d := startDispatcher(t, store)
@@ -141,8 +141,8 @@ func TestEvaluateFlag_NoSynchronousWrite(t *testing.T) {
 
 func TestEvaluateFlag_PreviewWritesNothing(t *testing.T) {
 	store := newAsyncFlagStore(t)
-	store.flags["p1/exp"] = repository.FeatureFlag{
-		ID: "f1", ProjectID: "p1", FlagKey: "exp", Status: "active", Kind: repository.FlagKindExperiment,
+	store.flags["p1/exp"] = domain.FeatureFlag{
+		ID: "f1", ProjectID: "p1", FlagKey: "exp", Status: "active", Kind: domain.FlagKindExperiment,
 		Variants: `{"on":true}`, DefaultVariant: "on", Split: `{"on":100}`, TargetingRules: "[]",
 	}
 	d := startDispatcher(t, store)
@@ -193,7 +193,7 @@ func TestEvaluateOrRegisterFlag_AsyncReturnsDisabledDefault(t *testing.T) {
 
 func TestEvaluateOrRegisterFlag_AsyncRespectsCap(t *testing.T) {
 	store := newAsyncFlagStore(t)
-	store.ensured = []repository.FeatureFlag{{}, {}}
+	store.ensured = []domain.FeatureFlag{{}, {}}
 	d := startDispatcher(t, store)
 	svc := NewFlagService(store).WithCommands(d)
 	if _, err := svc.EvaluateOrRegisterFlag(context.Background(), "p1", "x", nil, 1, 2, ""); err == nil {
@@ -241,8 +241,8 @@ func (b *recordingBus) types() []string {
 // bus so a new flag is published before its touch is queued.
 func TestEvaluate_BookkeepingGoesToTheBackgroundBus(t *testing.T) {
 	store := newAsyncFlagStore(t)
-	store.flags["p1/exp"] = repository.FeatureFlag{
-		ID: "f1", ProjectID: "p1", FlagKey: "exp", Status: "active", Kind: repository.FlagKindExperiment,
+	store.flags["p1/exp"] = domain.FeatureFlag{
+		ID: "f1", ProjectID: "p1", FlagKey: "exp", Status: "active", Kind: domain.FlagKindExperiment,
 		Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":100,"off":0}`, TargetingRules: "[]",
 	}
 	commands := &recordingBus{wait: time.Second}
@@ -276,8 +276,8 @@ func TestEvaluate_BookkeepingGoesToTheBackgroundBus(t *testing.T) {
 
 func TestEvaluate_WithoutBackgroundBusUsesCommands(t *testing.T) {
 	store := newAsyncFlagStore(t)
-	store.flags["p1/exp"] = repository.FeatureFlag{
-		ID: "f1", ProjectID: "p1", FlagKey: "exp", Status: "active", Kind: repository.FlagKindExperiment,
+	store.flags["p1/exp"] = domain.FeatureFlag{
+		ID: "f1", ProjectID: "p1", FlagKey: "exp", Status: "active", Kind: domain.FlagKindExperiment,
 		Variants: `{"on":true}`, DefaultVariant: "on", Split: `{"on":100}`, TargetingRules: "[]",
 	}
 	commands := &recordingBus{}

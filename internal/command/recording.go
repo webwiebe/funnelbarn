@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // KindApplyRecordingChunk labels a recording chunk's metadata carried on the
@@ -16,9 +16,9 @@ const KindApplyRecordingChunk = "apply_recording_chunk"
 // queue. The store records each (recording, chunk index) once, so a
 // redelivery changes nothing.
 type ApplyRecordingChunk struct {
-	Recording  repository.Recording   `json:"recording"`
-	ChunkIndex int                    `json:"chunk_index"`
-	Traces     []repository.TraceLink `json:"traces,omitempty"`
+	Recording  domain.Recording   `json:"recording"`
+	ChunkIndex int                `json:"chunk_index"`
+	Traces     []domain.TraceLink `json:"traces,omitempty"`
 }
 
 // Kind implements Command.

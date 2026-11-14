@@ -4,10 +4,13 @@ import (
 	"context"
 	"net/http"
 	"testing"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/ports"
+	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
-func storeRecordingSettings(cfg *ServerConfig) ProjectRecordingSettingsRepo {
-	return cfg.DB.(ProjectRecordingSettingsRepo)
+func storeRecordingSettings(cfg *ServerConfig) service.RecordingSettings {
+	return service.NewRecordingSettingsService(cfg.DB.(ports.ProjectRecordingSettingsRepo))
 }
 
 func TestHandleGetProjectRecordingSettings_Unavailable(t *testing.T) {
@@ -32,7 +35,7 @@ func recordingServerWithStore(t *testing.T) (*Server, string) {
 	t.Helper()
 	srv, store := fullServer(t, func(cfg *ServerConfig) {
 		cfg.RecordingSettings = storeRecordingSettings(cfg)
-		cfg.InstanceSettings = cfg.DB.(InstanceSettingsRepo)
+		cfg.InstanceSettings = storeInstanceSettings(cfg)
 	})
 	p, _ := store.CreateProject(context.Background(), "RecStore", "rec-store")
 	return srv, p.ID
@@ -111,7 +114,7 @@ func TestHandleUpdateProjectRecordingSettings_BadJSON(t *testing.T) {
 func TestHandleGetRecordingConfig_NoAPIKey(t *testing.T) {
 	// No API key -> instance defaults path.
 	srv, _ := fullServer(t, func(cfg *ServerConfig) {
-		cfg.InstanceSettings = cfg.DB.(InstanceSettingsRepo)
+		cfg.InstanceSettings = storeInstanceSettings(cfg)
 		cfg.RecordingSettings = storeRecordingSettings(cfg)
 	})
 	w := getJSON(t, srv, "/api/v1/recording-config", nil)

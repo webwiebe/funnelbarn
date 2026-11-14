@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // Kinds of the bookkeeping commands. They label metrics and spans and select
@@ -22,7 +22,7 @@ const (
 // idempotent: Encode assigns one when it is empty, so a redelivered command
 // inserts nothing new.
 type RecordEvaluation struct {
-	Eval repository.FlagEvaluation `json:"eval"`
+	Eval domain.FlagEvaluation `json:"eval"`
 }
 
 // Kind implements Command.
@@ -98,8 +98,8 @@ func (c MarkFlagsEvaluated) Apply(ctx context.Context, d Deps) error {
 // with Max > 0 the cap is checked again here, where commands apply one at a
 // time, and a new key past the cap is skipped.
 type EnsureAutoFlag struct {
-	Flag repository.FeatureFlag `json:"flag"`
-	Max  int                    `json:"max"`
+	Flag domain.FeatureFlag `json:"flag"`
+	Max  int                `json:"max"`
 }
 
 // Kind implements Command.

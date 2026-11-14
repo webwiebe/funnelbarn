@@ -8,37 +8,17 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
-// CanonicalEvent is an instance-level canonical event in the shared vocabulary.
-type CanonicalEvent struct {
-	Key       string `json:"key"`
-	Label     string `json:"label"`
-	SortOrder int    `json:"sort_order"`
-}
-
-// EventNameMapping maps one project's raw event name onto a canonical key.
-type EventNameMapping struct {
-	ProjectID    string `json:"project_id"`
-	RawName      string `json:"raw_name"`
-	CanonicalKey string `json:"canonical_key"`
-}
-
-// MappingSuggestion is an unmapped raw event name with a best-guess canonical key.
-type MappingSuggestion struct {
-	RawName      string `json:"raw_name"`
-	SuggestedKey string `json:"suggested_key"` // "" when no confident guess
-}
-
 // ListCanonicalEvents returns the canonical event catalog ordered for display.
-func (s *ReadStore) ListCanonicalEvents(ctx context.Context) ([]CanonicalEvent, error) {
+func (s *ReadStore) ListCanonicalEvents(ctx context.Context) ([]domain.CanonicalEvent, error) {
 	const q = `SELECT key, label, sort_order FROM canonical_events ORDER BY sort_order, key`
 	rows, err := s.rdb.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []CanonicalEvent
+	var out []domain.CanonicalEvent
 	for rows.Next() {
-		var c CanonicalEvent
+		var c domain.CanonicalEvent
 		if err := rows.Scan(&c.Key, &c.Label, &c.SortOrder); err != nil {
 			return nil, err
 		}
@@ -48,26 +28,26 @@ func (s *ReadStore) ListCanonicalEvents(ctx context.Context) ([]CanonicalEvent, 
 }
 
 // CreateCanonicalEvent inserts a new canonical event. A duplicate key is a conflict.
-func (s *Store) CreateCanonicalEvent(ctx context.Context, c CanonicalEvent) (CanonicalEvent, error) {
+func (s *Store) CreateCanonicalEvent(ctx context.Context, c domain.CanonicalEvent) (domain.CanonicalEvent, error) {
 	const q = `INSERT INTO canonical_events (key, label, sort_order) VALUES (?, ?, ?)`
 	if _, err := s.db.ExecContext(ctx, q, c.Key, c.Label, c.SortOrder); err != nil {
 		if isUniqueViolation(err) {
-			return CanonicalEvent{}, fmt.Errorf("canonical event %q: %w", c.Key, domain.ErrConflict)
+			return domain.CanonicalEvent{}, fmt.Errorf("canonical event %q: %w", c.Key, domain.ErrConflict)
 		}
-		return CanonicalEvent{}, err
+		return domain.CanonicalEvent{}, err
 	}
 	return c, nil
 }
 
 // UpdateCanonicalEvent updates a canonical event's label and sort order.
-func (s *Store) UpdateCanonicalEvent(ctx context.Context, c CanonicalEvent) (CanonicalEvent, error) {
+func (s *Store) UpdateCanonicalEvent(ctx context.Context, c domain.CanonicalEvent) (domain.CanonicalEvent, error) {
 	const q = `UPDATE canonical_events SET label = ?, sort_order = ? WHERE key = ?`
 	res, err := s.db.ExecContext(ctx, q, c.Label, c.SortOrder, c.Key)
 	if err != nil {
-		return CanonicalEvent{}, err
+		return domain.CanonicalEvent{}, err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return CanonicalEvent{}, fmt.Errorf("canonical event %q: %w", c.Key, domain.ErrNotFound)
+		return domain.CanonicalEvent{}, fmt.Errorf("canonical event %q: %w", c.Key, domain.ErrNotFound)
 	}
 	return c, nil
 }
@@ -111,16 +91,16 @@ func (s *ReadStore) CanonicalKeySet(ctx context.Context) (map[string]bool, error
 }
 
 // ListMappings returns all raw→canonical mappings for a project.
-func (s *ReadStore) ListMappings(ctx context.Context, projectID string) ([]EventNameMapping, error) {
+func (s *ReadStore) ListMappings(ctx context.Context, projectID string) ([]domain.EventNameMapping, error) {
 	const q = `SELECT project_id, raw_name, canonical_key FROM event_name_mappings WHERE project_id = ? ORDER BY raw_name`
 	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []EventNameMapping
+	var out []domain.EventNameMapping
 	for rows.Next() {
-		var m EventNameMapping
+		var m domain.EventNameMapping
 		if err := rows.Scan(&m.ProjectID, &m.RawName, &m.CanonicalKey); err != nil {
 			return nil, err
 		}
@@ -180,7 +160,7 @@ func (s *ReadStore) MappingsByProject(ctx context.Context) (map[string]map[strin
 // MappingSuggestions returns unmapped raw event names for a project, each with a
 // best-guess canonical key (empty when uncertain). Already-mapped raw names are
 // excluded. Suggestions are advisory — they are persisted only when confirmed.
-func (s *ReadStore) MappingSuggestions(ctx context.Context, projectID string) ([]MappingSuggestion, error) {
+func (s *ReadStore) MappingSuggestions(ctx context.Context, projectID string) ([]domain.MappingSuggestion, error) {
 	rawNames, err := s.DistinctEventNames(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -202,12 +182,12 @@ func (s *ReadStore) MappingSuggestions(ctx context.Context, projectID string) ([
 		catalogKeys[c.Key] = true
 	}
 
-	var out []MappingSuggestion
+	var out []domain.MappingSuggestion
 	for _, raw := range rawNames {
 		if mapped[raw] {
 			continue
 		}
-		out = append(out, MappingSuggestion{
+		out = append(out, domain.MappingSuggestion{
 			RawName:      raw,
 			SuggestedKey: guessCanonicalKey(raw, catalogKeys),
 		})

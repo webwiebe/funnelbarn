@@ -10,7 +10,6 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // OverviewService handles cross-project ("instance-wide") analytics: GA-like
@@ -26,7 +25,7 @@ func NewOverviewService(store ports.OverviewRepo) *OverviewService {
 
 // ---- GA-like overview ----
 
-func (svc *OverviewService) ProjectRollups(ctx context.Context, from, to time.Time, env string) ([]repository.ProjectRollup, error) {
+func (svc *OverviewService) ProjectRollups(ctx context.Context, from, to time.Time, env string) ([]domain.ProjectRollup, error) {
 	return svc.store.ProjectRollups(ctx, from, to, env)
 }
 
@@ -34,50 +33,50 @@ func (svc *OverviewService) OverviewTotals(ctx context.Context, from, to time.Ti
 	return svc.store.OverviewTotals(ctx, from, to, env)
 }
 
-func (svc *OverviewService) OverviewVisitorsByProject(ctx context.Context, from, to time.Time, env string, hourly bool) ([]repository.ProjectDayCount, error) {
+func (svc *OverviewService) OverviewVisitorsByProject(ctx context.Context, from, to time.Time, env string, hourly bool) ([]domain.ProjectDayCount, error) {
 	return svc.store.OverviewVisitorsByProject(ctx, from, to, env, hourly)
 }
 
-func (svc *OverviewService) OverviewTopPages(ctx context.Context, from, to time.Time, limit int, env string) ([]repository.OverviewPageStat, error) {
+func (svc *OverviewService) OverviewTopPages(ctx context.Context, from, to time.Time, limit int, env string) ([]domain.OverviewPageStat, error) {
 	return svc.store.OverviewTopPages(ctx, from, to, limit, env)
 }
 
-func (svc *OverviewService) OverviewTopReferrers(ctx context.Context, from, to time.Time, limit int, env string) ([]repository.OverviewReferrerStat, error) {
+func (svc *OverviewService) OverviewTopReferrers(ctx context.Context, from, to time.Time, limit int, env string) ([]domain.OverviewReferrerStat, error) {
 	return svc.store.OverviewTopReferrers(ctx, from, to, limit, env)
 }
 
-func (svc *OverviewService) OverviewTopCountries(ctx context.Context, from, to time.Time, limit int, env string) ([]repository.OverviewCountryStat, error) {
+func (svc *OverviewService) OverviewTopCountries(ctx context.Context, from, to time.Time, limit int, env string) ([]domain.OverviewCountryStat, error) {
 	return svc.store.OverviewTopCountries(ctx, from, to, limit, env)
 }
 
-func (svc *OverviewService) OverviewDimensionBreakdown(ctx context.Context, dimension string, from, to time.Time, limit int, env string) ([]repository.DimensionStat, error) {
+func (svc *OverviewService) OverviewDimensionBreakdown(ctx context.Context, dimension string, from, to time.Time, limit int, env string) ([]domain.DimensionStat, error) {
 	return svc.store.OverviewDimensionBreakdown(ctx, dimension, from, to, limit, env)
 }
 
-func (svc *OverviewService) ListAllEvents(ctx context.Context, f repository.EventFilter, limit int) ([]repository.Event, error) {
+func (svc *OverviewService) ListAllEvents(ctx context.Context, f domain.EventFilter, limit int) ([]domain.Event, error) {
 	return svc.store.ListAllEvents(ctx, f, limit)
 }
 
 // ---- Canonical events + mappings ----
 
-func (svc *OverviewService) ListCanonicalEvents(ctx context.Context) ([]repository.CanonicalEvent, error) {
+func (svc *OverviewService) ListCanonicalEvents(ctx context.Context) ([]domain.CanonicalEvent, error) {
 	return svc.store.ListCanonicalEvents(ctx)
 }
 
-func (svc *OverviewService) CreateCanonicalEvent(ctx context.Context, c repository.CanonicalEvent) (repository.CanonicalEvent, error) {
+func (svc *OverviewService) CreateCanonicalEvent(ctx context.Context, c domain.CanonicalEvent) (domain.CanonicalEvent, error) {
 	c.Key = strings.TrimSpace(c.Key)
 	if c.Key == "" {
-		return repository.CanonicalEvent{}, &domain.ValidationError{Field: "key", Message: "required"}
+		return domain.CanonicalEvent{}, &domain.ValidationError{Field: "key", Message: "required"}
 	}
 	if strings.TrimSpace(c.Label) == "" {
-		return repository.CanonicalEvent{}, &domain.ValidationError{Field: "label", Message: "required"}
+		return domain.CanonicalEvent{}, &domain.ValidationError{Field: "label", Message: "required"}
 	}
 	return svc.store.CreateCanonicalEvent(ctx, c)
 }
 
-func (svc *OverviewService) UpdateCanonicalEvent(ctx context.Context, c repository.CanonicalEvent) (repository.CanonicalEvent, error) {
+func (svc *OverviewService) UpdateCanonicalEvent(ctx context.Context, c domain.CanonicalEvent) (domain.CanonicalEvent, error) {
 	if strings.TrimSpace(c.Label) == "" {
-		return repository.CanonicalEvent{}, &domain.ValidationError{Field: "label", Message: "required"}
+		return domain.CanonicalEvent{}, &domain.ValidationError{Field: "label", Message: "required"}
 	}
 	return svc.store.UpdateCanonicalEvent(ctx, c)
 }
@@ -86,14 +85,14 @@ func (svc *OverviewService) DeleteCanonicalEvent(ctx context.Context, key string
 	return svc.store.DeleteCanonicalEvent(ctx, key)
 }
 
-func (svc *OverviewService) ListMappings(ctx context.Context, projectID string) ([]repository.EventNameMapping, error) {
+func (svc *OverviewService) ListMappings(ctx context.Context, projectID string) ([]domain.EventNameMapping, error) {
 	return svc.store.ListMappings(ctx, projectID)
 }
 
 // SetMappings bulk-upserts a project's raw→canonical mappings. Each canonical
 // key must exist in the catalog (validated up front so a bad row doesn't leave a
 // partial write).
-func (svc *OverviewService) SetMappings(ctx context.Context, projectID string, mappings []repository.EventNameMapping) error {
+func (svc *OverviewService) SetMappings(ctx context.Context, projectID string, mappings []domain.EventNameMapping) error {
 	keys, err := svc.store.CanonicalKeySet(ctx)
 	if err != nil {
 		return err
@@ -121,44 +120,44 @@ func (svc *OverviewService) DeleteMapping(ctx context.Context, projectID, rawNam
 	return svc.store.DeleteMapping(ctx, projectID, rawName)
 }
 
-func (svc *OverviewService) MappingSuggestions(ctx context.Context, projectID string) ([]repository.MappingSuggestion, error) {
+func (svc *OverviewService) MappingSuggestions(ctx context.Context, projectID string) ([]domain.MappingSuggestion, error) {
 	return svc.store.MappingSuggestions(ctx, projectID)
 }
 
 // ---- Canonical funnels ----
 
-func (svc *OverviewService) CreateCanonicalFunnel(ctx context.Context, f repository.CanonicalFunnel) (repository.CanonicalFunnel, error) {
+func (svc *OverviewService) CreateCanonicalFunnel(ctx context.Context, f domain.CanonicalFunnel) (domain.CanonicalFunnel, error) {
 	if err := svc.validateFunnelWithCatalog(ctx, f); err != nil {
-		return repository.CanonicalFunnel{}, err
+		return domain.CanonicalFunnel{}, err
 	}
 	return svc.store.CreateCanonicalFunnel(ctx, f)
 }
 
-func (svc *OverviewService) ListCanonicalFunnels(ctx context.Context) ([]repository.CanonicalFunnel, error) {
+func (svc *OverviewService) ListCanonicalFunnels(ctx context.Context) ([]domain.CanonicalFunnel, error) {
 	return svc.store.ListCanonicalFunnels(ctx)
 }
 
-func (svc *OverviewService) GetCanonicalFunnel(ctx context.Context, id string) (repository.CanonicalFunnel, error) {
+func (svc *OverviewService) GetCanonicalFunnel(ctx context.Context, id string) (domain.CanonicalFunnel, error) {
 	f, err := svc.store.CanonicalFunnelByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return repository.CanonicalFunnel{}, fmt.Errorf("%w: canonical funnel %s", domain.ErrNotFound, id)
+			return domain.CanonicalFunnel{}, fmt.Errorf("%w: canonical funnel %s", domain.ErrNotFound, id)
 		}
-		return repository.CanonicalFunnel{}, err
+		return domain.CanonicalFunnel{}, err
 	}
 	return f, nil
 }
 
-func (svc *OverviewService) UpdateCanonicalFunnel(ctx context.Context, f repository.CanonicalFunnel) (repository.CanonicalFunnel, error) {
+func (svc *OverviewService) UpdateCanonicalFunnel(ctx context.Context, f domain.CanonicalFunnel) (domain.CanonicalFunnel, error) {
 	if err := svc.validateFunnelWithCatalog(ctx, f); err != nil {
-		return repository.CanonicalFunnel{}, err
+		return domain.CanonicalFunnel{}, err
 	}
 	updated, err := svc.store.UpdateCanonicalFunnel(ctx, f)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return repository.CanonicalFunnel{}, fmt.Errorf("%w: canonical funnel %s", domain.ErrNotFound, f.ID)
+			return domain.CanonicalFunnel{}, fmt.Errorf("%w: canonical funnel %s", domain.ErrNotFound, f.ID)
 		}
-		return repository.CanonicalFunnel{}, err
+		return domain.CanonicalFunnel{}, err
 	}
 	return updated, nil
 }
@@ -167,11 +166,11 @@ func (svc *OverviewService) DeleteCanonicalFunnel(ctx context.Context, id string
 	return svc.store.DeleteCanonicalFunnel(ctx, id)
 }
 
-func (svc *OverviewService) AnalyzeCanonicalFunnel(ctx context.Context, f repository.CanonicalFunnel, projectIDs []string, from, to time.Time, seg *repository.SegmentFilter, rules ...repository.SegmentRule) (repository.CanonicalFunnelResult, error) {
+func (svc *OverviewService) AnalyzeCanonicalFunnel(ctx context.Context, f domain.CanonicalFunnel, projectIDs []string, from, to time.Time, seg *domain.SegmentFilter, rules ...domain.SegmentRule) (domain.CanonicalFunnelResult, error) {
 	return svc.store.AnalyzeCanonicalFunnel(ctx, f, projectIDs, from, to, seg, rules...)
 }
 
-func validateCanonicalFunnel(f repository.CanonicalFunnel) error {
+func validateCanonicalFunnel(f domain.CanonicalFunnel) error {
 	if strings.TrimSpace(f.Name) == "" {
 		return &domain.ValidationError{Field: "name", Message: "required"}
 	}
@@ -188,7 +187,7 @@ func validateCanonicalFunnel(f repository.CanonicalFunnel) error {
 
 // validateFunnelWithCatalog validates the funnel shape and that every step
 // references an existing canonical event.
-func (svc *OverviewService) validateFunnelWithCatalog(ctx context.Context, f repository.CanonicalFunnel) error {
+func (svc *OverviewService) validateFunnelWithCatalog(ctx context.Context, f domain.CanonicalFunnel) error {
 	if err := validateCanonicalFunnel(f); err != nil {
 		return err
 	}

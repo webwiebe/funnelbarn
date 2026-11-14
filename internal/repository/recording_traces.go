@@ -2,45 +2,14 @@ package repository
 
 import (
 	"context"
-	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
-
-// TraceLink is a single W3C trace observed in the browser during a recording.
-// It is sent by the SDK alongside a recording chunk and stored so a trace_id from
-// SpanBarn/BugBarn can be resolved back to a session + recording (and seek offset).
-type TraceLink struct {
-	TraceID    string    `json:"trace_id"`
-	SpanID     string    `json:"span_id,omitempty"`
-	URL        string    `json:"url,omitempty"`
-	OccurredAt time.Time `json:"occurred_at"`
-}
-
-// TraceLookup resolves a trace_id to the recording that captured it, including the
-// seek offset (occurred_at - recording.started_at) so a replay can jump to the
-// moment the trace fired.
-type TraceLookup struct {
-	TraceID            string    `json:"trace_id"`
-	ProjectID          string    `json:"project_id"`
-	SessionID          string    `json:"session_id"`
-	RecordingID        string    `json:"recording_id"`
-	OccurredAt         time.Time `json:"occurred_at"`
-	OffsetMs           int64     `json:"offset_ms"`
-	URL                string    `json:"url,omitempty"`
-	RecordingStartedAt time.Time `json:"recording_started_at"`
-	// Chunk range + metadata of the resolved recording, so a replay client can
-	// fetch the chunks and render without a second round-trip.
-	FirstChunkIndex int    `json:"first_chunk_index"`
-	LastChunkIndex  int    `json:"last_chunk_index"`
-	ChunkCount      int    `json:"chunk_count"`
-	DurationMs      int64  `json:"duration_ms"`
-	Environment     string `json:"environment,omitempty"`
-	PageURL         string `json:"page_url,omitempty"`
-}
 
 // InsertTraceLinks persists the trace links observed during one recording chunk.
 // It is idempotent on (recording_id, trace_id, occurred_at): a retried chunk
 // upload re-inserts the same rows without duplicating them.
-func (s *Store) InsertTraceLinks(ctx context.Context, projectID, sessionID, recordingID string, links []TraceLink) error {
+func (s *Store) InsertTraceLinks(ctx context.Context, projectID, sessionID, recordingID string, links []domain.TraceLink) error {
 	if len(links) == 0 {
 		return nil
 	}
@@ -55,7 +24,7 @@ func (s *Store) InsertTraceLinks(ctx context.Context, projectID, sessionID, reco
 	return tx.Commit()
 }
 
-func insertTraceLinks(ctx context.Context, ex execer, projectID, sessionID, recordingID string, links []TraceLink) error {
+func insertTraceLinks(ctx context.Context, ex execer, projectID, sessionID, recordingID string, links []domain.TraceLink) error {
 	const q = `
 		INSERT INTO recording_traces
 			(project_id, session_id, recording_id, trace_id, span_id, url, occurred_at)
@@ -75,7 +44,7 @@ func insertTraceLinks(ctx context.Context, ex execer, projectID, sessionID, reco
 // LookupTrace resolves a trace_id to its recording within a project. When a trace
 // spans multiple chunks it returns the earliest observation (the most useful seek
 // target). Returns sql.ErrNoRows-wrapped nil + found=false when the trace is unknown.
-func (s *ReadStore) LookupTrace(ctx context.Context, projectID, traceID string) (TraceLookup, bool, error) {
+func (s *ReadStore) LookupTrace(ctx context.Context, projectID, traceID string) (domain.TraceLookup, bool, error) {
 	const q = `
 		SELECT rt.project_id, rt.session_id, rt.recording_id, rt.trace_id, rt.url, rt.occurred_at,
 		       r.started_at, r.first_chunk_index, r.last_chunk_index, r.chunk_count, r.duration_ms, r.environment, r.page_url
@@ -84,7 +53,7 @@ func (s *ReadStore) LookupTrace(ctx context.Context, projectID, traceID string) 
 		WHERE rt.project_id = ? AND rt.trace_id = ?
 		ORDER BY rt.occurred_at ASC
 		LIMIT 1`
-	var out TraceLookup
+	var out domain.TraceLookup
 	err := s.rdb.QueryRowContext(ctx, q, projectID, traceID).Scan(
 		&out.ProjectID, &out.SessionID, &out.RecordingID, &out.TraceID,
 		&out.URL, &out.OccurredAt, &out.RecordingStartedAt,
@@ -92,9 +61,9 @@ func (s *ReadStore) LookupTrace(ctx context.Context, projectID, traceID string) 
 	)
 	if err != nil {
 		if isNoRows(err) {
-			return TraceLookup{}, false, nil
+			return domain.TraceLookup{}, false, nil
 		}
-		return TraceLookup{}, false, err
+		return domain.TraceLookup{}, false, err
 	}
 	out.OffsetMs = out.OccurredAt.Sub(out.RecordingStartedAt).Milliseconds()
 	if out.OffsetMs < 0 {
@@ -105,7 +74,7 @@ func (s *ReadStore) LookupTrace(ctx context.Context, projectID, traceID string) 
 
 // TracesForRecording returns the ordered trace timeline for a recording, for the
 // replay UI/CLI to overlay trace markers on the scrubber.
-func (s *ReadStore) TracesForRecording(ctx context.Context, recordingID string) ([]TraceLink, error) {
+func (s *ReadStore) TracesForRecording(ctx context.Context, recordingID string) ([]domain.TraceLink, error) {
 	const q = `
 		SELECT trace_id, span_id, url, occurred_at
 		FROM recording_traces
@@ -116,9 +85,9 @@ func (s *ReadStore) TracesForRecording(ctx context.Context, recordingID string) 
 		return nil, err
 	}
 	defer rows.Close()
-	var out []TraceLink
+	var out []domain.TraceLink
 	for rows.Next() {
-		var l TraceLink
+		var l domain.TraceLink
 		if err := rows.Scan(&l.TraceID, &l.SpanID, &l.URL, &l.OccurredAt); err != nil {
 			return nil, err
 		}

@@ -5,38 +5,16 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
-
-// Funnel scopes: what one funnel entry is keyed on.
-const (
-	// FunnelScopeSession counts distinct sessions per step (the default).
-	FunnelScopeSession = "session"
-	// FunnelScopePageView counts distinct page views per step.
-	FunnelScopePageView = "page_view"
-	// FunnelScopeUser counts distinct users (user_id_hash) through ordered
-	// steps: a user reaches step N only by firing it at or after their step
-	// N-1, and within the funnel's conversion window of their step 1.
-	FunnelScopeUser = "user"
-)
-
-// DefaultConversionWindow is the window of a user-scoped funnel whose
-// ConversionWindowSeconds is unset.
-const DefaultConversionWindow = 30 * 24 * time.Hour
-
-// ConversionWindow returns the window of a user-scoped funnel.
-func (f Funnel) ConversionWindow() time.Duration {
-	if f.ConversionWindowSeconds == nil {
-		return DefaultConversionWindow
-	}
-	return time.Duration(*f.ConversionWindowSeconds) * time.Second
-}
 
 // orderedUserStepCounts counts, per step, the users who reached it in order:
 // step 1 in [from, to], and each later step in [from, to], at or after the
 // user's previous step and within the conversion window of their step 1. A
 // user with several step-1 events counts at the furthest step any of them
 // reaches.
-func (s *ReadStore) orderedUserStepCounts(ctx context.Context, f Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool) ([]int64, error) {
+func (s *ReadStore) orderedUserStepCounts(ctx context.Context, f domain.Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool) ([]int64, error) {
 	depths, err := s.orderedUserDepths(ctx, f, from, to, extraWhere, extraArgs, needJoin)
 	if err != nil {
 		return nil, err
@@ -52,7 +30,7 @@ func (s *ReadStore) orderedUserStepCounts(ctx context.Context, f Funnel, from, t
 
 // orderedUserDepths returns, per user with a step 1, how many steps they
 // reached in order.
-func (s *ReadStore) orderedUserDepths(ctx context.Context, f Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool) (map[string]int, error) {
+func (s *ReadStore) orderedUserDepths(ctx context.Context, f domain.Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool) (map[string]int, error) {
 	join := ""
 	if needJoin {
 		join = " JOIN sessions s ON s.id = e.session_id AND s.project_id = e.project_id"

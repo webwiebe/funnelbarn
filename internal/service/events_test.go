@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -22,7 +22,7 @@ func TestEventService_InsertAndList(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC()
-	e := repository.Event{
+	e := domain.Event{
 		ID:         "ev-001",
 		ProjectID:  p.ID,
 		SessionID:  "sess-ev-001",
@@ -50,7 +50,7 @@ func TestEventService_CountEvents(t *testing.T) {
 
 	now := time.Now().UTC()
 	for i := 0; i < 3; i++ {
-		e := repository.Event{
+		e := domain.Event{
 			ID:         "ev-count-00" + string(rune('1'+i)),
 			ProjectID:  p.ID,
 			SessionID:  "sess-count",
@@ -77,7 +77,7 @@ func TestEventService_TopPages(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC()
-	e := repository.Event{
+	e := domain.Event{
 		ID:         "ev-pages-001",
 		ProjectID:  p.ID,
 		SessionID:  "sess-pages",
@@ -105,7 +105,7 @@ func TestEventService_UniqueSessionCount(t *testing.T) {
 
 	now := time.Now().UTC()
 	for i := 0; i < 2; i++ {
-		e := repository.Event{
+		e := domain.Event{
 			ID:         "ev-uniq-00" + string(rune('1'+i)),
 			ProjectID:  p.ID,
 			SessionID:  "sess-uniq-" + string(rune('a'+i)),
@@ -133,7 +133,7 @@ func TestEventService_BounceRate(t *testing.T) {
 
 	now := time.Now().UTC()
 	// One session with one event = 100% bounce
-	e := repository.Event{
+	e := domain.Event{
 		ID:         "ev-bounce-001",
 		ProjectID:  p.ID,
 		SessionID:  "sess-bounce-001",
@@ -159,7 +159,7 @@ func TestEventService_GetEventByIngestID(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC()
-	e := repository.Event{
+	e := domain.Event{
 		ID:         "ev-ingest-001",
 		ProjectID:  p.ID,
 		SessionID:  "sess-ingest-001",
@@ -186,7 +186,7 @@ func TestEventService_TopReferrers(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC()
-	e := repository.Event{
+	e := domain.Event{
 		ID:             "ev-ref-001",
 		ProjectID:      p.ID,
 		SessionID:      "sess-ref-001",
@@ -214,7 +214,7 @@ func TestEventService_AvgEventsPerSession(t *testing.T) {
 
 	now := time.Now().UTC()
 	for i := 0; i < 2; i++ {
-		e := repository.Event{
+		e := domain.Event{
 			ID:         "ev-avg-00" + string(rune('1'+i)),
 			ProjectID:  p.ID,
 			SessionID:  "sess-avg-001",
@@ -241,7 +241,7 @@ func TestEventService_TopBrowsers(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC()
-	e := repository.Event{
+	e := domain.Event{
 		ID:         "ev-br-001",
 		ProjectID:  p.ID,
 		SessionID:  "sess-br-001",
@@ -268,7 +268,7 @@ func TestEventService_TopDeviceTypes(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC()
-	e := repository.Event{
+	e := domain.Event{
 		ID:         "ev-dt-001",
 		ProjectID:  p.ID,
 		SessionID:  "sess-dt-001",
@@ -295,7 +295,7 @@ func TestEventService_TopEventNames(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC()
-	e := repository.Event{
+	e := domain.Event{
 		ID:         "ev-names-001",
 		ProjectID:  p.ID,
 		SessionID:  "sess-names-001",
@@ -321,7 +321,7 @@ func TestEventService_TopUTMSources(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC()
-	e := repository.Event{
+	e := domain.Event{
 		ID:         "ev-utm-001",
 		ProjectID:  p.ID,
 		SessionID:  "sess-utm-001",

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // FlagUsageWindowDays is the span of the usage report. The query is bounded to
@@ -95,9 +95,9 @@ func flagUsageWindow(now time.Time) (from, to time.Time) {
 // buildFlagUsage folds the per-day rows into one entry per flag. A flag counts
 // as stale when it has no recorded evaluation in the window and was neither
 // evaluated nor created in the last 30 days.
-func buildFlagUsage(flags []repository.FeatureFlag, rows []repository.FlagUsageRow, now time.Time) FlagUsageReport {
+func buildFlagUsage(flags []domain.FeatureFlag, rows []domain.FlagUsageRow, now time.Time) FlagUsageReport {
 	from, _ := flagUsageWindow(now)
-	byFlag := make(map[string][]repository.FlagUsageRow, len(flags))
+	byFlag := make(map[string][]domain.FlagUsageRow, len(flags))
 	for _, r := range rows {
 		byFlag[r.FlagID] = append(byFlag[r.FlagID], r)
 	}

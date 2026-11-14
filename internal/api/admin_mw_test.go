@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
@@ -16,8 +17,8 @@ type adminFixture struct {
 	srv   *Server
 	store *repository.Store
 	f     *fakeIdP
-	proj  repository.Project
-	key   repository.APIKey
+	proj  domain.Project
+	key   domain.APIKey
 }
 
 func newAdminFixture(t *testing.T) adminFixture {
@@ -29,7 +30,7 @@ func newAdminFixture(t *testing.T) adminFixture {
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	k, err := store.CreateAPIKey(ctx, "existing", p.ID, strings.Repeat("a", 64), repository.APIKeyScopeIngest)
+	k, err := store.CreateAPIKey(ctx, "existing", p.ID, strings.Repeat("a", 64), domain.APIKeyScopeIngest)
 	if err != nil {
 		t.Fatalf("CreateAPIKey: %v", err)
 	}
@@ -40,7 +41,7 @@ func newAdminFixture(t *testing.T) adminFixture {
 // returns its cookie and CSRF token.
 func (fx adminFixture) oidcSession(t *testing.T, claimsJSON string) (*http.Cookie, string) {
 	t.Helper()
-	cookie, _ := insertOIDCSession(t, fx.srv, repository.WebSession{
+	cookie, _ := insertOIDCSession(t, fx.srv, domain.WebSession{
 		Username:        "alice",
 		IdpSub:          fakeIdPSub,
 		IdpSid:          fakeIdPSid,
@@ -152,7 +153,7 @@ func TestAPIKeyRoutes_AllowALocalSession(t *testing.T) {
 // the key route answers 401 and the session stays gone.
 func TestAPIKeyRoutes_RefreshedClaimsWithoutTheRoleEndAccess(t *testing.T) {
 	fx := newAdminFixture(t)
-	cookie, _ := insertOIDCSession(t, fx.srv, repository.WebSession{
+	cookie, _ := insertOIDCSession(t, fx.srv, domain.WebSession{
 		Username:        "alice",
 		IdpSub:          fakeIdPSub,
 		IdpSid:          fakeIdPSid,

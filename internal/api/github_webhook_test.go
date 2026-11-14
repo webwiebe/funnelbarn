@@ -18,10 +18,10 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
 	"github.com/wiebe-xyz/funnelbarn/internal/ghwebhook"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
+	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
-	"github.com/wiebe-xyz/funnelbarn/internal/worker"
 )
 
 const testWebhookSecret = "webhook-test-secret"
@@ -45,14 +45,16 @@ func newWebhookStack(t *testing.T, secret string) *webhookStack {
 		Events:              service.NewEventService(store),
 		UserAuth:            userAuth,
 		SessionManager:      auth.NewSessionManager("test-secret", time.Hour),
-		WebSessions:         store,
+		WebSessions:         service.NewWebSessionService(store),
 		PublicURL:           "http://localhost",
 		IngestRatePerMinute: 1000,
 		IngestRateBurst:     1000,
 		DB:                  store,
 		Version:             "test",
+
+		GitHubWebhookSecret:  secret,
+		GitHubWebhookProject: "agents",
 	})
-	srv.SetGitHubWebhook(secret, "agents")
 	return &webhookStack{srv: srv, store: store, sp: sp, handler: handler}
 }
 
@@ -99,12 +101,12 @@ func (s *webhookStack) persistSpool(t *testing.T, want int) {
 		time.Sleep(2 * time.Millisecond)
 	}
 	for _, rec := range recs {
-		ev, err := worker.ProcessRecord(rec)
+		ev, err := pipeline.ProcessRecord(rec)
 		require.NoError(t, err)
 		proj, err := s.store.EnsureProject(context.Background(), rec.ProjectSlug)
 		require.NoError(t, err)
 		ev.ProjectID = proj.ID
-		require.NoError(t, worker.PersistEvent(context.Background(), s.store, ev, nil))
+		require.NoError(t, pipeline.PersistEvent(context.Background(), s.store, ev, nil))
 	}
 }
 

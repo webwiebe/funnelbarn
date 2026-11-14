@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
@@ -177,7 +178,7 @@ func TestReaderForwardsASessionThatNeedsAWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	past := time.Now().Add(-time.Minute).Unix()
-	if err := store.CreateWebSession(context.Background(), repository.WebSession{
+	if err := store.CreateWebSession(context.Background(), domain.WebSession{
 		IDHash: auth.HashSessionToken(token), Username: "admin", AuthMethod: "local",
 		CreatedAt: past - 3600, AbsoluteExpiresAt: past,
 	}); err != nil {

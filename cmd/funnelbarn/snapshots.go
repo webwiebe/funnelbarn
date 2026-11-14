@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -14,7 +15,7 @@ import (
 // their own goroutines until ctx is done.
 func startEvaluateSnapshots(ctx context.Context, store *repository.Store) (*service.FlagSnapshot, *auth.KeySnapshot) {
 	flags := service.NewFlagSnapshot(store.ListAllFlags, nil)
-	keys := auth.NewKeySnapshot(keyGrants(store.ListAllAPIKeys), repository.APIKeyScopeEvaluatesFlags, nil)
+	keys := auth.NewKeySnapshot(keyGrants(store.ListAllAPIKeys), domain.APIKeyScopeEvaluatesFlags, nil)
 	metrics.SetSnapshotAge("flags", flags.Age)
 	metrics.SetSnapshotAge("api_keys", keys.Age)
 	flags.Run(ctx)
@@ -23,7 +24,7 @@ func startEvaluateSnapshots(ctx context.Context, store *repository.Store) (*serv
 }
 
 // keyGrants adapts the stored key list to what the key snapshot holds.
-func keyGrants(list func(context.Context) ([]repository.APIKey, error)) func(context.Context) ([]auth.KeyGrant, error) {
+func keyGrants(list func(context.Context) ([]domain.APIKey, error)) func(context.Context) ([]auth.KeyGrant, error) {
 	return func(ctx context.Context) ([]auth.KeyGrant, error) {
 		keys, err := list(ctx)
 		if err != nil {

@@ -9,7 +9,6 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // ABTestService handles A/B test business logic.
@@ -29,34 +28,34 @@ var validABTestStatuses = map[string]bool{
 	"completed": true,
 }
 
-func (svc *ABTestService) CreateABTest(ctx context.Context, t repository.ABTest) (repository.ABTest, error) {
+func (svc *ABTestService) CreateABTest(ctx context.Context, t domain.ABTest) (domain.ABTest, error) {
 	if strings.TrimSpace(t.ProjectID) == "" {
-		return repository.ABTest{}, &domain.ValidationError{Field: "project_id", Message: "required"}
+		return domain.ABTest{}, &domain.ValidationError{Field: "project_id", Message: "required"}
 	}
 	if strings.TrimSpace(t.Name) == "" {
-		return repository.ABTest{}, &domain.ValidationError{Field: "name", Message: "required"}
+		return domain.ABTest{}, &domain.ValidationError{Field: "name", Message: "required"}
 	}
 	if strings.TrimSpace(t.ConversionEvent) == "" {
-		return repository.ABTest{}, &domain.ValidationError{Field: "conversion_event", Message: "required"}
+		return domain.ABTest{}, &domain.ValidationError{Field: "conversion_event", Message: "required"}
 	}
 	if t.Status != "" && !validABTestStatuses[t.Status] {
-		return repository.ABTest{}, &domain.ValidationError{Field: "status", Message: "must be \"running\", \"paused\", or \"completed\""}
+		return domain.ABTest{}, &domain.ValidationError{Field: "status", Message: "must be \"running\", \"paused\", or \"completed\""}
 	}
 	return svc.store.CreateABTest(ctx, t)
 }
 
-func (svc *ABTestService) ListABTests(ctx context.Context, projectID string) ([]repository.ABTest, error) {
+func (svc *ABTestService) ListABTests(ctx context.Context, projectID string) ([]domain.ABTest, error) {
 	return svc.store.ListABTests(ctx, projectID)
 }
 
-func (svc *ABTestService) GetABTest(ctx context.Context, id string) (repository.ABTest, error) {
+func (svc *ABTestService) GetABTest(ctx context.Context, id string) (domain.ABTest, error) {
 	t, err := svc.store.ABTestByID(ctx, id)
 	if err == sql.ErrNoRows {
-		return repository.ABTest{}, fmt.Errorf("%w: ab test %s", domain.ErrNotFound, id)
+		return domain.ABTest{}, fmt.Errorf("%w: ab test %s", domain.ErrNotFound, id)
 	}
 	return t, err
 }
 
-func (svc *ABTestService) AnalyzeABTest(ctx context.Context, t repository.ABTest, from, to time.Time) ([]repository.ABTestResult, error) {
+func (svc *ABTestService) AnalyzeABTest(ctx context.Context, t domain.ABTest, from, to time.Time) ([]domain.ABTestResult, error) {
 	return svc.store.AnalyzeABTest(ctx, t, from, to)
 }

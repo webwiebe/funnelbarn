@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 )
@@ -209,14 +210,14 @@ func TestDeleteProject_NoOrphans(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Tenant", "tenant-orphans")
 	require.NoError(t, err)
 
-	require.NoError(t, s.InsertEvent(ctx, repository.Event{
+	require.NoError(t, s.InsertEvent(ctx, domain.Event{
 		ID: "e1", ProjectID: p.ID, SessionID: "sess1", Name: "pageview",
 		IngestID: "ing1", OccurredAt: time.Now().UTC(),
 	}))
-	require.NoError(t, s.UpsertRecording(ctx, repository.Recording{
+	require.NoError(t, s.UpsertRecording(ctx, domain.Recording{
 		ID: "rec1", ProjectID: p.ID, SessionID: "sess1", StartedAt: time.Now().UTC(),
 	}))
-	require.NoError(t, s.InsertTraceLinks(ctx, p.ID, "sess1", "rec1", []repository.TraceLink{
+	require.NoError(t, s.InsertTraceLinks(ctx, p.ID, "sess1", "rec1", []domain.TraceLink{
 		{TraceID: "trace1", OccurredAt: time.Now().UTC()},
 	}))
 
@@ -419,11 +420,11 @@ func TestStore_CreateFunnel_WithSteps(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Proj", "proj-funnel")
 	require.NoError(t, err)
 
-	f, err := s.CreateFunnel(ctx, repository.Funnel{
+	f, err := s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID:   p.ID,
 		Name:        "Sign Up Funnel",
 		Description: "Tracks sign-up flow",
-		Steps: []repository.FunnelStep{
+		Steps: []domain.FunnelStep{
 			{EventName: "page-view"},
 			{EventName: "signup-started"},
 			{EventName: "signup-completed"},
@@ -456,10 +457,10 @@ func TestStore_ListFunnels_IncludesSteps(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Proj", "proj-listfunnel")
 	require.NoError(t, err)
 
-	_, err = s.CreateFunnel(ctx, repository.Funnel{
+	_, err = s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Funnel With Steps",
-		Steps: []repository.FunnelStep{
+		Steps: []domain.FunnelStep{
 			{EventName: "step-a"},
 			{EventName: "step-b"},
 		},
@@ -480,19 +481,19 @@ func TestStore_UpdateFunnel(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Proj", "proj-updatefunnel")
 	require.NoError(t, err)
 
-	f, err := s.CreateFunnel(ctx, repository.Funnel{
+	f, err := s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Original",
-		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step-1"}},
 	})
 	require.NoError(t, err)
 
-	updated, err := s.UpdateFunnel(ctx, repository.Funnel{
+	updated, err := s.UpdateFunnel(ctx, domain.Funnel{
 		ID:          f.ID,
 		ProjectID:   p.ID,
 		Name:        "Updated Name",
 		Description: "New description",
-		Steps: []repository.FunnelStep{
+		Steps: []domain.FunnelStep{
 			{EventName: "new-step-1"},
 			{EventName: "new-step-2"},
 		},
@@ -513,10 +514,10 @@ func TestStore_DeleteFunnel(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Proj", "proj-delfunnel")
 	require.NoError(t, err)
 
-	f, err := s.CreateFunnel(ctx, repository.Funnel{
+	f, err := s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "To Delete",
-		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step-1"}},
 	})
 	require.NoError(t, err)
 
@@ -534,11 +535,11 @@ func TestCreateFunnel(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Proj", "proj-cf")
 	require.NoError(t, err)
 
-	f, err := s.CreateFunnel(ctx, repository.Funnel{
+	f, err := s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID:   p.ID,
 		Name:        "Sign Up Funnel",
 		Description: "Tracks sign-up flow",
-		Steps: []repository.FunnelStep{
+		Steps: []domain.FunnelStep{
 			{EventName: "page-view"},
 			{EventName: "signup-started"},
 			{EventName: "signup-completed"},
@@ -560,17 +561,17 @@ func TestListFunnels(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Proj", "proj-lf")
 	require.NoError(t, err)
 
-	_, err = s.CreateFunnel(ctx, repository.Funnel{
+	_, err = s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Funnel A",
-		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step-1"}},
 	})
 	require.NoError(t, err)
 
-	_, err = s.CreateFunnel(ctx, repository.Funnel{
+	_, err = s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Funnel B",
-		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step-1"}},
 	})
 	require.NoError(t, err)
 
@@ -586,10 +587,10 @@ func TestDeleteFunnel(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Proj", "proj-df")
 	require.NoError(t, err)
 
-	f, err := s.CreateFunnel(ctx, repository.Funnel{
+	f, err := s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Temp Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step-1"}},
 	})
 	require.NoError(t, err)
 
@@ -613,7 +614,7 @@ func TestStore_UpsertSession_Create(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	sess := repository.Session{
+	sess := domain.Session{
 		ID:          "session-001",
 		ProjectID:   p.ID,
 		FirstSeenAt: now,
@@ -640,7 +641,7 @@ func TestStore_UpsertSession_Update(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	sess := repository.Session{
+	sess := domain.Session{
 		ID:          "session-update",
 		ProjectID:   p.ID,
 		FirstSeenAt: now,
@@ -673,7 +674,7 @@ func TestStore_UpsertSession_SameIDInTwoProjects(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	base := repository.Session{ID: "shared-id", FirstSeenAt: now, LastSeenAt: now}
+	base := domain.Session{ID: "shared-id", FirstSeenAt: now, LastSeenAt: now}
 
 	a := base
 	a.ProjectID = pa.ID
@@ -761,7 +762,7 @@ func TestStore_CreateABTest(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Proj", "proj-abtest")
 	require.NoError(t, err)
 
-	test, err := s.CreateABTest(ctx, repository.ABTest{
+	test, err := s.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       p.ID,
 		Name:            "Button Color Test",
 		Status:          "running",
@@ -791,7 +792,7 @@ func TestStore_ListABTests(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Proj", "proj-listabtests")
 	require.NoError(t, err)
 
-	_, err = s.CreateABTest(ctx, repository.ABTest{
+	_, err = s.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       p.ID,
 		Name:            "Test A",
 		Status:          "running",
@@ -799,7 +800,7 @@ func TestStore_ListABTests(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = s.CreateABTest(ctx, repository.ABTest{
+	_, err = s.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       p.ID,
 		Name:            "Test B",
 		Status:          "paused",
@@ -823,8 +824,8 @@ func newEventID() string {
 	return fmt.Sprintf("event-%06d", eventCounter)
 }
 
-func newTestEvent(projectID, sessionID string) repository.Event {
-	return repository.Event{
+func newTestEvent(projectID, sessionID string) domain.Event {
+	return domain.Event{
 		ID:         newEventID(),
 		ProjectID:  projectID,
 		SessionID:  sessionID,
@@ -1118,7 +1119,7 @@ func TestStore_ActiveSessionCount(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC()
-	sess := repository.Session{
+	sess := domain.Session{
 		ID:          "active-sess-001",
 		ProjectID:   p.ID,
 		FirstSeenAt: now,
@@ -1141,7 +1142,7 @@ func TestStore_ListSessions(t *testing.T) {
 
 	now := time.Now().UTC()
 	for i := 0; i < 3; i++ {
-		sess := repository.Session{
+		sess := domain.Session{
 			ID:          fmt.Sprintf("list-sess-%d", i),
 			ProjectID:   p.ID,
 			FirstSeenAt: now,
@@ -1289,7 +1290,7 @@ func TestStore_AnalyzeABTest(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Proj", "proj-analyzeab")
 	require.NoError(t, err)
 
-	test, err := s.CreateABTest(ctx, repository.ABTest{
+	test, err := s.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       p.ID,
 		Name:            "Test",
 		Status:          "running",
@@ -1415,7 +1416,7 @@ func TestEnsureProject_UnresolvableSlugsAreMarked(t *testing.T) {
 			if err == nil {
 				t.Fatalf("expected EnsureProject(%q) to fail", slug)
 			}
-			if !errors.Is(err, repository.ErrProjectUnresolvable) {
+			if !errors.Is(err, domain.ErrProjectUnresolvable) {
 				t.Errorf("expected ErrProjectUnresolvable, got %v", err)
 			}
 		})
@@ -1435,31 +1436,31 @@ func TestListFunnels_FlagsUnmatchedSteps(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, name := range []string{"page_view", "purchase"} {
-		require.NoError(t, s.InsertEvent(ctx, repository.Event{
+		require.NoError(t, s.InsertEvent(ctx, domain.Event{
 			ID: randomHex(t), ProjectID: p.ID, SessionID: "s1", Name: name,
 			IngestID: randomHex(t), OccurredAt: now,
 		}))
 	}
 
 	// Fully wired.
-	good, err := s.CreateFunnel(ctx, repository.Funnel{
+	good, err := s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID, Name: "Purchase",
-		Steps: []repository.FunnelStep{{EventName: "page_view"}, {EventName: "purchase"}},
+		Steps: []domain.FunnelStep{{EventName: "page_view"}, {EventName: "purchase"}},
 	})
 	require.NoError(t, err)
 	// A template funnel nobody wired up: neither name was ever sent, and
 	// "your_goal" appears twice to check it is reported once.
-	bad, err := s.CreateFunnel(ctx, repository.Funnel{
+	bad, err := s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID, Name: "Registration",
-		Steps: []repository.FunnelStep{
+		Steps: []domain.FunnelStep{
 			{EventName: "sign_up"}, {EventName: "your_goal"}, {EventName: "your_goal"},
 		},
 	})
 	require.NoError(t, err)
 	// Half wired: stalls at the second step.
-	partial, err := s.CreateFunnel(ctx, repository.Funnel{
+	partial, err := s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID, Name: "Half",
-		Steps: []repository.FunnelStep{{EventName: "page_view"}, {EventName: "form_submit"}},
+		Steps: []domain.FunnelStep{{EventName: "page_view"}, {EventName: "form_submit"}},
 	})
 	require.NoError(t, err)
 
@@ -1494,19 +1495,19 @@ func TestListFunnels_UnmatchedStepsAreProjectScoped(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	// Project A is live, but only ever sends "page_view".
-	require.NoError(t, s.InsertEvent(ctx, repository.Event{
+	require.NoError(t, s.InsertEvent(ctx, domain.Event{
 		ID: randomHex(t), ProjectID: pa.ID, SessionID: "s1", Name: "page_view",
 		IngestID: randomHex(t), OccurredAt: now,
 	}))
 	// Only project B ever sends "purchase".
-	require.NoError(t, s.InsertEvent(ctx, repository.Event{
+	require.NoError(t, s.InsertEvent(ctx, domain.Event{
 		ID: randomHex(t), ProjectID: pb.ID, SessionID: "s1", Name: "purchase",
 		IngestID: randomHex(t), OccurredAt: now,
 	}))
 
-	_, err = s.CreateFunnel(ctx, repository.Funnel{
+	_, err = s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: pa.ID, Name: "A's purchase funnel",
-		Steps: []repository.FunnelStep{{EventName: "purchase"}},
+		Steps: []domain.FunnelStep{{EventName: "purchase"}},
 	})
 	require.NoError(t, err)
 
@@ -1526,9 +1527,9 @@ func TestListFunnels_NoEventsFlagsNothing(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Brand New", "brand-new")
 	require.NoError(t, err)
 
-	_, err = s.CreateFunnel(ctx, repository.Funnel{
+	_, err = s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID, Name: "Registration",
-		Steps: []repository.FunnelStep{{EventName: "sign_up"}},
+		Steps: []domain.FunnelStep{{EventName: "sign_up"}},
 	})
 	require.NoError(t, err)
 

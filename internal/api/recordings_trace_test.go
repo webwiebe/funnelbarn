@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -99,7 +100,7 @@ func newRecordingServerWithStorage(t *testing.T, storage service.RecordingStorag
 		IngestRatePerMinute: 1000,
 		IngestRateBurst:     1000,
 		DB:                  store,
-		WebSessions:         store,
+		WebSessions:         service.NewWebSessionService(store),
 		Version:             "test",
 	})
 	return srv, store
@@ -190,7 +191,7 @@ func TestLookupTrace_EndToEnd(t *testing.T) {
 	if wl.Code != http.StatusOK {
 		t.Fatalf("lookup: expected 200, got %d (body: %s)", wl.Code, wl.Body.String())
 	}
-	var got repository.TraceLookup
+	var got domain.TraceLookup
 	if err := json.Unmarshal(wl.Body.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}

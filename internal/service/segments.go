@@ -8,7 +8,6 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // SegmentService handles segment business logic.
@@ -21,52 +20,52 @@ func NewSegmentService(store ports.SegmentRepo) *SegmentService {
 	return &SegmentService{store: store}
 }
 
-func (svc *SegmentService) CreateSegment(ctx context.Context, projectID, name string, rules []repository.SegmentRule) (repository.Segment, error) {
+func (svc *SegmentService) CreateSegment(ctx context.Context, projectID, name string, rules []domain.SegmentRule) (domain.Segment, error) {
 	if name == "" {
-		return repository.Segment{}, &domain.ValidationError{Field: "name", Message: "required"}
+		return domain.Segment{}, &domain.ValidationError{Field: "name", Message: "required"}
 	}
 	if err := validateRules(rules); err != nil {
-		return repository.Segment{}, err
+		return domain.Segment{}, err
 	}
-	return svc.store.CreateSegment(ctx, repository.Segment{
+	return svc.store.CreateSegment(ctx, domain.Segment{
 		ProjectID: projectID,
 		Name:      name,
 		Rules:     rules,
 	})
 }
 
-func (svc *SegmentService) ListSegments(ctx context.Context, projectID string) ([]repository.Segment, error) {
+func (svc *SegmentService) ListSegments(ctx context.Context, projectID string) ([]domain.Segment, error) {
 	return svc.store.ListSegments(ctx, projectID)
 }
 
-func (svc *SegmentService) GetSegment(ctx context.Context, id string) (repository.Segment, error) {
+func (svc *SegmentService) GetSegment(ctx context.Context, id string) (domain.Segment, error) {
 	seg, err := svc.store.SegmentByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return repository.Segment{}, fmt.Errorf("%w: segment %s", domain.ErrNotFound, id)
+			return domain.Segment{}, fmt.Errorf("%w: segment %s", domain.ErrNotFound, id)
 		}
-		return repository.Segment{}, err
+		return domain.Segment{}, err
 	}
 	return seg, nil
 }
 
-func (svc *SegmentService) UpdateSegment(ctx context.Context, id, name string, rules []repository.SegmentRule) (repository.Segment, error) {
+func (svc *SegmentService) UpdateSegment(ctx context.Context, id, name string, rules []domain.SegmentRule) (domain.Segment, error) {
 	if name == "" {
-		return repository.Segment{}, &domain.ValidationError{Field: "name", Message: "required"}
+		return domain.Segment{}, &domain.ValidationError{Field: "name", Message: "required"}
 	}
 	if err := validateRules(rules); err != nil {
-		return repository.Segment{}, err
+		return domain.Segment{}, err
 	}
-	return svc.store.UpdateSegment(ctx, repository.Segment{ID: id, Name: name, Rules: rules})
+	return svc.store.UpdateSegment(ctx, domain.Segment{ID: id, Name: name, Rules: rules})
 }
 
 func (svc *SegmentService) DeleteSegment(ctx context.Context, id string) error {
 	return svc.store.DeleteSegment(ctx, id)
 }
 
-func validateRules(rules []repository.SegmentRule) error {
+func validateRules(rules []domain.SegmentRule) error {
 	for i, r := range rules {
-		if _, ok := repository.AllowedSegmentFields[r.Field]; !ok {
+		if _, ok := domain.AllowedSegmentFields[r.Field]; !ok {
 			return &domain.ValidationError{
 				Field:   fmt.Sprintf("rules[%d].field", i),
 				Message: fmt.Sprintf("unsupported segment field %q", r.Field),
