@@ -9,21 +9,20 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
-// segmentRuleOperators are the operators repository.SegmentRule accepts (see
+// segmentRuleOperators are the operators domain.SegmentRule accepts (see
 // service.validateRules). Named here so the create/update tool descriptions
 // and validation error can never drift apart.
 var segmentRuleOperators = []string{"eq", "neq", "contains", "not_contains", "is_null", "is_not_null"}
 
 // allowedSegmentFieldNames lists the segment rule fields the store accepts,
 // sorted for a stable tool description. Read from
-// repository.AllowedSegmentFields rather than duplicated here, so a new
+// domain.AllowedSegmentFields rather than duplicated here, so a new
 // field is picked up without touching this file.
 func allowedSegmentFieldNames() []string {
-	names := make([]string, 0, len(repository.AllowedSegmentFields))
-	for f := range repository.AllowedSegmentFields {
+	names := make([]string, 0, len(domain.AllowedSegmentFields))
+	for f := range domain.AllowedSegmentFields {
 		names = append(names, f)
 	}
 	sort.Strings(names)
@@ -80,13 +79,13 @@ func registerSegmentTools(s *mcp.Server, d *Deps) {
 // loadSegment fetches a segment and checks it belongs to projectID. Skipping
 // this check would let a call scoped to one project read, change or delete
 // another project's segment by ID.
-func loadSegment(ctx context.Context, c *Call, projectID, segmentID string) (repository.Segment, error) {
+func loadSegment(ctx context.Context, c *Call, projectID, segmentID string) (domain.Segment, error) {
 	seg, err := c.Deps.Segments.GetSegment(ctx, segmentID)
 	if err != nil {
-		return repository.Segment{}, err
+		return domain.Segment{}, err
 	}
 	if seg.ProjectID != projectID {
-		return repository.Segment{}, fmt.Errorf("%w: segment %s", domain.ErrNotFound, segmentID)
+		return domain.Segment{}, fmt.Errorf("%w: segment %s", domain.ErrNotFound, segmentID)
 	}
 	return seg, nil
 }
@@ -98,8 +97,8 @@ type listSegmentsIn struct {
 }
 
 type listSegmentsOut struct {
-	Project  string               `json:"project" jsonschema:"Slug of the project these segments are from."`
-	Segments []repository.Segment `json:"segments" jsonschema:"Every saved segment for the project."`
+	Project  string           `json:"project" jsonschema:"Slug of the project these segments are from."`
+	Segments []domain.Segment `json:"segments" jsonschema:"Every saved segment for the project."`
 }
 
 func listSegments(ctx context.Context, c *Call, in listSegmentsIn) (listSegmentsOut, error) {
@@ -117,13 +116,13 @@ func listSegments(ctx context.Context, c *Call, in listSegmentsIn) (listSegments
 // --- create_segment ---
 
 type createSegmentIn struct {
-	Project string                   `json:"project,omitempty" jsonschema:"Project slug or ID; defaults to the repository's project from the x-funnelbarn-project header."`
-	Name    string                   `json:"name" jsonschema:"Segment name."`
-	Rules   []repository.SegmentRule `json:"rules,omitempty" jsonschema:"Filter rules; see the tool description for allowed field and operator values. A segment with no rules matches every session."`
+	Project string               `json:"project,omitempty" jsonschema:"Project slug or ID; defaults to the repository's project from the x-funnelbarn-project header."`
+	Name    string               `json:"name" jsonschema:"Segment name."`
+	Rules   []domain.SegmentRule `json:"rules,omitempty" jsonschema:"Filter rules; see the tool description for allowed field and operator values. A segment with no rules matches every session."`
 }
 
 type createSegmentOut struct {
-	Segment repository.Segment `json:"segment" jsonschema:"The created segment."`
+	Segment domain.Segment `json:"segment" jsonschema:"The created segment."`
 }
 
 func createSegment(ctx context.Context, c *Call, in createSegmentIn) (createSegmentOut, error) {
@@ -141,14 +140,14 @@ func createSegment(ctx context.Context, c *Call, in createSegmentIn) (createSegm
 // --- update_segment ---
 
 type updateSegmentIn struct {
-	Project   string                   `json:"project,omitempty" jsonschema:"Project slug or ID; defaults to the repository's project from the x-funnelbarn-project header."`
-	SegmentID string                   `json:"segment_id" jsonschema:"Segment to update; see list_segments."`
-	Name      string                   `json:"name" jsonschema:"Segment name."`
-	Rules     []repository.SegmentRule `json:"rules,omitempty" jsonschema:"Filter rules, replacing the existing ones; see the tool description for allowed field and operator values. A segment with no rules matches every session."`
+	Project   string               `json:"project,omitempty" jsonschema:"Project slug or ID; defaults to the repository's project from the x-funnelbarn-project header."`
+	SegmentID string               `json:"segment_id" jsonschema:"Segment to update; see list_segments."`
+	Name      string               `json:"name" jsonschema:"Segment name."`
+	Rules     []domain.SegmentRule `json:"rules,omitempty" jsonschema:"Filter rules, replacing the existing ones; see the tool description for allowed field and operator values. A segment with no rules matches every session."`
 }
 
 type updateSegmentOut struct {
-	Segment repository.Segment `json:"segment" jsonschema:"The updated segment."`
+	Segment domain.Segment `json:"segment" jsonschema:"The updated segment."`
 }
 
 func updateSegment(ctx context.Context, c *Call, in updateSegmentIn) (updateSegmentOut, error) {

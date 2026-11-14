@@ -7,12 +7,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
-func persistFixture(projectID, ingestID, sessionID string) (repository.Event, repository.Session) {
+func persistFixture(projectID, ingestID, sessionID string) (domain.Event, domain.Session) {
 	now := time.Now().UTC().Truncate(time.Second)
-	e := repository.Event{
+	e := domain.Event{
 		ID:         "evt-" + ingestID,
 		ProjectID:  projectID,
 		SessionID:  sessionID,
@@ -21,7 +22,7 @@ func persistFixture(projectID, ingestID, sessionID string) (repository.Event, re
 		IngestID:   ingestID,
 		OccurredAt: now,
 	}
-	sess := repository.Session{
+	sess := domain.Session{
 		ID:          sessionID,
 		ProjectID:   projectID,
 		FirstSeenAt: now,
@@ -49,7 +50,7 @@ func TestPersistEvent_ReplayIsANoOp(t *testing.T) {
 
 	e, sess := persistFixture(p.ID, "ingest-replay", "sess-replay")
 	width := 1440
-	signals := &repository.SessionSignals{ScreenWidth: &width}
+	signals := &domain.SessionSignals{ScreenWidth: &width}
 
 	inserted, err := s.PersistEvent(ctx, e, sess, signals)
 	require.NoError(t, err)
@@ -83,7 +84,7 @@ func TestPersistEvent_SecondEventCountsSession(t *testing.T) {
 
 	e1, sess := persistFixture(p.ID, "ingest-1", "sess-1")
 	e2, _ := persistFixture(p.ID, "ingest-2", "sess-1")
-	for _, e := range []repository.Event{e1, e2} {
+	for _, e := range []domain.Event{e1, e2} {
 		inserted, err := s.PersistEvent(ctx, e, sess, nil)
 		require.NoError(t, err)
 		require.True(t, inserted)

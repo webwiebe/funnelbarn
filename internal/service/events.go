@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // EventService handles event business logic.
@@ -18,15 +18,15 @@ func NewEventService(store ports.EventRepo) *EventService {
 	return &EventService{store: store}
 }
 
-func (svc *EventService) InsertEvent(ctx context.Context, e repository.Event) error {
+func (svc *EventService) InsertEvent(ctx context.Context, e domain.Event) error {
 	return svc.store.InsertEvent(ctx, e)
 }
 
-func (svc *EventService) ListEvents(ctx context.Context, projectID string, limit, offset int) ([]repository.Event, error) {
+func (svc *EventService) ListEvents(ctx context.Context, projectID string, limit, offset int) ([]domain.Event, error) {
 	return svc.store.ListEvents(ctx, projectID, limit, offset)
 }
 
-func (svc *EventService) ListEventsFiltered(ctx context.Context, projectID string, f repository.EventListFilter, limit, offset int) ([]repository.Event, error) {
+func (svc *EventService) ListEventsFiltered(ctx context.Context, projectID string, f domain.EventListFilter, limit, offset int) ([]domain.Event, error) {
 	return svc.store.ListEventsFiltered(ctx, projectID, f, limit, offset)
 }
 
@@ -34,47 +34,47 @@ func (svc *EventService) CountEvents(ctx context.Context, projectID string, from
 	return svc.store.CountEvents(ctx, projectID, from, to, env)
 }
 
-func (svc *EventService) TopPages(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]repository.PageStat, error) {
+func (svc *EventService) TopPages(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]domain.PageStat, error) {
 	return svc.store.TopPages(ctx, projectID, from, to, limit, env)
 }
 
-func (svc *EventService) TopReferrers(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]repository.ReferrerStat, error) {
+func (svc *EventService) TopReferrers(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]domain.ReferrerStat, error) {
 	return svc.store.TopReferrers(ctx, projectID, from, to, limit, env)
 }
 
-func (svc *EventService) DailyEventCounts(ctx context.Context, projectID string, from, to time.Time, env string) ([]repository.TimeSeriesPoint, error) {
+func (svc *EventService) DailyEventCounts(ctx context.Context, projectID string, from, to time.Time, env string) ([]domain.TimeSeriesPoint, error) {
 	return svc.store.DailyEventCounts(ctx, projectID, from, to, env)
 }
 
-func (svc *EventService) HourlyEventCounts(ctx context.Context, projectID string, from, to time.Time, env string) ([]repository.TimeSeriesPoint, error) {
+func (svc *EventService) HourlyEventCounts(ctx context.Context, projectID string, from, to time.Time, env string) ([]domain.TimeSeriesPoint, error) {
 	return svc.store.HourlyEventCounts(ctx, projectID, from, to, env)
 }
 
-func (svc *EventService) DailyUniqueSessions(ctx context.Context, projectID string, from, to time.Time, env string) ([]repository.TimeSeriesPoint, error) {
+func (svc *EventService) DailyUniqueSessions(ctx context.Context, projectID string, from, to time.Time, env string) ([]domain.TimeSeriesPoint, error) {
 	return svc.store.DailyUniqueSessions(ctx, projectID, from, to, env)
 }
 
-func (svc *EventService) TopBrowsers(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]repository.BrowserStat, error) {
+func (svc *EventService) TopBrowsers(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]domain.BrowserStat, error) {
 	return svc.store.TopBrowsers(ctx, projectID, from, to, limit, env)
 }
 
-func (svc *EventService) TopDeviceTypes(ctx context.Context, projectID string, from, to time.Time, env string) ([]repository.DeviceStat, error) {
+func (svc *EventService) TopDeviceTypes(ctx context.Context, projectID string, from, to time.Time, env string) ([]domain.DeviceStat, error) {
 	return svc.store.TopDeviceTypes(ctx, projectID, from, to, env)
 }
 
-func (svc *EventService) TopEventNamesFiltered(ctx context.Context, projectID string, from, to time.Time, limit int, f repository.EventCountFilter) ([]repository.EventNameStat, error) {
+func (svc *EventService) TopEventNamesFiltered(ctx context.Context, projectID string, from, to time.Time, limit int, f domain.EventCountFilter) ([]domain.EventNameStat, error) {
 	return svc.store.TopEventNamesFiltered(ctx, projectID, from, to, limit, f)
 }
 
-func (svc *EventService) EventBreakdown(ctx context.Context, projectID, eventName, dimension string, from, to time.Time, limit int, f repository.EventCountFilter) ([]repository.BreakdownRow, error) {
+func (svc *EventService) EventBreakdown(ctx context.Context, projectID, eventName, dimension string, from, to time.Time, limit int, f domain.EventCountFilter) ([]domain.BreakdownRow, error) {
 	return svc.store.EventBreakdown(ctx, projectID, eventName, dimension, from, to, limit, f)
 }
 
-func (svc *EventService) TopEventNames(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]repository.EventNameStat, error) {
+func (svc *EventService) TopEventNames(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]domain.EventNameStat, error) {
 	return svc.store.TopEventNames(ctx, projectID, from, to, limit, env)
 }
 
-func (svc *EventService) TopUTMSources(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]repository.UTMStat, error) {
+func (svc *EventService) TopUTMSources(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]domain.UTMStat, error) {
 	return svc.store.TopUTMSources(ctx, projectID, from, to, limit, env)
 }
 
@@ -90,7 +90,7 @@ func (svc *EventService) UniqueSessionCount(ctx context.Context, projectID strin
 	return svc.store.UniqueSessionCount(ctx, projectID, from, to, env)
 }
 
-func (svc *EventService) GetEventByIngestID(ctx context.Context, ingestID string) (*repository.Event, error) {
+func (svc *EventService) GetEventByIngestID(ctx context.Context, ingestID string) (*domain.Event, error) {
 	return svc.store.GetEventByIngestID(ctx, ingestID)
 }
 
@@ -110,7 +110,7 @@ func (svc *EventService) PopulatedMetadataColumns(ctx context.Context, projectID
 	return svc.store.PopulatedMetadataColumns(ctx, projectID, eventName)
 }
 
-func (svc *EventService) PageFlows(ctx context.Context, projectID, page string, depth int, from, to time.Time, env string) (repository.PageFlowResult, error) {
+func (svc *EventService) PageFlows(ctx context.Context, projectID, page string, depth int, from, to time.Time, env string) (domain.PageFlowResult, error) {
 	return svc.store.PageFlows(ctx, projectID, page, depth, from, to, env)
 }
 

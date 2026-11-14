@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 )
@@ -58,7 +59,7 @@ func TestPurgeRetention(t *testing.T) {
 	for _, name := range []string{"alpha", "beta"} {
 		p, err := s.CreateProject(ctx, name, name)
 		require.NoError(t, err)
-		f, err := s.CreateFlag(ctx, repository.FeatureFlag{
+		f, err := s.CreateFlag(ctx, domain.FeatureFlag{
 			ProjectID: p.ID, FlagKey: "purge-" + name, Name: name, FlagType: "boolean",
 			Variants: `{"on":true,"off":false}`, DefaultVariant: "off",
 			Split: `{"on":50,"off":50}`, Status: "active",

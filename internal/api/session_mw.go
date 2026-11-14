@@ -16,7 +16,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -88,7 +88,7 @@ func (s *Server) csrfValid(r *http.Request, cookieValue string) bool {
 // a reader forwards to the writer when serving needs a write, an expired row
 // is pruned, and an OIDC session with an expired access token is refreshed.
 // ok is false when a response has already been written.
-func (s *Server) resolveSession(w http.ResponseWriter, r *http.Request, cookieValue string) (repository.WebSession, bool) {
+func (s *Server) resolveSession(w http.ResponseWriter, r *http.Request, cookieValue string) (domain.WebSession, bool) {
 	idHash := auth.HashSessionToken(cookieValue)
 	ws, err := s.webSessions.GetWebSession(r.Context(), idHash)
 	if err != nil {
@@ -126,14 +126,14 @@ func (s *Server) resolveSession(w http.ResponseWriter, r *http.Request, cookieVa
 }
 
 // needsRefresh reports whether serving ws first runs the refresh_token grant.
-func (s *Server) needsRefresh(ws repository.WebSession, now time.Time) bool {
+func (s *Server) needsRefresh(ws domain.WebSession, now time.Time) bool {
 	return ws.AuthMethod == "oidc" && s.oidc != nil && accessTokenExpired(ws, now)
 }
 
 // accessTokenExpired reports whether the session's access token is past (or
 // within accessTokenSkew of) its expiry. Sessions without a known expiry
 // (no expires_in in the token response) are never treated as expired.
-func accessTokenExpired(ws repository.WebSession, now time.Time) bool {
+func accessTokenExpired(ws domain.WebSession, now time.Time) bool {
 	return ws.AccessExpiresAt != 0 && now.Unix() >= ws.AccessExpiresAt-int64(accessTokenSkew.Seconds())
 }
 
@@ -148,7 +148,7 @@ func accessTokenExpired(ws repository.WebSession, now time.Time) bool {
 //     row deleted, the new refresh token revoked, error
 //   - transient failure (IdP down): serve stale within the grace window
 //     measured from the FIRST failure; past the window → row deleted, error
-func (s *Server) refreshSession(ctx context.Context, idHash string) (repository.WebSession, error) {
+func (s *Server) refreshSession(ctx context.Context, idHash string) (domain.WebSession, error) {
 	ctx, span := tracing.StartSpan(ctx, "oidc.refresh_session")
 	defer span.End()
 
@@ -222,9 +222,9 @@ func (s *Server) refreshSession(ctx context.Context, idHash string) (repository.
 		return ws, nil
 	})
 	if err != nil {
-		return repository.WebSession{}, err
+		return domain.WebSession{}, err
 	}
-	return v.(repository.WebSession), nil
+	return v.(domain.WebSession), nil
 }
 
 // errSessionAccessRevoked ends a session whose refreshed claims no longer pass
@@ -235,7 +235,7 @@ var errSessionAccessRevoked = errors.New("session refresh: sign-in role no longe
 // sign-in role check, and revokes the refresh token the IdP just issued so it
 // cannot outlive the session. Both steps are best-effort; the caller answers
 // 401 either way.
-func (s *Server) endSessionWithoutAccess(ctx context.Context, idHash string, ws repository.WebSession, refreshToken string) {
+func (s *Server) endSessionWithoutAccess(ctx context.Context, idHash string, ws domain.WebSession, refreshToken string) {
 	slog.InfoContext(ctx, "session refresh: sign-in role no longer held, session ended",
 		"username", ws.Username, "sub", ws.IdpSub)
 	if err := s.webSessions.DeleteWebSession(ctx, idHash); err != nil {
@@ -252,7 +252,7 @@ func (s *Server) endSessionWithoutAccess(ctx context.Context, idHash string, ws 
 // refreshFailed handles a transient refresh failure (network, IdP 5xx): it
 // serves the stale session within the grace window, measured from the first
 // failure, and deletes the row once the window has passed.
-func (s *Server) refreshFailed(ctx context.Context, span trace.Span, idHash string, ws repository.WebSession, now time.Time, err error) (any, error) {
+func (s *Server) refreshFailed(ctx context.Context, span trace.Span, idHash string, ws domain.WebSession, now time.Time, err error) (any, error) {
 	failingSince := ws.RefreshFailingSince
 	if failingSince == 0 {
 		failingSince = now.Unix()

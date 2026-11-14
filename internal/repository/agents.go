@@ -5,22 +5,14 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
-)
 
-// AgentEvent is one event of the agents project (#331), as the delivery
-// scoring reads it: GitHub webhook events and the workstation hook's events.
-type AgentEvent struct {
-	Name       string
-	OccurredAt time.Time
-	SessionID  string
-	UserIDHash string
-	Properties map[string]any
-}
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+)
 
 // AgentEvents returns the project's events named in names that occurred in
 // [from, to], oldest first. An event whose properties do not decode keeps an
 // empty property map.
-func (s *ReadStore) AgentEvents(ctx context.Context, projectID string, names []string, from, to time.Time) ([]AgentEvent, error) {
+func (s *ReadStore) AgentEvents(ctx context.Context, projectID string, names []string, from, to time.Time) ([]domain.AgentEvent, error) {
 	if len(names) == 0 {
 		return nil, nil
 	}
@@ -38,9 +30,9 @@ func (s *ReadStore) AgentEvents(ctx context.Context, projectID string, names []s
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	var out []AgentEvent
+	var out []domain.AgentEvent
 	for rows.Next() {
-		var e AgentEvent
+		var e domain.AgentEvent
 		var props string
 		if err := rows.Scan(&e.Name, &e.OccurredAt, &e.SessionID, &e.UserIDHash, &props); err != nil {
 			return nil, err

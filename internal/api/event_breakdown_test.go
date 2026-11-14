@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func seedBreakdown(t *testing.T) (*Server, string) {
@@ -20,7 +20,7 @@ func seedBreakdown(t *testing.T) (*Server, string) {
 	at := time.Now().UTC().Add(-time.Hour)
 	add := func(id, session, device, ref, props string) {
 		t.Helper()
-		if err := store.InsertEvent(ctx, repository.Event{
+		if err := store.InsertEvent(ctx, domain.Event{
 			ID: id, ProjectID: p.ID, SessionID: session, Name: "signup", DeviceType: device,
 			ReferrerDomain: ref, Properties: props, IngestID: "ing-" + id, OccurredAt: at, CreatedAt: at,
 		}); err != nil {
@@ -39,7 +39,7 @@ func seedBreakdown(t *testing.T) (*Server, string) {
 
 func TestHandleEventBreakdown(t *testing.T) {
 	srv, pid := seedBreakdown(t)
-	get := func(q url.Values) []repository.BreakdownRow {
+	get := func(q url.Values) []domain.BreakdownRow {
 		t.Helper()
 		q.Set("event", "signup")
 		w := getJSON(t, srv, "/api/v1/projects/"+pid+"/event-breakdown?"+q.Encode(), nil)
@@ -47,7 +47,7 @@ func TestHandleEventBreakdown(t *testing.T) {
 			t.Fatalf("?%s: want 200, got %d (%s)", q.Encode(), w.Code, w.Body.String())
 		}
 		var resp struct {
-			Values []repository.BreakdownRow `json:"values"`
+			Values []domain.BreakdownRow `json:"values"`
 		}
 		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 			t.Fatal(err)
@@ -57,15 +57,15 @@ func TestHandleEventBreakdown(t *testing.T) {
 	cases := []struct {
 		name string
 		q    url.Values
-		want []repository.BreakdownRow
+		want []domain.BreakdownRow
 	}{
-		{"device", url.Values{"by": {"device_type"}}, []repository.BreakdownRow{
+		{"device", url.Values{"by": {"device_type"}}, []domain.BreakdownRow{
 			{Value: "desktop", Count: 3, Sessions: 2}, {Value: "mobile", Count: 3, Sessions: 3}, {Value: "bot", Count: 1, Sessions: 1}}},
-		{"no bots", url.Values{"by": {"device_type"}, "exclude_bots": {"true"}}, []repository.BreakdownRow{
+		{"no bots", url.Values{"by": {"device_type"}, "exclude_bots": {"true"}}, []domain.BreakdownRow{
 			{Value: "desktop", Count: 3, Sessions: 2}, {Value: "mobile", Count: 3, Sessions: 3}}},
-		{"property", url.Values{"by": {"referrer_domain"}, "property": {"plan"}, "value": {"pro"}}, []repository.BreakdownRow{
+		{"property", url.Values{"by": {"referrer_domain"}, "property": {"plan"}, "value": {"pro"}}, []domain.BreakdownRow{
 			{Value: "", Count: 1, Sessions: 1}, {Value: "google.com", Count: 1, Sessions: 1}, {Value: "spam.example", Count: 1, Sessions: 1}}},
-		{"boolean property", url.Values{"by": {"device_type"}, "property": {"real_signup"}, "value": {"true"}}, []repository.BreakdownRow{
+		{"boolean property", url.Values{"by": {"device_type"}, "property": {"real_signup"}, "value": {"true"}}, []domain.BreakdownRow{
 			{Value: "desktop", Count: 1, Sessions: 1}, {Value: "mobile", Count: 1, Sessions: 1}}},
 	}
 	for _, c := range cases {

@@ -5,41 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
-
-// Event represents a single analytics event.
-type Event struct {
-	ID             string    `json:"id"`
-	ProjectID      string    `json:"project_id"`
-	SessionID      string    `json:"session_id"`
-	UserIDHash     string    `json:"user_id_hash"`
-	Name           string    `json:"name"`
-	URL            string    `json:"url"`
-	Referrer       string    `json:"referrer"`
-	ReferrerDomain string    `json:"referrer_domain"`
-	UTMSource      string    `json:"utm_source"`
-	UTMMedium      string    `json:"utm_medium"`
-	UTMCampaign    string    `json:"utm_campaign"`
-	UTMTerm        string    `json:"utm_term"`
-	UTMContent     string    `json:"utm_content"`
-	Properties     string    `json:"properties"`
-	UserAgent      string    `json:"user_agent"`
-	Browser        string    `json:"browser"`
-	OS             string    `json:"os"`
-	DeviceType     string    `json:"device_type"`
-	CountryCode    string    `json:"country_code"`
-	PageViewID     string    `json:"page_view_id,omitempty"`
-	IngestID       string    `json:"ingest_id"`
-	OccurredAt     time.Time `json:"occurred_at"`
-	CreatedAt      time.Time `json:"created_at"`
-	Environment    string    `json:"environment,omitempty"`
-
-	// ClientIP is transient — used to pass the real IP to UpsertSession. Not stored.
-	ClientIP string `json:"-"`
-	// SessionSignalsRaw is transient — device/browser signals from the SDK payload.
-	// Passed to UpsertSessionSignals; not stored directly on the event.
-	SessionSignalsRaw map[string]any `json:"-"`
-}
 
 // OrphanCounts reports rows whose project_id matches no project. Every read
 // path is project-scoped, so such rows are unreachable: stored, indexed and
@@ -78,8 +46,8 @@ func (s *ReadStore) CountOrphanedRows(ctx context.Context) (OrphanCounts, error)
 }
 
 // ListEvents returns a paginated list of events for a project.
-func (s *ReadStore) ListEvents(ctx context.Context, projectID string, limit, offset int) ([]Event, error) {
-	return s.ListEventsFiltered(ctx, projectID, EventListFilter{}, limit, offset)
+func (s *ReadStore) ListEvents(ctx context.Context, projectID string, limit, offset int) ([]domain.Event, error) {
+	return s.ListEventsFiltered(ctx, projectID, domain.EventListFilter{}, limit, offset)
 }
 
 // CountEvents returns the total event count for a project in a time range.
@@ -91,7 +59,7 @@ func (s *ReadStore) CountEvents(ctx context.Context, projectID string, from, to 
 }
 
 // TopPages returns the most visited pages for a project in a time range.
-func (s *ReadStore) TopPages(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]PageStat, error) {
+func (s *ReadStore) TopPages(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]domain.PageStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -108,9 +76,9 @@ func (s *ReadStore) TopPages(ctx context.Context, projectID string, from, to tim
 	}
 	defer rows.Close()
 
-	var stats []PageStat
+	var stats []domain.PageStat
 	for rows.Next() {
-		var ps PageStat
+		var ps domain.PageStat
 		if err := rows.Scan(&ps.URL, &ps.Views); err != nil {
 			return nil, err
 		}
@@ -119,14 +87,8 @@ func (s *ReadStore) TopPages(ctx context.Context, projectID string, from, to tim
 	return stats, rows.Err()
 }
 
-// PageStat is a page URL with view count.
-type PageStat struct {
-	URL   string `json:"url"`
-	Views int64  `json:"views"`
-}
-
 // TopReferrers returns the most common referrer domains.
-func (s *ReadStore) TopReferrers(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]ReferrerStat, error) {
+func (s *ReadStore) TopReferrers(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]domain.ReferrerStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -143,9 +105,9 @@ func (s *ReadStore) TopReferrers(ctx context.Context, projectID string, from, to
 	}
 	defer rows.Close()
 
-	var stats []ReferrerStat
+	var stats []domain.ReferrerStat
 	for rows.Next() {
-		var rs ReferrerStat
+		var rs domain.ReferrerStat
 		if err := rows.Scan(&rs.Domain, &rs.Visits); err != nil {
 			return nil, err
 		}
@@ -154,14 +116,8 @@ func (s *ReadStore) TopReferrers(ctx context.Context, projectID string, from, to
 	return stats, rows.Err()
 }
 
-// ReferrerStat is a referrer domain with visit count.
-type ReferrerStat struct {
-	Domain string `json:"domain"`
-	Visits int64  `json:"visits"`
-}
-
 // EventTimeSeries returns hourly event counts for a project over a time range.
-func (s *ReadStore) EventTimeSeries(ctx context.Context, projectID string, from, to time.Time, env string) ([]TimeSeriesPoint, error) {
+func (s *ReadStore) EventTimeSeries(ctx context.Context, projectID string, from, to time.Time, env string) ([]domain.TimeSeriesPoint, error) {
 	const q = `
 		SELECT substr(occurred_at, 1, 13) || ':00:00Z' as hour, COUNT(*) as count
 		FROM events
@@ -174,9 +130,9 @@ func (s *ReadStore) EventTimeSeries(ctx context.Context, projectID string, from,
 	}
 	defer rows.Close()
 
-	var series []TimeSeriesPoint
+	var series []domain.TimeSeriesPoint
 	for rows.Next() {
-		var p TimeSeriesPoint
+		var p domain.TimeSeriesPoint
 		if err := rows.Scan(&p.Time, &p.Count); err != nil {
 			return nil, err
 		}
@@ -185,15 +141,9 @@ func (s *ReadStore) EventTimeSeries(ctx context.Context, projectID string, from,
 	return series, rows.Err()
 }
 
-// TimeSeriesPoint is a timestamp+count pair.
-type TimeSeriesPoint struct {
-	Time  string `json:"time"`
-	Count int64  `json:"count"`
-}
-
 // topUTMColumn executes the common UTM breakdown query for the given column.
 // column is an internal constant (utm_source, utm_medium, utm_campaign) — never user input.
-func topUTMColumn(ctx context.Context, db *sql.DB, projectID, column, env string, from, to time.Time, limit int) ([]UTMStat, error) {
+func topUTMColumn(ctx context.Context, db *sql.DB, projectID, column, env string, from, to time.Time, limit int) ([]domain.UTMStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -210,9 +160,9 @@ func topUTMColumn(ctx context.Context, db *sql.DB, projectID, column, env string
 	}
 	defer rows.Close()
 
-	var stats []UTMStat
+	var stats []domain.UTMStat
 	for rows.Next() {
-		var us UTMStat
+		var us domain.UTMStat
 		if err := rows.Scan(&us.Value, &us.Count); err != nil {
 			return nil, err
 		}
@@ -222,14 +172,8 @@ func topUTMColumn(ctx context.Context, db *sql.DB, projectID, column, env string
 }
 
 // TopUTMSources returns the most common UTM sources.
-func (s *ReadStore) TopUTMSources(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
+func (s *ReadStore) TopUTMSources(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]domain.UTMStat, error) {
 	return topUTMColumn(ctx, s.rdb, projectID, "utm_source", env, from, to, limit)
-}
-
-// UTMStat is a UTM value with count.
-type UTMStat struct {
-	Value string `json:"value"`
-	Count int64  `json:"count"`
 }
 
 // UniqueSessionCount returns distinct session IDs in a time range.
@@ -252,7 +196,7 @@ func (s *ReadStore) CountNewEvents(ctx context.Context, projectID string, since 
 }
 
 // GetEventByIngestID fetches an event by its ingest ID (idempotency check).
-func (s *ReadStore) GetEventByIngestID(ctx context.Context, ingestID string) (*Event, error) {
+func (s *ReadStore) GetEventByIngestID(ctx context.Context, ingestID string) (*domain.Event, error) {
 	const q = `
 		SELECT id, project_id, session_id, COALESCE(user_id_hash,''), name,
 			COALESCE(url,''), COALESCE(referrer,''), COALESCE(referrer_domain,''),
@@ -273,7 +217,7 @@ func (s *ReadStore) GetEventByIngestID(ctx context.Context, ingestID string) (*E
 }
 
 // TopBrowsers returns the most common browsers.
-func (s *ReadStore) TopBrowsers(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]BrowserStat, error) {
+func (s *ReadStore) TopBrowsers(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]domain.BrowserStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -290,9 +234,9 @@ func (s *ReadStore) TopBrowsers(ctx context.Context, projectID string, from, to 
 	}
 	defer rows.Close()
 
-	var stats []BrowserStat
+	var stats []domain.BrowserStat
 	for rows.Next() {
-		var bs BrowserStat
+		var bs domain.BrowserStat
 		if err := rows.Scan(&bs.Browser, &bs.Count); err != nil {
 			return nil, err
 		}
@@ -301,14 +245,8 @@ func (s *ReadStore) TopBrowsers(ctx context.Context, projectID string, from, to 
 	return stats, rows.Err()
 }
 
-// BrowserStat is a browser name with count.
-type BrowserStat struct {
-	Browser string `json:"browser"`
-	Count   int64  `json:"count"`
-}
-
 // TopDeviceTypes returns breakdown by device type.
-func (s *ReadStore) TopDeviceTypes(ctx context.Context, projectID string, from, to time.Time, env string) ([]DeviceStat, error) {
+func (s *ReadStore) TopDeviceTypes(ctx context.Context, projectID string, from, to time.Time, env string) ([]domain.DeviceStat, error) {
 	const q = `
 		SELECT COALESCE(device_type, 'unknown'), COUNT(*) as count
 		FROM events
@@ -321,9 +259,9 @@ func (s *ReadStore) TopDeviceTypes(ctx context.Context, projectID string, from, 
 	}
 	defer rows.Close()
 
-	var stats []DeviceStat
+	var stats []domain.DeviceStat
 	for rows.Next() {
-		var ds DeviceStat
+		var ds domain.DeviceStat
 		if err := rows.Scan(&ds.DeviceType, &ds.Count); err != nil {
 			return nil, err
 		}
@@ -332,14 +270,8 @@ func (s *ReadStore) TopDeviceTypes(ctx context.Context, projectID string, from, 
 	return stats, rows.Err()
 }
 
-// DeviceStat is a device type with count.
-type DeviceStat struct {
-	DeviceType string `json:"device_type"`
-	Count      int64  `json:"count"`
-}
-
 // TopEventNames returns the most frequent event names.
-func (s *ReadStore) TopEventNames(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]EventNameStat, error) {
+func (s *ReadStore) TopEventNames(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]domain.EventNameStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -356,9 +288,9 @@ func (s *ReadStore) TopEventNames(ctx context.Context, projectID string, from, t
 	}
 	defer rows.Close()
 
-	var stats []EventNameStat
+	var stats []domain.EventNameStat
 	for rows.Next() {
-		var es EventNameStat
+		var es domain.EventNameStat
 		if err := rows.Scan(&es.Name, &es.Count); err != nil {
 			return nil, err
 		}
@@ -367,14 +299,8 @@ func (s *ReadStore) TopEventNames(ctx context.Context, projectID string, from, t
 	return stats, rows.Err()
 }
 
-// EventNameStat is an event name with count.
-type EventNameStat struct {
-	Name  string `json:"name"`
-	Count int64  `json:"count"`
-}
-
 // TopCountries returns breakdown by country code.
-func (s *ReadStore) TopCountries(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]CountryStat, error) {
+func (s *ReadStore) TopCountries(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]domain.CountryStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -391,9 +317,9 @@ func (s *ReadStore) TopCountries(ctx context.Context, projectID string, from, to
 	}
 	defer rows.Close()
 
-	var stats []CountryStat
+	var stats []domain.CountryStat
 	for rows.Next() {
-		var cs CountryStat
+		var cs domain.CountryStat
 		if err := rows.Scan(&cs.CountryCode, &cs.Count); err != nil {
 			return nil, err
 		}
@@ -402,14 +328,8 @@ func (s *ReadStore) TopCountries(ctx context.Context, projectID string, from, to
 	return stats, rows.Err()
 }
 
-// CountryStat is a country code with count.
-type CountryStat struct {
-	CountryCode string `json:"country_code"`
-	Count       int64  `json:"count"`
-}
-
 // TopOSSystems returns breakdown by operating system.
-func (s *ReadStore) TopOSSystems(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]OSStat, error) {
+func (s *ReadStore) TopOSSystems(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]domain.OSStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -426,9 +346,9 @@ func (s *ReadStore) TopOSSystems(ctx context.Context, projectID string, from, to
 	}
 	defer rows.Close()
 
-	var stats []OSStat
+	var stats []domain.OSStat
 	for rows.Next() {
-		var os OSStat
+		var os domain.OSStat
 		if err := rows.Scan(&os.OS, &os.Count); err != nil {
 			return nil, err
 		}
@@ -437,24 +357,18 @@ func (s *ReadStore) TopOSSystems(ctx context.Context, projectID string, from, to
 	return stats, rows.Err()
 }
 
-// OSStat is an OS name with count.
-type OSStat struct {
-	OS    string `json:"os"`
-	Count int64  `json:"count"`
-}
-
 // TopUTMCampaigns returns breakdown by UTM campaign.
-func (s *ReadStore) TopUTMCampaigns(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
+func (s *ReadStore) TopUTMCampaigns(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]domain.UTMStat, error) {
 	return topUTMColumn(ctx, s.rdb, projectID, "utm_campaign", env, from, to, limit)
 }
 
 // TopUTMMediums returns breakdown by UTM medium.
-func (s *ReadStore) TopUTMMediums(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]UTMStat, error) {
+func (s *ReadStore) TopUTMMediums(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]domain.UTMStat, error) {
 	return topUTMColumn(ctx, s.rdb, projectID, "utm_medium", env, from, to, limit)
 }
 
 // DailyEventCounts returns daily event counts for a project over a time range.
-func (s *ReadStore) DailyEventCounts(ctx context.Context, projectID string, from, to time.Time, env string) ([]TimeSeriesPoint, error) {
+func (s *ReadStore) DailyEventCounts(ctx context.Context, projectID string, from, to time.Time, env string) ([]domain.TimeSeriesPoint, error) {
 	const q = `
 		SELECT substr(occurred_at, 1, 10) as day, COUNT(*) as count
 		FROM events
@@ -467,9 +381,9 @@ func (s *ReadStore) DailyEventCounts(ctx context.Context, projectID string, from
 	}
 	defer rows.Close()
 
-	var series []TimeSeriesPoint
+	var series []domain.TimeSeriesPoint
 	for rows.Next() {
-		var p TimeSeriesPoint
+		var p domain.TimeSeriesPoint
 		if err := rows.Scan(&p.Time, &p.Count); err != nil {
 			return nil, err
 		}
@@ -479,7 +393,7 @@ func (s *ReadStore) DailyEventCounts(ctx context.Context, projectID string, from
 }
 
 // HourlyEventCounts returns hourly event counts for a project over a time range.
-func (s *ReadStore) HourlyEventCounts(ctx context.Context, projectID string, from, to time.Time, env string) ([]TimeSeriesPoint, error) {
+func (s *ReadStore) HourlyEventCounts(ctx context.Context, projectID string, from, to time.Time, env string) ([]domain.TimeSeriesPoint, error) {
 	const q = `
 		SELECT substr(occurred_at, 1, 13) || ':00:00' as hour, COUNT(*) as count
 		FROM events
@@ -492,9 +406,9 @@ func (s *ReadStore) HourlyEventCounts(ctx context.Context, projectID string, fro
 	}
 	defer rows.Close()
 
-	var series []TimeSeriesPoint
+	var series []domain.TimeSeriesPoint
 	for rows.Next() {
-		var p TimeSeriesPoint
+		var p domain.TimeSeriesPoint
 		if err := rows.Scan(&p.Time, &p.Count); err != nil {
 			return nil, err
 		}
@@ -549,7 +463,7 @@ func (s *ReadStore) AvgEventsPerSession(ctx context.Context, projectID string, f
 }
 
 // DailyUniqueSessions returns daily unique session counts.
-func (s *ReadStore) DailyUniqueSessions(ctx context.Context, projectID string, from, to time.Time, env string) ([]TimeSeriesPoint, error) {
+func (s *ReadStore) DailyUniqueSessions(ctx context.Context, projectID string, from, to time.Time, env string) ([]domain.TimeSeriesPoint, error) {
 	const q = `
 		SELECT substr(occurred_at, 1, 10) as day, COUNT(DISTINCT session_id) as count
 		FROM events
@@ -562,9 +476,9 @@ func (s *ReadStore) DailyUniqueSessions(ctx context.Context, projectID string, f
 	}
 	defer rows.Close()
 
-	var series []TimeSeriesPoint
+	var series []domain.TimeSeriesPoint
 	for rows.Next() {
-		var p TimeSeriesPoint
+		var p domain.TimeSeriesPoint
 		if err := rows.Scan(&p.Time, &p.Count); err != nil {
 			return nil, err
 		}
@@ -683,7 +597,7 @@ func (s *ReadStore) PopulatedMetadataColumns(ctx context.Context, projectID, eve
 }
 
 // TopOS is an alias for TopOSSystems kept for backward compatibility in tests.
-func (s *ReadStore) TopOS(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]OSStat, error) {
+func (s *ReadStore) TopOS(ctx context.Context, projectID string, from, to time.Time, limit int, env string) ([]domain.OSStat, error) {
 	return s.TopOSSystems(ctx, projectID, from, to, limit, env)
 }
 
@@ -707,10 +621,10 @@ func (s *ReadStore) DistinctEnvironments(ctx context.Context, projectID string) 
 	return envs, rows.Err()
 }
 
-func scanEvents(rows *sql.Rows) ([]Event, error) {
-	var events []Event
+func scanEvents(rows *sql.Rows) ([]domain.Event, error) {
+	var events []domain.Event
 	for rows.Next() {
-		var e Event
+		var e domain.Event
 		if err := rows.Scan(
 			&e.ID, &e.ProjectID, &e.SessionID, &e.UserIDHash, &e.Name,
 			&e.URL, &e.Referrer, &e.ReferrerDomain,

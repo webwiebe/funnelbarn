@@ -10,7 +10,6 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // FunnelService handles funnel business logic.
@@ -25,7 +24,7 @@ func NewFunnelService(store ports.FunnelRepo) *FunnelService {
 
 // validateFunnel checks the fields CreateFunnel and UpdateFunnel both
 // require, so REST and MCP report the same validation messages either way.
-func validateFunnel(f repository.Funnel) error {
+func validateFunnel(f domain.Funnel) error {
 	if strings.TrimSpace(f.ProjectID) == "" {
 		return &domain.ValidationError{Field: "project_id", Message: "required"}
 	}
@@ -41,12 +40,12 @@ func validateFunnel(f repository.Funnel) error {
 		}
 	}
 	switch f.Scope {
-	case "", repository.FunnelScopeSession, repository.FunnelScopePageView, repository.FunnelScopeUser:
+	case "", domain.FunnelScopeSession, domain.FunnelScopePageView, domain.FunnelScopeUser:
 	default:
 		return &domain.ValidationError{Field: "scope", Message: "must be session, page_view or user"}
 	}
 	if f.ConversionWindowSeconds != nil {
-		if f.Scope != repository.FunnelScopeUser {
+		if f.Scope != domain.FunnelScopeUser {
 			return &domain.ValidationError{Field: "conversion_window_seconds", Message: "only applies to scope user"}
 		}
 		if *f.ConversionWindowSeconds <= 0 {
@@ -56,24 +55,24 @@ func validateFunnel(f repository.Funnel) error {
 	return nil
 }
 
-func (svc *FunnelService) CreateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error) {
+func (svc *FunnelService) CreateFunnel(ctx context.Context, f domain.Funnel) (domain.Funnel, error) {
 	if err := validateFunnel(f); err != nil {
-		return repository.Funnel{}, err
+		return domain.Funnel{}, err
 	}
 	return svc.store.CreateFunnel(ctx, f)
 }
 
-func (svc *FunnelService) ListFunnels(ctx context.Context, projectID string) ([]repository.Funnel, error) {
+func (svc *FunnelService) ListFunnels(ctx context.Context, projectID string) ([]domain.Funnel, error) {
 	return svc.store.ListFunnels(ctx, projectID)
 }
 
-func (svc *FunnelService) GetFunnel(ctx context.Context, id string) (repository.Funnel, error) {
+func (svc *FunnelService) GetFunnel(ctx context.Context, id string) (domain.Funnel, error) {
 	f, err := svc.store.FunnelByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return repository.Funnel{}, fmt.Errorf("%w: funnel %s", domain.ErrNotFound, id)
+			return domain.Funnel{}, fmt.Errorf("%w: funnel %s", domain.ErrNotFound, id)
 		}
-		return repository.Funnel{}, err
+		return domain.Funnel{}, err
 	}
 	return f, nil
 }
@@ -81,11 +80,11 @@ func (svc *FunnelService) GetFunnel(ctx context.Context, id string) (repository.
 // UpdateFunnel validates like CreateFunnel and, when Scope is left empty,
 // keeps the funnel's existing scope and conversion window, because the caller
 // may be updating name or steps without meaning to touch either.
-func (svc *FunnelService) UpdateFunnel(ctx context.Context, f repository.Funnel) (repository.Funnel, error) {
+func (svc *FunnelService) UpdateFunnel(ctx context.Context, f domain.Funnel) (domain.Funnel, error) {
 	if f.Scope == "" {
 		existing, err := svc.GetFunnel(ctx, f.ID)
 		if err != nil {
-			return repository.Funnel{}, err
+			return domain.Funnel{}, err
 		}
 		f.Scope = existing.Scope
 		if f.ConversionWindowSeconds == nil {
@@ -93,7 +92,7 @@ func (svc *FunnelService) UpdateFunnel(ctx context.Context, f repository.Funnel)
 		}
 	}
 	if err := validateFunnel(f); err != nil {
-		return repository.Funnel{}, err
+		return domain.Funnel{}, err
 	}
 	return svc.store.UpdateFunnel(ctx, f)
 }
@@ -102,19 +101,19 @@ func (svc *FunnelService) DeleteFunnel(ctx context.Context, id string) error {
 	return svc.store.DeleteFunnel(ctx, id)
 }
 
-func (svc *FunnelService) AnalyzeFunnel(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, rules ...repository.SegmentRule) ([]repository.FunnelStepResult, error) {
+func (svc *FunnelService) AnalyzeFunnel(ctx context.Context, f domain.Funnel, from, to time.Time, seg *domain.SegmentFilter, rules ...domain.SegmentRule) ([]domain.FunnelStepResult, error) {
 	return svc.store.AnalyzeFunnel(ctx, f, from, to, seg, rules...)
 }
 
 // AnalyzeFunnelBreakdown splits the funnel by the value property has on each
 // entry's first step event. An invalid property name is a validation error.
-func (svc *FunnelService) AnalyzeFunnelBreakdown(ctx context.Context, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, property string, rules ...repository.SegmentRule) ([]repository.FunnelBreakdownGroup, error) {
-	if !repository.ValidBreakdownProperty(property) {
+func (svc *FunnelService) AnalyzeFunnelBreakdown(ctx context.Context, f domain.Funnel, from, to time.Time, seg *domain.SegmentFilter, property string, rules ...domain.SegmentRule) ([]domain.FunnelBreakdownGroup, error) {
+	if !domain.ValidBreakdownProperty(property) {
 		return nil, &domain.ValidationError{Field: "breakdown", Message: "only letters, digits and underscore are allowed"}
 	}
 	return svc.store.AnalyzeFunnelBreakdown(ctx, f, from, to, seg, property, rules...)
 }
 
-func (svc *FunnelService) FunnelSegmentData(ctx context.Context, projectID string) (repository.FunnelSegments, error) {
+func (svc *FunnelService) FunnelSegmentData(ctx context.Context, projectID string) (domain.FunnelSegments, error) {
 	return svc.store.FunnelSegmentData(ctx, projectID)
 }

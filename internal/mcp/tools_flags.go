@@ -10,7 +10,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -130,7 +129,7 @@ func targetingRuleHelp() string {
 		"Each rule's variant must exist on the flag."
 }
 
-func toFlagDetail(f repository.FeatureFlag) flagDetail {
+func toFlagDetail(f domain.FeatureFlag) flagDetail {
 	return flagDetail{
 		ID:              f.ID,
 		FlagKey:         f.FlagKey,
@@ -152,29 +151,29 @@ func toFlagDetail(f repository.FeatureFlag) flagDetail {
 // resolved project: flagKey goes through GetFlagByKey (already scoped, so a
 // flag in another project is a plain not-found); flagID goes through GetFlag
 // and then checks ProjectID itself, per the package's object-ID convention.
-func resolveFlag(ctx context.Context, c *Call, project, flagKey, flagID string) (repository.Project, repository.FeatureFlag, error) {
+func resolveFlag(ctx context.Context, c *Call, project, flagKey, flagID string) (domain.Project, domain.FeatureFlag, error) {
 	p, err := c.Project(ctx, project)
 	if err != nil {
-		return repository.Project{}, repository.FeatureFlag{}, err
+		return domain.Project{}, domain.FeatureFlag{}, err
 	}
 	switch {
 	case flagKey != "":
 		f, err := c.Deps.Flags.GetFlagByKey(ctx, p.ID, flagKey)
 		if err != nil {
-			return p, repository.FeatureFlag{}, err
+			return p, domain.FeatureFlag{}, err
 		}
 		return p, f, nil
 	case flagID != "":
 		f, err := c.Deps.Flags.GetFlag(ctx, flagID)
 		if err != nil {
-			return p, repository.FeatureFlag{}, err
+			return p, domain.FeatureFlag{}, err
 		}
 		if f.ProjectID != p.ID {
-			return p, repository.FeatureFlag{}, fmt.Errorf("%w: flag %s", domain.ErrNotFound, flagID)
+			return p, domain.FeatureFlag{}, fmt.Errorf("%w: flag %s", domain.ErrNotFound, flagID)
 		}
 		return p, f, nil
 	default:
-		return p, repository.FeatureFlag{}, invalidInput("flag_key or flag_id is required")
+		return p, domain.FeatureFlag{}, invalidInput("flag_key or flag_id is required")
 	}
 }
 
@@ -275,7 +274,7 @@ func analyzeFlag(ctx context.Context, c *Call, in analyzeFlagIn) (analyzeFlagOut
 	// A config flag records no evaluations (see FlagService.EvaluateFlag), so
 	// a variant/conversion report for it would be an empty table dressed up
 	// as a result. Mirrors handleFlagAnalysis's config case.
-	if flag.Kind == repository.FlagKindConfig {
+	if flag.Kind == domain.FlagKindConfig {
 		return analyzeFlagOut{
 			FlagKey:     flag.FlagKey,
 			Results:     []flagAnalysisVariant{},

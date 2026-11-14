@@ -7,16 +7,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
 // createManualFlag inserts a flag straight through the store (bypassing
 // FlagService's validation, which the create_flag tool tests separately) so
 // setup can freely shape variants/split/kind for whatever a test needs.
-func createManualFlag(t *testing.T, env *testEnv, projectID, flagKey string, opts func(*repository.FeatureFlag)) repository.FeatureFlag {
+func createManualFlag(t *testing.T, env *testEnv, projectID, flagKey string, opts func(*domain.FeatureFlag)) domain.FeatureFlag {
 	t.Helper()
-	f := repository.FeatureFlag{
+	f := domain.FeatureFlag{
 		ProjectID:      projectID,
 		FlagKey:        flagKey,
 		Name:           flagKey,
@@ -65,8 +65,8 @@ func TestListFlagsTool(t *testing.T) {
 	env := newTestEnv(t, nil)
 	p := env.createProject(t, "Alpha", "alpha")
 	createManualFlag(t, env, p.ID, "flag_a", nil)
-	createManualFlag(t, env, p.ID, "flag_b", func(f *repository.FeatureFlag) {
-		f.Kind = repository.FlagKindConfig
+	createManualFlag(t, env, p.ID, "flag_b", func(f *domain.FeatureFlag) {
+		f.Kind = domain.FlagKindConfig
 	})
 
 	cs := env.connect(t, tokenRead, p.Slug)
@@ -84,11 +84,11 @@ func TestListFlagsTool(t *testing.T) {
 	if !ok {
 		t.Fatalf("flag_a missing from list: %+v", out.Flags)
 	}
-	if a.Origin != "manual" || a.Status != "active" || a.Kind != repository.FlagKindExperiment {
+	if a.Origin != "manual" || a.Status != "active" || a.Kind != domain.FlagKindExperiment {
 		t.Errorf("flag_a: got %+v", a)
 	}
 	b, ok := byKey["flag_b"]
-	if !ok || b.Kind != repository.FlagKindConfig {
+	if !ok || b.Kind != domain.FlagKindConfig {
 		t.Errorf("flag_b missing or wrong kind: %+v", b)
 	}
 }
@@ -211,7 +211,7 @@ func TestCreateFlagTool_Success(t *testing.T) {
 	if out.Status != "active" {
 		t.Errorf("status = %q, want active", out.Status)
 	}
-	if out.Kind != repository.FlagKindExperiment {
+	if out.Kind != domain.FlagKindExperiment {
 		t.Errorf("flag_kind = %q, want experiment (default)", out.Kind)
 	}
 
@@ -268,7 +268,7 @@ func TestCreateFlagTool_ConfigKind(t *testing.T) {
 	callOK(t, cs, "create_flag", map[string]any{
 		"flag_key": "daily_cap", "flag_kind": "config", "default_value": float64(250),
 	}, &out)
-	if out.Kind != repository.FlagKindConfig {
+	if out.Kind != domain.FlagKindConfig {
 		t.Errorf("flag_kind = %q, want config", out.Kind)
 	}
 	variants := unmarshalVariants(t, out.Variants)
@@ -307,11 +307,11 @@ func TestUpdateFlagTool_RequiresWriteScope(t *testing.T) {
 func TestUpdateFlagTool_ByFlagKey_UpdatesDefaultValue(t *testing.T) {
 	env := newTestEnv(t, nil)
 	p := env.createProject(t, "Alpha", "alpha")
-	createManualFlag(t, env, p.ID, "cap", func(f *repository.FeatureFlag) {
+	createManualFlag(t, env, p.ID, "cap", func(f *domain.FeatureFlag) {
 		f.Variants = `{"default":10}`
 		f.DefaultVariant = "default"
 		f.Split = `{"default":100}`
-		f.Kind = repository.FlagKindConfig
+		f.Kind = domain.FlagKindConfig
 		f.FlagType = "number"
 	})
 	cs := env.connect(t, tokenReadWrite, p.Slug)
@@ -338,7 +338,7 @@ func TestUpdateFlagTool_ByFlagKey_UpdatesDefaultValue(t *testing.T) {
 func TestUpdateFlagTool_PreservesOtherVariants(t *testing.T) {
 	env := newTestEnv(t, nil)
 	p := env.createProject(t, "Alpha", "alpha")
-	createManualFlag(t, env, p.ID, "multi", func(f *repository.FeatureFlag) {
+	createManualFlag(t, env, p.ID, "multi", func(f *domain.FeatureFlag) {
 		f.Variants = `{"on":true,"off":false,"canary":true}`
 		f.DefaultVariant = "off"
 		f.Split = `{"off":100}`
@@ -360,8 +360,8 @@ func TestUpdateFlagTool_PreservesOtherVariants(t *testing.T) {
 func TestUpdateFlagTool_PreservesOmittedFields(t *testing.T) {
 	env := newTestEnv(t, nil)
 	p := env.createProject(t, "Alpha", "alpha")
-	createManualFlag(t, env, p.ID, "gate", func(f *repository.FeatureFlag) {
-		f.Kind = repository.FlagKindConfig
+	createManualFlag(t, env, p.ID, "gate", func(f *domain.FeatureFlag) {
+		f.Kind = domain.FlagKindConfig
 	})
 	cs := env.connect(t, tokenReadWrite, p.Slug)
 
@@ -370,7 +370,7 @@ func TestUpdateFlagTool_PreservesOmittedFields(t *testing.T) {
 	if out.Status != "paused" {
 		t.Errorf("status = %q, want paused", out.Status)
 	}
-	if out.Kind != repository.FlagKindConfig {
+	if out.Kind != domain.FlagKindConfig {
 		t.Errorf("flag_kind = %q, a partial update must not reset it to experiment", out.Kind)
 	}
 }
@@ -429,7 +429,7 @@ func TestUpdateFlagTool_RuleNamingMissingVariant(t *testing.T) {
 func TestEvaluateFlagTool_StoredRuleNamingMissingVariant(t *testing.T) {
 	env := newTestEnv(t, nil)
 	p := env.createProject(t, "Alpha", "alpha")
-	createManualFlag(t, env, p.ID, "beta_banner", func(f *repository.FeatureFlag) {
+	createManualFlag(t, env, p.ID, "beta_banner", func(f *domain.FeatureFlag) {
 		f.TargetingRules = `[{"name":"staff","match":"all","conditions":[{"context_key":"plan","operator":"eq","value":"staff"}],"variant":"missing"}]`
 	})
 	cs := env.connect(t, tokenRead, p.Slug)
@@ -535,7 +535,7 @@ func TestUpdateFlagTool_AddsVariantForARule(t *testing.T) {
 func TestUpdateFlagTool_RemovesVariant(t *testing.T) {
 	env := newTestEnv(t, nil)
 	p := env.createProject(t, "Alpha", "alpha")
-	createManualFlag(t, env, p.ID, "multi", func(f *repository.FeatureFlag) {
+	createManualFlag(t, env, p.ID, "multi", func(f *domain.FeatureFlag) {
 		f.Variants = `{"on":true,"off":false,"canary":true}`
 		f.Split = `{"on":50,"off":50}`
 	})
@@ -566,7 +566,7 @@ func TestUpdateFlagTool_RejectsVariantRemovalInUse(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			env := newTestEnv(t, nil)
 			p := env.createProject(t, "Alpha", "alpha")
-			createManualFlag(t, env, p.ID, "multi", func(f *repository.FeatureFlag) {
+			createManualFlag(t, env, p.ID, "multi", func(f *domain.FeatureFlag) {
 				f.Variants = `{"on":true,"off":false,"canary":true}`
 				f.Split = `{"on":50,"off":50}`
 				f.TargetingRules = tc.rules
@@ -728,7 +728,7 @@ func TestEvaluateFlagTool_UnknownKeyLeavesNoTrace(t *testing.T) {
 func TestEvaluateFlagTool_ResolvesRealFlag(t *testing.T) {
 	env := newTestEnv(t, nil)
 	p := env.createProject(t, "Alpha", "alpha")
-	createManualFlag(t, env, p.ID, "checkout", func(f *repository.FeatureFlag) {
+	createManualFlag(t, env, p.ID, "checkout", func(f *domain.FeatureFlag) {
 		f.Variants = `{"on":true,"off":false}`
 		f.DefaultVariant = "off"
 		f.Split = `{"on":100,"off":0}`
@@ -751,7 +751,7 @@ func TestEvaluateFlagTool_ResolvesRealFlag(t *testing.T) {
 func TestEvaluateFlagTool_TargetingMatchRecordsNothing(t *testing.T) {
 	env := newTestEnv(t, nil)
 	p := env.createProject(t, "Alpha", "alpha")
-	createManualFlag(t, env, p.ID, "beta_banner", func(f *repository.FeatureFlag) {
+	createManualFlag(t, env, p.ID, "beta_banner", func(f *domain.FeatureFlag) {
 		f.Variants = `{"on":true,"off":false}`
 		f.DefaultVariant = "off"
 		f.Split = `{"on":0,"off":100}`
@@ -803,8 +803,8 @@ func TestEvaluateFlagTool_CrossProjectNotFound(t *testing.T) {
 func TestAnalyzeFlagTool_ConfigKindUnavailable(t *testing.T) {
 	env := newTestEnv(t, nil)
 	p := env.createProject(t, "Alpha", "alpha")
-	createManualFlag(t, env, p.ID, "cap", func(f *repository.FeatureFlag) {
-		f.Kind = repository.FlagKindConfig
+	createManualFlag(t, env, p.ID, "cap", func(f *domain.FeatureFlag) {
+		f.Kind = domain.FlagKindConfig
 		f.Variants = `{"default":10}`
 		f.DefaultVariant = "default"
 		f.Split = `{"default":100}`
@@ -824,7 +824,7 @@ func TestAnalyzeFlagTool_ConfigKindUnavailable(t *testing.T) {
 func TestAnalyzeFlagTool_ExperimentReportsSamples(t *testing.T) {
 	env := newTestEnv(t, nil)
 	p := env.createProject(t, "Alpha", "alpha")
-	createManualFlag(t, env, p.ID, "exp", func(f *repository.FeatureFlag) {
+	createManualFlag(t, env, p.ID, "exp", func(f *domain.FeatureFlag) {
 		f.Variants = `{"on":true,"off":false}`
 		f.DefaultVariant = "off"
 		f.Split = `{"on":100,"off":0}`

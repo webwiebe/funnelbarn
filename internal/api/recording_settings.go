@@ -1,21 +1,14 @@
 package api
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
-
-// ProjectRecordingSettingsRepo is the narrow repo interface for per-project recording settings.
-type ProjectRecordingSettingsRepo interface {
-	GetProjectRecordingSettings(ctx context.Context, projectID string) (*repository.ProjectRecordingSettings, error)
-	UpsertProjectRecordingSettings(ctx context.Context, settings *repository.ProjectRecordingSettings) error
-}
 
 // handleGetProjectRecordingSettings returns the per-project recording settings.
 // GET /api/v1/projects/{id}/recording-settings
@@ -62,9 +55,9 @@ func (s *Server) handleUpdateProjectRecordingSettings(w http.ResponseWriter, r *
 	projectID := r.PathValue("id")
 
 	var body struct {
-		Enabled    *bool                      `json:"enabled"`
-		SampleRate *float64                   `json:"sample_rate"`
-		Rules      []repository.RecordingRule `json:"rules"`
+		Enabled    *bool                  `json:"enabled"`
+		SampleRate *float64               `json:"sample_rate"`
+		Rules      []domain.RecordingRule `json:"rules"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid json", http.StatusBadRequest)
@@ -76,7 +69,7 @@ func (s *Server) handleUpdateProjectRecordingSettings(w http.ResponseWriter, r *
 		return
 	}
 	if body.Rules == nil {
-		body.Rules = []repository.RecordingRule{}
+		body.Rules = []domain.RecordingRule{}
 	}
 
 	ctx, span := tracing.StartSpan(r.Context(), "recording_settings.update",
@@ -91,7 +84,7 @@ func (s *Server) handleUpdateProjectRecordingSettings(w http.ResponseWriter, r *
 		span.SetAttributes(attribute.Float64("recording.sample_rate", *body.SampleRate))
 	}
 
-	settings := &repository.ProjectRecordingSettings{
+	settings := &domain.ProjectRecordingSettings{
 		ProjectID:  projectID,
 		Enabled:    body.Enabled,
 		SampleRate: body.SampleRate,
@@ -108,7 +101,7 @@ func (s *Server) handleUpdateProjectRecordingSettings(w http.ResponseWriter, r *
 
 // recordingSettingsProblem returns what is wrong with submitted settings, or ""
 // when they are valid.
-func recordingSettingsProblem(sampleRate *float64, rules []repository.RecordingRule) string {
+func recordingSettingsProblem(sampleRate *float64, rules []domain.RecordingRule) string {
 	if sampleRate != nil && (*sampleRate < 0 || *sampleRate > 1) {
 		return "sample_rate must be between 0 and 1"
 	}
@@ -127,11 +120,11 @@ func recordingSettingsProblem(sampleRate *float64, rules []repository.RecordingR
 type effectiveRecordingConfig struct {
 	Enabled    bool
 	SampleRate float64
-	Rules      []repository.RecordingRule
+	Rules      []domain.RecordingRule
 }
 
 // resolveEffectiveRecordingConfig merges per-project settings with instance defaults.
-func (s *Server) resolveEffectiveRecordingConfig(r *http.Request, settings *repository.ProjectRecordingSettings) effectiveRecordingConfig {
+func (s *Server) resolveEffectiveRecordingConfig(r *http.Request, settings *domain.ProjectRecordingSettings) effectiveRecordingConfig {
 	cfg := effectiveRecordingConfig{
 		Enabled:    false,
 		SampleRate: 1.0,
@@ -161,7 +154,7 @@ func (s *Server) resolveEffectiveRecordingConfig(r *http.Request, settings *repo
 	}
 
 	if cfg.Rules == nil {
-		cfg.Rules = []repository.RecordingRule{}
+		cfg.Rules = []domain.RecordingRule{}
 	}
 	return cfg
 }
@@ -194,7 +187,7 @@ func (s *Server) handleGetRecordingConfig(w http.ResponseWriter, r *http.Request
 	)
 	defer span.End()
 
-	var settings *repository.ProjectRecordingSettings
+	var settings *domain.ProjectRecordingSettings
 	if s.recordingSettings != nil {
 		if ps, err := s.recordingSettings.GetProjectRecordingSettings(ctx, projectID); err == nil {
 			settings = ps

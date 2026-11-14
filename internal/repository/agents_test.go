@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func TestAgentEvents_FiltersNamesAndRangeOldestFirst(t *testing.T) {
@@ -23,7 +23,7 @@ func TestAgentEvents_FiltersNamesAndRangeOldestFirst(t *testing.T) {
 	base := time.Date(2026, time.October, 5, 12, 0, 0, 0, time.UTC)
 	insert := func(project, name string, at time.Time, props string) {
 		t.Helper()
-		require.NoError(t, s.InsertEvent(ctx, repository.Event{
+		require.NoError(t, s.InsertEvent(ctx, domain.Event{
 			ID: fmt.Sprintf("%s-%d", name, at.Unix()) + project[:4], ProjectID: project, SessionID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			UserIDHash: "hash-" + name, Name: name, Properties: props,
 			IngestID: fmt.Sprintf("i-%s-%d-%s", name, at.Unix(), project[:4]), OccurredAt: at,

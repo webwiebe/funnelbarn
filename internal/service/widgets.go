@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 type WidgetService struct {
@@ -15,19 +15,19 @@ func NewWidgetService(store ports.WidgetRepo) *WidgetService {
 	return &WidgetService{store: store}
 }
 
-func (svc *WidgetService) CreateWidget(ctx context.Context, w repository.DashboardWidget) (repository.DashboardWidget, error) {
+func (svc *WidgetService) CreateWidget(ctx context.Context, w domain.DashboardWidget) (domain.DashboardWidget, error) {
 	return svc.store.CreateWidget(ctx, w)
 }
 
-func (svc *WidgetService) GetWidget(ctx context.Context, id string) (repository.DashboardWidget, error) {
+func (svc *WidgetService) GetWidget(ctx context.Context, id string) (domain.DashboardWidget, error) {
 	return svc.store.WidgetByID(ctx, id)
 }
 
-func (svc *WidgetService) ListWidgets(ctx context.Context, projectID string) ([]repository.DashboardWidget, error) {
+func (svc *WidgetService) ListWidgets(ctx context.Context, projectID string) ([]domain.DashboardWidget, error) {
 	return svc.store.ListWidgets(ctx, projectID)
 }
 
-func (svc *WidgetService) UpdateWidget(ctx context.Context, w repository.DashboardWidget) (repository.DashboardWidget, error) {
+func (svc *WidgetService) UpdateWidget(ctx context.Context, w domain.DashboardWidget) (domain.DashboardWidget, error) {
 	return svc.store.UpdateWidget(ctx, w)
 }
 
@@ -35,6 +35,6 @@ func (svc *WidgetService) DeleteWidget(ctx context.Context, id string) error {
 	return svc.store.DeleteWidget(ctx, id)
 }
 
-func (svc *WidgetService) WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]repository.PropertyBreakdown, error) {
+func (svc *WidgetService) WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]domain.PropertyBreakdown, error) {
 	return svc.store.WidgetBreakdown(ctx, projectID, eventName, property, window, limit)
 }

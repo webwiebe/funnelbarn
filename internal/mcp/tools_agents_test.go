@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func seedAgentPR(t *testing.T, env *testEnv, projectID string, opened time.Time) {
@@ -16,7 +16,7 @@ func seedAgentPR(t *testing.T, env *testEnv, projectID string, opened time.Time)
 		name string
 		at   time.Time
 	}{{"pr_opened", opened}, {"pr_merged", opened.Add(90 * time.Minute)}} {
-		if err := env.Store.InsertEvent(ctx, repository.Event{
+		if err := env.Store.InsertEvent(ctx, domain.Event{
 			ID: e.name + projectID[:8], ProjectID: projectID, Name: e.name, IngestID: e.name + projectID[:8],
 			OccurredAt: e.at, SessionID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			Properties: `{"source":"github","repo":"o/r","pr":7,"branch":"issue-1/x","merge_sha":"abc"}`,

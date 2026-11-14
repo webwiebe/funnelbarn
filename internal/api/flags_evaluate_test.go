@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -23,14 +24,14 @@ import (
 
 // playgroundFlag creates a project + simple boolean flag and returns both,
 // plus the CSRF token a session-authed request needs.
-func playgroundFlag(t *testing.T, srv *Server, store *repository.Store, slug string) (repository.Project, repository.FeatureFlag, *http.Cookie, string) {
+func playgroundFlag(t *testing.T, srv *Server, store *repository.Store, slug string) (domain.Project, domain.FeatureFlag, *http.Cookie, string) {
 	t.Helper()
 	ctx := context.Background()
 	p, err := store.CreateProject(ctx, "FlagEval-"+slug, "flageval-"+slug)
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	flag, err := store.CreateFlag(ctx, repository.FeatureFlag{
+	flag, err := store.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID:      p.ID,
 		FlagKey:        "test_flag",
 		Name:           "Test Flag",
@@ -179,7 +180,7 @@ func TestPlaygroundEvaluate_ContextSplitsEvenly(t *testing.T) {
 	srv, store := newAuthedServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "FlagEval-Split", "flageval-split")
-	flag, _ := store.CreateFlag(ctx, repository.FeatureFlag{
+	flag, _ := store.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID:      p.ID,
 		FlagKey:        "split_test",
 		Name:           "Split Test",
@@ -450,7 +451,7 @@ func TestSDKEvaluate_AutoRegistersConfigKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListFlags: %v", err)
 	}
-	if len(flags) != 1 || flags[0].Kind != repository.FlagKindConfig {
+	if len(flags) != 1 || flags[0].Kind != domain.FlagKindConfig {
 		t.Fatalf("want one config-kind flag, got %+v", flags)
 	}
 	if flags[0].FlagType != "number" {
@@ -467,7 +468,7 @@ func TestSDKEvaluate_CacheControlByKind(t *testing.T) {
 
 	mustFlag := func(key, kind string) {
 		t.Helper()
-		if _, err := store.CreateFlag(ctx, repository.FeatureFlag{
+		if _, err := store.CreateFlag(ctx, domain.FeatureFlag{
 			ProjectID: projectID, FlagKey: key, Name: key, FlagType: "number",
 			Variants: `{"default":42}`, DefaultVariant: "default",
 			Split: `{"default":100}`, TargetingRules: "[]", Status: "active", Kind: kind,
@@ -475,8 +476,8 @@ func TestSDKEvaluate_CacheControlByKind(t *testing.T) {
 			t.Fatalf("CreateFlag(%s): %v", key, err)
 		}
 	}
-	mustFlag("cfg", repository.FlagKindConfig)
-	mustFlag("exp", repository.FlagKindExperiment)
+	mustFlag("cfg", domain.FlagKindConfig)
+	mustFlag("exp", domain.FlagKindExperiment)
 
 	w := postEvaluateSDK(t, srv, apiKey, map[string]any{"flag_key": "cfg", "default_value": float64(0)})
 	var resp map[string]any
@@ -519,10 +520,10 @@ func TestSDKEvaluate_ErrorIsNeverCached(t *testing.T) {
 
 func TestSDKEvaluate_StoredRuleNamingMissingVariant(t *testing.T) {
 	srv, store, projectID, apiKey := newSDKServer(t, 100)
-	if _, err := store.CreateFlag(context.Background(), repository.FeatureFlag{
+	if _, err := store.CreateFlag(context.Background(), domain.FeatureFlag{
 		ProjectID: projectID, FlagKey: "outreach", Name: "outreach", FlagType: "boolean",
 		Variants: `{"default":true}`, DefaultVariant: "default", Split: `{}`, Status: "active",
-		Kind:           repository.FlagKindConfig,
+		Kind:           domain.FlagKindConfig,
 		TargetingRules: `[{"name":"testing sends","match":"all","conditions":[{"context_key":"environment","operator":"eq","value":"testing"}],"variant":"on"}]`,
 	}); err != nil {
 		t.Fatalf("CreateFlag: %v", err)

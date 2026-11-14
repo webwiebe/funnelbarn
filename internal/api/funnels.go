@@ -7,8 +7,8 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -33,10 +33,10 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name        string                  `json:"name"`
-		Description string                  `json:"description"`
-		Scope       string                  `json:"scope"`
-		Steps       []repository.FunnelStep `json:"steps"`
+		Name        string              `json:"name"`
+		Description string              `json:"description"`
+		Scope       string              `json:"scope"`
+		Steps       []domain.FunnelStep `json:"steps"`
 
 		ConversionWindowSeconds *int64 `json:"conversion_window_seconds"`
 	}
@@ -48,7 +48,7 @@ func (s *Server) handleUpdateFunnel(w http.ResponseWriter, r *http.Request) {
 	// Name, steps and scope-default validation live in FunnelService.UpdateFunnel
 	// (shared with CreateFunnel and with the MCP update_funnel tool), so a bad
 	// request here surfaces as a 422 via mapServiceError below.
-	funnel := repository.Funnel{
+	funnel := domain.Funnel{
 		ID:          funnelID,
 		ProjectID:   projectID,
 		Name:        body.Name,
@@ -134,10 +134,10 @@ func (s *Server) handleCreateFunnel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name        string                  `json:"name"`
-		Description string                  `json:"description"`
-		Scope       string                  `json:"scope"`
-		Steps       []repository.FunnelStep `json:"steps"`
+		Name        string              `json:"name"`
+		Description string              `json:"description"`
+		Scope       string              `json:"scope"`
+		Steps       []domain.FunnelStep `json:"steps"`
 
 		ConversionWindowSeconds *int64 `json:"conversion_window_seconds"`
 	}
@@ -149,7 +149,7 @@ func (s *Server) handleCreateFunnel(w http.ResponseWriter, r *http.Request) {
 		body.Scope = "session"
 	}
 
-	funnel := repository.Funnel{
+	funnel := domain.Funnel{
 		ProjectID:   projectID,
 		Name:        body.Name,
 		Description: body.Description,
@@ -179,22 +179,22 @@ func (s *Server) handleCreateFunnel(w http.ResponseWriter, r *http.Request) {
 
 // parseSegment maps a preset segment name to a SegmentFilter.
 // Returns nil when name is "all" or empty (no filter).
-func parseSegment(name string) *repository.SegmentFilter {
+func parseSegment(name string) *domain.SegmentFilter {
 	switch name {
 	case "logged_in":
-		return &repository.SegmentFilter{Field: "user_id_hash", Op: "is_not_null"}
+		return &domain.SegmentFilter{Field: "user_id_hash", Op: "is_not_null"}
 	case "not_logged_in":
-		return &repository.SegmentFilter{Field: "user_id_hash", Op: "is_null"}
+		return &domain.SegmentFilter{Field: "user_id_hash", Op: "is_null"}
 	case "mobile":
-		return &repository.SegmentFilter{Field: "device_type", Op: "eq", Value: "mobile"}
+		return &domain.SegmentFilter{Field: "device_type", Op: "eq", Value: "mobile"}
 	case "desktop":
-		return &repository.SegmentFilter{Field: "device_type", Op: "eq", Value: "desktop"}
+		return &domain.SegmentFilter{Field: "device_type", Op: "eq", Value: "desktop"}
 	case "tablet":
-		return &repository.SegmentFilter{Field: "device_type", Op: "eq", Value: "tablet"}
+		return &domain.SegmentFilter{Field: "device_type", Op: "eq", Value: "tablet"}
 	case "new_visitor":
-		return &repository.SegmentFilter{Field: "session_returning", Op: "eq", Value: "false"}
+		return &domain.SegmentFilter{Field: "session_returning", Op: "eq", Value: "false"}
 	case "returning":
-		return &repository.SegmentFilter{Field: "session_returning", Op: "eq", Value: "true"}
+		return &domain.SegmentFilter{Field: "session_returning", Op: "eq", Value: "true"}
 	default:
 		return nil
 	}
@@ -219,7 +219,7 @@ func overrideWindow(r *http.Request, from, to time.Time) (time.Time, time.Time) 
 // storedSegmentRules returns the rules of the stored segment named by
 // segment_id, or nil. A failed lookup is non-fatal: the analysis runs without
 // the segment filter, and the warning makes a stale UI dropdown visible.
-func (s *Server) storedSegmentRules(r *http.Request, projectID string) []repository.SegmentRule {
+func (s *Server) storedSegmentRules(r *http.Request, projectID string) []domain.SegmentRule {
 	segID := r.URL.Query().Get("segment_id")
 	if segID == "" || s.segments == nil {
 		return nil
@@ -266,7 +266,7 @@ func (s *Server) handleFunnelAnalysis(w http.ResponseWriter, r *http.Request) {
 
 	// Optional environment: empty keeps every environment.
 	env := r.URL.Query().Get("environment")
-	segRules = append(segRules, repository.EnvironmentRule(env)...)
+	segRules = append(segRules, domain.EnvironmentRule(env)...)
 
 	ctx, span := tracing.StartSpan(r.Context(), "funnels.analyze",
 		attribute.String("project.id", projectID),

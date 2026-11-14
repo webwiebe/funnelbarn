@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/queue"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
@@ -23,8 +24,8 @@ const itKeyHash = "it-key-hash"
 type itEnv struct {
 	list    *queue.RedisList
 	store   *repository.Store
-	project repository.Project
-	flag    repository.FeatureFlag
+	project domain.Project
+	flag    domain.FeatureFlag
 }
 
 func newITEnv(t *testing.T) *itEnv {
@@ -44,7 +45,7 @@ func newITEnv(t *testing.T) *itEnv {
 	require.NoError(t, err)
 	_, err = store.CreateAPIKey(ctx, "k", p.ID, itKeyHash, "full")
 	require.NoError(t, err)
-	f, err := store.CreateFlag(ctx, repository.FeatureFlag{
+	f, err := store.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID: p.ID, FlagKey: "it_flag", Name: "It", FlagType: "boolean",
 		Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":50,"off":50}`, Status: "active",
 	})
@@ -79,8 +80,8 @@ func (e *itEnv) bus(t *testing.T, consume bool) *command.RedisBus {
 	return b
 }
 
-func (e *itEnv) eval(id string) repository.FlagEvaluation {
-	return repository.FlagEvaluation{
+func (e *itEnv) eval(id string) domain.FlagEvaluation {
+	return domain.FlagEvaluation{
 		ID: id, FlagID: e.flag.ID, ProjectID: e.project.ID, Variant: "on",
 		ContextHash: "h-" + id, SessionID: "s-" + id, ContextKeys: []string{"plan"},
 	}

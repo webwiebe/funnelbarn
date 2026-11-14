@@ -9,10 +9,10 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
@@ -60,7 +60,7 @@ type ServerConfig struct {
 	DogfoodAPIKey    string
 	DogfoodProject   string
 
-	IAMBarnUsers IAMBarnUserRepo
+	IAMBarnUsers service.IAMBarnUsers
 
 	// PostLogoutRedirectURI is exposed to the frontend so the hosted IAMBarn
 	// components can pass it to /oauth2/end-session. It should point at the
@@ -74,7 +74,7 @@ type ServerConfig struct {
 	// WebSessions is the server-side session store. Required whenever any
 	// authentication mechanism is configured: sessions are rows, and deleting
 	// a row revokes the session.
-	WebSessions WebSessionStore
+	WebSessions service.WebSessions
 
 	// Environment is the normalized deployment tier (internal/environment).
 	// Outside development, cookies default to Secure=true even when the TLS
@@ -91,12 +91,11 @@ type ServerConfig struct {
 	// login is a real mechanism and session-authed routes must fail closed.
 	LocalUsersExist bool
 
-	InstanceSettings  InstanceSettingsRepo
-	GeoAnonymizer     GeoAnonymizer
+	InstanceSettings  service.InstanceSettings
+	Privacy           service.Privacy
 	Segments          service.Segments
-	Distributions     DistributionRepo
 	Recordings        service.Recordings
-	RecordingSettings ProjectRecordingSettingsRepo
+	RecordingSettings service.RecordingSettings
 	ProjectHealth     service.ProjectHealth
 	Agents            service.Agents
 
@@ -134,6 +133,12 @@ type ServerConfig struct {
 	// subject). Zero means 120/min with a burst of 30.
 	MCPRatePerMinute float64
 	MCPRateBurst     float64
+
+	// GitHubWebhookSecret signs GitHub webhook deliveries; empty leaves the
+	// route unregistered (404). GitHubWebhookProject is the slug they are
+	// filed under.
+	GitHubWebhookSecret  string
+	GitHubWebhookProject string
 }
 
 // Server is the main HTTP API server.
@@ -164,20 +169,19 @@ type Server struct {
 	dogfoodAPIKey       string
 	dogfoodProject      string
 	trustedProxies      []string
-	iambarnUsers        IAMBarnUserRepo
+	iambarnUsers        service.IAMBarnUsers
 	postLogoutRedirect  string
 	oidc                *auth.OIDCClient
-	webSessions         WebSessionStore
+	webSessions         service.WebSessions
 	environment         string
 	oidcRefreshGrace    time.Duration
 	refreshGroup        singleflight.Group
 	localUsersExist     bool
-	instanceSettings    InstanceSettingsRepo
-	geoAnonymizer       GeoAnonymizer
+	instanceSettings    service.InstanceSettings
+	privacy             service.Privacy
 	segments            service.Segments
-	distributions       DistributionRepo
 	recordings          service.Recordings
-	recordingSettings   ProjectRecordingSettingsRepo
+	recordingSettings   service.RecordingSettings
 	projectHealth       service.ProjectHealth
 	agents              service.Agents
 	flagAutoRegisterMax int
@@ -200,6 +204,9 @@ type Server struct {
 	// securityMW is the precomputed security-headers middleware; its CSP
 	// whitelists the IAMBarn origin (if configured) for the hosted components.
 	securityMW func(http.Handler) http.Handler
+
+	githubWebhookSecret  string
+	githubWebhookProject string
 }
 
 // NewServer creates the API server and registers all routes.
@@ -261,9 +268,8 @@ func NewServer(cfg ServerConfig) *Server {
 		oidcRefreshGrace:    cfg.OIDCRefreshGrace,
 		localUsersExist:     cfg.LocalUsersExist,
 		instanceSettings:    cfg.InstanceSettings,
-		geoAnonymizer:       cfg.GeoAnonymizer,
+		privacy:             cfg.Privacy,
 		segments:            cfg.Segments,
-		distributions:       cfg.Distributions,
 		recordings:          cfg.Recordings,
 		recordingSettings:   cfg.RecordingSettings,
 		projectHealth:       cfg.ProjectHealth,
@@ -283,20 +289,10 @@ func NewServer(cfg ServerConfig) *Server {
 		s.oidcRefreshGrace = time.Hour
 	}
 	s.securityMW = securityHeaders(originOf(s.iambarnIssuer()))
+	s.githubWebhookSecret = cfg.GitHubWebhookSecret
+	s.githubWebhookProject = cfg.GitHubWebhookProject
 	s.registerRoutes()
 	return s
-}
-
-// WebSessionStore is the narrow interface over the web_sessions table used by
-// the session middleware, the OIDC callback, and the logout paths.
-type WebSessionStore interface {
-	CreateWebSession(ctx context.Context, ws repository.WebSession) error
-	GetWebSession(ctx context.Context, idHash string) (repository.WebSession, error)
-	UpdateWebSessionTokens(ctx context.Context, idHash, idToken, accessToken, refreshToken string, accessExpiresAt int64, claimsJSON string, lastRefreshAt int64) error
-	MarkWebSessionRefreshFailing(ctx context.Context, idHash string, since int64) error
-	DeleteWebSession(ctx context.Context, idHash string) error
-	DeleteWebSessionsByIdpSid(ctx context.Context, sid string) (int64, error)
-	DeleteWebSessionsByIdpSub(ctx context.Context, sub string) (int64, error)
 }
 
 // StartCleanup begins periodic rate limiter cleanup goroutines.
@@ -354,14 +350,14 @@ func (s *Server) registerRoutes() {
 	// Projects. The list is also reachable with an analytics:read token, which
 	// narrows it to that token's own project — a scripted readout has to be
 	// able to resolve its project without a dashboard session.
-	s.mux.HandleFunc("GET /api/v1/projects", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleListProjects))
+	s.mux.HandleFunc("GET /api/v1/projects", s.requireSessionOrToken(domain.APIKeyScopeAnalyticsRead, s.handleListProjects))
 	s.mux.HandleFunc("POST /api/v1/projects", s.requireSession(s.handleCreateProject))
 	s.mux.HandleFunc("PUT /api/v1/projects/{id}", s.requireSession(s.handleUpdateProject))
 	s.mux.HandleFunc("DELETE /api/v1/projects/{id}", s.requireSession(s.handleDeleteProject))
 
 	// Dashboard & analytics. The read-only routes a scripted readout needs also
 	// accept a project-scoped analytics:read token — see internal/api/api_tokens.go.
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/dashboard", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleDashboard))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/dashboard", s.requireSessionOrToken(domain.APIKeyScopeAnalyticsRead, s.handleDashboard))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/flows", s.requireSession(s.handlePageFlows))
 	s.registerEventReadRoutes()
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-properties", s.requireSession(s.handleEventProperties))
@@ -393,11 +389,11 @@ func (s *Server) registerRoutes() {
 
 	// Funnels. Listing and step conversion also accept an analytics:read token;
 	// creating, editing and deleting a funnel stay session-only.
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleListFunnels))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels", s.requireSessionOrToken(domain.APIKeyScopeAnalyticsRead, s.handleListFunnels))
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/funnels", s.requireSession(s.handleCreateFunnel))
 	s.mux.HandleFunc("PUT /api/v1/projects/{id}/funnels/{fid}", s.requireSession(s.handleUpdateFunnel))
 	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/funnels/{fid}", s.requireSession(s.handleDeleteFunnel))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels/{fid}/analysis", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleFunnelAnalysis))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels/{fid}/analysis", s.requireSessionOrToken(domain.APIKeyScopeAnalyticsRead, s.handleFunnelAnalysis))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/funnels/{fid}/segments", s.requireSession(s.handleFunnelSegments))
 
 	// Feature Flags. Reads and updates also accept a project-scoped API token
@@ -406,12 +402,12 @@ func (s *Server) registerRoutes() {
 	// Creation and deletion stay session-only: auto-registration already covers
 	// creation, and a token that can turn an outbound-email gate off should not
 	// also be able to delete the gate.
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags", s.requireSessionOrToken(repository.APIKeyScopeFlagsRead, s.handleListFlags))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags", s.requireSessionOrToken(domain.APIKeyScopeFlagsRead, s.handleListFlags))
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/flags", s.requireSession(s.handleCreateFlag))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/{fid}", s.requireSessionOrToken(repository.APIKeyScopeFlagsRead, s.handleGetFlag))
-	s.mux.HandleFunc("PUT /api/v1/projects/{id}/flags/{fid}", s.requireSessionOrToken(repository.APIKeyScopeFlagsWrite, s.handleUpdateFlag))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/{fid}", s.requireSessionOrToken(domain.APIKeyScopeFlagsRead, s.handleGetFlag))
+	s.mux.HandleFunc("PUT /api/v1/projects/{id}/flags/{fid}", s.requireSessionOrToken(domain.APIKeyScopeFlagsWrite, s.handleUpdateFlag))
 	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/flags/{fid}", s.requireSession(s.handleDeleteFlag))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/{fid}/analysis", s.requireSessionOrToken(repository.APIKeyScopeFlagsRead, s.handleFlagAnalysis))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/flags/{fid}/analysis", s.requireSessionOrToken(domain.APIKeyScopeFlagsRead, s.handleFlagAnalysis))
 	s.registerFlagInsightRoutes()
 	// Dogfooding playground — same flag-eval logic as the customer endpoint
 	// but session-authed so the dashboard can call it without an API key in the browser.
@@ -485,6 +481,8 @@ func (s *Server) registerRoutes() {
 
 	// MCP endpoint + protected-resource metadata (only with OIDC configured).
 	s.registerMCPRoutes()
+
+	s.registerGitHubWebhookRoutes()
 }
 
 // ServeHTTP adds CORS headers and dispatches to the router.

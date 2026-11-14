@@ -7,21 +7,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func TestHandleFunnelAnalysis_Environment(t *testing.T) {
 	srv, store := newTestServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "FAnalyEnv", "fanalyenv")
-	f, _ := store.CreateFunnel(ctx, repository.Funnel{
+	f, _ := store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Env Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "visit"}},
+		Steps:     []domain.FunnelStep{{EventName: "visit"}},
 	})
 	now := time.Now().UTC().Add(-time.Hour)
 	for i, env := range []string{"production", "staging", "staging"} {
-		if err := store.InsertEvent(ctx, repository.Event{
+		if err := store.InsertEvent(ctx, domain.Event{
 			ID: randomID() + string(rune('a'+i)), ProjectID: p.ID, SessionID: "s" + string(rune('a'+i)),
 			Name: "visit", Properties: "{}", IngestID: "i" + randomID() + string(rune('a'+i)),
 			OccurredAt: now, Environment: env,
@@ -37,7 +37,7 @@ func TestHandleFunnelAnalysis_Environment(t *testing.T) {
 			t.Fatalf("%s: want 200, got %d (body: %s)", query, w.Code, w.Body.String())
 		}
 		var resp struct {
-			Results []repository.FunnelStepResult `json:"results"`
+			Results []domain.FunnelStepResult `json:"results"`
 		}
 		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil || len(resp.Results) != 1 {
 			t.Fatalf("%s: bad body %s", query, w.Body.String())
@@ -64,16 +64,16 @@ func TestHandleFunnelStepSessions_Environment(t *testing.T) {
 	srv, store := newRecordingServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "FStepEnv", "fstepenv")
-	f, _ := store.CreateFunnel(ctx, repository.Funnel{
+	f, _ := store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Env Step Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "visit"}, {EventName: "book"}},
+		Steps:     []domain.FunnelStep{{EventName: "visit"}, {EventName: "book"}},
 	})
 	now := time.Now().UTC().Add(-time.Hour)
 	for i, ev := range []struct{ session, env string }{
 		{"prod-a", "production"}, {"stg-a", "staging"}, {"stg-b", "staging"},
 	} {
-		if err := store.InsertEvent(ctx, repository.Event{
+		if err := store.InsertEvent(ctx, domain.Event{
 			ID: randomID() + string(rune('a'+i)), ProjectID: p.ID, SessionID: ev.session,
 			Name: "visit", Properties: "{}", IngestID: "i" + randomID() + string(rune('a'+i)),
 			OccurredAt: now, Environment: ev.env,

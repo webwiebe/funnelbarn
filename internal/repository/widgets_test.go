@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
@@ -25,7 +26,7 @@ func TestWidget_CRUD(t *testing.T) {
 	p, _ := s.CreateProject(ctx, "Widgets", "widgets-crud")
 
 	// Create — size out of range gets clamped to 1.
-	w, err := s.CreateWidget(ctx, repository.DashboardWidget{
+	w, err := s.CreateWidget(ctx, domain.DashboardWidget{
 		ProjectID: p.ID,
 		EventName: "page_view",
 		Property:  "browser",
@@ -78,7 +79,7 @@ func TestWidgetBreakdown_TotalCount(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	for i := 0; i < 3; i++ {
-		e := repository.Event{
+		e := domain.Event{
 			ID:         randomHex(t) + string(rune('a'+i)),
 			ProjectID:  p.ID,
 			SessionID:  "s1",
@@ -104,7 +105,7 @@ func TestWidgetBreakdown_MetadataColumn(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, browser := range []string{"Chrome", "Chrome", "Firefox"} {
-		e := repository.Event{
+		e := domain.Event{
 			ID:         randomHex(t) + browser,
 			ProjectID:  p.ID,
 			SessionID:  "s1",
@@ -131,7 +132,7 @@ func TestWidgetBreakdown_JSONProperty(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, plan := range []string{"pro", "pro", "free"} {
-		e := repository.Event{
+		e := domain.Event{
 			ID:         randomHex(t) + plan,
 			ProjectID:  p.ID,
 			SessionID:  "s1",

@@ -4,13 +4,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // With MCP enabled, the guide opens with a pitch to the reading assistant,
 // and every install command works without the project header.
 func TestBuildSetupMarkdown_MCPEnabled(t *testing.T) {
-	doc := buildSetupMarkdown(repository.Project{Slug: "shop", Status: "active"}, "key", "https://fb.example", 10, true)
+	doc := buildSetupMarkdown(domain.Project{Slug: "shop", Status: "active"}, "key", "https://fb.example", 10, true)
 
 	callout := strings.Index(doc, "## Using an AI assistant? Connect the FunnelBarn MCP server first")
 	config := strings.Index(doc, "## Project Configuration")
@@ -42,7 +42,7 @@ func TestBuildSetupMarkdown_MCPEnabled(t *testing.T) {
 // Without MCP the guide never mentions it, so it never sends an assistant to
 // a server the instance does not run.
 func TestBuildSetupMarkdown_MCPDisabled(t *testing.T) {
-	doc := buildSetupMarkdown(repository.Project{Slug: "shop", Status: "active"}, "key", "https://fb.example", 10, false)
+	doc := buildSetupMarkdown(domain.Project{Slug: "shop", Status: "active"}, "key", "https://fb.example", 10, false)
 
 	for _, s := range []string{"MCP", "mcp add", "create_funnel"} {
 		if strings.Contains(doc, s) {

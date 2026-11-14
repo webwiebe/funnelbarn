@@ -14,7 +14,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // ---------------------------------------------------------------------------
@@ -186,16 +186,16 @@ func TestRateLimit_ResponseFormat(t *testing.T) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-func repositoryFunnel(projectID, name string) repository.Funnel {
-	return repository.Funnel{
+func repositoryFunnel(projectID, name string) domain.Funnel {
+	return domain.Funnel{
 		ProjectID: projectID,
 		Name:      name,
-		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step-1"}},
 	}
 }
 
-func repositoryABTest(projectID string) repository.ABTest {
-	return repository.ABTest{
+func repositoryABTest(projectID string) domain.ABTest {
+	return domain.ABTest{
 		ProjectID:       projectID,
 		Name:            "Test A",
 		Status:          "running",

@@ -77,11 +77,11 @@
 
 ### Background Worker
 
-- [x] T-040: Implement `internal/worker/worker.go` — `ProcessRecord()`, `PersistEvent()`
+- [x] T-040: Implement `internal/ingest/pipeline/process.go` — `ProcessRecord()`, `PersistEvent()`
 - [x] T-041: Implement event payload decoding (base64 decode → JSON unmarshal)
 - [x] T-042: Implement event enrichment pipeline: UA parse, UTM extract, referrer domain, session fingerprint, user ID hash
 - [x] T-043: Implement `PersistEvent()` — idempotency check via IngestID, `InsertEvent`, `UpsertSession`
-- [x] T-044: Implement `runBackgroundWorker()` in main — 1s tick, retry counting, dead-letter on `workerMaxRetries=3`, spool rotation
+- [x] T-044: Implement `pipeline.RunWorker()` in main — 1s tick, retry counting, dead-letter on `workerMaxRetries=3`, spool rotation
 - [ ] T-045: Write unit tests for `ProcessRecord()` — valid payload, missing name error, timestamp fallback
 - [ ] T-046: Write unit tests for enrichment — UTM extraction from URL, referrer domain extraction, user ID hashing
 - [ ] T-047: Write integration test for full ingest → spool → worker → SQLite pipeline

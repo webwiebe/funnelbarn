@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
@@ -112,11 +113,11 @@ func seedGolden(t *testing.T, store *repository.Store, storage *memStorage) *gol
 
 	ids := map[string]string{}
 	keys := []struct{ name, plain, scope, project string }{
-		{"a-full", s.KeyAFull, repository.APIKeyScopeFull, s.ProjectA},
-		{"a-ingest", s.KeyAIngest, repository.APIKeyScopeIngest, s.ProjectA},
-		{"a-analytics", s.KeyAAnalytics, repository.APIKeyScopeAnalyticsRead, s.ProjectA},
-		{"a-flags", s.KeyAFlags, repository.APIKeyScopeFlagsRead, s.ProjectA},
-		{"b-full", s.KeyBFull, repository.APIKeyScopeFull, s.ProjectB},
+		{"a-full", s.KeyAFull, domain.APIKeyScopeFull, s.ProjectA},
+		{"a-ingest", s.KeyAIngest, domain.APIKeyScopeIngest, s.ProjectA},
+		{"a-analytics", s.KeyAAnalytics, domain.APIKeyScopeAnalyticsRead, s.ProjectA},
+		{"a-flags", s.KeyAFlags, domain.APIKeyScopeFlagsRead, s.ProjectA},
+		{"b-full", s.KeyBFull, domain.APIKeyScopeFull, s.ProjectB},
 	}
 	for i, k := range keys {
 		ak, err := store.CreateAPIKey(ctx, k.name, k.project, goldenSHA256(k.plain), k.scope)
@@ -174,7 +175,7 @@ func insertSession(t *testing.T, store *repository.Store, project, host, tag str
 	}
 	for k, ev := range evs {
 		at := start.Add(ev.offset)
-		e := repository.Event{
+		e := domain.Event{
 			ID:         fmt.Sprintf("ev-%s-%02d-%02d", tag, i, k),
 			ProjectID:  project,
 			SessionID:  sid,
@@ -194,7 +195,7 @@ func insertSession(t *testing.T, store *repository.Store, project, host, tag str
 		if err := store.InsertEvent(ctx, e); err != nil {
 			t.Fatalf("seed event: %v", err)
 		}
-		sess := repository.Session{
+		sess := domain.Session{
 			ID: sid, ProjectID: project, FirstSeenAt: start, LastSeenAt: at,
 			EntryURL: "https://" + host + evs[0].path, ExitURL: e.URL,
 			Referrer: ref, UTMSource: utmSource, UTMMedium: utmMedium, UTMCampaign: utmCampaign,
@@ -209,7 +210,7 @@ func insertSession(t *testing.T, store *repository.Store, project, host, tag str
 	}
 	if i%3 == 0 {
 		w, h, dark, touch := 1440+i, 900, i%2 == 0, i%2 == 1
-		err := store.UpsertSessionSignals(ctx, project, sid, repository.SessionSignals{
+		err := store.UpsertSessionSignals(ctx, project, sid, domain.SessionSignals{
 			ScreenWidth: &w, ScreenHeight: &h, DarkMode: &dark, Touch: &touch, BrowserTimezone: "Europe/Amsterdam",
 		})
 		if err != nil {

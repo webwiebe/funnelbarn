@@ -6,7 +6,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -29,7 +29,7 @@ func (s *Server) handleListWidgets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if widgets == nil {
-		widgets = []repository.DashboardWidget{}
+		widgets = []domain.DashboardWidget{}
 	}
 	span.SetAttributes(attribute.Int("widgets.count", len(widgets)))
 	writeJSON(w, http.StatusOK, map[string]any{"widgets": widgets})
@@ -65,7 +65,7 @@ func (s *Server) handleCreateWidget(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
-	widget, err := s.widgets.CreateWidget(ctx, repository.DashboardWidget{
+	widget, err := s.widgets.CreateWidget(ctx, domain.DashboardWidget{
 		ProjectID: projectID,
 		EventName: body.EventName,
 		Property:  body.Property,
@@ -108,7 +108,7 @@ func (s *Server) handleUpdateWidget(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
-	widget, err := s.widgets.UpdateWidget(ctx, repository.DashboardWidget{
+	widget, err := s.widgets.UpdateWidget(ctx, domain.DashboardWidget{
 		ID:        widgetID,
 		EventName: body.EventName,
 		Property:  body.Property,
@@ -179,7 +179,7 @@ func (s *Server) handleWidgetBreakdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if breakdown == nil {
-		breakdown = []repository.PropertyBreakdown{}
+		breakdown = []domain.PropertyBreakdown{}
 	}
 	span.SetAttributes(attribute.Int("breakdown.count", len(breakdown)))
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -221,18 +221,18 @@ func (s *Server) handleBatchBreakdowns(w http.ResponseWriter, r *http.Request) {
 	span.SetAttributes(attribute.Int("widgets.count", len(widgets)))
 
 	type widgetResult struct {
-		Widget    repository.DashboardWidget     `json:"widget"`
-		Breakdown []repository.PropertyBreakdown `json:"breakdown"`
+		Widget    domain.DashboardWidget     `json:"widget"`
+		Breakdown []domain.PropertyBreakdown `json:"breakdown"`
 	}
 
 	results := make([]widgetResult, 0, len(widgets))
 	for _, widget := range widgets {
 		bd, err := s.widgets.WidgetBreakdown(ctx, widget.ProjectID, widget.EventName, widget.Property, 100, 10)
 		if err != nil {
-			bd = []repository.PropertyBreakdown{}
+			bd = []domain.PropertyBreakdown{}
 		}
 		if bd == nil {
-			bd = []repository.PropertyBreakdown{}
+			bd = []domain.PropertyBreakdown{}
 		}
 		results = append(results, widgetResult{Widget: widget, Breakdown: bd})
 	}

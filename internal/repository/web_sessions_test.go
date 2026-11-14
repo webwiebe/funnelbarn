@@ -9,12 +9,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
-func fullWebSession(idHash string) repository.WebSession {
+func fullWebSession(idHash string) domain.WebSession {
 	now := time.Now().Unix()
-	return repository.WebSession{
+	return domain.WebSession{
 		IDHash:            idHash,
 		Username:          "alice",
 		AuthMethod:        "oidc",
@@ -50,7 +50,7 @@ func TestWebSessions_LocalSessionNullTokens(t *testing.T) {
 	s := newTestStore(t)
 
 	now := time.Now().Unix()
-	require.NoError(t, s.CreateWebSession(ctx, repository.WebSession{
+	require.NoError(t, s.CreateWebSession(ctx, domain.WebSession{
 		IDHash:            "local-1",
 		Username:          "admin",
 		AuthMethod:        "local",
@@ -127,7 +127,7 @@ func TestWebSessions_DeleteBySidAndSub(t *testing.T) {
 	b.IdpSid = "sid-2" // sub-1 / sid-2
 	c := fullWebSession("h-c")
 	c.IdpSub, c.IdpSid = "sub-other", "sid-other"
-	for _, ws := range []repository.WebSession{a, b, c} {
+	for _, ws := range []domain.WebSession{a, b, c} {
 		require.NoError(t, s.CreateWebSession(ctx, ws))
 	}
 

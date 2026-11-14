@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func TestStore_ProjectRecordingSettings(t *testing.T) {
@@ -28,11 +28,11 @@ func TestStore_ProjectRecordingSettings(t *testing.T) {
 	// Upsert with enabled=true and a sample rate.
 	enabled := true
 	rate := 0.5
-	settings := &repository.ProjectRecordingSettings{
+	settings := &domain.ProjectRecordingSettings{
 		ProjectID:  proj.ID,
 		Enabled:    &enabled,
 		SampleRate: &rate,
-		Rules:      []repository.RecordingRule{},
+		Rules:      []domain.RecordingRule{},
 	}
 	require.NoError(t, s.UpsertProjectRecordingSettings(ctx, settings))
 
@@ -47,7 +47,7 @@ func TestStore_ProjectRecordingSettings(t *testing.T) {
 	// Update with URL rules and enabled=false.
 	disabled := false
 	settings.Enabled = &disabled
-	settings.Rules = []repository.RecordingRule{
+	settings.Rules = []domain.RecordingRule{
 		{Pattern: "/admin/**", Action: "ignore"},
 		{Pattern: "/checkout", Action: "capture"},
 	}
@@ -66,7 +66,7 @@ func TestStore_ProjectRecordingSettings(t *testing.T) {
 	// Upsert with nil Enabled resets to inherit.
 	settings.Enabled = nil
 	settings.SampleRate = nil
-	settings.Rules = []repository.RecordingRule{}
+	settings.Rules = []domain.RecordingRule{}
 	require.NoError(t, s.UpsertProjectRecordingSettings(ctx, settings))
 
 	got, err = s.GetProjectRecordingSettings(ctx, proj.ID)

@@ -8,37 +8,14 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
-
-// FlowNode is a node in the page flow Sankey graph.
-type FlowNode struct {
-	ID       string `json:"id"`
-	Label    string `json:"label"`
-	NodeType string `json:"type"` // "page", "referrer", "exit"
-	Depth    int    `json:"depth"`
-	Sessions int64  `json:"sessions"`
-}
-
-// FlowLink is a directed edge in the page flow Sankey graph.
-type FlowLink struct {
-	Source string `json:"source"`
-	Target string `json:"target"`
-	Value  int64  `json:"value"`
-}
-
-// PageFlowResult is the complete page flow graph centered on a focused page.
-type PageFlowResult struct {
-	FocusedPage   string     `json:"focused_page"`
-	TotalSessions int64      `json:"total_sessions"`
-	Nodes         []FlowNode `json:"nodes"`
-	Links         []FlowLink `json:"links"`
-}
 
 // PageFlows returns a Sankey flow graph centered on the given page within the
 // time range. If page is empty the most-visited page is used. depth controls
 // how many hops before and after the focused page are included (max 10).
-func (s *ReadStore) PageFlows(ctx context.Context, projectID, page string, depth int, from, to time.Time, env string) (PageFlowResult, error) {
+func (s *ReadStore) PageFlows(ctx context.Context, projectID, page string, depth int, from, to time.Time, env string) (domain.PageFlowResult, error) {
 	ctx, span := tracing.StartSpan(ctx, "repository.PageFlows",
 		attribute.String("project.id", projectID),
 		attribute.String("page", page),
@@ -54,10 +31,10 @@ func (s *ReadStore) PageFlows(ctx context.Context, projectID, page string, depth
 		top, err := s.TopPages(ctx, projectID, from, to, 1, env)
 		if err != nil {
 			tracing.RecordError(span, err)
-			return PageFlowResult{}, err
+			return domain.PageFlowResult{}, err
 		}
 		if len(top) == 0 {
-			return PageFlowResult{Nodes: []FlowNode{}, Links: []FlowLink{}}, nil
+			return domain.PageFlowResult{Nodes: []domain.FlowNode{}, Links: []domain.FlowLink{}}, nil
 		}
 		page = top[0].URL
 		span.SetAttributes(attribute.String("page.resolved", page))
@@ -66,28 +43,28 @@ func (s *ReadStore) PageFlows(ctx context.Context, projectID, page string, depth
 	totalSessions, err := s.flowTotalSessions(ctx, projectID, page, from, to, env)
 	if err != nil {
 		tracing.RecordError(span, err)
-		return PageFlowResult{}, err
+		return domain.PageFlowResult{}, err
 	}
 	if totalSessions == 0 {
-		return PageFlowResult{FocusedPage: page, Nodes: []FlowNode{}, Links: []FlowLink{}}, nil
+		return domain.PageFlowResult{FocusedPage: page, Nodes: []domain.FlowNode{}, Links: []domain.FlowLink{}}, nil
 	}
 
 	transitions, err := s.flowTransitions(ctx, projectID, page, depth, from, to, env)
 	if err != nil {
 		tracing.RecordError(span, err)
-		return PageFlowResult{}, err
+		return domain.PageFlowResult{}, err
 	}
 
 	exitCount, err := s.flowExitCount(ctx, projectID, page, from, to, env)
 	if err != nil {
 		tracing.RecordError(span, err)
-		return PageFlowResult{}, err
+		return domain.PageFlowResult{}, err
 	}
 
 	entryReferrers, err := s.flowEntryReferrers(ctx, projectID, page, from, to, env)
 	if err != nil {
 		tracing.RecordError(span, err)
-		return PageFlowResult{}, err
+		return domain.PageFlowResult{}, err
 	}
 
 	span.SetAttributes(attribute.Int64("total_sessions", totalSessions))
@@ -284,8 +261,8 @@ func flowReferrerNodeID(domain string) string {
 	return fmt.Sprintf("referrer:%s|-1", domain)
 }
 
-func buildFlowResult(page string, totalSessions, exitCount int64, transitions []flowTransition, entryReferrers []flowEntryReferrer) PageFlowResult {
-	nodeMap := map[string]FlowNode{}
+func buildFlowResult(page string, totalSessions, exitCount int64, transitions []flowTransition, entryReferrers []flowEntryReferrer) domain.PageFlowResult {
+	nodeMap := map[string]domain.FlowNode{}
 
 	upsert := func(id, label, nodeType string, depth int, sessions int64) {
 		if existing, ok := nodeMap[id]; ok {
@@ -294,35 +271,35 @@ func buildFlowResult(page string, totalSessions, exitCount int64, transitions []
 				nodeMap[id] = existing
 			}
 		} else {
-			nodeMap[id] = FlowNode{ID: id, Label: label, NodeType: nodeType, Depth: depth, Sessions: sessions}
+			nodeMap[id] = domain.FlowNode{ID: id, Label: label, NodeType: nodeType, Depth: depth, Sessions: sessions}
 		}
 	}
 
 	upsert(flowNodeID(page, 0), page, "page", 0, totalSessions)
 
-	var links []FlowLink
+	var links []domain.FlowLink
 
 	for _, t := range transitions {
 		srcID := flowNodeID(t.SourceURL, t.SourceDepth)
 		tgtID := flowNodeID(t.TargetURL, t.TargetDepth)
 		upsert(srcID, t.SourceURL, "page", t.SourceDepth, t.Sessions)
 		upsert(tgtID, t.TargetURL, "page", t.TargetDepth, t.Sessions)
-		links = append(links, FlowLink{Source: srcID, Target: tgtID, Value: t.Sessions})
+		links = append(links, domain.FlowLink{Source: srcID, Target: tgtID, Value: t.Sessions})
 	}
 
 	for _, r := range entryReferrers {
 		id := flowReferrerNodeID(r.Domain)
 		upsert(id, r.Domain, "referrer", -1, r.Sessions)
-		links = append(links, FlowLink{Source: id, Target: flowNodeID(page, 0), Value: r.Sessions})
+		links = append(links, domain.FlowLink{Source: id, Target: flowNodeID(page, 0), Value: r.Sessions})
 	}
 
 	if exitCount > 0 {
 		const exitID = "exit|1"
 		upsert(exitID, "(drop-off)", "exit", 1, exitCount)
-		links = append(links, FlowLink{Source: flowNodeID(page, 0), Target: exitID, Value: exitCount})
+		links = append(links, domain.FlowLink{Source: flowNodeID(page, 0), Target: exitID, Value: exitCount})
 	}
 
-	nodes := make([]FlowNode, 0, len(nodeMap))
+	nodes := make([]domain.FlowNode, 0, len(nodeMap))
 	for _, n := range nodeMap {
 		nodes = append(nodes, n)
 	}
@@ -343,10 +320,10 @@ func buildFlowResult(page string, totalSessions, exitCount int64, transitions []
 	})
 
 	if links == nil {
-		links = []FlowLink{}
+		links = []domain.FlowLink{}
 	}
 
-	return PageFlowResult{
+	return domain.PageFlowResult{
 		FocusedPage:   page,
 		TotalSessions: totalSessions,
 		Nodes:         nodes,

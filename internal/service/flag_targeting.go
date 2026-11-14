@@ -18,7 +18,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 type TargetingCondition struct {
@@ -142,7 +142,7 @@ func validateFlagRules(rulesJSON, variantsJSON string) error {
 // still pause it or change a value. The check passes when the rules are
 // unchanged and the update reports the same missing variant against the same
 // variant names; editing the rules or the set of names has to repair it.
-func (svc *FlagService) validateUpdatedRules(ctx context.Context, f repository.FeatureFlag) error {
+func (svc *FlagService) validateUpdatedRules(ctx context.Context, f domain.FeatureFlag) error {
 	err := validateFlagRules(f.TargetingRules, f.Variants)
 	if err == nil {
 		return nil
@@ -193,7 +193,7 @@ func (r *missingVariantReports) due(flagID string, now time.Time) bool {
 // every cache. Serving a default in silence is how this fault hid, so it logs at
 // Error to reach BugBarn. BugBarn titles and groups the issue on the error text, so
 // the text names the flag and each flag gets its own issue.
-func (svc *FlagService) ruleVariantMissing(ctx context.Context, span trace.Span, flag repository.FeatureFlag, ruleName string, cause error) FlagEvalResult {
+func (svc *FlagService) ruleVariantMissing(ctx context.Context, span trace.Span, flag domain.FeatureFlag, ruleName string, cause error) FlagEvalResult {
 	span.SetAttributes(
 		attribute.String("flag.reason", "ERROR"),
 		attribute.String("flag.error_code", string(EvalVariantNotFound)),
@@ -217,7 +217,7 @@ func (svc *FlagService) ruleVariantMissing(ctx context.Context, span trace.Span,
 
 // InferFlagType maps a JSON-decoded default value to a flag_type for the
 // dashboard. Exported so callers outside the service (e.g. the MCP tools'
-// create_flag) can build a repository.FeatureFlag from a bare default value
+// create_flag) can build a domain.FeatureFlag from a bare default value
 // the same way EvaluateOrRegisterFlag's auto-registration does.
 func InferFlagType(v any) string {
 	switch v.(type) {

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"log/slog"
 	"path/filepath"
 	"testing"
@@ -14,6 +13,8 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
@@ -27,8 +28,8 @@ type readerWriterPair struct {
 	writer      command.Bus
 	readerStore *repository.Store
 	reader      *readerCommandBus
-	project     repository.Project
-	flag        repository.FeatureFlag
+	project     domain.Project
+	flag        domain.FeatureFlag
 }
 
 func newReaderWriterPair(t *testing.T) *readerWriterPair {
@@ -82,7 +83,7 @@ func TestReaderPublishesAndTheWriterApplies(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pair.reader.Submit(ctx, command.RecordEvaluation{Eval: repository.FlagEvaluation{
+	pair.reader.Submit(ctx, command.RecordEvaluation{Eval: domain.FlagEvaluation{
 		FlagID: pair.flag.ID, ProjectID: pair.project.ID, Variant: "on",
 	}})
 	readerHealth := service.NewProjectHealthService(service.HealthViaCommands{ProjectHealthRepo: pair.readerStore, Bus: pair.reader})
@@ -105,18 +106,18 @@ func TestReaderBuffersWhileValkeyIsDown(t *testing.T) {
 	defer cancel()
 
 	pair.mr.SetError("LOADING Valkey is down")
-	pair.reader.Submit(ctx, command.RecordEvaluation{Eval: repository.FlagEvaluation{
+	pair.reader.Submit(ctx, command.RecordEvaluation{Eval: domain.FlagEvaluation{
 		FlagID: pair.flag.ID, ProjectID: pair.project.ID, Variant: "on",
 	}})
 	pair.reader.Submit(ctx, command.MarkProjectHealth{ProjectID: pair.project.ID, Field: command.HealthSetupCalled})
 
 	// Still down: forwarding keeps the commands on disk.
-	pair.reader.fallback.forward(ctx)
-	require.True(t, pair.reader.fallback.outage.Failing())
+	pair.reader.fallback.Forward(ctx)
+	require.True(t, pair.reader.fallback.Failing())
 
 	pair.mr.SetError("")
-	pair.reader.fallback.forward(ctx)
-	require.False(t, pair.reader.fallback.outage.Failing())
+	pair.reader.fallback.Forward(ctx)
+	require.False(t, pair.reader.fallback.Failing())
 
 	require.NoError(t, pair.writer.Flush(ctx))
 	require.Equal(t, 1, evaluationRows(t, pair.writerStore))
@@ -129,10 +130,10 @@ func TestReaderQueuesDoNotConsume(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
 
-	iq, err := newIngestQueue(ctx, cfg, nil, logger)
+	iq, err := pipeline.NewIngestQueue(ctx, cfg, nil, logger)
 	require.NoError(t, err)
 	require.NotNil(t, iq, "a reader always forwards ingest to the queue")
-	require.Nil(t, iq.bus)
+	require.Nil(t, iq.Bus)
 	require.NoError(t, iq.Close(ctx))
 
 	rq, err := newRecordingsQueue(ctx, cfg, nil, logger)
@@ -143,10 +144,10 @@ func TestReaderQueuesDoNotConsume(t *testing.T) {
 	// Valkey down: the chunk is buffered and reported queued, so the
 	// recording service does not try to apply it on the read-only store.
 	mr.SetError("LOADING Valkey is down")
-	require.True(t, rq.Enqueue(ctx, service.ChunkMeta{Recording: repository.Recording{ID: "r1", ProjectID: "p1"}, ChunkIndex: 0}))
+	require.True(t, rq.Enqueue(ctx, service.ChunkMeta{Recording: domain.Recording{ID: "r1", ProjectID: "p1"}, ChunkIndex: 0}))
 	mr.SetError("")
-	rq.fallback.forward(ctx)
-	require.False(t, rq.fallback.outage.Failing())
+	rq.fallback.Forward(ctx)
+	require.False(t, rq.fallback.Failing())
 	n, err := rq.list.QueuedLen(ctx)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, n)
@@ -157,7 +158,7 @@ func TestStandaloneIgnoresTheSplitDefaults(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
 	cfg := config.Config{Mode: config.ModeStandalone, SpoolDir: t.TempDir()}
-	iq, err := newIngestQueue(ctx, cfg, nil, logger)
+	iq, err := pipeline.NewIngestQueue(ctx, cfg, nil, logger)
 	require.NoError(t, err)
 	require.Nil(t, iq)
 	rq, err := newRecordingsQueue(ctx, cfg, nil, logger)
@@ -217,93 +218,9 @@ func TestStartWorkerByMode(t *testing.T) {
 	// The full worker returns once its context ends.
 	stopped, stop := context.WithCancel(context.Background())
 	stop()
-	runBackgroundWorker(stopped, config.Config{SpoolDir: t.TempDir()}, pair.writerStore, sp, &ingestApplier{}, nil, nil)
-	ready, err = startWorker(stopped, config.Config{SpoolDir: t.TempDir()}, pair.writerStore, sp, &ingestApplier{}, nil, nil, nil, pair.writer)
+	stoppedCfg := config.Config{SpoolDir: t.TempDir()}
+	pipeline.RunWorker(stopped, stoppedCfg, sp, &pipeline.Applier{}, nil, workerJobs(stoppedCfg, pair.writerStore, nil))
+	ready, err = startWorker(stopped, config.Config{SpoolDir: t.TempDir()}, pair.writerStore, sp, &pipeline.Applier{}, nil, nil, nil, pair.writer)
 	require.NoError(t, err)
 	require.Nil(t, ready)
-}
-
-func TestReaderWorkerForwardsTheSpool(t *testing.T) {
-	mr := miniredis.RunT(t)
-	cfg := config.Config{Mode: config.ModeReader, RedisQueueURL: "redis://" + mr.Addr() + "/0", SpoolDir: t.TempDir(), IngestQueueMaxLen: 10}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sp, err := spool.New(cfg.SpoolDir)
-	require.NoError(t, err)
-	defer sp.Close()
-	require.NoError(t, sp.Append(spool.Record{IngestID: "i1", ReceivedAt: time.Now(), BodyBase64: "e30=", ProjectSlug: "s"}))
-
-	iq, err := newIngestQueue(ctx, cfg, nil, slog.New(slog.DiscardHandler))
-	require.NoError(t, err)
-	defer iq.Close(context.Background())
-
-	done := make(chan struct{})
-	go func() {
-		runReaderWorker(ctx, cfg, sp, iq, nil)
-		close(done)
-	}()
-	require.Eventually(t, func() bool {
-		n, err := iq.forwarder.list.QueuedLen(context.Background())
-		return err == nil && n == 1
-	}, 5*time.Second, 20*time.Millisecond)
-	cancel()
-	<-done
-}
-
-// flakyPublisher fails the next publish when told to.
-type flakyPublisher struct{ failNext bool }
-
-func (p *flakyPublisher) PublishBatch(context.Context, [][]byte) error {
-	if p.failNext {
-		p.failNext = false
-		return errors.New("connection refused")
-	}
-	return nil
-}
-
-// A reader's buffered commands can keep failing to forward with no other Error
-// on the way, so the forwarder reports repeated stalls itself, once per window.
-func TestFallbackForwarderRepeatedStallsLogErrorOnce(t *testing.T) {
-	const (
-		failed    = "bookkeeping: forwarding buffered commands failed"
-		recovered = "bookkeeping: forwarding buffered commands recovered"
-	)
-	count := levelCounts(t)
-	ctx := context.Background()
-	fallback, err := command.NewSpoolFallback(t.TempDir(), "bookkeeping", 0, slog.Default())
-	require.NoError(t, err)
-	now := time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC)
-	list := &flakyPublisher{}
-	f := &fallbackForwarder{name: "bookkeeping", fallback: fallback, list: list}
-	f.outage.Now = func() time.Time { return now }
-
-	stall := func() {
-		fallback.Submit(ctx, command.TouchAPIKey{KeyHash: "k"})
-		list.failNext = true
-		f.forward(ctx)
-		now = now.Add(29 * time.Second)
-		list.failNext = true
-		f.forward(ctx)
-		now = now.Add(time.Second)
-		f.forward(ctx)
-	}
-
-	stall()
-	require.Equal(t, 1, count("WARN", failed))
-	require.Zero(t, count("ERROR", failed), "29s is under the total")
-	require.Equal(t, 1, count("INFO", recovered))
-
-	stall()
-	require.Equal(t, 1, count("ERROR", failed), "the second run takes the total to 30s")
-
-	stall()
-	stall()
-	require.Equal(t, 1, count("ERROR", failed), "once inside the window")
-	require.Equal(t, 4, count("INFO", recovered))
-
-	now = now.Add(command.OutageWindow)
-	stall()
-	stall()
-	require.Equal(t, 2, count("ERROR", failed), "the pattern goes on past the window")
 }

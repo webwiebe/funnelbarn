@@ -8,55 +8,16 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
-// CanonicalFunnel is an instance-level funnel defined over canonical event keys
-// and evaluated across multiple projects.
-type CanonicalFunnel struct {
-	ID          string                `json:"id"`
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	Scope       string                `json:"scope"`       // "session" (default) or "page_view"
-	ProjectIDs  []string              `json:"project_ids"` // default scope; empty = all projects
-	Segment     string                `json:"segment"`     // default preset segment; "" = none
-	Steps       []CanonicalFunnelStep `json:"steps"`
-	CreatedAt   time.Time             `json:"created_at"`
-}
-
-// CanonicalFunnelStep is one step, referencing a canonical event key.
-type CanonicalFunnelStep struct {
-	StepOrder    int    `json:"step_order"`
-	CanonicalKey string `json:"canonical_key"`
-	Label        string `json:"label"`
-}
-
-// ProjectFunnelBreakdown holds one project's contribution to a canonical funnel.
-type ProjectFunnelBreakdown struct {
-	ProjectID   string             `json:"project_id"`
-	ProjectName string             `json:"project_name"`
-	Steps       []FunnelStepResult `json:"steps"`
-}
-
-// ExcludedProject records a project dropped from a canonical funnel and why.
-type ExcludedProject struct {
-	ProjectID   string `json:"project_id"`
-	ProjectName string `json:"project_name"`
-	Reason      string `json:"reason"`
-}
-
-// CanonicalFunnelResult is the aggregate analysis plus per-project detail.
-type CanonicalFunnelResult struct {
-	Steps            []FunnelStepResult       `json:"steps"` // aggregated across included projects
-	ByProject        []ProjectFunnelBreakdown `json:"by_project"`
-	ExcludedProjects []ExcludedProject        `json:"excluded_projects"`
-}
-
 // CreateCanonicalFunnel inserts a canonical funnel with its steps.
-func (s *Store) CreateCanonicalFunnel(ctx context.Context, f CanonicalFunnel) (CanonicalFunnel, error) {
+func (s *Store) CreateCanonicalFunnel(ctx context.Context, f domain.CanonicalFunnel) (domain.CanonicalFunnel, error) {
 	var err error
 	f.ID, err = generateUUID()
 	if err != nil {
-		return CanonicalFunnel{}, fmt.Errorf("generate uuid: %w", err)
+		return domain.CanonicalFunnel{}, fmt.Errorf("generate uuid: %w", err)
 	}
 	if f.Scope == "" {
 		f.Scope = "session"
@@ -65,25 +26,25 @@ func (s *Store) CreateCanonicalFunnel(ctx context.Context, f CanonicalFunnel) (C
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return CanonicalFunnel{}, err
+		return domain.CanonicalFunnel{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck
 
 	const qf = `INSERT INTO canonical_funnels (id, name, description, scope, project_ids, segment) VALUES (?, ?, ?, ?, ?, ?)`
 	if _, err := tx.ExecContext(ctx, qf, f.ID, f.Name, nullStr(f.Description), f.Scope, string(projectIDsJSON), nullStr(f.Segment)); err != nil {
-		return CanonicalFunnel{}, fmt.Errorf("insert canonical funnel: %w", err)
+		return domain.CanonicalFunnel{}, fmt.Errorf("insert canonical funnel: %w", err)
 	}
 	if err := insertCanonicalSteps(ctx, tx, f.ID, f.Steps); err != nil {
-		return CanonicalFunnel{}, err
+		return domain.CanonicalFunnel{}, err
 	}
 	if err := tx.Commit(); err != nil {
-		return CanonicalFunnel{}, err
+		return domain.CanonicalFunnel{}, err
 	}
 	return s.canonicalFunnelByID(ctx, s.db, f.ID)
 }
 
 // insertCanonicalSteps writes ordered steps for a canonical funnel within a tx.
-func insertCanonicalSteps(ctx context.Context, tx *sql.Tx, funnelID string, steps []CanonicalFunnelStep) error {
+func insertCanonicalSteps(ctx context.Context, tx *sql.Tx, funnelID string, steps []domain.CanonicalFunnelStep) error {
 	const qs = `INSERT INTO canonical_funnel_steps (id, funnel_id, step_order, canonical_key) VALUES (?, ?, ?, ?)`
 	for i := range steps {
 		stepID, err := generateUUID()
@@ -103,40 +64,40 @@ func insertCanonicalSteps(ctx context.Context, tx *sql.Tx, funnelID string, step
 
 // CanonicalFunnelByID fetches a canonical funnel with its steps (step labels are
 // resolved from the canonical_events catalog).
-func (s *ReadStore) CanonicalFunnelByID(ctx context.Context, id string) (CanonicalFunnel, error) {
+func (s *ReadStore) CanonicalFunnelByID(ctx context.Context, id string) (domain.CanonicalFunnel, error) {
 	return s.canonicalFunnelByID(ctx, s.rdb, id)
 }
 
 // canonicalFunnelByID reads through db, so write paths can read back on the write pool.
-func (s *ReadStore) canonicalFunnelByID(ctx context.Context, db querier, id string) (CanonicalFunnel, error) {
+func (s *ReadStore) canonicalFunnelByID(ctx context.Context, db querier, id string) (domain.CanonicalFunnel, error) {
 	const qf = `SELECT id, name, COALESCE(description,''), COALESCE(scope,'session'), COALESCE(project_ids,'[]'), COALESCE(segment,''), created_at FROM canonical_funnels WHERE id = ?`
-	var f CanonicalFunnel
+	var f domain.CanonicalFunnel
 	var projectIDsJSON string
 	if err := db.QueryRowContext(ctx, qf, id).Scan(&f.ID, &f.Name, &f.Description, &f.Scope, &projectIDsJSON, &f.Segment, &f.CreatedAt); err != nil {
-		return CanonicalFunnel{}, err
+		return domain.CanonicalFunnel{}, err
 	}
 	if err := json.Unmarshal([]byte(projectIDsJSON), &f.ProjectIDs); err != nil {
 		slog.WarnContext(ctx, "canonical funnel: malformed project_ids JSON", "funnel_id", f.ID, "raw_len", len(projectIDsJSON), "error", err)
 	}
 	steps, err := s.canonicalFunnelSteps(ctx, db, id)
 	if err != nil {
-		return CanonicalFunnel{}, err
+		return domain.CanonicalFunnel{}, err
 	}
 	f.Steps = steps
 	return f, nil
 }
 
 // ListCanonicalFunnels returns all canonical funnels with their steps.
-func (s *ReadStore) ListCanonicalFunnels(ctx context.Context) ([]CanonicalFunnel, error) {
+func (s *ReadStore) ListCanonicalFunnels(ctx context.Context) ([]domain.CanonicalFunnel, error) {
 	const q = `SELECT id, name, COALESCE(description,''), COALESCE(scope,'session'), COALESCE(project_ids,'[]'), COALESCE(segment,''), created_at FROM canonical_funnels ORDER BY created_at`
 	rows, err := s.rdb.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var funnels []CanonicalFunnel
+	var funnels []domain.CanonicalFunnel
 	for rows.Next() {
-		var f CanonicalFunnel
+		var f domain.CanonicalFunnel
 		var projectIDsJSON string
 		if err := rows.Scan(&f.ID, &f.Name, &f.Description, &f.Scope, &projectIDsJSON, &f.Segment, &f.CreatedAt); err != nil {
 			return nil, err
@@ -160,7 +121,7 @@ func (s *ReadStore) ListCanonicalFunnels(ctx context.Context) ([]CanonicalFunnel
 }
 
 // UpdateCanonicalFunnel replaces a canonical funnel's fields and steps.
-func (s *Store) UpdateCanonicalFunnel(ctx context.Context, f CanonicalFunnel) (CanonicalFunnel, error) {
+func (s *Store) UpdateCanonicalFunnel(ctx context.Context, f domain.CanonicalFunnel) (domain.CanonicalFunnel, error) {
 	if f.Scope == "" {
 		f.Scope = "session"
 	}
@@ -168,26 +129,26 @@ func (s *Store) UpdateCanonicalFunnel(ctx context.Context, f CanonicalFunnel) (C
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return CanonicalFunnel{}, err
+		return domain.CanonicalFunnel{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck
 
 	res, err := tx.ExecContext(ctx, `UPDATE canonical_funnels SET name=?, description=?, scope=?, project_ids=?, segment=? WHERE id=?`,
 		f.Name, nullStr(f.Description), f.Scope, string(projectIDsJSON), nullStr(f.Segment), f.ID)
 	if err != nil {
-		return CanonicalFunnel{}, fmt.Errorf("update canonical funnel: %w", err)
+		return domain.CanonicalFunnel{}, fmt.Errorf("update canonical funnel: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return CanonicalFunnel{}, sql.ErrNoRows
+		return domain.CanonicalFunnel{}, sql.ErrNoRows
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM canonical_funnel_steps WHERE funnel_id=?`, f.ID); err != nil {
-		return CanonicalFunnel{}, fmt.Errorf("delete canonical steps: %w", err)
+		return domain.CanonicalFunnel{}, fmt.Errorf("delete canonical steps: %w", err)
 	}
 	if err := insertCanonicalSteps(ctx, tx, f.ID, f.Steps); err != nil {
-		return CanonicalFunnel{}, err
+		return domain.CanonicalFunnel{}, err
 	}
 	if err := tx.Commit(); err != nil {
-		return CanonicalFunnel{}, err
+		return domain.CanonicalFunnel{}, err
 	}
 	return s.canonicalFunnelByID(ctx, s.db, f.ID)
 }
@@ -200,7 +161,7 @@ func (s *Store) DeleteCanonicalFunnel(ctx context.Context, id string) error {
 
 // canonicalFunnelSteps returns steps ordered by step_order, resolving each
 // canonical key's label from the catalog.
-func (s *ReadStore) canonicalFunnelSteps(ctx context.Context, db querier, funnelID string) ([]CanonicalFunnelStep, error) {
+func (s *ReadStore) canonicalFunnelSteps(ctx context.Context, db querier, funnelID string) ([]domain.CanonicalFunnelStep, error) {
 	const q = `
 		SELECT st.step_order, st.canonical_key, COALESCE(ce.label, st.canonical_key)
 		FROM canonical_funnel_steps st
@@ -212,9 +173,9 @@ func (s *ReadStore) canonicalFunnelSteps(ctx context.Context, db querier, funnel
 		return nil, err
 	}
 	defer rows.Close()
-	var steps []CanonicalFunnelStep
+	var steps []domain.CanonicalFunnelStep
 	for rows.Next() {
-		var st CanonicalFunnelStep
+		var st domain.CanonicalFunnelStep
 		if err := rows.Scan(&st.StepOrder, &st.CanonicalKey, &st.Label); err != nil {
 			return nil, err
 		}
@@ -242,8 +203,8 @@ func nameInClause(names []string) (clause string, args []any) {
 // project that lacks a mapping for ANY step is excluded from the whole funnel
 // and reported in ExcludedProjects. Segmentation reuses the same seg/rules
 // machinery as AnalyzeFunnel.
-func (s *ReadStore) AnalyzeCanonicalFunnel(ctx context.Context, f CanonicalFunnel, projectIDs []string, from, to time.Time, seg *SegmentFilter, rules ...SegmentRule) (CanonicalFunnelResult, error) {
-	var result CanonicalFunnelResult
+func (s *ReadStore) AnalyzeCanonicalFunnel(ctx context.Context, f domain.CanonicalFunnel, projectIDs []string, from, to time.Time, seg *domain.SegmentFilter, rules ...domain.SegmentRule) (domain.CanonicalFunnelResult, error) {
+	var result domain.CanonicalFunnelResult
 	if len(f.Steps) == 0 {
 		return result, nil
 	}
@@ -268,7 +229,7 @@ func (s *ReadStore) AnalyzeCanonicalFunnel(ctx context.Context, f CanonicalFunne
 		// Exclusion rule: a project missing ANY step's mapping is dropped from
 		// the entire funnel and reported.
 		if missingKey := missingCanonicalMapping(f.Steps, canonMap); missingKey != "" {
-			result.ExcludedProjects = append(result.ExcludedProjects, ExcludedProject{
+			result.ExcludedProjects = append(result.ExcludedProjects, domain.ExcludedProject{
 				ProjectID:   pid,
 				ProjectName: nameByID[pid],
 				Reason:      fmt.Sprintf("no event mapped to %q", missingKey),
@@ -283,7 +244,7 @@ func (s *ReadStore) AnalyzeCanonicalFunnel(ctx context.Context, f CanonicalFunne
 		for i, n := range stepCounts {
 			agg[i] += n
 		}
-		result.ByProject = append(result.ByProject, ProjectFunnelBreakdown{
+		result.ByProject = append(result.ByProject, domain.ProjectFunnelBreakdown{
 			ProjectID:   pid,
 			ProjectName: nameByID[pid],
 			Steps:       buildStepResults(f.Steps, stepCounts),
@@ -325,7 +286,7 @@ type canonicalFilter struct {
 }
 
 // canonicalWhere builds the shared filter. An empty scope means session.
-func canonicalWhere(scope string, seg *SegmentFilter, rules []SegmentRule) canonicalFilter {
+func canonicalWhere(scope string, seg *domain.SegmentFilter, rules []domain.SegmentRule) canonicalFilter {
 	presetClause, presetArg, needJoin := segmentParam(seg)
 	ruleClause, ruleArgs, rulesNeedJoin := buildSegmentRuleClause(rules)
 
@@ -357,7 +318,7 @@ func canonicalWhere(scope string, seg *SegmentFilter, rules []SegmentRule) canon
 
 // missingCanonicalMapping returns the first step's canonical key that the
 // project has no event mapped to, or "" when every step is mapped.
-func missingCanonicalMapping(steps []CanonicalFunnelStep, canonMap map[string][]string) string {
+func missingCanonicalMapping(steps []domain.CanonicalFunnelStep, canonMap map[string][]string) string {
 	for _, step := range steps {
 		if len(canonMap[step.CanonicalKey]) == 0 {
 			return step.CanonicalKey
@@ -368,7 +329,7 @@ func missingCanonicalMapping(steps []CanonicalFunnelStep, canonMap map[string][]
 
 // canonicalStepCounts counts the distinct sessions (or page views) of one
 // project per step.
-func (s *ReadStore) canonicalStepCounts(ctx context.Context, steps []CanonicalFunnelStep, canonMap map[string][]string, pid string, from, to time.Time, w canonicalFilter) ([]int64, error) {
+func (s *ReadStore) canonicalStepCounts(ctx context.Context, steps []domain.CanonicalFunnelStep, canonMap map[string][]string, pid string, from, to time.Time, w canonicalFilter) ([]int64, error) {
 	counts := make([]int64, len(steps))
 	for i, step := range steps {
 		inClause, inArgs := nameInClause(canonMap[step.CanonicalKey])
@@ -397,14 +358,14 @@ func (s *ReadStore) canonicalStepCounts(ctx context.Context, steps []CanonicalFu
 
 // buildStepResults turns raw per-step distinct counts into conversion/drop-off
 // results relative to the entry (first) step. Mirrors AnalyzeFunnel's math.
-func buildStepResults(steps []CanonicalFunnelStep, counts []int64) []FunnelStepResult {
-	results := make([]FunnelStepResult, len(steps))
+func buildStepResults(steps []domain.CanonicalFunnelStep, counts []int64) []domain.FunnelStepResult {
+	results := make([]domain.FunnelStepResult, len(steps))
 	var entry int64
 	if len(counts) > 0 {
 		entry = counts[0]
 	}
 	for i, step := range steps {
-		r := FunnelStepResult{StepOrder: step.StepOrder, EventName: step.CanonicalKey, Count: counts[i]}
+		r := domain.FunnelStepResult{StepOrder: step.StepOrder, EventName: step.CanonicalKey, Count: counts[i]}
 		if entry > 0 {
 			r.Conversion = float64(counts[i]) / float64(entry)
 		}

@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // sessionAndCSRF mints a session (cookie + server-side row) + matching CSRF
@@ -45,7 +45,7 @@ func TestHandleListFlags_ReturnsCreated(t *testing.T) {
 	srv, store := newAuthedServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "WithFlags", "withflags")
-	_, _ = store.CreateFlag(ctx, repository.FeatureFlag{
+	_, _ = store.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID:      p.ID,
 		FlagKey:        "feature_x",
 		Name:           "Feature X",
@@ -114,7 +114,7 @@ func TestHandleGetFlag(t *testing.T) {
 	srv, store := newAuthedServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "GetFlag", "getflag")
-	flag, _ := store.CreateFlag(ctx, repository.FeatureFlag{
+	flag, _ := store.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID:      p.ID,
 		FlagKey:        "get_me",
 		Name:           "Get Me",
@@ -153,7 +153,7 @@ func TestHandleDeleteFlag(t *testing.T) {
 	srv, store := newAuthedServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "DeleteFlag", "deleteflag")
-	flag, _ := store.CreateFlag(ctx, repository.FeatureFlag{
+	flag, _ := store.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID:      p.ID,
 		FlagKey:        "kill_me",
 		Name:           "Kill Me",
@@ -201,7 +201,7 @@ func TestHandleCreateFlag_KindDefaultsToExperiment(t *testing.T) {
 	}
 	var resp map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp["flag_kind"] != repository.FlagKindExperiment {
+	if resp["flag_kind"] != domain.FlagKindExperiment {
 		t.Errorf("flag_kind: want experiment, got %v", resp["flag_kind"])
 	}
 }
@@ -212,10 +212,10 @@ func TestHandleUpdateFlag_PreservesKind(t *testing.T) {
 	srv, store := newAuthedServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "KindKeep", "kindkeep")
-	f, err := store.CreateFlag(ctx, repository.FeatureFlag{
+	f, err := store.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID: p.ID, FlagKey: "cap", Name: "Cap", FlagType: "number",
 		Variants: `{"default":10}`, DefaultVariant: "default", Split: `{"default":100}`,
-		TargetingRules: "[]", Status: "active", Kind: repository.FlagKindConfig,
+		TargetingRules: "[]", Status: "active", Kind: domain.FlagKindConfig,
 	})
 	if err != nil {
 		t.Fatalf("CreateFlag: %v", err)
@@ -231,7 +231,7 @@ func TestHandleUpdateFlag_PreservesKind(t *testing.T) {
 	}
 	var resp map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp["flag_kind"] != repository.FlagKindConfig {
+	if resp["flag_kind"] != domain.FlagKindConfig {
 		t.Errorf("flag_kind: want config preserved through a partial update, got %v", resp["flag_kind"])
 	}
 }
@@ -243,7 +243,7 @@ func TestHandleUpdateFlag_StatusOnlyKeepsConversionEvent(t *testing.T) {
 	srv, store := newAuthedServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "ConvKeep", "convkeep")
-	f, err := store.CreateFlag(ctx, repository.FeatureFlag{
+	f, err := store.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID: p.ID, FlagKey: "gate", Name: "Gate", FlagType: "boolean",
 		Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":50,"off":50}`,
 		ConversionEvent: "signup", TargetingRules: "[]", Status: "active",
@@ -278,7 +278,7 @@ func TestHandleUpdateFlag_EmptyConversionEventClearsIt(t *testing.T) {
 	srv, store := newAuthedServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "ConvClear", "convclear")
-	f, err := store.CreateFlag(ctx, repository.FeatureFlag{
+	f, err := store.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID: p.ID, FlagKey: "gate", Name: "Gate", FlagType: "boolean",
 		Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":50,"off":50}`,
 		ConversionEvent: "signup", TargetingRules: "[]", Status: "active",
@@ -338,10 +338,10 @@ func TestHandleFlagAnalysis_ConfigKindReportsUnavailable(t *testing.T) {
 	srv, store := newAuthedServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "KindAnalysis", "kindanalysis")
-	f, err := store.CreateFlag(ctx, repository.FeatureFlag{
+	f, err := store.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID: p.ID, FlagKey: "cap", Name: "Cap", FlagType: "number",
 		Variants: `{"default":10}`, DefaultVariant: "default", Split: `{"default":100}`,
-		TargetingRules: "[]", Status: "active", Kind: repository.FlagKindConfig,
+		TargetingRules: "[]", Status: "active", Kind: domain.FlagKindConfig,
 	})
 	if err != nil {
 		t.Fatalf("CreateFlag: %v", err)
@@ -386,7 +386,7 @@ func TestHandleFlagWrite_RejectsRuleNamingMissingVariant(t *testing.T) {
 		t.Errorf("a rejected create must store nothing, got %d flags", len(flags))
 	}
 
-	flag, err := store.CreateFlag(ctx, repository.FeatureFlag{
+	flag, err := store.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID: p.ID, FlagKey: "ok", Name: "Ok", FlagType: "boolean",
 		Variants: `{"default":false}`, DefaultVariant: "default", Split: "{}", TargetingRules: "[]", Status: "active",
 	})

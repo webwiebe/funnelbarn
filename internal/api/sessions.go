@@ -40,7 +40,7 @@ func (s *Server) handleSessionDistributions(w http.ResponseWriter, r *http.Reque
 		jsonError(w, "project id required", http.StatusBadRequest)
 		return
 	}
-	if s.distributions == nil {
+	if s.sessions == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"distributions": map[string]any{}})
 		return
 	}
@@ -50,7 +50,7 @@ func (s *Server) handleSessionDistributions(w http.ResponseWriter, r *http.Reque
 	)
 	defer span.End()
 
-	dist, err := s.distributions.SessionDistributions(ctx, projectID)
+	dist, err := s.sessions.SessionDistributions(ctx, projectID)
 	if err != nil {
 		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleSessionDistributions")

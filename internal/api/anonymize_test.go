@@ -4,14 +4,19 @@ import (
 	"context"
 	"net/http"
 	"testing"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/ports"
+	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
 // store2Geo returns the config's DB (a memory repository.Store) as a
-// GeoAnonymizer — the store implements the interface directly.
-func store2Geo(cfg *ServerConfig) GeoAnonymizer { return cfg.DB.(GeoAnonymizer) }
+// Privacy service over the store.
+func store2Geo(cfg *ServerConfig) service.Privacy {
+	return service.NewPrivacyService(cfg.DB.(ports.GeoAnonymizerRepo))
+}
 
 func TestHandleAnonymizeGeo_Unavailable(t *testing.T) {
-	// newTestServer wires no GeoAnonymizer -> 503.
+	// newTestServer wires no Privacy service -> 503.
 	srv, _ := newTestServer(t)
 	w := postJSON(t, srv, "/api/v1/admin/anonymize-geo", map[string]string{"ip": "1.2.3.4"}, nil)
 	if w.Code != http.StatusServiceUnavailable {
@@ -20,7 +25,7 @@ func TestHandleAnonymizeGeo_Unavailable(t *testing.T) {
 }
 
 func TestHandleAnonymizeGeo_MissingFields(t *testing.T) {
-	srv, _ := fullServer(t, func(cfg *ServerConfig) { cfg.GeoAnonymizer = store2Geo(cfg) })
+	srv, _ := fullServer(t, func(cfg *ServerConfig) { cfg.Privacy = store2Geo(cfg) })
 	w := postJSON(t, srv, "/api/v1/admin/anonymize-geo", map[string]string{}, nil)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("expected 422, got %d (body: %s)", w.Code, w.Body.String())
@@ -28,7 +33,7 @@ func TestHandleAnonymizeGeo_MissingFields(t *testing.T) {
 }
 
 func TestHandleAnonymizeGeo_InvalidIP(t *testing.T) {
-	srv, _ := fullServer(t, func(cfg *ServerConfig) { cfg.GeoAnonymizer = store2Geo(cfg) })
+	srv, _ := fullServer(t, func(cfg *ServerConfig) { cfg.Privacy = store2Geo(cfg) })
 	w := postJSON(t, srv, "/api/v1/admin/anonymize-geo", map[string]string{"ip": "not-an-ip"}, nil)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("expected 422 for invalid ip, got %d (body: %s)", w.Code, w.Body.String())
@@ -36,7 +41,7 @@ func TestHandleAnonymizeGeo_InvalidIP(t *testing.T) {
 }
 
 func TestHandleAnonymizeGeo_HappyPath(t *testing.T) {
-	srv, store := fullServer(t, func(cfg *ServerConfig) { cfg.GeoAnonymizer = store2Geo(cfg) })
+	srv, store := fullServer(t, func(cfg *ServerConfig) { cfg.Privacy = store2Geo(cfg) })
 	_, _ = store.CreateProject(context.Background(), "Geo", "geo")
 
 	// Both session_id and a valid ip -> two anonymize calls, 200.

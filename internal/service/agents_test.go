@@ -11,21 +11,20 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
 type fakeAgentQueries struct {
-	events []repository.AgentEvent
+	events []domain.AgentEvent
 	err    error
 }
 
-func (f fakeAgentQueries) AgentEvents(_ context.Context, _ string, names []string, from, to time.Time) ([]repository.AgentEvent, error) {
+func (f fakeAgentQueries) AgentEvents(_ context.Context, _ string, names []string, from, to time.Time) ([]domain.AgentEvent, error) {
 	want := map[string]bool{}
 	for _, n := range names {
 		want[n] = true
 	}
-	var out []repository.AgentEvent
+	var out []domain.AgentEvent
 	for _, e := range f.events {
 		if want[e.Name] && !e.OccurredAt.Before(from) && !e.OccurredAt.After(to) {
 			out = append(out, e)
@@ -42,7 +41,7 @@ const (
 
 // agentScript builds the agents project's events for ISO week 2026-W41
 // (Monday 5 October to Sunday 11 October).
-type agentScript struct{ events []repository.AgentEvent }
+type agentScript struct{ events []domain.AgentEvent }
 
 func oct(day, hour, minute int) time.Time {
 	return time.Date(2026, time.October, day, hour, minute, 0, 0, time.UTC)
@@ -60,7 +59,7 @@ func (s *agentScript) gh(name string, at time.Time, issue string, props map[stri
 		p["issue_ref"] = issueRef(issue)
 		hash = enrich.HashUserID(issueRef(issue))
 	}
-	s.events = append(s.events, repository.AgentEvent{Name: name, OccurredAt: at, SessionID: "0123456789abcdef0123456789abcdef", UserIDHash: hash, Properties: p})
+	s.events = append(s.events, domain.AgentEvent{Name: name, OccurredAt: at, SessionID: "0123456789abcdef0123456789abcdef", UserIDHash: hash, Properties: p})
 }
 
 func (s *agentScript) hook(name string, at time.Time, session, issue string) {
@@ -69,7 +68,7 @@ func (s *agentScript) hook(name string, at time.Time, session, issue string) {
 	if issue != "" {
 		hash = enrich.HashUserID(issueRef(issue))
 	}
-	s.events = append(s.events, repository.AgentEvent{Name: name, OccurredAt: at, SessionID: session, UserIDHash: hash, Properties: p})
+	s.events = append(s.events, domain.AgentEvent{Name: name, OccurredAt: at, SessionID: session, UserIDHash: hash, Properties: p})
 }
 
 func (s *agentScript) pr(name string, at time.Time, issue string, n float64, branch, head string, extra map[string]any) {
@@ -88,7 +87,7 @@ func (s *agentScript) workflow(at time.Time, name, conclusion, head string) {
 	s.gh("workflow_completed", at, "", map[string]any{"workflow": name, "conclusion": conclusion, "head_sha": head, "run_attempt": float64(1)})
 }
 
-func weekScript() []repository.AgentEvent {
+func weekScript() []domain.AgentEvent {
 	var s agentScript
 	// Issue 1 (session A): refined without a question, first-pass green,
 	// shipped by a deploy that stays healthy.
@@ -137,12 +136,12 @@ func weekScript() []repository.AgentEvent {
 	// already reports); another repo's production deployment counts, with
 	// no session to credit.
 	s.gh("deployment_status", oct(5, 11, 46), "", map[string]any{"environment": "production", "state": "success", "sha": "m10"})
-	s.events = append(s.events, repository.AgentEvent{Name: "deployment_status", OccurredAt: oct(9, 12, 0),
+	s.events = append(s.events, domain.AgentEvent{Name: "deployment_status", OccurredAt: oct(9, 12, 0),
 		Properties: map[string]any{"source": "github", "repo": "other/repo", "environment": "Production", "state": "success", "sha": "o1"}})
 	return s.events
 }
 
-func newAgentService(events []repository.AgentEvent) *service.AgentService {
+func newAgentService(events []domain.AgentEvent) *service.AgentService {
 	return service.NewAgentService(fakeAgentQueries{events: events}).
 		WithClock(func() time.Time { return oct(12, 10, 0) })
 }

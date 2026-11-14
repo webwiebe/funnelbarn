@@ -16,7 +16,6 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // RecordingChunk is a chunk of rrweb events sent from the SDK.
@@ -31,11 +30,11 @@ type RecordingChunk struct {
 	// Traces are the W3C trace links observed in the browser during this chunk's
 	// window. They are the cross-stack join key (SpanBarn/BugBarn trace_id ->
 	// session/recording). Optional: a chunk with no instrumented requests sends none.
-	Traces      []repository.TraceLink `json:"traces,omitempty"`
-	Environment string                 `json:"-"` // set by the handler from the resolved project
-	ProjectSlug string                 `json:"-"` // set by the handler
-	ProjectID   string                 `json:"-"` // set by the handler after slug lookup
-	UserAgent   string                 `json:"-"` // set by the handler from the request UA header
+	Traces      []domain.TraceLink `json:"traces,omitempty"`
+	Environment string             `json:"-"` // set by the handler from the resolved project
+	ProjectSlug string             `json:"-"` // set by the handler
+	ProjectID   string             `json:"-"` // set by the handler after slug lookup
+	UserAgent   string             `json:"-"` // set by the handler from the request UA header
 }
 
 // RecordingStorage is the interface for chunk blob storage (R2).
@@ -76,9 +75,9 @@ func NewRecordingService(store ports.RecordingRepo, funnels ports.FunnelRepo, ev
 // R2: the recording row it folds into, its index and its trace links. It is
 // small, so it can travel on a queue while the chunk itself stays in R2.
 type ChunkMeta struct {
-	Recording  repository.Recording   `json:"recording"`
-	ChunkIndex int                    `json:"chunk_index"`
-	Traces     []repository.TraceLink `json:"traces,omitempty"`
+	Recording  domain.Recording   `json:"recording"`
+	ChunkIndex int                `json:"chunk_index"`
+	Traces     []domain.TraceLink `json:"traces,omitempty"`
 }
 
 // IngestChunk uploads the chunk to R2 and applies its metadata to SQLite. With
@@ -139,7 +138,7 @@ func (svc *RecordingService) UploadChunk(ctx context.Context, chunk RecordingChu
 	}
 
 	endedAt := chunk.StartedAt.Add(time.Duration(chunk.DurationMs) * time.Millisecond)
-	rec := repository.Recording{
+	rec := domain.Recording{
 		ID:              chunk.RecordingID,
 		ProjectID:       chunk.ProjectID,
 		SessionID:       chunk.SessionID,
@@ -181,30 +180,30 @@ func (svc *RecordingService) ApplyChunkMeta(ctx context.Context, meta ChunkMeta)
 
 // LookupTrace resolves a trace_id (from SpanBarn/BugBarn) to the recording that
 // captured it, scoped to the project. ok is false when the trace is unknown.
-func (svc *RecordingService) LookupTrace(ctx context.Context, projectID, traceID string) (repository.TraceLookup, bool, error) {
+func (svc *RecordingService) LookupTrace(ctx context.Context, projectID, traceID string) (domain.TraceLookup, bool, error) {
 	return svc.store.LookupTrace(ctx, projectID, traceID)
 }
 
 // ownedRecording loads a recording and checks it belongs to projectID. A
 // missing recording and one in another project both wrap domain.ErrNotFound,
 // so the API answers 404 for either.
-func (svc *RecordingService) ownedRecording(ctx context.Context, projectID, recordingID string) (repository.Recording, error) {
+func (svc *RecordingService) ownedRecording(ctx context.Context, projectID, recordingID string) (domain.Recording, error) {
 	rec, err := svc.store.GetRecording(ctx, recordingID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return repository.Recording{}, fmt.Errorf("%w: recording %s", domain.ErrNotFound, recordingID)
+		return domain.Recording{}, fmt.Errorf("%w: recording %s", domain.ErrNotFound, recordingID)
 	}
 	if err != nil {
-		return repository.Recording{}, fmt.Errorf("recordings: get recording: %w", err)
+		return domain.Recording{}, fmt.Errorf("recordings: get recording: %w", err)
 	}
 	if rec.ProjectID != projectID {
-		return repository.Recording{}, fmt.Errorf("%w: recording %s", domain.ErrNotFound, recordingID)
+		return domain.Recording{}, fmt.Errorf("%w: recording %s", domain.ErrNotFound, recordingID)
 	}
 	return rec, nil
 }
 
 // TracesForRecording returns the ordered trace timeline for a recording, after
 // verifying it belongs to the given project.
-func (svc *RecordingService) TracesForRecording(ctx context.Context, projectID, recordingID string) ([]repository.TraceLink, error) {
+func (svc *RecordingService) TracesForRecording(ctx context.Context, projectID, recordingID string) ([]domain.TraceLink, error) {
 	if _, err := svc.ownedRecording(ctx, projectID, recordingID); err != nil {
 		return nil, err
 	}
@@ -299,7 +298,7 @@ func (svc *RecordingService) PurgeProjectRecordings(ctx context.Context, project
 	const batch = 500
 	offset := 0
 	for {
-		recs, err := svc.store.ListRecordings(ctx, projectID, repository.RecordingListOpts{Limit: batch, Offset: offset})
+		recs, err := svc.store.ListRecordings(ctx, projectID, domain.RecordingListOpts{Limit: batch, Offset: offset})
 		if err != nil {
 			return fmt.Errorf("recordings: list for project purge: %w", err)
 		}
@@ -345,7 +344,7 @@ func (svc *RecordingService) deleteChunks(ctx context.Context, projectSlug, reco
 }
 
 // ListRecordings returns recordings for a project with optional filters.
-func (svc *RecordingService) ListRecordings(ctx context.Context, projectID string, opts repository.RecordingListOpts) ([]repository.Recording, error) {
+func (svc *RecordingService) ListRecordings(ctx context.Context, projectID string, opts domain.RecordingListOpts) ([]domain.Recording, error) {
 	return svc.store.ListRecordings(ctx, projectID, opts)
 }
 
@@ -395,7 +394,7 @@ func (svc *RecordingService) GetRecordingSessionID(ctx context.Context, projectI
 }
 
 // FlagEvaluationsForSession returns flag evaluations for the session linked to a recording.
-func (svc *RecordingService) FlagEvaluationsForSession(ctx context.Context, projectID, sessionID string) ([]repository.FlagEvaluationEntry, error) {
+func (svc *RecordingService) FlagEvaluationsForSession(ctx context.Context, projectID, sessionID string) ([]domain.FlagEvaluationEntry, error) {
 	return svc.store.FlagEvaluationsForSession(ctx, sessionID, projectID)
 }
 
@@ -409,7 +408,7 @@ func (svc *RecordingService) SessionsAtStep(ctx context.Context, funnelID, proje
 	if f.ProjectID != projectID {
 		return nil, fmt.Errorf("recordings: funnel not found")
 	}
-	return svc.funnels.SessionsAtStep(ctx, f, stepOrder, from, to, 100, repository.EnvironmentRule(environment)...)
+	return svc.funnels.SessionsAtStep(ctx, f, stepOrder, from, to, 100, domain.EnvironmentRule(environment)...)
 }
 
 // SessionsForPage returns session IDs that visited the given page URL.

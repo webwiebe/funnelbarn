@@ -37,7 +37,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -62,7 +62,7 @@ type Deps struct {
 
 	// SetupDoc renders a project's setup guide, the document served at
 	// GET /api/v1/setup/{slug}. Nil makes get_setup_guide return an error.
-	SetupDoc func(ctx context.Context, project repository.Project) (string, error)
+	SetupDoc func(ctx context.Context, project domain.Project) (string, error)
 
 	// Allow reports whether the caller identified by key (the token subject)
 	// may make another call now. Nil disables rate limiting.

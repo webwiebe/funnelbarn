@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func TestStore_PurgeOldEvaluations(t *testing.T) {
@@ -18,7 +18,7 @@ func TestStore_PurgeOldEvaluations(t *testing.T) {
 	p, err := s.CreateProject(ctx, "PurgeEval", "purge-eval")
 	require.NoError(t, err)
 
-	f, err := s.CreateFlag(ctx, repository.FeatureFlag{
+	f, err := s.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID:      p.ID,
 		FlagKey:        "test-flag",
 		Name:           "Test Flag",
@@ -31,7 +31,7 @@ func TestStore_PurgeOldEvaluations(t *testing.T) {
 	require.NoError(t, err)
 
 	for i := 0; i < 5; i++ {
-		err = s.RecordEvaluation(ctx, repository.FlagEvaluation{
+		err = s.RecordEvaluation(ctx, domain.FlagEvaluation{
 			FlagID:      f.ID,
 			ProjectID:   p.ID,
 			Variant:     "on",

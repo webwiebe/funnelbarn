@@ -8,11 +8,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
-func autoFlag(projectID, key string) repository.FeatureFlag {
-	return repository.FeatureFlag{
+func autoFlag(projectID, key string) domain.FeatureFlag {
+	return domain.FeatureFlag{
 		ProjectID:      projectID,
 		FlagKey:        key,
 		Name:           key,
@@ -58,7 +58,7 @@ func TestStore_CountAutoFlags_IgnoresManual(t *testing.T) {
 	_, err = s.EnsureAutoFlag(ctx, autoFlag(p.ID, "a2"))
 	require.NoError(t, err)
 	// A manual flag must not count.
-	_, err = s.CreateFlag(ctx, repository.FeatureFlag{
+	_, err = s.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID: p.ID, FlagKey: "manual", Name: "manual", FlagType: "boolean",
 		Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: "{}", Status: "active",
 	})
@@ -103,7 +103,7 @@ func TestStore_PurgeStaleAutoFlags(t *testing.T) {
 	require.NoError(t, err)
 
 	// manual+inactive — kept (human-claimed).
-	_, err = s.CreateFlag(ctx, repository.FeatureFlag{
+	_, err = s.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID: p.ID, FlagKey: "manual_inactive", Name: "m", FlagType: "boolean",
 		Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: "{}", Status: "inactive",
 	})

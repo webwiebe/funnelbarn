@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -21,7 +20,7 @@ func TestABTestService_CreateABTest_Valid(t *testing.T) {
 	p, err := projSvc.CreateProject(ctx, "AB Project", "ab-project-valid")
 	require.NoError(t, err)
 
-	test, err := abSvc.CreateABTest(ctx, repository.ABTest{
+	test, err := abSvc.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       p.ID,
 		Name:            "My Test",
 		Status:          "running",
@@ -43,7 +42,7 @@ func TestABTestService_CreateABTest_EmptyName(t *testing.T) {
 	p, err := projSvc.CreateProject(ctx, "AB Project", "ab-project-emptyname")
 	require.NoError(t, err)
 
-	_, err = abSvc.CreateABTest(ctx, repository.ABTest{
+	_, err = abSvc.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       p.ID,
 		Name:            "",
 		ConversionEvent: "purchase",
@@ -61,7 +60,7 @@ func TestABTestService_CreateABTest_EmptyConversionEvent(t *testing.T) {
 	p, err := projSvc.CreateProject(ctx, "AB Project", "ab-project-emptycv")
 	require.NoError(t, err)
 
-	_, err = abSvc.CreateABTest(ctx, repository.ABTest{
+	_, err = abSvc.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       p.ID,
 		Name:            "My Test",
 		ConversionEvent: "",
@@ -79,7 +78,7 @@ func TestABTestService_ListABTests(t *testing.T) {
 	p, err := projSvc.CreateProject(ctx, "AB Project", "ab-project-list")
 	require.NoError(t, err)
 
-	_, err = abSvc.CreateABTest(ctx, repository.ABTest{
+	_, err = abSvc.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       p.ID,
 		Name:            "Test A",
 		Status:          "running",
@@ -87,7 +86,7 @@ func TestABTestService_ListABTests(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = abSvc.CreateABTest(ctx, repository.ABTest{
+	_, err = abSvc.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       p.ID,
 		Name:            "Test B",
 		Status:          "paused",

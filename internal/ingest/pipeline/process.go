@@ -1,0 +1,357 @@
+package pipeline
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
+	"github.com/wiebe-xyz/funnelbarn/internal/environment"
+	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
+	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
+	"github.com/wiebe-xyz/funnelbarn/internal/session"
+	"github.com/wiebe-xyz/funnelbarn/internal/spool"
+)
+
+// EventPayload is the JSON body accepted by POST /api/v1/events.
+type EventPayload struct {
+	Name           string         `json:"name"`
+	URL            string         `json:"url"`
+	Referrer       string         `json:"referrer"`
+	UTMSource      string         `json:"utm_source"`
+	UTMMedium      string         `json:"utm_medium"`
+	UTMCampaign    string         `json:"utm_campaign"`
+	UTMTerm        string         `json:"utm_term"`
+	UTMContent     string         `json:"utm_content"`
+	Properties     map[string]any `json:"properties"`
+	SessionID      string         `json:"session_id"`
+	UserID         string         `json:"user_id"`
+	UserAgent      string         `json:"user_agent"`
+	PageViewID     string         `json:"page_view_id"`
+	SessionSignals map[string]any `json:"session_signals"`
+	Timestamp      time.Time      `json:"timestamp"`
+	Environment    string         `json:"environment"`
+}
+
+// resolveSessionID returns the client's session ID when it is one of ours, and
+// otherwise a fingerprint of in, counting why the client's own was not used.
+func resolveSessionID(sent string, in session.FingerprintInput) string {
+	if sent != "" && session.IsValidSessionID(sent) {
+		return sent
+	}
+	reason := "missing"
+	if sent != "" {
+		reason = "invalid"
+	}
+	metrics.SessionsFingerprinted.WithLabelValues(reason).Inc()
+	return session.Fingerprint(in)
+}
+
+// ProcessRecord decodes and enriches a spool record into a domain.Event.
+// It does not touch the database.
+func ProcessRecord(record spool.Record) (domain.Event, error) {
+	body, err := base64.StdEncoding.DecodeString(record.BodyBase64)
+	if err != nil {
+		return domain.Event{}, fmt.Errorf("decode body: %w", err)
+	}
+
+	var payload EventPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return domain.Event{}, fmt.Errorf("unmarshal payload: %w", err)
+	}
+
+	if payload.Name == "" {
+		return domain.Event{}, fmt.Errorf("event name is required")
+	}
+
+	occurredAt := payload.Timestamp
+	if occurredAt.IsZero() {
+		occurredAt = record.ReceivedAt
+	}
+
+	// Normalize environment to a canonical value. An unrecognised value is
+	// filed as development rather than rejected — dropping an event over a typo
+	// is worse than mis-filing it — and said once per distinct value, because a
+	// production client with a typo goes missing from production. An absent
+	// value is filed as production: the analytics filters compare environment
+	// for equality, so an untagged event is invisible under every filter
+	// including the one the dashboard defaults to.
+	env := environment.NormalizeEvent(payload.Environment)
+	if !environment.IsKnown(payload.Environment) {
+		warnUnknownEnvironment(payload.Environment, env, record.ProjectSlug)
+	}
+
+	// The user agent. SDKs that post from a browser leave user_agent out of the
+	// payload (XHR cannot set it), so fall back to the request header the ingest
+	// handler captured. Without this fallback browser/os/device_type are empty
+	// on every such event and the audience widgets have nothing to group by.
+	ua := payload.UserAgent
+	if ua == "" {
+		ua = record.UserAgent
+	}
+
+	// The address the visitor actually came from. record.RemoteAddr is the TCP
+	// peer, which behind an ingress or CDN is the proxy, identical for every
+	// visitor; ClientIP is resolved from the forwarding headers at the edge.
+	clientIP := record.ClientIP
+	if clientIP == "" {
+		clientIP = record.RemoteAddr
+	}
+
+	// Derive session ID. A client that sends none of its own — or sends
+	// something that is not one of ours — gets a fingerprint instead.
+	sessionID := resolveSessionID(payload.SessionID, session.FingerprintInput{
+		ClientIP:    clientIP,
+		UserAgent:   ua,
+		ProjectSlug: record.ProjectSlug,
+		Environment: env,
+		At:          occurredAt,
+	})
+
+	// Drop the values of sensitive query parameters (one-time sign-in and
+	// reset tokens, OAuth codes) before anything reads or stores the URLs. A
+	// site that puts such a token in its address bar would otherwise have it
+	// kept in events, sessions and every export. The session's entry and exit
+	// URLs are copied from these fields, so they are covered too.
+	payload.URL = enrich.RedactURL(payload.URL)
+	payload.Referrer = enrich.RedactURL(payload.Referrer)
+	payload.Properties = enrich.RedactURLStrings(payload.Properties)
+
+	// Extract UTM from URL if not provided directly.
+	utmFromURL := enrich.ExtractUTM(payload.URL)
+	utmSource := coalesce(payload.UTMSource, utmFromURL.Source)
+	utmMedium := coalesce(payload.UTMMedium, utmFromURL.Medium)
+	utmCampaign := coalesce(payload.UTMCampaign, utmFromURL.Campaign)
+	utmTerm := coalesce(payload.UTMTerm, utmFromURL.Term)
+	utmContent := coalesce(payload.UTMContent, utmFromURL.Content)
+
+	// Encode properties.
+	propsJSON := ""
+	if len(payload.Properties) > 0 {
+		b, _ := json.Marshal(payload.Properties)
+		propsJSON = string(b)
+	}
+
+	// Hash user ID for privacy-safe storage.
+	userIDHash := enrich.HashUserID(payload.UserID)
+
+	// Extract referrer domain.
+	referrerDomain := enrich.ExtractReferrerDomain(payload.Referrer)
+
+	// Parse user agent.
+	var browser, osName, deviceType string
+	if ua != "" {
+		uaInfo := enrich.ParseUA(ua)
+		browser = uaInfo.Browser
+		osName = uaInfo.OS
+		deviceType = uaInfo.DeviceType
+	}
+
+	eventID, err := generateUUIDLocal()
+	if err != nil {
+		return domain.Event{}, fmt.Errorf("generate uuid: %w", err)
+	}
+
+	event := domain.Event{
+		ID:             eventID,
+		SessionID:      sessionID,
+		UserIDHash:     userIDHash,
+		Name:           payload.Name,
+		URL:            payload.URL,
+		Referrer:       payload.Referrer,
+		ReferrerDomain: referrerDomain,
+		UTMSource:      utmSource,
+		UTMMedium:      utmMedium,
+		UTMCampaign:    utmCampaign,
+		UTMTerm:        utmTerm,
+		UTMContent:     utmContent,
+		Properties:     propsJSON,
+		UserAgent:      ua,
+		Browser:        browser,
+		OS:             osName,
+		DeviceType:     deviceType,
+		PageViewID:     payload.PageViewID,
+		IngestID:       record.IngestID,
+		OccurredAt:     occurredAt,
+		ClientIP:       clientIP,
+		Environment:    env,
+	}
+	// Carry session signals through as a transient field for PersistEvent.
+	if len(payload.SessionSignals) > 0 {
+		event.SessionSignalsRaw = payload.SessionSignals
+	}
+
+	return event, nil
+}
+
+// EventPersister is the narrow repository interface PersistEvent requires.
+// PersistEvent stores the event, the session upsert and the session signals
+// in one transaction and skips an ingest_id that is already stored.
+type EventPersister interface {
+	PersistEvent(ctx context.Context, e domain.Event, sess domain.Session, signals *domain.SessionSignals) (bool, error)
+}
+
+// ErrNoProject means the event carries no project ID. events.project_id is
+// NOT NULL REFERENCES projects(id), so inserting one produces an opaque
+// "FOREIGN KEY constraint failed (787)" that says nothing about which parent
+// row was missing. Catch it here, where the cause is still nameable.
+var ErrNoProject = errors.New("event has no project ID")
+
+// PersistEvent stores an event and upserts the associated session.
+// geo may be nil when geo collection is disabled or the database is unconfigured.
+func PersistEvent(ctx context.Context, store EventPersister, event domain.Event, geo *geoip.GeoResult) error {
+	if event.ProjectID == "" {
+		return fmt.Errorf("%w (ingest_id %s, event %q)", ErrNoProject, event.IngestID, event.Name)
+	}
+
+	// Carry the resolved country onto the event itself. The geo lookup was
+	// only ever written to the session row, so events.country_code stayed empty
+	// and the country widgets — which group events, not sessions — returned
+	// nothing. Only overwrite when the lookup produced something, so a payload
+	// that already carried a country keeps it.
+	if geo != nil && geo.CountryCode != "" {
+		event.CountryCode = geo.CountryCode
+	}
+
+	sess := domain.Session{
+		ID:          event.SessionID,
+		ProjectID:   event.ProjectID,
+		FirstSeenAt: event.OccurredAt,
+		LastSeenAt:  event.OccurredAt,
+		EntryURL:    event.URL,
+		ExitURL:     event.URL,
+		Referrer:    event.Referrer,
+		UTMSource:   event.UTMSource,
+		UTMMedium:   event.UTMMedium,
+		UTMCampaign: event.UTMCampaign,
+		DeviceType:  event.DeviceType,
+		CountryCode: event.CountryCode,
+		Environment: event.Environment,
+	}
+	if geo != nil {
+		sess.CountryCode = geo.CountryCode
+		sess.IP = event.ClientIP
+		sess.City = geo.City
+		sess.Region = geo.Region
+		sess.Latitude = geo.Latitude
+		sess.Longitude = geo.Longitude
+		sess.Timezone = geo.Timezone
+		sess.ASNOrg = geo.ASNOrg
+		sess.ConnectionClass = geo.ConnectionClass
+	}
+	// Device/browser signals arrive on the first event of a session only.
+	var signals *domain.SessionSignals
+	if len(event.SessionSignalsRaw) > 0 {
+		parsed := parseSessionSignals(event.SessionSignalsRaw)
+		signals = &parsed
+	}
+
+	// One transaction: a redelivered ingest_id is skipped, so a replay cannot
+	// count the session twice, and a failure stores nothing and is retried.
+	inserted, err := store.PersistEvent(ctx, event, sess, signals)
+	if err != nil {
+		return fmt.Errorf("persist event: %w", err)
+	}
+	if !inserted {
+		slog.Debug("event already stored, skipping", "ingest_id", event.IngestID)
+		return nil
+	}
+
+	slog.Info("event stored",
+		"ingest_id", event.IngestID,
+		"event_id", event.ID,
+		"project_id", event.ProjectID,
+		"event_name", event.Name,
+		"session_id", event.SessionID,
+	)
+	return nil
+}
+
+func parseSessionSignals(raw map[string]any) domain.SessionSignals {
+	var s domain.SessionSignals
+	if v, ok := raw["screen_width"].(float64); ok {
+		n := int(v)
+		s.ScreenWidth = &n
+	}
+	if v, ok := raw["screen_height"].(float64); ok {
+		n := int(v)
+		s.ScreenHeight = &n
+	}
+	if v, ok := raw["pixel_ratio"].(float64); ok {
+		s.PixelRatio = &v
+	}
+	if v, ok := raw["touch"].(bool); ok {
+		s.Touch = &v
+	}
+	if v, ok := raw["dark_mode"].(bool); ok {
+		s.DarkMode = &v
+	}
+	if v, ok := raw["reduced_motion"].(bool); ok {
+		s.ReducedMotion = &v
+	}
+	if v, ok := raw["browser_timezone"].(string); ok {
+		s.BrowserTimezone = v
+	}
+	if v, ok := raw["cpu_cores"].(float64); ok {
+		n := int(v)
+		s.CPUCores = &n
+	}
+	return s
+}
+
+// SafeProcess wraps ProcessRecord with a panic recovery so that a panicking
+// record does not crash the background worker goroutine.
+func SafeProcess(rec spool.Record) (event domain.Event, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			slog.Error("worker panic", "ingest_id", rec.IngestID, "panic", fmt.Sprint(p))
+			err = fmt.Errorf("worker panic: %v", p)
+		}
+	}()
+	return ProcessRecord(rec)
+}
+
+func coalesce(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// unknownEnvironments bounds the "unrecognised environment" warning to one line
+// per distinct value per process, so a misconfigured client reports its typo
+// once instead of thousands of times a day. The cap stops a caller that sends a
+// random value per event from growing the set without limit.
+var unknownEnvironments = struct {
+	sync.Mutex
+	seen map[string]struct{}
+}{seen: make(map[string]struct{})}
+
+const maxTrackedUnknownEnvironments = 64
+
+func warnUnknownEnvironment(raw, filedAs, project string) {
+	unknownEnvironments.Lock()
+	_, already := unknownEnvironments.seen[raw]
+	if !already && len(unknownEnvironments.seen) < maxTrackedUnknownEnvironments {
+		unknownEnvironments.seen[raw] = struct{}{}
+	}
+	unknownEnvironments.Unlock()
+	if already {
+		return
+	}
+	slog.Warn("event carries an unrecognised environment; filing it under the default",
+		"handled", true,
+		"environment", raw,
+		"filed_as", filedAs,
+		"project", project,
+		"known", environment.Canonical(),
+	)
+}

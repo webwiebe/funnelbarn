@@ -158,10 +158,10 @@ All work in this phase is complete unless marked TODO.
 
 ### 1.7 Background Worker
 
-- [x] `internal/worker/worker.go`: `ProcessRecord()`, `PersistEvent()`
-- [x] `internal/worker/uuid.go`: local UUID v4 generation (avoids import cycle with storage)
-- [x] `cmd/funnelbarn/main.go`: `runBackgroundWorker()` with 1s ticker, retry counting, dead-letter on max retries, spool rotation
-- [ ] `internal/worker/worker_test.go`: unit tests for record decoding, enrichment pipeline
+- [x] `internal/ingest/pipeline/process.go`: `ProcessRecord()`, `PersistEvent()`
+- [x] `internal/ingest/pipeline/uuid.go`: local UUID v4 generation (avoids import cycle with storage)
+- [x] `cmd/funnelbarn/main.go`: `pipeline.RunWorker()` with 1s ticker, retry counting, dead-letter on max retries, spool rotation
+- [ ] `internal/ingest/pipeline/process_test.go`: unit tests for record decoding, enrichment pipeline
 
 ### 1.8 API Server
 

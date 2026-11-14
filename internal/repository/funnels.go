@@ -6,72 +6,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
-// validPropertyName matches only alphanumeric and underscore characters.
-var validPropertyName = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
-
-// Funnel is a multi-step conversion funnel.
-type Funnel struct {
-	ID          string       `json:"id"`
-	ProjectID   string       `json:"project_id"`
-	Name        string       `json:"name"`
-	Description string       `json:"description"`
-	Scope       string       `json:"scope"` // "session" (default), "page_view" or "user"
-	Steps       []FunnelStep `json:"steps"`
-	CreatedAt   time.Time    `json:"created_at"`
-
-	// ConversionWindowSeconds bounds a "user" funnel: every later step must
-	// happen within this many seconds of step 1. Nil means
-	// DefaultConversionWindow. The other scopes ignore it.
-	ConversionWindowSeconds *int64 `json:"conversion_window_seconds,omitempty"`
-
-	// UnmatchedSteps lists the step event names this project has never emitted.
-	// A funnel whose steps reference names the project does not send can never
-	// report a conversion, and presents as a legitimate zero-conversion funnel
-	// rather than as misconfiguration — 20 of 37 funnels in production are in
-	// that state. Read-only: computed on load, never persisted, ignored on write.
-	UnmatchedSteps []string `json:"unmatched_steps,omitempty"`
-}
-
-// FunnelStep is one step in a funnel.
-type FunnelStep struct {
-	ID        string         `json:"id"`
-	FunnelID  string         `json:"funnel_id"`
-	StepOrder int            `json:"step_order"`
-	EventName string         `json:"event_name"`
-	Filters   []FunnelFilter `json:"filters"`
-}
-
-// FunnelFilter filters events at a funnel step by property value.
-type FunnelFilter struct {
-	Property string `json:"property"`
-	Value    string `json:"value"`
-}
-
-// FunnelStepResult holds analysis results for one funnel step.
-type FunnelStepResult struct {
-	StepOrder  int     `json:"step_order"`
-	EventName  string  `json:"event_name"`
-	Count      int64   `json:"count"`
-	Conversion float64 `json:"conversion"`
-	DropOff    float64 `json:"drop_off"`
-}
-
 // CreateFunnel inserts a funnel with its steps.
-func (s *Store) CreateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
+func (s *Store) CreateFunnel(ctx context.Context, f domain.Funnel) (domain.Funnel, error) {
 	var err error
 	f.ID, err = generateUUID()
 	if err != nil {
-		return Funnel{}, fmt.Errorf("generate uuid: %w", err)
+		return domain.Funnel{}, fmt.Errorf("generate uuid: %w", err)
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return Funnel{}, err
+		return domain.Funnel{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck
 
@@ -80,12 +31,12 @@ func (s *Store) CreateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
 	}
 	const qf = `INSERT INTO funnels (id, project_id, name, description, scope, conversion_window_seconds) VALUES (?, ?, ?, ?, ?, ?)`
 	if _, err := tx.ExecContext(ctx, qf, f.ID, f.ProjectID, f.Name, nullStr(f.Description), f.Scope, nullInt64(f.ConversionWindowSeconds)); err != nil {
-		return Funnel{}, fmt.Errorf("insert funnel: %w", err)
+		return domain.Funnel{}, fmt.Errorf("insert funnel: %w", err)
 	}
 
 	for i, step := range f.Steps {
 		if strings.TrimSpace(step.EventName) == "" {
-			return Funnel{}, fmt.Errorf("step %d: event_name is required", i+1)
+			return domain.Funnel{}, fmt.Errorf("step %d: event_name is required", i+1)
 		}
 	}
 
@@ -93,54 +44,54 @@ func (s *Store) CreateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
 	for i := range f.Steps {
 		f.Steps[i].ID, err = generateUUID()
 		if err != nil {
-			return Funnel{}, fmt.Errorf("generate uuid: %w", err)
+			return domain.Funnel{}, fmt.Errorf("generate uuid: %w", err)
 		}
 		f.Steps[i].FunnelID = f.ID
 		f.Steps[i].StepOrder = i + 1
 
 		filtersJSON, _ := json.Marshal(f.Steps[i].Filters)
 		if _, err := tx.ExecContext(ctx, qs, f.Steps[i].ID, f.ID, f.Steps[i].StepOrder, f.Steps[i].EventName, string(filtersJSON)); err != nil {
-			return Funnel{}, fmt.Errorf("insert funnel step: %w", err)
+			return domain.Funnel{}, fmt.Errorf("insert funnel step: %w", err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return Funnel{}, err
+		return domain.Funnel{}, err
 	}
 
 	return s.funnelByID(ctx, s.db, f.ID)
 }
 
 // FunnelByID fetches a funnel with all its steps.
-func (s *ReadStore) FunnelByID(ctx context.Context, id string) (Funnel, error) {
+func (s *ReadStore) FunnelByID(ctx context.Context, id string) (domain.Funnel, error) {
 	return s.funnelByID(ctx, s.rdb, id)
 }
 
 // funnelByID reads a funnel through db, so write paths can read back on the write pool.
-func (s *ReadStore) funnelByID(ctx context.Context, db querier, id string) (Funnel, error) {
+func (s *ReadStore) funnelByID(ctx context.Context, db querier, id string) (domain.Funnel, error) {
 	const qf = `SELECT id, project_id, name, COALESCE(description,''), COALESCE(scope,'session'), created_at, conversion_window_seconds FROM funnels WHERE id = ?`
-	var f Funnel
+	var f domain.Funnel
 	var window sql.NullInt64
 	if err := db.QueryRowContext(ctx, qf, id).Scan(&f.ID, &f.ProjectID, &f.Name, &f.Description, &f.Scope, &f.CreatedAt, &window); err != nil {
-		return Funnel{}, err
+		return domain.Funnel{}, err
 	}
 	f.ConversionWindowSeconds = int64Ptr(window)
 
 	steps, err := s.funnelSteps(ctx, db, id)
 	if err != nil {
-		return Funnel{}, err
+		return domain.Funnel{}, err
 	}
 	f.Steps = steps
 
-	one := []Funnel{f}
+	one := []domain.Funnel{f}
 	if err := s.annotateUnmatchedSteps(ctx, db, f.ProjectID, one); err != nil {
-		return Funnel{}, err
+		return domain.Funnel{}, err
 	}
 	return one[0], nil
 }
 
 // ListFunnels returns all funnels for a project.
-func (s *ReadStore) ListFunnels(ctx context.Context, projectID string) ([]Funnel, error) {
+func (s *ReadStore) ListFunnels(ctx context.Context, projectID string) ([]domain.Funnel, error) {
 	const q = `SELECT id, project_id, name, COALESCE(description,''), COALESCE(scope,'session'), created_at, conversion_window_seconds FROM funnels WHERE project_id = ? ORDER BY created_at`
 	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
@@ -148,9 +99,9 @@ func (s *ReadStore) ListFunnels(ctx context.Context, projectID string) ([]Funnel
 	}
 	defer rows.Close()
 
-	var funnels []Funnel
+	var funnels []domain.Funnel
 	for rows.Next() {
-		var f Funnel
+		var f domain.Funnel
 		var window sql.NullInt64
 		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Name, &f.Description, &f.Scope, &f.CreatedAt, &window); err != nil {
 			return nil, err
@@ -178,10 +129,10 @@ func (s *ReadStore) ListFunnels(ctx context.Context, projectID string) ([]Funnel
 }
 
 // UpdateFunnel replaces a funnel's name and steps.
-func (s *Store) UpdateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
+func (s *Store) UpdateFunnel(ctx context.Context, f domain.Funnel) (domain.Funnel, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return Funnel{}, err
+		return domain.Funnel{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck
 
@@ -189,30 +140,30 @@ func (s *Store) UpdateFunnel(ctx context.Context, f Funnel) (Funnel, error) {
 		f.Scope = "session"
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE funnels SET name=?, description=?, scope=?, conversion_window_seconds=? WHERE id=?`, f.Name, nullStr(f.Description), f.Scope, nullInt64(f.ConversionWindowSeconds), f.ID); err != nil {
-		return Funnel{}, fmt.Errorf("update funnel: %w", err)
+		return domain.Funnel{}, fmt.Errorf("update funnel: %w", err)
 	}
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM funnel_steps WHERE funnel_id=?`, f.ID); err != nil {
-		return Funnel{}, fmt.Errorf("delete funnel steps: %w", err)
+		return domain.Funnel{}, fmt.Errorf("delete funnel steps: %w", err)
 	}
 
 	const qs = `INSERT INTO funnel_steps (id, funnel_id, step_order, event_name, filters) VALUES (?, ?, ?, ?, ?)`
 	for i := range f.Steps {
 		f.Steps[i].ID, err = generateUUID()
 		if err != nil {
-			return Funnel{}, fmt.Errorf("generate uuid: %w", err)
+			return domain.Funnel{}, fmt.Errorf("generate uuid: %w", err)
 		}
 		f.Steps[i].FunnelID = f.ID
 		f.Steps[i].StepOrder = i + 1
 
 		filtersJSON, _ := json.Marshal(f.Steps[i].Filters)
 		if _, err := tx.ExecContext(ctx, qs, f.Steps[i].ID, f.ID, f.Steps[i].StepOrder, f.Steps[i].EventName, string(filtersJSON)); err != nil {
-			return Funnel{}, fmt.Errorf("insert funnel step: %w", err)
+			return domain.Funnel{}, fmt.Errorf("insert funnel step: %w", err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return Funnel{}, err
+		return domain.Funnel{}, err
 	}
 
 	return s.funnelByID(ctx, s.db, f.ID)
@@ -226,7 +177,7 @@ func (s *Store) DeleteFunnel(ctx context.Context, id string) error {
 }
 
 // funnelSteps returns steps for a funnel ordered by step_order.
-func (s *ReadStore) funnelSteps(ctx context.Context, db querier, funnelID string) ([]FunnelStep, error) {
+func (s *ReadStore) funnelSteps(ctx context.Context, db querier, funnelID string) ([]domain.FunnelStep, error) {
 	const q = `SELECT id, funnel_id, step_order, event_name, COALESCE(filters,'[]') FROM funnel_steps WHERE funnel_id = ? ORDER BY step_order`
 	rows, err := db.QueryContext(ctx, q, funnelID)
 	if err != nil {
@@ -234,9 +185,9 @@ func (s *ReadStore) funnelSteps(ctx context.Context, db querier, funnelID string
 	}
 	defer rows.Close()
 
-	var steps []FunnelStep
+	var steps []domain.FunnelStep
 	for rows.Next() {
-		var step FunnelStep
+		var step domain.FunnelStep
 		var filtersJSON string
 		if err := rows.Scan(&step.ID, &step.FunnelID, &step.StepOrder, &step.EventName, &filtersJSON); err != nil {
 			return nil, err
@@ -253,13 +204,13 @@ func (s *ReadStore) funnelSteps(ctx context.Context, db querier, funnelID string
 
 // AnalyzeFunnel computes conversion rates for each step of a funnel over a time range.
 // seg is the legacy preset filter; rules are additional stored segment conditions (ANDed together).
-func (s *ReadStore) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.Time, seg *SegmentFilter, rules ...SegmentRule) ([]FunnelStepResult, error) {
+func (s *ReadStore) AnalyzeFunnel(ctx context.Context, f domain.Funnel, from, to time.Time, seg *domain.SegmentFilter, rules ...domain.SegmentRule) ([]domain.FunnelStepResult, error) {
 	if len(f.Steps) == 0 {
 		return nil, nil
 	}
 
-	pageViewScope := f.Scope == FunnelScopePageView
-	userScope := f.Scope == FunnelScopeUser
+	pageViewScope := f.Scope == domain.FunnelScopePageView
+	userScope := f.Scope == domain.FunnelScopeUser
 	extraWhere, extraArgs, needJoin := funnelExtraWhere(f, seg, rules)
 
 	if userScope {
@@ -310,11 +261,11 @@ func (s *ReadStore) AnalyzeFunnel(ctx context.Context, f Funnel, from, to time.T
 }
 
 // funnelResults turns per-step counts into conversion and drop-off rates.
-func funnelResults(f Funnel, stepCounts []int64) []FunnelStepResult {
-	results := make([]FunnelStepResult, len(f.Steps))
+func funnelResults(f domain.Funnel, stepCounts []int64) []domain.FunnelStepResult {
+	results := make([]domain.FunnelStepResult, len(f.Steps))
 	entry := stepCounts[0]
 	for i, step := range f.Steps {
-		r := FunnelStepResult{StepOrder: step.StepOrder, EventName: step.EventName, Count: stepCounts[i]}
+		r := domain.FunnelStepResult{StepOrder: step.StepOrder, EventName: step.EventName, Count: stepCounts[i]}
 		if entry > 0 {
 			r.Conversion = float64(stepCounts[i]) / float64(entry)
 		}
@@ -327,9 +278,9 @@ func funnelResults(f Funnel, stepCounts []int64) []FunnelStepResult {
 }
 
 // stepFilterClause appends a step's property filters to a step query.
-func stepFilterClause(q string, args []any, step FunnelStep) (string, []any) {
+func stepFilterClause(q string, args []any, step domain.FunnelStep) (string, []any) {
 	for _, filter := range step.Filters {
-		if !validPropertyName.MatchString(filter.Property) {
+		if !domain.ValidBreakdownProperty(filter.Property) {
 			continue
 		}
 		q += fmt.Sprintf(" AND json_extract(e.properties, '$.%s') = ?", filter.Property)
@@ -343,7 +294,7 @@ func stepFilterClause(q string, args []any, step FunnelStep) (string, []any) {
 // total number of steps, it returns sessions that completed all steps (converters).
 // rules narrow both steps the same way funnel analysis does (for example the
 // EnvironmentRule), so a drill-down shows the sessions behind the counts.
-func (s *ReadStore) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int, from, to time.Time, limit int, rules ...SegmentRule) ([]string, error) {
+func (s *ReadStore) SessionsAtStep(ctx context.Context, f domain.Funnel, stepOrder int, from, to time.Time, limit int, rules ...domain.SegmentRule) ([]string, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -390,13 +341,13 @@ func (s *ReadStore) SessionsAtStep(ctx context.Context, f Funnel, stepOrder int,
 
 // funnelStepAt returns the step with the given 1-based StepOrder, or the zero
 // step when the funnel has none.
-func funnelStepAt(f Funnel, stepOrder int) FunnelStep {
+func funnelStepAt(f domain.Funnel, stepOrder int) domain.FunnelStep {
 	for _, st := range f.Steps {
 		if st.StepOrder == stepOrder {
 			return st
 		}
 	}
-	return FunnelStep{}
+	return domain.FunnelStep{}
 }
 
 // scanSessionIDs runs a query that selects one session id per row and hands

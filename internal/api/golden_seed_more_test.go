@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
@@ -39,18 +40,18 @@ func seedGoldenEntities(t *testing.T, store *repository.Store, storage *memStora
 	}
 
 	// Funnels. The session-scoped purchase funnel has drop-off at every step.
-	fa, err := store.CreateFunnel(ctx, repository.Funnel{ProjectID: s.ProjectA, Name: "Purchase", Description: "Visit to purchase",
-		Steps: []repository.FunnelStep{{EventName: "page_view"}, {EventName: "add_to_cart"}, {EventName: "checkout_start"}, {EventName: "purchase"}}})
+	fa, err := store.CreateFunnel(ctx, domain.Funnel{ProjectID: s.ProjectA, Name: "Purchase", Description: "Visit to purchase",
+		Steps: []domain.FunnelStep{{EventName: "page_view"}, {EventName: "add_to_cart"}, {EventName: "checkout_start"}, {EventName: "purchase"}}})
 	must(err, "funnel A")
-	fp, err := store.CreateFunnel(ctx, repository.Funnel{ProjectID: s.ProjectA, Name: "Pricing to cart", Scope: "page_view",
-		Steps: []repository.FunnelStep{{EventName: "page_view"}, {EventName: "add_to_cart"}}})
+	fp, err := store.CreateFunnel(ctx, domain.Funnel{ProjectID: s.ProjectA, Name: "Pricing to cart", Scope: "page_view",
+		Steps: []domain.FunnelStep{{EventName: "page_view"}, {EventName: "add_to_cart"}}})
 	must(err, "funnel A page")
-	fb, err := store.CreateFunnel(ctx, repository.Funnel{ProjectID: s.ProjectB, Name: "Blog signup",
-		Steps: []repository.FunnelStep{{EventName: "page_view"}, {EventName: "signup", Filters: []repository.FunnelFilter{{Property: "plan", Value: "pro"}}}}})
+	fb, err := store.CreateFunnel(ctx, domain.Funnel{ProjectID: s.ProjectB, Name: "Blog signup",
+		Steps: []domain.FunnelStep{{EventName: "page_view"}, {EventName: "signup", Filters: []domain.FunnelFilter{{Property: "plan", Value: "pro"}}}}})
 	must(err, "funnel B")
 	s.FunnelA, s.FunnelAPage, s.FunnelB = fix(fa.ID, kindFunnel, 1), fix(fp.ID, kindFunnel, 2), fix(fb.ID, kindFunnel, 3)
 	n := 0
-	for _, f := range []repository.Funnel{fa, fp, fb} {
+	for _, f := range []domain.Funnel{fa, fp, fb} {
 		for _, st := range f.Steps {
 			n++
 			fix(st.ID, kindFunnelStep, n)
@@ -66,9 +67,9 @@ func seedGoldenEntities(t *testing.T, store *repository.Store, storage *memStora
 	} {
 		must(store.UpsertMapping(ctx, m[0], m[1], m[2]), "mapping "+m[1])
 	}
-	cf, err := store.CreateCanonicalFunnel(ctx, repository.CanonicalFunnel{Name: "Visit to signup", Description: "Across projects",
+	cf, err := store.CreateCanonicalFunnel(ctx, domain.CanonicalFunnel{Name: "Visit to signup", Description: "Across projects",
 		ProjectIDs: []string{s.ProjectA, s.ProjectB},
-		Steps:      []repository.CanonicalFunnelStep{{CanonicalKey: "page_view", Label: "Visit"}, {CanonicalKey: "sign_up", Label: "Sign up"}}})
+		Steps:      []domain.CanonicalFunnelStep{{CanonicalKey: "page_view", Label: "Visit"}, {CanonicalKey: "sign_up", Label: "Sign up"}}})
 	must(err, "canonical funnel")
 	s.CanonicalFunnel = fix(cf.ID, kindCanonicalFunnel, 1)
 
@@ -76,41 +77,41 @@ func seedGoldenEntities(t *testing.T, store *repository.Store, storage *memStora
 	// inactive manual, auto-registered, one in project B, plus one whose rule names
 	// a missing variant.
 	flags := service.NewFlagService(store)
-	mk := func(f repository.FeatureFlag, nth int) string {
+	mk := func(f domain.FeatureFlag, nth int) string {
 		t.Helper()
 		got, err := flags.CreateFlag(ctx, f)
 		must(err, "flag "+f.FlagKey)
 		return fix(got.ID, kindFlag, nth)
 	}
-	s.FlagExperiment = mk(repository.FeatureFlag{ProjectID: s.ProjectA, FlagKey: "checkout_redesign", Name: "Checkout redesign",
+	s.FlagExperiment = mk(domain.FeatureFlag{ProjectID: s.ProjectA, FlagKey: "checkout_redesign", Name: "Checkout redesign",
 		FlagType: "experiment", Variants: `{"control":false,"treatment":true}`, DefaultVariant: "control",
 		Split: `{"control":50,"treatment":50}`, ConversionEvent: "purchase"}, 1)
-	s.FlagTargeted = mk(repository.FeatureFlag{ProjectID: s.ProjectA, FlagKey: "pricing_banner", Name: "Pricing banner",
+	s.FlagTargeted = mk(domain.FeatureFlag{ProjectID: s.ProjectA, FlagKey: "pricing_banner", Name: "Pricing banner",
 		FlagType: "string", Variants: `{"a":"standard","b":"dutch-promo"}`, DefaultVariant: "a", Split: `{"a":100,"b":0}`,
 		TargetingRules: `[{"name":"dutch visitors","variant":"b","match":"all","conditions":[{"context_key":"country","operator":"eq","value":"NL"}]}]`}, 2)
-	s.FlagConfig = mk(repository.FeatureFlag{ProjectID: s.ProjectA, FlagKey: "max_items", Name: "Max items per page",
-		FlagType: "number", Kind: repository.FlagKindConfig, Variants: `{"default":25,"high":100}`, DefaultVariant: "default", Split: `{}`}, 3)
-	s.FlagInactive = mk(repository.FeatureFlag{ProjectID: s.ProjectA, FlagKey: "legacy_search", Name: "Legacy search",
+	s.FlagConfig = mk(domain.FeatureFlag{ProjectID: s.ProjectA, FlagKey: "max_items", Name: "Max items per page",
+		FlagType: "number", Kind: domain.FlagKindConfig, Variants: `{"default":25,"high":100}`, DefaultVariant: "default", Split: `{}`}, 3)
+	s.FlagInactive = mk(domain.FeatureFlag{ProjectID: s.ProjectA, FlagKey: "legacy_search", Name: "Legacy search",
 		FlagType: "boolean", Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":0,"off":100}`, Status: "paused"}, 4)
-	auto, err := store.CreateFlag(ctx, repository.FeatureFlag{ProjectID: s.ProjectA, FlagKey: "sdk_discovered", Name: "sdk_discovered",
+	auto, err := store.CreateFlag(ctx, domain.FeatureFlag{ProjectID: s.ProjectA, FlagKey: "sdk_discovered", Name: "sdk_discovered",
 		FlagType: "boolean", Variants: `{"default":false}`, DefaultVariant: "default", Split: `{}`, Status: "inactive", Origin: "auto"})
 	must(err, "auto flag")
 	s.FlagAuto = fix(auto.ID, kindFlag, 5)
-	s.FlagB = mk(repository.FeatureFlag{ProjectID: s.ProjectB, FlagKey: "beta_banner", Name: "Beta banner",
+	s.FlagB = mk(domain.FeatureFlag{ProjectID: s.ProjectB, FlagKey: "beta_banner", Name: "Beta banner",
 		FlagType: "boolean", Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":30,"off":70}`}, 6)
 	// A rule naming a missing variant cannot be written any more, so this row goes
 	// straight to the store, as one saved before the check existed.
-	_, err = store.CreateFlag(ctx, repository.FeatureFlag{ProjectID: s.ProjectA, FlagKey: "stale_rule", Name: "Stale rule",
-		FlagType: "boolean", Variants: `{"default":true}`, DefaultVariant: "default", Split: `{}`, Status: "active", Kind: repository.FlagKindConfig,
+	_, err = store.CreateFlag(ctx, domain.FeatureFlag{ProjectID: s.ProjectA, FlagKey: "stale_rule", Name: "Stale rule",
+		FlagType: "boolean", Variants: `{"default":true}`, DefaultVariant: "default", Split: `{}`, Status: "active", Kind: domain.FlagKindConfig,
 		TargetingRules: `[{"name":"testers","match":"all","conditions":[{"context_key":"plan","operator":"eq","value":"staff"}],"variant":"on"}]`})
 	must(err, "flag stale_rule")
 
-	ab, err := store.CreateABTest(ctx, repository.ABTest{ProjectID: s.ProjectA, Name: "Variant a vs b", Status: "running",
+	ab, err := store.CreateABTest(ctx, domain.ABTest{ProjectID: s.ProjectA, Name: "Variant a vs b", Status: "running",
 		ControlFilter: `{"property":"variant","value":"a"}`, VariantFilter: `{"property":"variant","value":"b"}`, ConversionEvent: "purchase"})
 	must(err, "abtest")
 	s.ABTestA = fix(ab.ID, kindABTest, 1)
 
-	for i, w := range []repository.DashboardWidget{
+	for i, w := range []domain.DashboardWidget{
 		{ProjectID: s.ProjectA, EventName: "purchase", Property: "plan", Title: "Purchases by plan", Position: 0, Size: 2},
 		{ProjectID: s.ProjectA, EventName: "signup", Property: "plan", Title: "Signups by plan", Position: 1, Size: 1},
 		{ProjectID: s.ProjectB, EventName: "page_view", Property: "plan", Title: "Views by plan", Position: 0, Size: 1},
@@ -128,12 +129,12 @@ func seedGoldenEntities(t *testing.T, store *repository.Store, storage *memStora
 		}
 	}
 
-	seg, err := store.CreateSegment(ctx, repository.Segment{ProjectID: s.ProjectA, Name: "Mobile visitors",
-		Rules: []repository.SegmentRule{{Field: "device_type", Operator: "eq", Value: "mobile"}}})
+	seg, err := store.CreateSegment(ctx, domain.Segment{ProjectID: s.ProjectA, Name: "Mobile visitors",
+		Rules: []domain.SegmentRule{{Field: "device_type", Operator: "eq", Value: "mobile"}}})
 	must(err, "segment")
 	s.SegmentMobile = fix(seg.ID, kindSegment, 1)
-	_, err = store.CreateSegment(ctx, repository.Segment{ProjectID: s.ProjectA, Name: "Dutch visitors",
-		Rules: []repository.SegmentRule{{Field: "country_code", Operator: "eq", Value: "NL"}}})
+	_, err = store.CreateSegment(ctx, domain.Segment{ProjectID: s.ProjectA, Name: "Dutch visitors",
+		Rules: []domain.SegmentRule{{Field: "country_code", Operator: "eq", Value: "NL"}}})
 	must(err, "segment 2")
 	if segs, err := store.ListSegments(ctx, s.ProjectA); err == nil {
 		for i, sg := range segs {
@@ -146,8 +147,8 @@ func seedGoldenEntities(t *testing.T, store *repository.Store, storage *memStora
 	seedGoldenRecordings(t, store, storage, s)
 
 	enabled, rate := true, 0.5
-	must(store.UpsertProjectRecordingSettings(ctx, &repository.ProjectRecordingSettings{ProjectID: s.ProjectA,
-		Enabled: &enabled, SampleRate: &rate, Rules: []repository.RecordingRule{{Pattern: "/checkout*", Action: "capture"}}}), "recording settings")
+	must(store.UpsertProjectRecordingSettings(ctx, &domain.ProjectRecordingSettings{ProjectID: s.ProjectA,
+		Enabled: &enabled, SampleRate: &rate, Rules: []domain.RecordingRule{{Pattern: "/checkout*", Action: "capture"}}}), "recording settings")
 	for k, v := range map[string]string{"recording_enabled": "true", "recording_sample_rate": "0.25", "retention_days": "90"} {
 		must(store.SetInstanceSetting(ctx, k, v), "instance setting "+k)
 	}
@@ -167,7 +168,7 @@ func seedGoldenRecordings(t *testing.T, store *repository.Store, storage *memSto
 	chunks := []service.RecordingChunk{
 		{RecordingID: s.RecordingA1, SessionID: "sess-A-00", ChunkIndex: 0, Events: snapshot, StartedAt: ts, DurationMs: 5000,
 			PageURL: "https://acme.example/", ProjectID: s.ProjectA, Environment: "production", UserAgent: goldenDesktopUA,
-			Traces: []repository.TraceLink{{TraceID: s.TraceA, SpanID: "00f067aa0ba902b7", URL: "https://acme.example/api/cart", OccurredAt: ts.Add(2 * time.Second)}}},
+			Traces: []domain.TraceLink{{TraceID: s.TraceA, SpanID: "00f067aa0ba902b7", URL: "https://acme.example/api/cart", OccurredAt: ts.Add(2 * time.Second)}}},
 		{RecordingID: s.RecordingA1, SessionID: "sess-A-00", ChunkIndex: 1, Events: incr, StartedAt: ts.Add(5 * time.Second), DurationMs: 4000,
 			PageURL: "https://acme.example/", ProjectID: s.ProjectA, Environment: "production", UserAgent: goldenDesktopUA},
 		{RecordingID: s.RecordingA2, SessionID: "sess-A-02", ChunkIndex: 0, Events: snapshot, StartedAt: ts.Add(time.Hour), DurationMs: 7000,

@@ -10,7 +10,6 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // reNonSlug matches any character that is not a lowercase letter, digit, or hyphen.
@@ -39,60 +38,60 @@ func NewProjectService(store ports.ProjectRepo) *ProjectService {
 	return &ProjectService{store: store}
 }
 
-func (svc *ProjectService) CreateProject(ctx context.Context, name, slug string) (repository.Project, error) {
+func (svc *ProjectService) CreateProject(ctx context.Context, name, slug string) (domain.Project, error) {
 	if strings.TrimSpace(name) == "" {
-		return repository.Project{}, &domain.ValidationError{Field: "name", Message: "required"}
+		return domain.Project{}, &domain.ValidationError{Field: "name", Message: "required"}
 	}
 	slug = normalizeSlug(slug)
 	if slug == "" {
-		return repository.Project{}, &domain.ValidationError{Field: "slug", Message: "required"}
+		return domain.Project{}, &domain.ValidationError{Field: "slug", Message: "required"}
 	}
 	p, err := svc.store.CreateProject(ctx, strings.TrimSpace(name), slug)
 	if err != nil {
-		if isUniqueConstraint(err) {
-			return repository.Project{}, fmt.Errorf("%w: slug %q", domain.ErrConflict, slug)
+		if domain.IsConflict(err) {
+			return domain.Project{}, fmt.Errorf("%w: slug %q", domain.ErrConflict, slug)
 		}
-		return repository.Project{}, err
+		return domain.Project{}, err
 	}
 	return p, nil
 }
 
-func (svc *ProjectService) ListProjects(ctx context.Context) ([]repository.Project, error) {
+func (svc *ProjectService) ListProjects(ctx context.Context) ([]domain.Project, error) {
 	return svc.store.ListProjects(ctx)
 }
 
-func (svc *ProjectService) GetProject(ctx context.Context, id string) (repository.Project, error) {
+func (svc *ProjectService) GetProject(ctx context.Context, id string) (domain.Project, error) {
 	p, err := svc.store.ProjectByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return repository.Project{}, fmt.Errorf("%w: project %s", domain.ErrNotFound, id)
+			return domain.Project{}, fmt.Errorf("%w: project %s", domain.ErrNotFound, id)
 		}
-		return repository.Project{}, err
+		return domain.Project{}, err
 	}
 	return p, nil
 }
 
-func (svc *ProjectService) GetProjectBySlug(ctx context.Context, slug string) (repository.Project, error) {
+func (svc *ProjectService) GetProjectBySlug(ctx context.Context, slug string) (domain.Project, error) {
 	p, err := svc.store.ProjectBySlug(ctx, slug)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return repository.Project{}, fmt.Errorf("%w: project slug %s", domain.ErrNotFound, slug)
+			return domain.Project{}, fmt.Errorf("%w: project slug %s", domain.ErrNotFound, slug)
 		}
-		return repository.Project{}, err
+		return domain.Project{}, err
 	}
 	return p, nil
 }
 
-func (svc *ProjectService) UpdateProject(ctx context.Context, id, name, projectDomain string) (repository.Project, error) {
+func (svc *ProjectService) UpdateProject(ctx context.Context, id, name, projectDomain string) (domain.Project, error) {
 	if strings.TrimSpace(name) == "" {
-		return repository.Project{}, &domain.ValidationError{Field: "name", Message: "required"}
+		return domain.Project{}, &domain.ValidationError{Field: "name", Message: "required"}
 	}
 	p, err := svc.store.UpdateProject(ctx, id, name, strings.TrimSpace(projectDomain))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return repository.Project{}, fmt.Errorf("%w: project %s", domain.ErrNotFound, id)
+			return domain.Project{}, fmt.Errorf("%w: project %s", domain.ErrNotFound, id)
 		}
-		return repository.Project{}, err
+		return domain.Project{}, err
 	}
 	return p, nil
 }
@@ -104,25 +103,25 @@ func (svc *ProjectService) DeleteProject(ctx context.Context, id string) error {
 	return svc.store.DeleteProject(ctx, id)
 }
 
-func (svc *ProjectService) ApproveProject(ctx context.Context, id string) (repository.Project, error) {
+func (svc *ProjectService) ApproveProject(ctx context.Context, id string) (domain.Project, error) {
 	if strings.TrimSpace(id) == "" {
-		return repository.Project{}, fmt.Errorf("%w: project id required", domain.ErrNotFound)
+		return domain.Project{}, fmt.Errorf("%w: project id required", domain.ErrNotFound)
 	}
 	p, err := svc.store.ApproveProject(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return repository.Project{}, fmt.Errorf("%w: project %s", domain.ErrNotFound, id)
+			return domain.Project{}, fmt.Errorf("%w: project %s", domain.ErrNotFound, id)
 		}
-		return repository.Project{}, err
+		return domain.Project{}, err
 	}
 	return p, nil
 }
 
-func (svc *ProjectService) EnsureProjectPending(ctx context.Context, name, slug string) (repository.Project, error) {
+func (svc *ProjectService) EnsureProjectPending(ctx context.Context, name, slug string) (domain.Project, error) {
 	return svc.store.EnsureProjectPending(ctx, name, slug)
 }
 
-func (svc *ProjectService) EnsureProject(ctx context.Context, slug string) (repository.Project, error) {
+func (svc *ProjectService) EnsureProject(ctx context.Context, slug string) (domain.Project, error) {
 	return svc.store.EnsureProject(ctx, slug)
 }
 
@@ -130,6 +129,6 @@ func (svc *ProjectService) HasProjects(ctx context.Context) (bool, error) {
 	return svc.store.HasProjects(ctx)
 }
 
-func (svc *ProjectService) UserByUsername(ctx context.Context, username string) (repository.User, error) {
+func (svc *ProjectService) UserByUsername(ctx context.Context, username string) (domain.User, error) {
 	return svc.store.UserByUsername(ctx, username)
 }

@@ -17,16 +17,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
-
-// IAMBarnUserRepo is the storage interface needed by the OIDC callback handler
-// to upsert the local user record keyed on the stable IdP subject.
-type IAMBarnUserRepo interface {
-	FindUserByIAMBarnSub(ctx context.Context, sub string) (repository.User, error)
-	CreateIAMBarnUser(ctx context.Context, sub, username string) (repository.User, error)
-}
 
 const (
 	oidcConfStateCookie = "funnelbarn_oidc_state"
@@ -156,7 +149,7 @@ func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.R
 	}
 
 	secure := s.isSecureRequest(r)
-	expires, err := s.issueWebSession(r.Context(), w, secure, repository.WebSession{
+	expires, err := s.issueWebSession(r.Context(), w, secure, domain.WebSession{
 		Username:        username,
 		AuthMethod:      "oidc",
 		IdpSub:          claims.Subject,
@@ -195,7 +188,7 @@ func (s *Server) handleOIDCConfidentialCallback(w http.ResponseWriter, r *http.R
 
 // issueWebSession mints an opaque session handle, persists the session row,
 // and sets the session + CSRF cookies. Returns the session's absolute expiry.
-func (s *Server) issueWebSession(ctx context.Context, w http.ResponseWriter, secure bool, ws repository.WebSession) (time.Time, error) {
+func (s *Server) issueWebSession(ctx context.Context, w http.ResponseWriter, secure bool, ws domain.WebSession) (time.Time, error) {
 	token, expires, err := s.sessionManager.Create()
 	if err != nil {
 		return time.Time{}, err

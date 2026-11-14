@@ -12,11 +12,12 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 )
 
-func newCommandTestStore(t *testing.T) (*repository.Store, repository.Project, repository.FeatureFlag) {
+func newCommandTestStore(t *testing.T) (*repository.Store, domain.Project, domain.FeatureFlag) {
 	t.Helper()
 	ctx := context.Background()
 	store, err := repository.Open(repotest.Path(t, "cmd.db"))
@@ -24,7 +25,7 @@ func newCommandTestStore(t *testing.T) (*repository.Store, repository.Project, r
 	t.Cleanup(func() { store.Close() })
 	p, err := store.CreateProject(ctx, "Cmd", "cmd")
 	require.NoError(t, err)
-	f, err := store.CreateFlag(ctx, repository.FeatureFlag{
+	f, err := store.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID: p.ID, FlagKey: "cmd_flag", Name: "Cmd", FlagType: "boolean",
 		Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":50,"off":50}`, Status: "active",
 	})
@@ -48,7 +49,7 @@ func TestNewCommandBusWithoutRedisIsTheDispatcher(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, &command.Dispatcher{}, bus)
 
-	bus.Submit(ctx, command.RecordEvaluation{Eval: repository.FlagEvaluation{ID: "e1", FlagID: f.ID, ProjectID: p.ID, Variant: "on"}})
+	bus.Submit(ctx, command.RecordEvaluation{Eval: domain.FlagEvaluation{ID: "e1", FlagID: f.ID, ProjectID: p.ID, Variant: "on"}})
 	require.NoError(t, bus.Flush(ctx))
 	require.Equal(t, 1, evaluationRows(t, store))
 	require.NoError(t, bus.Close(ctx))
@@ -66,7 +67,7 @@ func TestNewCommandBusWithRedisConsumesTheQueue(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, &redisClosingBus{}, bus)
 
-	bus.Submit(ctx, command.RecordEvaluation{Eval: repository.FlagEvaluation{ID: "e1", FlagID: f.ID, ProjectID: p.ID, Variant: "on"}})
+	bus.Submit(ctx, command.RecordEvaluation{Eval: domain.FlagEvaluation{ID: "e1", FlagID: f.ID, ProjectID: p.ID, Variant: "on"}})
 	require.NoError(t, bus.Flush(ctx))
 	require.Equal(t, 1, evaluationRows(t, store))
 	require.NoError(t, bus.Close(ctx))

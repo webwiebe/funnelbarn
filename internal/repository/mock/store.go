@@ -4,37 +4,37 @@ import (
 	"context"
 	"time"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
-func (s *Store) FlagContextKeySuggestions(_ context.Context, _ string) ([]repository.ContextKeySuggestion, error) {
+func (s *Store) FlagContextKeySuggestions(_ context.Context, _ string) ([]domain.ContextKeySuggestion, error) {
 	return nil, nil
 }
 
-func (s *Store) FlagUsageDaily(_ context.Context, _ string, _, _ time.Time) ([]repository.FlagUsageRow, error) {
+func (s *Store) FlagUsageDaily(_ context.Context, _ string, _, _ time.Time) ([]domain.FlagUsageRow, error) {
 	return nil, nil
 }
 
 func (s *Store) AnonymizeSessionGeo(_ context.Context, _ string) error { return nil }
 
-func (s *Store) SessionDistributions(_ context.Context, _ string) (map[string][]repository.DistributionEntry, error) {
-	return map[string][]repository.DistributionEntry{}, nil
+func (s *Store) SessionDistributions(_ context.Context, _ string) (map[string][]domain.DistributionEntry, error) {
+	return map[string][]domain.DistributionEntry{}, nil
 }
 
-func (s *Store) CreateSegment(_ context.Context, seg repository.Segment) (repository.Segment, error) {
+func (s *Store) CreateSegment(_ context.Context, seg domain.Segment) (domain.Segment, error) {
 	return seg, nil
 }
-func (s *Store) SegmentByID(_ context.Context, _ string) (repository.Segment, error) {
-	return repository.Segment{}, nil
+func (s *Store) SegmentByID(_ context.Context, _ string) (domain.Segment, error) {
+	return domain.Segment{}, nil
 }
-func (s *Store) ListSegments(_ context.Context, _ string) ([]repository.Segment, error) {
+func (s *Store) ListSegments(_ context.Context, _ string) ([]domain.Segment, error) {
 	return nil, nil
 }
-func (s *Store) UpdateSegment(_ context.Context, seg repository.Segment) (repository.Segment, error) {
+func (s *Store) UpdateSegment(_ context.Context, seg domain.Segment) (domain.Segment, error) {
 	return seg, nil
 }
 func (s *Store) DeleteSegment(_ context.Context, _ string) error { return nil }
-func (s *Store) UpsertSessionSignals(_ context.Context, _, _ string, _ repository.SessionSignals) error {
+func (s *Store) UpsertSessionSignals(_ context.Context, _, _ string, _ domain.SessionSignals) error {
 	return nil
 }
 
@@ -50,23 +50,23 @@ func (s *Store) GetAllInstanceSettings(_ context.Context) (map[string]string, er
 	return map[string]string{}, nil
 }
 
-func (s *Store) UpsertRecording(_ context.Context, _ repository.Recording) error { return nil }
-func (s *Store) GetRecording(_ context.Context, _ string) (repository.Recording, error) {
-	return repository.Recording{}, nil
+func (s *Store) UpsertRecording(_ context.Context, _ domain.Recording) error { return nil }
+func (s *Store) GetRecording(_ context.Context, _ string) (domain.Recording, error) {
+	return domain.Recording{}, nil
 }
-func (s *Store) ListRecordings(_ context.Context, _ string, _ repository.RecordingListOpts) ([]repository.Recording, error) {
+func (s *Store) ListRecordings(_ context.Context, _ string, _ domain.RecordingListOpts) ([]domain.Recording, error) {
 	return nil, nil
 }
-func (s *Store) ListOldRecordings(_ context.Context, _ time.Time) ([]repository.Recording, error) {
+func (s *Store) ListOldRecordings(_ context.Context, _ time.Time) ([]domain.Recording, error) {
 	return nil, nil
 }
 func (s *Store) DeleteRecording(_ context.Context, _ string) error { return nil }
-func (s *Store) FlagEvaluationsForSession(_ context.Context, _, _ string) ([]repository.FlagEvaluationEntry, error) {
+func (s *Store) FlagEvaluationsForSession(_ context.Context, _, _ string) ([]domain.FlagEvaluationEntry, error) {
 	return nil, nil
 }
 
-func (s *Store) GetProjectHealth(_ context.Context, projectID string) (repository.ProjectHealth, error) {
-	return repository.ProjectHealth{ProjectID: projectID}, nil
+func (s *Store) GetProjectHealth(_ context.Context, projectID string) (domain.ProjectHealth, error) {
+	return domain.ProjectHealth{ProjectID: projectID}, nil
 }
 func (s *Store) MarkProjectHealthSetupCalled(_ context.Context, _ string) error        { return nil }
 func (s *Store) MarkProjectHealthEventsReceived(_ context.Context, _ string) error     { return nil }

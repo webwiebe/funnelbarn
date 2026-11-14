@@ -14,6 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -89,7 +90,7 @@ func fakeVerify(_ context.Context, token string, _ *http.Request) (*auth.TokenIn
 }
 
 // createProject inserts an active project and returns it.
-func (e *testEnv) createProject(t *testing.T, name, slug string) repository.Project {
+func (e *testEnv) createProject(t *testing.T, name, slug string) domain.Project {
 	t.Helper()
 	p, err := e.Store.CreateProject(context.Background(), name, slug)
 	if err != nil {

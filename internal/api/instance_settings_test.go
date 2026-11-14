@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/ports"
+	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
-func storeInstanceSettings(cfg *ServerConfig) InstanceSettingsRepo {
-	return cfg.DB.(InstanceSettingsRepo)
+func storeInstanceSettings(cfg *ServerConfig) service.InstanceSettings {
+	return service.NewInstanceSettingsService(cfg.DB.(ports.InstanceSettingsRepo))
 }
 
 func TestHandleGetInstanceSettings_NilRepo(t *testing.T) {

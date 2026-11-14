@@ -4,32 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"time"
-)
 
-// WebSession is one token-bound server-side browser session. The
-// funnelbarn_session cookie holds an opaque handle; IDHash is its SHA-256 hex
-// and the row key. OIDC sessions carry the iambarn token set; local
-// password/admin sessions leave the token fields empty (stored as NULL).
-type WebSession struct {
-	IDHash              string
-	Username            string
-	AuthMethod          string // "oidc" or "local"
-	IdpSub              string
-	IdpSid              string
-	IDToken             string
-	AccessToken         string
-	RefreshToken        string
-	AccessExpiresAt     int64 // unix seconds; 0 = not applicable
-	ClaimsJSON          string
-	CreatedAt           int64 // unix seconds
-	AbsoluteExpiresAt   int64 // unix seconds; hard cap regardless of refreshes
-	LastRefreshAt       int64 // unix seconds; 0 = never refreshed
-	RefreshFailingSince int64 // unix seconds; 0 = refresh not failing
-}
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+)
 
 // CreateWebSession inserts a session row. IDHash must be unique (it derives
 // from a fresh random handle, so collisions do not occur in practice).
-func (s *Store) CreateWebSession(ctx context.Context, ws WebSession) error {
+func (s *Store) CreateWebSession(ctx context.Context, ws domain.WebSession) error {
 	const q = `
 		INSERT INTO web_sessions (
 			id_hash, username, auth_method, idp_sub, idp_sid,
@@ -49,14 +30,14 @@ func (s *Store) CreateWebSession(ctx context.Context, ws WebSession) error {
 
 // GetWebSession loads a session row. Returns sql.ErrNoRows when the handle is
 // unknown (revoked, expired-and-pruned, or forged).
-func (s *ReadStore) GetWebSession(ctx context.Context, idHash string) (WebSession, error) {
+func (s *ReadStore) GetWebSession(ctx context.Context, idHash string) (domain.WebSession, error) {
 	const q = `
 		SELECT id_hash, username, auth_method, idp_sub, idp_sid,
 			id_token, access_token, refresh_token, access_expires_at,
 			claims_json, created_at, absolute_expires_at,
 			last_refresh_at, refresh_failing_since
 		FROM web_sessions WHERE id_hash = ?`
-	var ws WebSession
+	var ws domain.WebSession
 	var idpSub, idpSid, idToken, accessToken, refreshToken, claimsJSON sql.NullString
 	var accessExpiresAt, lastRefreshAt, refreshFailingSince sql.NullInt64
 	err := s.rdb.QueryRowContext(ctx, q, idHash).Scan(
@@ -65,7 +46,7 @@ func (s *ReadStore) GetWebSession(ctx context.Context, idHash string) (WebSessio
 		&claimsJSON, &ws.CreatedAt, &ws.AbsoluteExpiresAt,
 		&lastRefreshAt, &refreshFailingSince)
 	if err != nil {
-		return WebSession{}, err
+		return domain.WebSession{}, err
 	}
 	ws.IdpSub = idpSub.String
 	ws.IdpSid = idpSid.String

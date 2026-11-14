@@ -14,12 +14,13 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
+	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
-	"github.com/wiebe-xyz/funnelbarn/internal/worker"
 )
 
 const (
@@ -91,7 +92,7 @@ func newSnapStack(t *testing.T) *snapStack {
 		Widgets:             service.NewWidgetService(store),
 		UserAuth:            userAuth,
 		SessionManager:      auth.NewSessionManager("test-secret", time.Hour),
-		WebSessions:         store,
+		WebSessions:         service.NewWebSessionService(store),
 		PublicURL:           "http://localhost",
 		LoginRatePerMinute:  1000,
 		LoginRateBurst:      1000,
@@ -111,7 +112,7 @@ func newSnapStack(t *testing.T) *snapStack {
 }
 
 // seed creates the project, its two API keys and the four known flags.
-func (s *snapStack) seed(t *testing.T) repository.Project {
+func (s *snapStack) seed(t *testing.T) domain.Project {
 	t.Helper()
 	ctx := context.Background()
 	p, err := s.store.CreateProject(ctx, "Snapshot", "snap")
@@ -124,24 +125,24 @@ func (s *snapStack) seed(t *testing.T) repository.Project {
 		}
 	}
 	rules := `[{"name":"pro-users","variant":"on","match":"all","conditions":[{"context_key":"plan","operator":"eq","value":"pro"}]}]`
-	base := repository.FeatureFlag{
+	base := domain.FeatureFlag{
 		ProjectID: p.ID, FlagType: "boolean", Variants: `{"on":true,"off":false}`,
 		DefaultVariant: "off", Split: `{"on":50,"off":50}`, Status: "active",
 	}
-	mk := func(mut func(f *repository.FeatureFlag)) {
+	mk := func(mut func(f *domain.FeatureFlag)) {
 		f := base
 		mut(&f)
 		if _, err := s.store.CreateFlag(ctx, f); err != nil {
 			t.Fatalf("CreateFlag %s: %v", f.FlagKey, err)
 		}
 	}
-	mk(func(f *repository.FeatureFlag) { f.FlagKey, f.Name, f.ConversionEvent = "exp_split", "Split", "signup" })
-	mk(func(f *repository.FeatureFlag) { f.FlagKey, f.Name, f.TargetingRules = "exp_target", "Targeted", rules })
-	mk(func(f *repository.FeatureFlag) {
-		f.FlagKey, f.Name, f.Kind = "cfg_flag", "Config", repository.FlagKindConfig
+	mk(func(f *domain.FeatureFlag) { f.FlagKey, f.Name, f.ConversionEvent = "exp_split", "Split", "signup" })
+	mk(func(f *domain.FeatureFlag) { f.FlagKey, f.Name, f.TargetingRules = "exp_target", "Targeted", rules })
+	mk(func(f *domain.FeatureFlag) {
+		f.FlagKey, f.Name, f.Kind = "cfg_flag", "Config", domain.FlagKindConfig
 		f.FlagType, f.Variants, f.DefaultVariant, f.Split = "string", `{"v1":"alpha","v2":"beta"}`, "v2", "{}"
 	})
-	mk(func(f *repository.FeatureFlag) { f.FlagKey, f.Name, f.Status = "off_flag", "Inactive", "inactive" })
+	mk(func(f *domain.FeatureFlag) { f.FlagKey, f.Name, f.Status = "off_flag", "Inactive", "inactive" })
 	return p
 }
 
@@ -213,7 +214,7 @@ func (s *snapStack) ingestAndPersist(t *testing.T) {
 	// (e.g. worker.PersistRecord) once production code may change, so the
 	// harness exercises the same path as production.
 	for _, rec := range recs {
-		ev, err := worker.ProcessRecord(rec)
+		ev, err := pipeline.ProcessRecord(rec)
 		if err != nil {
 			t.Fatalf("ProcessRecord: %v", err)
 		}
@@ -222,7 +223,7 @@ func (s *snapStack) ingestAndPersist(t *testing.T) {
 			t.Fatalf("EnsureProject(%s): %v", rec.ProjectSlug, err)
 		}
 		ev.ProjectID = proj.ID
-		if err := worker.PersistEvent(context.Background(), s.store, ev, nil); err != nil {
+		if err := pipeline.PersistEvent(context.Background(), s.store, ev, nil); err != nil {
 			t.Fatalf("PersistEvent: %v", err)
 		}
 	}
@@ -253,7 +254,7 @@ var snapEvals = []snapEval{
 
 // evaluateAll runs the SDK and playground evaluations and returns one line per
 // response so the goldens also pin what callers saw.
-func (s *snapStack) evaluateAll(t *testing.T, p repository.Project) string {
+func (s *snapStack) evaluateAll(t *testing.T, p domain.Project) string {
 	t.Helper()
 	var out strings.Builder
 	for _, e := range snapEvals {
