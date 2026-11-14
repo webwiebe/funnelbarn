@@ -223,7 +223,7 @@ type Recordings interface {
 
 // APIKeys is the interface for API key-related operations.
 type APIKeys interface {
-	CreateAPIKey(ctx context.Context, name, projectID, keySHA256, scope string) (domain.APIKey, error)
+	IssueAPIKey(ctx context.Context, name, projectID, scope string) (key domain.APIKey, plaintext string, err error)
 	ListAPIKeys(ctx context.Context, projectID string) ([]domain.APIKey, error)
 	ListAllAPIKeys(ctx context.Context) ([]domain.APIKey, error)
 	DeleteAPIKey(ctx context.Context, id string) error

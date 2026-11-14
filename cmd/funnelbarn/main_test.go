@@ -59,21 +59,6 @@ func TestValidateFailClosed(t *testing.T) {
 	}
 }
 
-func TestSlugPattern(t *testing.T) {
-	valid := []string{"default", "my-project", "a1", "team-42-alpha"}
-	for _, s := range valid {
-		if !slugPattern.MatchString(s) {
-			t.Errorf("slugPattern should match %q", s)
-		}
-	}
-	invalid := []string{"", "-lead", "trail-", "Upper", "has space", "double--dash", "under_score"}
-	for _, s := range invalid {
-		if slugPattern.MatchString(s) {
-			t.Errorf("slugPattern should reject %q", s)
-		}
-	}
-}
-
 func TestToSlugLocal(t *testing.T) {
 	cases := map[string]string{
 		"My Project":     "my-project",

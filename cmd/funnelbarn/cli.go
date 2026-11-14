@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -20,11 +18,10 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
-
-var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 // --------------------------------------------------------------------------
 // CLI subcommands
@@ -229,7 +226,7 @@ func runProjectCmd(cfg config.Config, args []string) error {
 		if *slug == "" {
 			*slug = toSlugLocal(*name)
 		}
-		if !slugPattern.MatchString(*slug) {
+		if !domain.ValidProjectSlug(*slug) {
 			return fmt.Errorf("invalid slug %q: must be lowercase alphanumeric with hyphens", *slug)
 		}
 		store, err := repository.Open(cfg.DBPath)
@@ -237,7 +234,7 @@ func runProjectCmd(cfg config.Config, args []string) error {
 			return err
 		}
 		defer logShutdown(slog.LevelError, "store", store.Close)
-		p, err := store.CreateProject(context.Background(), *name, *slug)
+		p, err := service.NewProjectService(store).CreateProject(context.Background(), *name, *slug)
 		if err != nil {
 			return fmt.Errorf("create project: %w", err)
 		}
@@ -275,24 +272,21 @@ func runAPIKeyCmd(cfg config.Config, args []string) error {
 		}
 		defer logShutdown(slog.LevelError, "store", store.Close)
 		ctx := context.Background()
-		project, err := store.ProjectBySlug(ctx, *projectSlug)
+		projects := service.NewProjectService(store)
+		project, err := projects.GetProjectBySlug(ctx, *projectSlug)
 		if err != nil {
-			project, err = store.CreateProject(ctx, *projectSlug, *projectSlug)
+			project, err = projects.CreateProject(ctx, *projectSlug, *projectSlug)
 			if err != nil {
 				return fmt.Errorf("create project %q: %w", *projectSlug, err)
 			}
 			fmt.Printf("Project %q created automatically.\n", *projectSlug)
 		}
-		var raw [32]byte
-		if _, err := rand.Read(raw[:]); err != nil {
-			return fmt.Errorf("generate key: %w", err)
-		}
-		plaintext := hex.EncodeToString(raw[:])
-		sum := sha256.Sum256([]byte(plaintext))
-		keySHA256 := hex.EncodeToString(sum[:])
-
-		key, err := store.CreateAPIKey(ctx, *name, project.ID, keySHA256, *scope)
+		key, plaintext, err := service.NewAPIKeyService(store).IssueAPIKey(ctx, *name, project.ID, *scope)
 		if err != nil {
+			var genErr *service.KeyGenerationError
+			if errors.As(err, &genErr) {
+				return fmt.Errorf("generate key: %w", genErr.Err)
+			}
 			return fmt.Errorf("create api key: %w", err)
 		}
 		fmt.Printf("API key created (id=%s, project=%s, name=%s, scope=%s)\n", key.ID, project.Slug, key.Name, key.Scope)
