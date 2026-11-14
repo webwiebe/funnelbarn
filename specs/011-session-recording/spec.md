@@ -183,7 +183,7 @@ DROP TABLE IF EXISTS recordings;
 
 | Path | Role |
 |------|------|
-| `internal/storage/r2.go` | Thin R2 client wrapper (aws-sdk-go-v2/service/s3) |
+| `internal/blobstore/r2.go` | Thin R2 client wrapper (aws-sdk-go-v2/service/s3) |
 | `internal/repository/recordings.go` | Repository methods: `UpsertRecording`, `ListRecordings`, `GetRecording`, `ListRecordingsBySessionIDs` |
 | `internal/service/recordings.go` | Service: `IngestChunk`, `ListRecordings`, `GetChunk` |
 | `internal/api/recordings.go` | HTTP handlers for all recording endpoints |
@@ -411,6 +411,6 @@ Note: `rrweb-player` (the pre-built UI widget) is NOT used in favor of a custom 
 
 ## Sources
 
-- `internal/api/recordings.go`, `internal/api/recording_settings.go`, `internal/service/recordings.go`, `internal/storage/r2.go`, `internal/repository/recordings.go`, `cmd/funnelbarn/recordings_queue.go`, `cmd/funnelbarn/maintenance.go`
+- `internal/api/recordings.go`, `internal/api/recording_settings.go`, `internal/service/recordings.go`, `internal/blobstore/r2.go`, `internal/repository/recordings.go`, `cmd/funnelbarn/recordings_queue.go`, `cmd/funnelbarn/maintenance.go`
 - `sdks/js/src/index.ts`, `web/src/pages/Sessions.tsx`, `web/src/components/sessions/SessionReplay.tsx`
 - Issue titles: #228, #305, #345

@@ -1,4 +1,5 @@
-package storage
+// Package blobstore stores session-recording chunks in Cloudflare R2 (S3 compatible).
+package blobstore
 
 import (
 	"bytes"

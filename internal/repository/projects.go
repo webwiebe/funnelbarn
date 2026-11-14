@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/sqlcgen"
 )
 
@@ -77,6 +78,9 @@ func (s *Store) CreateProject(ctx context.Context, name, slug string) (Project, 
 		return Project{}, fmt.Errorf("create project: %w", err)
 	}
 	if err := s.q.InsertProject(ctx, sqlcgen.InsertProjectParams{ID: id, Name: name, Slug: slug}); err != nil {
+		if isUniqueViolation(err) {
+			return Project{}, fmt.Errorf("create project: %w: %w", domain.ErrConflict, err)
+		}
 		return Project{}, fmt.Errorf("create project: %w", err)
 	}
 	return s.projectByID(ctx, s.q, id)
