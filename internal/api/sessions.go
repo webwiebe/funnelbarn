@@ -40,17 +40,13 @@ func (s *Server) handleSessionDistributions(w http.ResponseWriter, r *http.Reque
 		jsonError(w, "project id required", http.StatusBadRequest)
 		return
 	}
-	if s.distributions == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"distributions": map[string]any{}})
-		return
-	}
 
 	ctx, span := tracing.StartSpan(r.Context(), "sessions.distributions",
 		attribute.String("project.id", projectID),
 	)
 	defer span.End()
 
-	dist, err := s.distributions.SessionDistributions(ctx, projectID)
+	dist, err := s.sessions.SessionDistributions(ctx, projectID)
 	if err != nil {
 		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleSessionDistributions")

@@ -50,7 +50,7 @@ CI enforces the architecture and quality rules of the codebase mechanically. The
 
 | Claim | Source | Tree |
 |---|---|---|
-| Handlers (`internal/api`, `internal/ingest`, `cmd`) call only services | Layered Structure rules | `internal/api` imports `internal/repository` in 20 files, `internal/service` in 6 and `internal/ports` in 1; the only enforced rule is the `sqlcgen` ban (`internal/archtest/archtest.go`) |
+| Handlers (`internal/api`, `internal/ingest`, `cmd`) call only services | Layered Structure rules | `internal/api` imports `internal/repository` in 20 files, `internal/service` in 6 and `internal/ports` in 0. Handlers no longer call a repository: instance settings, recording settings, geo anonymization, session distributions, web sessions and IAMBarn users go through `internal/service`. Only `s.db.Ping` (health probe) and `s.commands.Submit` (command bus) stay direct. The `repository` imports left are type names, the `APIKeyScope*` constants and `repository.ValidPropertyKey`; they move with the domain-type step. The only enforced rule is the `sqlcgen` ban (`internal/archtest/archtest.go`) |
 | Migrations, queries and generated code live in `internal/db/{migrations,queries,generated}` | Package Layout | They live in `internal/repository/{migrations,queries,sqlcgen}`, with `sqlc.yaml` in `internal/repository` |
 | Migration files are named `000001_initial_schema.sql` | Migration Tooling | Names have five digits, for example `00040_funnel_conversion_window.sql` |
 | `goose up` and `goose down` are available as a CLI subcommand | Migration Tooling | `goose.Up` runs in `internal/repository/db.go` at start-up; no `goose` subcommand exists in `cmd/` |

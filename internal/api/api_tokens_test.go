@@ -77,7 +77,7 @@ func newFlagTokenServerOpts(t *testing.T, o flagTokenOpts) (*Server, *repository
 		Widgets:             service.NewWidgetService(store),
 		UserAuth:            userAuth,
 		SessionManager:      sm,
-		WebSessions:         store,
+		WebSessions:         service.NewWebSessionService(store),
 		PublicURL:           "http://localhost",
 		LoginRatePerMinute:  1000,
 		LoginRateBurst:      1000,

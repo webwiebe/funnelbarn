@@ -21,13 +21,6 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
-// IAMBarnUserRepo is the storage interface needed by the OIDC callback handler
-// to upsert the local user record keyed on the stable IdP subject.
-type IAMBarnUserRepo interface {
-	FindUserByIAMBarnSub(ctx context.Context, sub string) (repository.User, error)
-	CreateIAMBarnUser(ctx context.Context, sub, username string) (repository.User, error)
-}
-
 const (
 	oidcConfStateCookie = "funnelbarn_oidc_state"
 	oidcConfNonceCookie = "funnelbarn_oidc_nonce"

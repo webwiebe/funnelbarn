@@ -154,6 +154,44 @@ type Sessions interface {
 	SessionByID(ctx context.Context, projectID, id string) (repository.Session, error)
 	ListSessions(ctx context.Context, projectID string, limit, offset int) ([]repository.Session, error)
 	ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error)
+	SessionDistributions(ctx context.Context, projectID string) (map[string][]repository.DistributionEntry, error)
+}
+
+// InstanceSettings is the interface for instance-level settings.
+type InstanceSettings interface {
+	GetAllInstanceSettings(ctx context.Context) (map[string]string, error)
+	SetInstanceSetting(ctx context.Context, key, value string) error
+}
+
+// RecordingSettings is the interface for per-project recording settings.
+type RecordingSettings interface {
+	GetProjectRecordingSettings(ctx context.Context, projectID string) (*repository.ProjectRecordingSettings, error)
+	UpsertProjectRecordingSettings(ctx context.Context, settings *repository.ProjectRecordingSettings) error
+}
+
+// Privacy is the interface for erasing personal data held on sessions.
+type Privacy interface {
+	AnonymizeSessionGeo(ctx context.Context, sessionID string) error
+	AnonymizeSessionsByIP(ctx context.Context, ip string) (int64, error)
+}
+
+// WebSessions is the interface for the server-side dashboard sessions used by
+// the session middleware, the OIDC callback and the logout paths.
+type WebSessions interface {
+	CreateWebSession(ctx context.Context, ws repository.WebSession) error
+	GetWebSession(ctx context.Context, idHash string) (repository.WebSession, error)
+	UpdateWebSessionTokens(ctx context.Context, idHash, idToken, accessToken, refreshToken string, accessExpiresAt int64, claimsJSON string, lastRefreshAt int64) error
+	MarkWebSessionRefreshFailing(ctx context.Context, idHash string, since int64) error
+	DeleteWebSession(ctx context.Context, idHash string) error
+	DeleteWebSessionsByIdpSid(ctx context.Context, sid string) (int64, error)
+	DeleteWebSessionsByIdpSub(ctx context.Context, sub string) (int64, error)
+}
+
+// IAMBarnUsers is the interface for the local user records created from an
+// IAMBarn login.
+type IAMBarnUsers interface {
+	FindUserByIAMBarnSub(ctx context.Context, sub string) (repository.User, error)
+	CreateIAMBarnUser(ctx context.Context, sub, username string) (repository.User, error)
 }
 
 // Segments is the interface for user-defined segment operations.
