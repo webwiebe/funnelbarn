@@ -40,6 +40,10 @@ func (s *Server) handleSessionDistributions(w http.ResponseWriter, r *http.Reque
 		jsonError(w, "project id required", http.StatusBadRequest)
 		return
 	}
+	if s.sessions == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"distributions": map[string]any{}})
+		return
+	}
 
 	ctx, span := tracing.StartSpan(r.Context(), "sessions.distributions",
 		attribute.String("project.id", projectID),
