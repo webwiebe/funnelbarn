@@ -54,11 +54,13 @@ func (h *Handler) Handle(ctx context.Context, record slog.Record) error {
 	return h.base.Handle(ctx, record)
 }
 
-// capture forwards the record to BugBarn with all structured attributes.
-func (h *Handler) capture(_ context.Context, record slog.Record) {
+// captureAttrs flattens the record's attributes into the map sent to BugBarn.
+// A group attribute becomes one dotted key per member (outage.total), because a
+// group's []slog.Attr serialises as empty objects in the SDK's JSON payload.
+// It also returns the "err" attribute when it holds a real error.
+func captureAttrs(record slog.Record) (map[string]any, error) {
 	attrs := make(map[string]any, record.NumAttrs())
 	var capErr error
-
 	record.Attrs(func(a slog.Attr) bool {
 		// Lift any "err" attribute that is a real error for CaptureError.
 		if a.Key == "err" {
@@ -66,15 +68,35 @@ func (h *Handler) capture(_ context.Context, record slog.Record) {
 				capErr = e
 			}
 		}
-		v := a.Value.Any()
-		// An error value marshals to {} in the SDK's JSON payload, which hides
-		// the cause. Send its text instead.
-		if e, ok := v.(error); ok {
-			v = e.Error()
-		}
-		attrs[a.Key] = v
+		addAttr(attrs, "", a)
 		return true
 	})
+	return attrs, capErr
+}
+
+func addAttr(dst map[string]any, prefix string, a slog.Attr) {
+	v := a.Value.Resolve()
+	if v.Kind() == slog.KindGroup {
+		if a.Key != "" {
+			prefix += a.Key + "."
+		}
+		for _, m := range v.Group() {
+			addAttr(dst, prefix, m)
+		}
+		return
+	}
+	x := v.Any()
+	// An error value marshals to {} in the SDK's JSON payload, which hides
+	// the cause. Send its text instead.
+	if e, ok := x.(error); ok {
+		x = e.Error()
+	}
+	dst[prefix+a.Key] = x
+}
+
+// capture forwards the record to BugBarn with all structured attributes.
+func (h *Handler) capture(_ context.Context, record slog.Record) {
+	attrs, capErr := captureAttrs(record)
 
 	opts := []bb.CaptureOption{bb.WithAttributes(attrs)}
 
