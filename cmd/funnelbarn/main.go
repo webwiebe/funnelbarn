@@ -5,29 +5,16 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
-	selfsdk "github.com/webwiebe/funnelbarn/sdks/go"
-	bb "github.com/wiebe-xyz/bugbarn-go"
-
 	"github.com/wiebe-xyz/funnelbarn/internal/api"
-	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
-	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
-	"github.com/wiebe-xyz/funnelbarn/internal/environment"
-	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
-	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
-	"github.com/wiebe-xyz/funnelbarn/internal/service"
-	"github.com/wiebe-xyz/funnelbarn/internal/spool"
-	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
-	"github.com/wiebe-xyz/funnelbarn/internal/workerhealth"
 )
 
 // Version, Commit and BuildTime are injected at build time via -ldflags.
@@ -109,363 +96,68 @@ func isHealthProbeLog(r slog.Record) bool {
 }
 
 // run owns process wiring: opens storage, starts the worker, and serves the API.
+// Each stage registers its shutdown steps on cleanup, which runs them in reverse
+// order when run returns, so the store closes after everything that writes to it.
 func run() error {
 	if handled, code := handleUsageArgs(os.Args[1:], os.Stdout, os.Stderr); handled {
 		os.Exit(code)
 	}
 	cfg := config.Load()
-
-	// Runtime version: the deploy injects the actual release tag via
-	// FUNNELBARN_VERSION (images are SHA-tagged and reused across environments),
-	// which overrides the build-time default baked into the binary.
-	version := Version
-	if cfg.Version != "" {
-		version = cfg.Version
-	}
+	version := runtimeVersion(cfg)
 
 	if handled, err := runSubcommand(cfg, os.Args[1:]); handled {
 		return err
 	}
-
 	if err := cfg.ValidateMode(); err != nil {
 		return err
 	}
-
-	// A configured session secret must be strong. An empty secret is tolerated
-	// for local dev (a random per-process secret is generated) but refused for a
-	// weak explicit one — a short secret is worse than none because it looks
-	// deliberate. All deployed environments set this via SOPS.
-	if secret := strings.TrimSpace(cfg.SessionSecret); secret == "" {
-		slog.Warn("FUNNELBARN_SESSION_SECRET is not set; a random per-process secret will be used and sessions will not persist across restarts",
-			"handled", false)
-	} else if len(secret) < 32 {
-		return fmt.Errorf("FUNNELBARN_SESSION_SECRET must be at least 32 characters (got %d)", len(secret))
+	if err := checkSessionSecret(cfg.SessionSecret); err != nil {
+		return err
 	}
 
-	// Telemetry (logging sinks, tracer, and OTel MeterProvider) is wired up
-	// front, before repository.Open: otelsql resolves otel.GetMeterProvider()
-	// exactly once, at Open time, and binds to whatever provider is current
-	// then. If InitMetrics ran later, otelsql would permanently bind to the
-	// no-op default provider and its db.sql.* histograms would never export.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	var cleanup cleanupStack
+	defer cleanup.run()
 
-	// Wire BugBarn self-reporting and set up multi-sink logger.
-	selfReporting := cfg.SelfEndpoint != "" && cfg.SelfAPIKey != ""
-	if selfReporting {
-		bb.Init(bb.Options{
-			APIKey:      cfg.SelfAPIKey,
-			Endpoint:    cfg.SelfEndpoint,
-			ProjectSlug: cfg.SelfProject,
-			Environment: cfg.SelfEnvironment,
-		})
-		defer bb.Shutdown(2 * time.Second)
-	}
-	otelCfg := tracing.Config{
-		Endpoint:    cfg.SpanBarnEndpoint,
-		APIKey:      cfg.SpanBarnAPIKey,
-		ServiceName: "funnelbarn",
-		Version:     version,
-		Environment: cfg.SelfEnvironment,
-	}
-
-	// SpanBarn OTLP logs handler — must be created before the logger is built.
-	spanbarnLogHandler, shutdownLogs, err := tracing.InitLogs(ctx, otelCfg)
-	if err != nil {
-		return fmt.Errorf("init logs: %w", err)
-	}
-	defer logShutdown(slog.LevelWarn, "logs", func() error { return shutdownLogs(context.Background()) })
-
-	// Rewire the global logger with the appropriate sinks.
-	slog.SetDefault(buildLogger(os.Stderr, cfg, spanbarnLogHandler))
-	if selfReporting {
-		slog.Info("self-reporting enabled", "endpoint", cfg.SelfEndpoint)
-	} else {
-		slog.Warn("self-reporting disabled; errors will not be reported to BugBarn — set FUNNELBARN_SELF_ENDPOINT and FUNNELBARN_SELF_API_KEY to enable it",
-			"handled", true)
-	}
-	if cfg.DogfoodAPIKey != "" {
-		slog.Info("dogfood analytics enabled", "project", cfg.DogfoodProject)
-	}
-
-	// Backend self-tracking: fire events (e.g. first_event_ingested) that can
-	// only be observed server-side, against the same dogfood project used for
-	// frontend analytics and flag evaluation — via this repo's own Go SDK
-	// hitting this app's own public ingest endpoint.
-	if cfg.DogfoodAPIKey != "" && cfg.PublicURL != "" {
-		selfsdk.Init(selfsdk.Options{
-			APIKey:      cfg.DogfoodAPIKey,
-			Endpoint:    strings.TrimRight(cfg.PublicURL, "/"),
-			ProjectName: cfg.DogfoodProject,
-			// Without this the SDK falls back to its own log.Printf, which
-			// bypasses slog and so never reaches BugBarn. A dogfood key minted
-			// for the wrong project rejects every event permanently; that has
-			// to look like a problem, not like silence.
-			OnError: func(e selfsdk.Event, err error) {
-				slog.Warn("dogfood analytics event was rejected",
-					"event", e.Name, "err", err, "handled", true)
-			},
-		})
-		defer logShutdown(slog.LevelWarn, "self-reporting", func() error { return selfsdk.Shutdown(2 * time.Second) })
-	} else if cfg.DogfoodAPIKey != "" {
-		slog.Warn("dogfood analytics enabled but FUNNELBARN_PUBLIC_URL is unset; backend self-tracking disabled",
-			"handled", true)
-	}
-
-	shutdownTracer, err := tracing.Init(ctx, otelCfg)
-	if err != nil {
-		return fmt.Errorf("init tracing: %w", err)
-	}
-	defer logShutdown(slog.LevelWarn, "tracer", func() error { return shutdownTracer(context.Background()) })
-
-	// Must run before repository.Open (see comment above): this is what sets
-	// the real OTel MeterProvider via otel.SetMeterProvider.
-	shutdownMetrics, err := tracing.InitMetrics(ctx, otelCfg)
-	if err != nil {
-		return fmt.Errorf("init metrics: %w", err)
-	}
-	defer logShutdown(slog.LevelWarn, "metrics", func() error { return shutdownMetrics(context.Background()) })
-
-	// Relays the dashboard's own browser spans to SpanBarn, so a trace shows the
-	// page and the client-side view of each API call above the server spans that
-	// already join it via the traceparent header.
-	spanRelay := tracing.NewSpanRelay(otelCfg)
-	defer spanRelay.Shutdown()
-
-	if cfg.SpanBarnEndpoint != "" {
-		slog.Info("spanbarn telemetry enabled", "endpoint", cfg.SpanBarnEndpoint, "signals", "traces,metrics,logs,browser-spans")
-	}
-
-	slog.Info("process mode", "mode", cfg.Mode)
-	store, err := openStore(cfg)
-	if err != nil {
-		return fmt.Errorf("open storage: %w", err)
-	}
-	defer logShutdown(slog.LevelError, "store", store.Close)
-
-	healthSvc := service.NewProjectHealthService(store)
-	commands, err := newCommandBus(ctx, cfg, command.Deps{
-		Store:              store,
-		MarkFlagsEvaluated: healthSvc.MarkFlagsEvaluated,
-		MarkProjectHealth:  service.ApplyHealthMark(healthSvc),
-	}, slog.Default())
-	if err != nil {
-		return fmt.Errorf("command bus: %w", err)
-	}
-	defer drainCommands(commands) // deferred LIFO: drains before store.Close
-	if isReader(cfg) {
-		healthSvc = service.NewProjectHealthService(service.HealthViaCommands{ProjectHealthRepo: store, Bus: commands})
-	}
-	flagBookkeeping := newFlagBookkeeping(ctx, commands, slog.Default())
-	defer drainCommands(flagBookkeeping) // deferred LIFO: hands its queue to commands before they drain
-
-	// Wire services.
-	projectsSvc := service.NewProjectService(store)
-	funnelsSvc := service.NewFunnelService(store)
-	abtestsSvc := service.NewABTestService(store)
-	flagSnapshot, keySnapshot := startEvaluateSnapshots(ctx, store)
-	flagsSvc := service.NewFlagService(store).WithConfigCacheTTL(time.Duration(cfg.ConfigFlagCacheSeconds) * time.Second).WithCommands(commands).WithBackgroundCommands(flagBookkeeping).WithSnapshot(flagSnapshot)
-	eventsSvc := service.NewEventService(store)
-	overviewSvc := service.NewOverviewService(store)
-	sessionsSvc := service.NewSessionService(store)
-	apikeysSvc := service.NewAPIKeyService(store)
-	widgetsSvc := service.NewWidgetService(store)
-	segmentsSvc := service.NewSegmentService(store)
-
-	eventSpool, err := spool.NewWithLimit(cfg.SpoolDir, cfg.MaxSpoolBytes)
-	if err != nil {
-		return fmt.Errorf("open spool: %w", err)
-	}
-	defer logShutdown(slog.LevelError, "spool", eventSpool.Close)
-
-	recordingsSvc, recordingsQ, err := newRecordings(ctx, cfg, store, slog.Default())
-	if err != nil {
-		return fmt.Errorf("recordings queue: %w", err)
-	}
-	defer drainQueue("recordings queue", recordingsQ) // deferred LIFO: drains before store.Close
-
-	var geoLookup *geoip.Lookup
-	if cfg.GeoIPCityDB != "" {
-		var geoErr error
-		geoLookup, geoErr = geoip.Open(cfg.GeoIPCityDB, cfg.GeoIPASNDB)
-		if geoErr != nil {
-			// Error (not Warn) so a missing/unreadable geo DB raises a BugBarn
-			// issue instead of silently disabling geo enrichment.
-			slog.Error("geoip: failed to open database, geo enrichment disabled",
-				"err", geoErr, "handled", false,
-				"city_db", cfg.GeoIPCityDB, "asn_db", cfg.GeoIPASNDB)
-		} else {
-			defer geoLookup.Close()
-			slog.Info("geoip enabled", "city_db", cfg.GeoIPCityDB, "asn_db", cfg.GeoIPASNDB)
-		}
-	}
-
-	applier := &ingestApplier{store: store, geo: geoLookup, health: workerhealth.New(workerhealth.Options{})}
-	ingestQ, err := newIngestQueue(ctx, cfg, applier, slog.Default())
-	if err != nil {
-		return fmt.Errorf("ingest queue: %w", err)
-	}
-	defer drainQueue("ingest queue", ingestQ) // deferred LIFO: drains before store.Close
-
-	ready, err := startWorker(ctx, cfg, store, eventSpool, applier, ingestQ, recordingsQ, recordingsSvc, commands)
+	// Telemetry (logging sinks, tracer, and OTel MeterProvider) is wired up
+	// front, before repository.Open: see startTelemetry.
+	tele, err := startTelemetry(ctx, cfg, version, &cleanup)
 	if err != nil {
 		return err
 	}
+	data, err := openData(ctx, cfg, &cleanup)
+	if err != nil {
+		return err
+	}
+	serverCfg, keySnapshot := newServerConfig(ctx, cfg, version, data)
+	serverCfg.SpanRelay = tele.spanRelay
 
-	apiAuthorizer, err := newAPIAuthorizer(cfg, store, commands)
+	ing, err := startIngest(ctx, cfg, data, &cleanup)
 	if err != nil {
 		return err
 	}
-	apiAuthorizer = apiAuthorizer.WithEvaluateKeys(keySnapshot)
-	userAuth, err := auth.NewUserAuthenticator(cfg.AdminUsername, cfg.AdminPassword, cfg.AdminPasswordBcrypt)
+	serverCfg.Recordings = ing.recordings
+	serverCfg.Ready = ing.ready
+
+	authn, err := newAuthStack(ctx, cfg, data, keySnapshot)
 	if err != nil {
 		return err
 	}
-	// Sessions are token-bound server-side rows (web_sessions): the cookie is
-	// an opaque handle, so a logout/revocation is simply a row deletion —
-	// durable by construction, no separate revocation list needed.
-	sessionManager := auth.NewSessionManager(cfg.SessionSecret, cfg.SessionTTL)
-	if !isReader(cfg) { // a reader cannot write; the writer prunes
-		if n, err := store.DeleteExpiredWebSessions(ctx, time.Now().UTC()); err != nil {
-			slog.Warn("prune expired web sessions", "err", err)
-		} else if n > 0 {
-			slog.Info("pruned expired web sessions", "count", n)
-		}
-	}
-	handler := ingest.NewHandler(apiAuthorizer, eventSpool, cfg.MaxBodyBytes)
-	handler.OnEventsReceived = func(ctx context.Context, projectID string) {
-		firstEvent, err := healthSvc.MarkEventsReceived(ctx, projectID)
-		if err != nil {
-			slog.Warn("ingest: mark events received", "project_id", projectID, "err", err)
-			return
-		}
-		// firstEvent is true only on the call that flips this project's
-		// events_received health flag from false to true — i.e. this
-		// project's first ever ingested event. Reusing that existing
-		// per-project flag (rather than a new migration/counter) gives us an
-		// activation signal that can only be observed here, server-side: it
-		// happens via the customer's own SDK hitting this app's ingest
-		// endpoint, never through this app's own UI.
-		if firstEvent && projectID != "" {
-			selfsdk.Track("first_event_ingested", map[string]any{
-				"project_id": projectID,
-			})
-		}
-	}
-	// Deferred after eventSpool.Close, so it runs first: the handler's final
-	// flush must reach the spool before the file closes.
-	defer handler.StartBackground(ctx)()
+	handler := newIngestHandler(ctx, cfg, authn.authorizer, ing.spool, data.health, &cleanup)
+	serverCfg.Ingest = handler
+	serverCfg.UserAuth = authn.users
+	serverCfg.SessionManager = authn.sessions
 
 	oidcClient := buildOIDCClient(cfg)
-
-	// Determine whether local/DB users exist so the API can fail closed. A
-	// deployment that authenticates only via CLI-created users (no admin env,
-	// no OIDC) must still enforce sessions on its dashboard routes.
-	localUserCount, err := store.CountUsers(ctx)
+	localUsers, err := checkAuthentication(ctx, cfg, data.store, authn, oidcClient)
 	if err != nil {
-		return fmt.Errorf("count users: %w", err)
-	}
-	slog.Info("authentication mechanisms",
-		"env_admin", userAuth.Enabled(),
-		"oidc_confidential", oidcClient != nil,
-		"local_users", localUserCount,
-		"mcp", oidcClient != nil && cfg.MCPResourceURL != "",
-		"mcp_resource_url", cfg.MCPResourceURL,
-	)
-	authConfigured := userAuth.Enabled() || oidcClient != nil || localUserCount > 0
-	if err := validateFailClosed(environment.Normalize(cfg.SelfEnvironment), apiAuthorizer.Enabled(), authConfigured); err != nil {
 		return err
 	}
-	if !authConfigured {
-		slog.Warn("no authentication mechanism configured; dashboard API routes will be served UNAUTHENTICATED — set FUNNELBARN_ADMIN_*, configure OIDC, or run 'funnelbarn user create'",
-			"handled", false)
-	}
+	serverCfg.LocalUsersExist = localUsers > 0
+	serverCfg.OIDC = oidcClient
 
-	apiServer := api.NewServer(api.ServerConfig{
-		InstanceSettings:      store,
-		GeoAnonymizer:         store,
-		Segments:              segmentsSvc,
-		Distributions:         store,
-		Ingest:                handler,
-		Projects:              projectsSvc,
-		Funnels:               funnelsSvc,
-		ABTests:               abtestsSvc,
-		Flags:                 flagsSvc,
-		Events:                eventsSvc,
-		Overview:              overviewSvc,
-		Sessions:              sessionsSvc,
-		APIKeys:               apikeysSvc,
-		Widgets:               widgetsSvc,
-		UserAuth:              userAuth,
-		SessionManager:        sessionManager,
-		LocalUsersExist:       localUserCount > 0,
-		AllowedOrigins:        cfg.AllowedOrigins,
-		PublicURL:             cfg.PublicURL,
-		LoginRatePerMinute:    cfg.LoginRatePerMinute,
-		LoginRateBurst:        cfg.LoginRateBurst,
-		APIRatePerMinute:      cfg.APIRatePerMinute,
-		APIRateBurst:          cfg.APIRateBurst,
-		IngestRatePerMinute:   cfg.IngestRatePerMinute,
-		IngestRateBurst:       cfg.IngestRateBurst,
-		SetupRatePerMinute:    cfg.SetupRatePerMinute,
-		SetupRateBurst:        cfg.SetupRateBurst,
-		DB:                    store,
-		Version:               version,
-		Commit:                Commit,
-		BuildTime:             BuildTime,
-		TrustedProxies:        cfg.TrustedProxies,
-		BugbarnEndpoint:       cfg.SelfEndpoint,
-		BugbarnIngestKey:      cfg.SelfAPIKey,
-		BugbarnProject:        cfg.SelfProject,
-		DogfoodAPIKey:         cfg.DogfoodAPIKey,
-		DogfoodProject:        cfg.DogfoodProject,
-		IAMBarnUsers:          store,
-		PostLogoutRedirectURI: cfg.PostLogoutRedirectURI,
-		OIDC:                  oidcClient,
-		WebSessions:           store,
-		Environment:           cfg.SelfEnvironment,
-		OIDCRefreshGrace:      time.Duration(cfg.OIDCRefreshGraceSeconds) * time.Second,
-		Recordings:            recordingsSvc,
-		RecordingSettings:     store,
-		ProjectHealth:         healthSvc,
-		Agents:                service.NewAgentService(store),
-		FlagAutoRegisterMax:   cfg.AutoRegisterMaxFlags,
-		Commands:              commands,
-		ReadPoolWait:          func() time.Duration { return store.ReadDB().Stats().WaitDuration },
-		Ready:                 ready,
-		WriterURL:             forwardTarget(cfg),
-		InternalToken:         cfg.InternalToken,
-		SpanRelay:             spanRelay,
-		MCPResourceURL:        cfg.MCPResourceURL,
-	})
-	apiServer.SetGitHubWebhook(cfg.GitHubWebhookSecret, cfg.GitHubWebhookProject)
-	if cfg.MetricsToken != "" {
-		apiServer.SetMetricsToken(cfg.MetricsToken)
-	} else {
-		slog.Warn("/metrics is served without authentication (FUNNELBARN_METRICS_TOKEN unset); ensure it is not exposed on a public route",
-			"handled", false)
-	}
-
-	apiServer.StartCleanup(ctx)
-
-	var httpHandler http.Handler = apiServer
-	if selfReporting {
-		httpHandler = bb.RecoverMiddleware(httpHandler)
-	}
-
-	server := &http.Server{
-		Addr:    cfg.Addr,
-		Handler: httpHandler,
-	}
-
-	slog.Info("funnelbarn starting", "addr", cfg.Addr, "version", version)
-
-	errCh := make(chan error, 1)
-	bblog.Go("http-server", func() {
-		errCh <- server.ListenAndServe()
-	})
-
-	return waitServer(ctx, server, errCh)
+	return serve(ctx, cfg, version, api.NewServer(serverCfg), tele.selfReporting)
 }
 
 // resolveEventProject looks up the project a spool record belongs to. A record
