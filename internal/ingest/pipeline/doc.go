@@ -1,7 +1,8 @@
 // Package pipeline moves ingest records from the spool to stored events: the
 // worker loops that read the spool, the applier that turns a record into rows,
-// the forwarders that publish records to the ingest queue, and the health
-// monitor that reports a stalled or blind worker.
+// the forwarders that publish records to the ingest queue, the queue that
+// carries session recording chunk metadata, and the health monitor that
+// reports a stalled or blind worker.
 //
 // The monitor is a set of pure state machines that report when something looks
 // wrong; the caller decides how to react (typically a slog.Error, which the

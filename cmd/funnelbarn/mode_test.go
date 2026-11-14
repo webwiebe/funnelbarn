@@ -135,23 +135,6 @@ func TestReaderQueuesDoNotConsume(t *testing.T) {
 	require.NotNil(t, iq, "a reader always forwards ingest to the queue")
 	require.Nil(t, iq.Bus)
 	require.NoError(t, iq.Close(ctx))
-
-	rq, err := newRecordingsQueue(ctx, cfg, nil, logger)
-	require.NoError(t, err)
-	require.NotNil(t, rq.fallback)
-	require.Nil(t, rq.bus)
-
-	// Valkey down: the chunk is buffered and reported queued, so the
-	// recording service does not try to apply it on the read-only store.
-	mr.SetError("LOADING Valkey is down")
-	require.True(t, rq.Enqueue(ctx, service.ChunkMeta{Recording: domain.Recording{ID: "r1", ProjectID: "p1"}, ChunkIndex: 0}))
-	mr.SetError("")
-	rq.fallback.Forward(ctx)
-	require.False(t, rq.fallback.Failing())
-	n, err := rq.list.QueuedLen(ctx)
-	require.NoError(t, err)
-	require.EqualValues(t, 1, n)
-	require.NoError(t, rq.Close(ctx))
 }
 
 func TestStandaloneIgnoresTheSplitDefaults(t *testing.T) {
@@ -161,9 +144,6 @@ func TestStandaloneIgnoresTheSplitDefaults(t *testing.T) {
 	iq, err := pipeline.NewIngestQueue(ctx, cfg, nil, logger)
 	require.NoError(t, err)
 	require.Nil(t, iq)
-	rq, err := newRecordingsQueue(ctx, cfg, nil, logger)
-	require.NoError(t, err)
-	require.Nil(t, rq)
 }
 
 func TestSchemaGateWaitsForTheWriter(t *testing.T) {

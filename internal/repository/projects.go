@@ -4,17 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"regexp"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/sqlcgen"
 )
-
-// projectSlugPattern bounds slugs that may be auto-created on the ingest path.
-// It mirrors the CLI's slugPattern (lowercase alphanumerics + single hyphens),
-// so an attacker cannot use a forged x-funnelbarn-project header to spawn
-// projects with arbitrary/garbage names.
-var projectSlugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 // CreateProject inserts a new project.
 func (s *Store) CreateProject(ctx context.Context, name, slug string) (domain.Project, error) {
@@ -110,7 +103,7 @@ func (s *Store) findProject(ctx context.Context, slug string) (p domain.Project,
 	// Only auto-create for well-formed slugs. This blocks path-traversal /
 	// garbage values (e.g. from a forged x-funnelbarn-project header on an
 	// instance-wide key) from spawning junk projects.
-	if !projectSlugPattern.MatchString(slug) {
+	if !domain.ValidProjectSlug(slug) {
 		return domain.Project{}, false, fmt.Errorf("%w: refusing to auto-create project for invalid slug %q", domain.ErrProjectUnresolvable, slug)
 	}
 
