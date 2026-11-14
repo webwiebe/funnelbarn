@@ -1,4 +1,7 @@
-package main
+// Package maintenance holds the background jobs the writer runs beside the
+// ingest worker: the daily retention and integrity pass, and the hourly check
+// for a drop in production event volume.
+package maintenance
 
 import (
 	"context"
@@ -17,7 +20,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
-// startupMaintenanceDelay is how long after boot the first maintenance pass
+// StartupDelay is how long after boot the first maintenance pass
 // runs. The pass used to fire only on a 24h ticker with no initial run, so a
 // redeploy reset the timer — and during active development the pod restarts
 // more often than once a day, which meant the pass could go weeks without ever
@@ -28,7 +31,7 @@ import (
 // The delay keeps a potentially R2-heavy sweep off the boot path so the
 // readiness probe settles first, and stops a crash-loop turning the pass into
 // a hot loop of object-store deletes.
-const startupMaintenanceDelay = 2 * time.Minute
+const StartupDelay = 2 * time.Minute
 
 // maintenanceRecordings is the narrow slice of service.Recordings the
 // maintenance pass actually uses. Depending on the full fifteen-method
@@ -40,11 +43,11 @@ type maintenanceRecordings interface {
 	PurgeBotRecordings(ctx context.Context) (int, error)
 }
 
-// runMaintenance executes one maintenance pass: retention purges, the recording
+// Run executes one maintenance pass: retention purges, the recording
 // sweeps, and the orphaned-row integrity check. Every step is independent and
 // failure-tolerant — one failing purge logs and the rest still run — and every
 // step is idempotent, so running the pass more often than daily is harmless.
-func runMaintenance(ctx context.Context, cfg config.Config, store *repository.Store, recordings maintenanceRecordings) {
+func Run(ctx context.Context, cfg config.Config, store *repository.Store, recordings maintenanceRecordings) {
 	purgeCtx, purgeSpan := tracing.StartSpan(ctx, "maintenance.purge")
 	defer purgeSpan.End()
 	p := &maintenancePass{ctx: purgeCtx, root: purgeSpan, store: store}

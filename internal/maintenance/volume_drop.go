@@ -1,4 +1,4 @@
-package main
+package maintenance
 
 import (
 	"context"
@@ -18,9 +18,10 @@ import (
 )
 
 const (
-	// volumeDropInterval is how often the worker looks for a new clock hour. Each
+	// VolumeDropInterval is how often the worker looks for a new clock hour. Each
 	// hour is evaluated once.
-	volumeDropInterval = 10 * time.Minute
+	// VolumeDropInterval is how often the worker runs the check.
+	VolumeDropInterval = 10 * time.Minute
 
 	// volumeDropOpenKey is the instance setting that lists the projects whose drop
 	// is open, as JSON. It is a setting because a release with a migration gets no
@@ -46,11 +47,11 @@ const (
 // hold them. It is a variable so a test can expire it.
 var volumeDropTimeout = 30 * time.Second
 
-// volumeDropCheck logs one Error per project at the start of a volume drop, which
+// VolumeDropCheck logs one Error per project at the start of a volume drop, which
 // opens its BugBarn issue. lastHour only stops repeat evaluations within an hour;
 // the open drops in the instance setting stop repeat lines, across restarts too.
 // failingSince and stallReported belong to the stall alarm.
-type volumeDropCheck struct {
+type VolumeDropCheck struct {
 	store         *repository.Store
 	now           func() time.Time
 	lastHour      time.Time
@@ -58,17 +59,18 @@ type volumeDropCheck struct {
 	stallReported bool
 }
 
-func newVolumeDropCheck(store *repository.Store) *volumeDropCheck {
-	return &volumeDropCheck{store: store, now: time.Now}
+// NewVolumeDropCheck returns a check that reads and keeps its state in store.
+func NewVolumeDropCheck(store *repository.Store) *VolumeDropCheck {
+	return &VolumeDropCheck{store: store, now: time.Now}
 }
 
-// run evaluates every clock hour since the last one evaluated, up to the current
+// Run evaluates every clock hour since the last one evaluated, up to the current
 // hour, unless it already did this hour. Test and development rows follow deploys
 // and agent work, so only production rows count. A failed read logs Warn and
 // leaves the hours for the next interval; the Error comes from the stall alarm.
 // The lines go out before the settings are saved, so a failed save repeats a line
 // and loses none.
-func (c *volumeDropCheck) run(ctx context.Context) {
+func (c *VolumeDropCheck) Run(ctx context.Context) {
 	now := c.now().UTC().Truncate(time.Hour)
 	if now.Equal(c.lastHour) {
 		return
@@ -97,7 +99,7 @@ func (c *volumeDropCheck) run(ctx context.Context) {
 
 // evaluate reads the state and the hourly counts and evaluates the pending
 // hours. On a failed read it returns the last hour evaluated, zero if unknown.
-func (c *volumeDropCheck) evaluate(ctx context.Context, span trace.Span, now time.Time) (time.Time, error) {
+func (c *VolumeDropCheck) evaluate(ctx context.Context, span trace.Span, now time.Time) (time.Time, error) {
 	open, err := c.readOpen(ctx)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("read open drops: %w", err)
@@ -162,7 +164,7 @@ func pendingHours(last, now time.Time) (pending []time.Time, skipped int) {
 // failed logs a failed evaluation at Warn, and an Error once when no hour has
 // been evaluated for volumeDropStallAfter. The outage starts at the hour after
 // last, or at this process's first failure when last is unknown or later.
-func (c *volumeDropCheck) failed(last time.Time, err error) {
+func (c *VolumeDropCheck) failed(last time.Time, err error) {
 	slog.Warn("volume drop: evaluation failed, retrying next interval", "err", err)
 	now := c.now().UTC()
 	if c.failingSince.IsZero() {
@@ -181,7 +183,7 @@ func (c *volumeDropCheck) failed(last time.Time, err error) {
 }
 
 // save stores the open drops when they changed and the hour just evaluated.
-func (c *volumeDropCheck) save(ctx context.Context, open, stillOpen []string, now time.Time) {
+func (c *VolumeDropCheck) save(ctx context.Context, open, stillOpen []string, now time.Time) {
 	if !slices.Equal(open, stillOpen) {
 		if err := c.writeOpen(ctx, stillOpen); err != nil {
 			slog.Warn("volume drop: save open drops", "err", err)
@@ -194,7 +196,7 @@ func (c *volumeDropCheck) save(ctx context.Context, open, stillOpen []string, no
 
 // readLast returns the last hour evaluated, zero when none is stored. A value it
 // cannot parse counts as none, which evaluates only the current hour.
-func (c *volumeDropCheck) readLast(ctx context.Context) (time.Time, error) {
+func (c *VolumeDropCheck) readLast(ctx context.Context) (time.Time, error) {
 	value, ok, err := c.store.GetInstanceSetting(ctx, volumeDropLastKey)
 	if err != nil || !ok {
 		return time.Time{}, err
@@ -209,7 +211,7 @@ func (c *volumeDropCheck) readLast(ctx context.Context) (time.Time, error) {
 
 // readOpen returns the projects whose drop is open. A value it cannot parse counts
 // as none open, which repeats a line for each drop that is still open.
-func (c *volumeDropCheck) readOpen(ctx context.Context) ([]string, error) {
+func (c *VolumeDropCheck) readOpen(ctx context.Context) ([]string, error) {
 	value, ok, err := c.store.GetInstanceSetting(ctx, volumeDropOpenKey)
 	if err != nil || !ok {
 		return nil, err
@@ -222,7 +224,7 @@ func (c *volumeDropCheck) readOpen(ctx context.Context) ([]string, error) {
 	return open, nil
 }
 
-func (c *volumeDropCheck) writeOpen(ctx context.Context, open []string) error {
+func (c *VolumeDropCheck) writeOpen(ctx context.Context, open []string) error {
 	if open == nil {
 		open = []string{}
 	}

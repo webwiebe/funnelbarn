@@ -1,4 +1,4 @@
-package main
+package maintenance
 
 import (
 	"context"
@@ -74,7 +74,7 @@ func TestRunMaintenance_StepOrder(t *testing.T) {
 	store := openMaintenanceStore(t, "maint-order.db")
 
 	cfg := config.Config{EventRetentionDays: 30, AutoRegisterTTLDays: 30}
-	runMaintenance(context.Background(), cfg, store, &scriptedRecordings{})
+	Run(context.Background(), cfg, store, &scriptedRecordings{})
 
 	var steps []tracetest.SpanStub
 	for _, s := range exp.GetSpans() {
@@ -124,7 +124,7 @@ func TestRunMaintenance_RetentionStepsFollowConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			exp := captureSpans(t)
 			store := openMaintenanceStore(t, "maint-gate.db")
-			runMaintenance(context.Background(), tc.cfg, store, nil)
+			Run(context.Background(), tc.cfg, store, nil)
 			spans := spansByName(exp)
 			for step, wantRan := range tc.want {
 				if _, ran := spans["maintenance.purge."+step]; ran != wantRan {
@@ -164,7 +164,7 @@ func TestRunMaintenance_RecordingRetentionDays(t *testing.T) {
 				}
 			}
 			rec := &scriptedRecordings{}
-			runMaintenance(context.Background(), config.Config{}, store, rec)
+			Run(context.Background(), config.Config{}, store, rec)
 			if rec.retention != tc.want {
 				t.Errorf("retention = %d, want %d", rec.retention, tc.want)
 			}
@@ -185,7 +185,7 @@ func TestRunMaintenance_RecordingFailuresDoNotStopTheSweeps(t *testing.T) {
 		botErr:    errors.New("bot failed"),
 	}
 
-	runMaintenance(context.Background(), config.Config{}, store, rec)
+	Run(context.Background(), config.Config{}, store, rec)
 
 	if got := rec.calls; len(got) != 3 || got[0] != "old" || got[1] != "broken" || got[2] != "bot" {
 		t.Fatalf("calls = %v, want [old broken bot]", got)
@@ -212,7 +212,7 @@ func TestRunMaintenance_RecordingFailuresDoNotStopTheSweeps(t *testing.T) {
 func TestRunMaintenance_RecordingCountsAreSpanAttributes(t *testing.T) {
 	exp := captureSpans(t)
 	store := openMaintenanceStore(t, "maint-counts.db")
-	runMaintenance(context.Background(), config.Config{}, store, &scriptedRecordings{broken: 2, bot: 3})
+	Run(context.Background(), config.Config{}, store, &scriptedRecordings{broken: 2, bot: 3})
 
 	step := spansByName(exp)["maintenance.purge.recordings"]
 	if n, ok := intAttr(step, "broken_rows"); !ok || n != 2 {
@@ -226,7 +226,7 @@ func TestRunMaintenance_RecordingCountsAreSpanAttributes(t *testing.T) {
 	}
 
 	exp2 := captureSpans(t)
-	runMaintenance(context.Background(), config.Config{}, store, &scriptedRecordings{})
+	Run(context.Background(), config.Config{}, store, &scriptedRecordings{})
 	step = spansByName(exp2)["maintenance.purge.recordings"]
 	if hasAttr(step, "broken_rows") || hasAttr(step, "bot_rows") {
 		t.Error("zero counts must not set broken_rows or bot_rows")
@@ -238,7 +238,7 @@ func TestRunMaintenance_CleanPassHasNoErrors(t *testing.T) {
 	exp := captureSpans(t)
 	store := openMaintenanceStore(t, "maint-clean.db")
 	cfg := config.Config{EventRetentionDays: 30, AutoRegisterTTLDays: 30}
-	runMaintenance(context.Background(), cfg, store, &scriptedRecordings{})
+	Run(context.Background(), cfg, store, &scriptedRecordings{})
 
 	root := spansByName(exp)["maintenance.purge"]
 	if root.Status.Code == codes.Error || len(root.Events) != 0 {

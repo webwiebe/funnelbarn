@@ -393,7 +393,7 @@ Note: `rrweb-player` (the pre-built UI widget) is NOT used in favor of a custom 
 | The SDK emits a custom rrweb event tagged `fb_flag` on `evaluate()` and the player draws amber markers | Flag evaluation markers section | No file under `sdks/js/src`, `web/src` or `internal` contains `fb_flag`; the player shows a sidebar list from the flags endpoint |
 | The recordings list filters by `flag` and `variant` | Unified Session Filter | `handleListRecordings` reads `limit`, `offset`, `environment`, `device_type`, `page_url`, `human_only` and `session_ids` (`internal/api/recordings.go`) |
 | Sessions rows show flag badges | Frontend changes | `web/src/pages/Sessions.tsx` has no flag handling |
-| Old recordings are not purged | Out of Scope | The maintenance pass purges old, unplayable and bot recordings (`cmd/funnelbarn/maintenance.go`) |
+| Old recordings are not purged | Out of Scope | The maintenance pass purges old, unplayable and bot recordings (`internal/maintenance/maintenance.go`) |
 | All recordings are stored in full, with no sampling | Out of Scope | Per-project sample rate and URL include and exclude rules exist (`internal/api/recording_settings.go`) |
 | One migration, `00018_recordings.sql`, adds a `recordings` table with fixed columns | Database Schema | Migrations 00018 to 00022, 00025, 00032 and 00039 change the recording tables |
 | Four R2 variables | Config | A fifth, `FUNNELBARN_R2_ENDPOINT`, exists, plus `FUNNELBARN_RECORDINGS_VIA_QUEUE` and `FUNNELBARN_RECORDINGS_QUEUE_MAX_LEN` (`internal/config/config.go`) |
@@ -411,6 +411,6 @@ Note: `rrweb-player` (the pre-built UI widget) is NOT used in favor of a custom 
 
 ## Sources
 
-- `internal/api/recordings.go`, `internal/api/recording_settings.go`, `internal/service/recordings.go`, `internal/blobstore/r2.go`, `internal/repository/recordings.go`, `cmd/funnelbarn/recordings_queue.go`, `cmd/funnelbarn/maintenance.go`
+- `internal/api/recordings.go`, `internal/api/recording_settings.go`, `internal/service/recordings.go`, `internal/blobstore/r2.go`, `internal/repository/recordings.go`, `cmd/funnelbarn/recordings_queue.go`, `internal/maintenance/maintenance.go`
 - `sdks/js/src/index.ts`, `web/src/pages/Sessions.tsx`, `web/src/components/sessions/SessionReplay.tsx`
 - Issue titles: #228, #305, #345

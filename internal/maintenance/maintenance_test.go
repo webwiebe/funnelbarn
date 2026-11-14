@@ -1,4 +1,4 @@
-package main
+package maintenance
 
 import (
 	"context"
@@ -44,7 +44,7 @@ func TestRunMaintenance_EmitsRootAndStepSpans(t *testing.T) {
 	defer store.Close()
 
 	cfg := config.Config{EventRetentionDays: 30, AutoRegisterTTLDays: 30}
-	runMaintenance(context.Background(), cfg, store, &fakeRecordings{})
+	Run(context.Background(), cfg, store, &fakeRecordings{})
 
 	byName := map[string]tracetest.SpanStub{}
 	for _, s := range exp.GetSpans() {
@@ -86,7 +86,7 @@ func TestRunMaintenance_SkippedStepsEmitNoSpans(t *testing.T) {
 	}
 	defer store.Close()
 
-	runMaintenance(context.Background(), config.Config{}, store, nil)
+	Run(context.Background(), config.Config{}, store, nil)
 
 	for _, s := range exp.GetSpans() {
 		switch s.Name {

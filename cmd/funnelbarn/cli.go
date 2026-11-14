@@ -17,10 +17,10 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
-	"github.com/wiebe-xyz/funnelbarn/internal/worker"
 )
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
@@ -49,7 +49,7 @@ func runWorkerOnce(cfg config.Config) error {
 
 	processed := 0
 	for _, record := range records {
-		event, err := worker.SafeProcess(record)
+		event, err := pipeline.SafeProcess(record)
 		if err != nil {
 			tracing.RecordError(span, err)
 			slog.Error("worker-once: process record", "ingest_id", record.IngestID, "err", err)
@@ -61,7 +61,7 @@ func runWorkerOnce(cfg config.Config) error {
 				event.ProjectID = proj.ID
 			}
 		}
-		if err := worker.PersistEvent(ctx, store, event, nil); err != nil {
+		if err := pipeline.PersistEvent(ctx, store, event, nil); err != nil {
 			tracing.RecordError(span, err)
 			slog.Error("worker-once: persist event", "ingest_id", record.IngestID, "err", err)
 			continue
@@ -140,7 +140,7 @@ func replayRecord(ctx context.Context, store *repository.Store, record spool.Rec
 		return false
 	}
 
-	event, err := worker.SafeProcess(record)
+	event, err := pipeline.SafeProcess(record)
 	if err != nil {
 		slog.Error("replay: process record", "ingest_id", record.IngestID, "err", err)
 		return false
@@ -161,7 +161,7 @@ func replayRecord(ctx context.Context, store *repository.Store, record spool.Rec
 	}
 	event.ProjectID = proj.ID
 
-	if err := worker.PersistEvent(ctx, store, event, nil); err != nil {
+	if err := pipeline.PersistEvent(ctx, store, event, nil); err != nil {
 		slog.Error("replay: persist event", "ingest_id", record.IngestID, "err", err)
 		return false
 	}

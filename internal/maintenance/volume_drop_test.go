@@ -1,4 +1,4 @@
-package main
+package maintenance
 
 import (
 	"bytes"
@@ -79,8 +79,8 @@ func TestVolumeDropCheck_LogsErrorOncePerDrop(t *testing.T) {
 	logs := captureDefaultLog(t)
 
 	clock := start.Add(5 * time.Minute)
-	check := &volumeDropCheck{store: store, now: func() time.Time { return clock }}
-	check.run(context.Background())
+	check := &VolumeDropCheck{store: store, now: func() time.Time { return clock }}
+	check.Run(context.Background())
 
 	errs := logsAtLevel(t, logs, "ERROR")
 	require.Len(t, errs, 1)
@@ -91,12 +91,12 @@ func TestVolumeDropCheck_LogsErrorOncePerDrop(t *testing.T) {
 
 	// Same hour, same instance: no second evaluation.
 	clock = start.Add(15 * time.Minute)
-	check.run(context.Background())
+	check.Run(context.Background())
 	require.Len(t, logsAtLevel(t, logs, "ERROR"), 1)
 
 	// Next hour: the drop is running.
 	clock = start.Add(time.Hour + 5*time.Minute)
-	check.run(context.Background())
+	check.Run(context.Background())
 	require.Len(t, logsAtLevel(t, logs, "ERROR"), 1)
 }
 
@@ -110,8 +110,8 @@ func TestVolumeDropCheck_RestartDoesNotRepeat(t *testing.T) {
 
 	for _, at := range []time.Duration{0, 10 * time.Minute, 3 * time.Hour} {
 		clock := start.Add(at)
-		check := &volumeDropCheck{store: store, now: func() time.Time { return clock }}
-		check.run(context.Background())
+		check := &VolumeDropCheck{store: store, now: func() time.Time { return clock }}
+		check.Run(context.Background())
 	}
 
 	require.Len(t, logsAtLevel(t, logs, "ERROR"), 1)
@@ -125,14 +125,14 @@ func TestVolumeDropCheck_LogsAgainAfterRecovery(t *testing.T) {
 	logs := captureDefaultLog(t)
 
 	clock := start
-	check := &volumeDropCheck{store: store, now: func() time.Time { return clock }}
-	check.run(context.Background())
+	check := &VolumeDropCheck{store: store, now: func() time.Time { return clock }}
+	check.Run(context.Background())
 	require.Len(t, logsAtLevel(t, logs, "ERROR"), 1)
 
 	// 30 events in the window against a baseline of 72: over a fifth, so it closes.
 	seedHours(t, store, p.ID, environment.Production, start, start.Add(10*time.Hour), 3)
 	clock = start.Add(10 * time.Hour)
-	check.run(context.Background())
+	check.Run(context.Background())
 	require.Len(t, logsAtLevel(t, logs, "ERROR"), 1)
 	value, ok, err := store.GetInstanceSetting(context.Background(), volumeDropOpenKey)
 	require.NoError(t, err)
@@ -141,7 +141,7 @@ func TestVolumeDropCheck_LogsAgainAfterRecovery(t *testing.T) {
 
 	// 22 hours after the events stop again it has 6 left in the window.
 	clock = start.Add(32 * time.Hour)
-	check.run(context.Background())
+	check.Run(context.Background())
 	require.Len(t, logsAtLevel(t, logs, "ERROR"), 2)
 }
 
@@ -153,8 +153,8 @@ func TestVolumeDropCheck_UnreadableSettingCountsAsNoneOpen(t *testing.T) {
 	require.NoError(t, store.SetInstanceSetting(context.Background(), volumeDropOpenKey, "not json"))
 	logs := captureDefaultLog(t)
 
-	check := &volumeDropCheck{store: store, now: func() time.Time { return start }}
-	check.run(context.Background())
+	check := &VolumeDropCheck{store: store, now: func() time.Time { return start }}
+	check.Run(context.Background())
 
 	require.Len(t, logsAtLevel(t, logs, "WARN"), 1)
 	require.Len(t, logsAtLevel(t, logs, "ERROR"), 1)
@@ -171,8 +171,8 @@ func TestVolumeDropCheck_TestRowsDoNotHideAProductionDrop(t *testing.T) {
 	seedHours(t, store, p.ID, environment.Test, start.Add(-22*time.Hour), start, 10)
 	logs := captureDefaultLog(t)
 
-	check := &volumeDropCheck{store: store, now: func() time.Time { return start }}
-	check.run(context.Background())
+	check := &VolumeDropCheck{store: store, now: func() time.Time { return start }}
+	check.Run(context.Background())
 
 	require.Len(t, logsAtLevel(t, logs, "ERROR"), 1)
 }
@@ -185,8 +185,8 @@ func TestVolumeDropCheck_QuietWhenOnlyTestRowsFall(t *testing.T) {
 	seedHours(t, store, p.ID, environment.Production, start.Add(-22*time.Hour), start, 3)
 	logs := captureDefaultLog(t)
 
-	check := &volumeDropCheck{store: store, now: func() time.Time { return start }}
-	check.run(context.Background())
+	check := &VolumeDropCheck{store: store, now: func() time.Time { return start }}
+	check.Run(context.Background())
 
 	require.Empty(t, logsAtLevel(t, logs, "ERROR"))
 }
@@ -202,15 +202,15 @@ func TestVolumeDropCheck_RetriesAfterAFailedRead(t *testing.T) {
 	t.Cleanup(func() { volumeDropTimeout = prev })
 
 	start := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
-	check := &volumeDropCheck{store: store, now: func() time.Time { return start }}
-	check.run(context.Background())
+	check := &VolumeDropCheck{store: store, now: func() time.Time { return start }}
+	check.Run(context.Background())
 
 	require.Len(t, logsAtLevel(t, logs, "WARN"), 1)
 	require.Empty(t, logsAtLevel(t, logs, "ERROR"))
 	require.True(t, check.lastHour.IsZero())
 
 	volumeDropTimeout = prev
-	check.run(context.Background())
+	check.Run(context.Background())
 	require.Equal(t, start, check.lastHour)
 }
 
@@ -223,15 +223,15 @@ func TestVolumeDropCheck_ShutdownIsNotAFailure(t *testing.T) {
 	cancel()
 
 	start := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
-	check := &volumeDropCheck{store: store, now: func() time.Time { return start }}
-	check.run(cancelled)
+	check := &VolumeDropCheck{store: store, now: func() time.Time { return start }}
+	check.Run(cancelled)
 
 	require.Empty(t, logsAtLevel(t, logs, "WARN"))
 	require.Empty(t, logsAtLevel(t, logs, "ERROR"))
 	require.True(t, check.lastHour.IsZero())
 	require.True(t, check.failingSince.IsZero())
 
-	check.run(context.Background())
+	check.Run(context.Background())
 	require.Equal(t, start, check.lastHour)
 }
 
@@ -247,8 +247,8 @@ func TestVolumeDropCheck_DeadlineEndsTheEvaluation(t *testing.T) {
 	volumeDropTimeout = time.Nanosecond
 	t.Cleanup(func() { volumeDropTimeout = prev })
 
-	check := &volumeDropCheck{store: store, now: func() time.Time { return start }}
-	check.run(context.Background())
+	check := &VolumeDropCheck{store: store, now: func() time.Time { return start }}
+	check.Run(context.Background())
 
 	warns := logsAtLevel(t, logs, "WARN")
 	require.Len(t, warns, 1)
@@ -257,7 +257,7 @@ func TestVolumeDropCheck_DeadlineEndsTheEvaluation(t *testing.T) {
 	require.True(t, check.lastHour.IsZero())
 
 	volumeDropTimeout = prev
-	check.run(context.Background())
+	check.Run(context.Background())
 	require.Equal(t, start, check.lastHour)
 }
 
@@ -285,8 +285,8 @@ func TestVolumeDropCheck_CatchUpReportsADropInAMissedHour(t *testing.T) {
 	setLastHour(t, store, start.Add(-time.Hour))
 	logs := captureDefaultLog(t)
 
-	check := &volumeDropCheck{store: store, now: func() time.Time { return start.Add(3*time.Hour + 5*time.Minute) }}
-	check.run(context.Background())
+	check := &VolumeDropCheck{store: store, now: func() time.Time { return start.Add(3*time.Hour + 5*time.Minute) }}
+	check.Run(context.Background())
 
 	errs := logsAtLevel(t, logs, "ERROR")
 	require.Len(t, errs, 1)
@@ -302,8 +302,8 @@ func TestVolumeDropCheck_ReportsHoursPastTheLimit(t *testing.T) {
 	setLastHour(t, store, start.Add(-30*time.Hour))
 	logs := captureDefaultLog(t)
 
-	check := &volumeDropCheck{store: store, now: func() time.Time { return start }}
-	check.run(context.Background())
+	check := &VolumeDropCheck{store: store, now: func() time.Time { return start }}
+	check.Run(context.Background())
 
 	errs := logsAtLevel(t, logs, "ERROR")
 	require.Len(t, errs, 1)
@@ -313,7 +313,7 @@ func TestVolumeDropCheck_ReportsHoursPastTheLimit(t *testing.T) {
 	require.Equal(t, start.Format(volumedrop.HourFormat), lastHourSetting(t, store))
 
 	check.lastHour = time.Time{}
-	check.run(context.Background())
+	check.Run(context.Background())
 	require.Len(t, logsAtLevel(t, logs, "ERROR"), 1, "the skip is reported once")
 }
 
@@ -329,25 +329,25 @@ func TestVolumeDropCheck_StallAlarmFromTheStoredHour(t *testing.T) {
 	logs := captureDefaultLog(t)
 
 	clock := start.Add(-time.Minute)
-	check := &volumeDropCheck{store: store, now: func() time.Time { return clock }}
-	check.run(context.Background())
+	check := &VolumeDropCheck{store: store, now: func() time.Time { return clock }}
+	check.Run(context.Background())
 	require.Empty(t, logsAtLevel(t, logs, "ERROR"), "2h59m since the first missed hour")
 
 	clock = start
-	check.run(context.Background())
+	check.Run(context.Background())
 	errs := logsAtLevel(t, logs, "ERROR")
 	require.Len(t, errs, 1)
 	require.Contains(t, errs[0]["msg"], "no hour for 3 hours")
 	require.Equal(t, start.Add(-3*time.Hour).Format(time.RFC3339), errs[0]["since"])
 
 	clock = start.Add(10 * time.Minute)
-	check.run(context.Background())
+	check.Run(context.Background())
 	require.Len(t, logsAtLevel(t, logs, "ERROR"), 1, "once per outage")
 
 	_, err = store.DB().Exec(`ALTER TABLE events_away RENAME TO events`)
 	require.NoError(t, err)
 	clock = start.Add(20 * time.Minute)
-	check.run(context.Background())
+	check.Run(context.Background())
 	require.False(t, check.stallReported)
 	require.Equal(t, start.Format(volumedrop.HourFormat), lastHourSetting(t, store))
 }
@@ -362,15 +362,15 @@ func TestVolumeDropCheck_StallAlarmInMemory(t *testing.T) {
 
 	start := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 	clock := start
-	check := &volumeDropCheck{store: store, now: func() time.Time { return clock }}
+	check := &VolumeDropCheck{store: store, now: func() time.Time { return clock }}
 	for _, at := range []time.Duration{0, time.Hour, 2*time.Hour + 50*time.Minute} {
 		clock = start.Add(at)
-		check.run(context.Background())
+		check.Run(context.Background())
 	}
 	require.Empty(t, logsAtLevel(t, logs, "ERROR"))
 
 	clock = start.Add(3 * time.Hour)
-	check.run(context.Background())
+	check.Run(context.Background())
 	require.Len(t, logsAtLevel(t, logs, "ERROR"), 1)
 }
 
@@ -413,8 +413,8 @@ func TestVolumeDropCheck_SpansSplitTheRead(t *testing.T) {
 	seedFallingProject(t, store, start)
 	captureDefaultLog(t)
 
-	check := &volumeDropCheck{store: store, now: func() time.Time { return start }}
-	check.run(context.Background())
+	check := &VolumeDropCheck{store: store, now: func() time.Time { return start }}
+	check.Run(context.Background())
 
 	byName := map[string]tracetest.SpanStub{}
 	for _, s := range exp.GetSpans() {

@@ -1,4 +1,4 @@
-package main
+package pipeline
 
 import (
 	"context"
@@ -10,17 +10,16 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
-	"github.com/wiebe-xyz/funnelbarn/internal/workerhealth"
 )
 
-func newTestApplier(t *testing.T) (*ingestApplier, *repository.Store) {
+func newTestApplier(t *testing.T) (*Applier, *repository.Store) {
 	t.Helper()
 	store, err := repository.Open(repotest.Path(t, "apply.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { store.Close() })
-	return &ingestApplier{store: store, health: workerhealth.New(workerhealth.Options{})}, store
+	return &Applier{Store: store, Health: NewMonitor(MonitorOptions{})}, store
 }
 
 func applyRecord(ingestID, slug, body string) spool.Record {
@@ -82,5 +81,12 @@ func TestIngestApply_BadPayloadIsAProcessError(t *testing.T) {
 	}
 	if errors.Is(err, repository.ErrProjectUnresolvable) {
 		t.Error("a process error must be retried, not dead-lettered as unresolvable")
+	}
+}
+
+func TestResolveEventProject_EmptySlugIsUnresolvable(t *testing.T) {
+	_, err := resolveEventProject(context.Background(), nil, "")
+	if !errors.Is(err, repository.ErrProjectUnresolvable) {
+		t.Fatalf("got %v, want ErrProjectUnresolvable", err)
 	}
 }

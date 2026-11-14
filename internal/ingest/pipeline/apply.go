@@ -1,4 +1,4 @@
-package main
+package pipeline
 
 import (
 	"context"
@@ -14,22 +14,20 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
-	"github.com/wiebe-xyz/funnelbarn/internal/worker"
-	"github.com/wiebe-xyz/funnelbarn/internal/workerhealth"
 )
 
 // errProcessRecord marks a record whose payload could not be turned into an
 // event. It is retried like a persist failure, under its own log message.
 var errProcessRecord = errors.New("process record")
 
-// ingestApplier turns one ingest record into stored rows. The spool worker
+// Applier turns one ingest record into stored rows. The spool worker
 // calls it today; a queue consumer calls the same code, so both paths store a
 // record the same way. Applying a record twice stores it once (PersistEvent
 // skips a known ingest_id), so a redelivery is safe.
-type ingestApplier struct {
-	store  *repository.Store
-	geo    *geoip.Lookup
-	health *workerhealth.Monitor
+type Applier struct {
+	Store  *repository.Store
+	Geo    *geoip.Lookup
+	Health *Monitor
 }
 
 // apply stores one record. geoEnabled is read once per batch by the caller.
@@ -39,8 +37,8 @@ type ingestApplier struct {
 //   - wraps repository.ErrProjectUnresolvable: it can never apply; dead-letter
 //     it now instead of retrying.
 //   - wraps errProcessRecord, or any other error: retry it.
-func (a *ingestApplier) apply(ctx context.Context, record spool.Record, geoEnabled bool) error {
-	event, err := worker.SafeProcess(record)
+func (a *Applier) apply(ctx context.Context, record spool.Record, geoEnabled bool) error {
+	event, err := SafeProcess(record)
 	if err != nil {
 		return fmt.Errorf("%w: %w", errProcessRecord, err)
 	}
@@ -57,7 +55,7 @@ func (a *ingestApplier) apply(ctx context.Context, record spool.Record, geoEnabl
 	defer span.End()
 
 	// Resolve project from the slug stored in the spool record.
-	projectID, projectErr := resolveEventProject(opCtx, a.store, record.ProjectSlug)
+	projectID, projectErr := resolveEventProject(opCtx, a.Store, record.ProjectSlug)
 	switch {
 	case projectErr == nil:
 		event.ProjectID = projectID
@@ -80,7 +78,7 @@ func (a *ingestApplier) apply(ctx context.Context, record spool.Record, geoEnabl
 
 	var geoResult *geoip.GeoResult
 	if geoEnabled {
-		geoResult = a.geo.Lookup(event.ClientIP)
+		geoResult = a.Geo.Lookup(event.ClientIP)
 		// Geo is on but resolving nothing usually means the real
 		// client IP isn't reaching us (proxy/forwarding config).
 		hit := geoResult != nil && geoResult.CountryCode != ""
@@ -88,13 +86,13 @@ func (a *ingestApplier) apply(ctx context.Context, record spool.Record, geoEnabl
 		if hit {
 			metrics.GeoHits.Inc()
 		}
-		if alert, n := a.health.RecordGeo(hit); alert {
+		if alert, n := a.Health.RecordGeo(hit); alert {
 			slog.Error("geo enrichment resolved 0 countries over recent lookups; check FUNNELBARN_TRUSTED_PROXIES and client-IP forwarding",
 				"handled", false, "lookups", n)
 		}
 	}
 
-	err = worker.PersistEvent(opCtx, a.store, event, geoResult)
+	err = PersistEvent(opCtx, a.Store, event, geoResult)
 	metrics.EventProcessingDuration.Observe(time.Since(eventStart).Seconds())
 	if err != nil {
 		tracing.RecordError(span, err)
@@ -105,13 +103,13 @@ func (a *ingestApplier) apply(ctx context.Context, record spool.Record, geoEnabl
 
 // applyEntries applies spool entries in order from offset and returns the new
 // offset. It writes the cursor after each stored record. A failing record stops
-// the batch so the next tick retries it; after workerMaxRetries failures, or
+// the batch so the next tick retries it; after maxRetries failures, or
 // at once for an unresolvable project, the record is dead-lettered.
-func (a *ingestApplier) applyEntries(ctx context.Context, spoolDir string, entries []spool.RecordAtOffset, offset int64, retryCounts map[string]int) int64 {
+func (a *Applier) applyEntries(ctx context.Context, spoolDir string, entries []spool.RecordAtOffset, offset int64, retryCounts map[string]int) int64 {
 	// Check geo_enabled once per batch to avoid a DB round-trip per event.
-	geoEnabled := a.geo != nil
+	geoEnabled := a.Geo != nil
 	if geoEnabled {
-		val, _, _ := a.store.GetInstanceSetting(ctx, "geo_enabled")
+		val, _, _ := a.Store.GetInstanceSetting(ctx, "geo_enabled")
 		geoEnabled = val != "false"
 	}
 
@@ -139,7 +137,7 @@ func (a *ingestApplier) applyEntries(ctx context.Context, spoolDir string, entri
 				"attempt", retryCounts[record.IngestID],
 				"err", err,
 			)
-			if retryCounts[record.IngestID] >= workerMaxRetries {
+			if retryCounts[record.IngestID] >= maxRetries {
 				slog.Error("worker dead-lettering record after "+stage+" failures",
 					"ingest_id", record.IngestID,
 					"attempts", retryCounts[record.IngestID],
@@ -160,4 +158,19 @@ func (a *ingestApplier) applyEntries(ctx context.Context, spoolDir string, entri
 		}
 	}
 	return offset
+}
+
+// resolveEventProject looks up the project a spool record belongs to. A record
+// with no slug, or one whose slug can never resolve, comes back wrapped in
+// repository.ErrProjectUnresolvable: events.project_id is NOT NULL REFERENCES
+// projects(id), so persisting it could only ever fail the foreign key.
+func resolveEventProject(ctx context.Context, store *repository.Store, slug string) (string, error) {
+	if slug == "" {
+		return "", fmt.Errorf("%w: spool record carries no project slug", repository.ErrProjectUnresolvable)
+	}
+	proj, err := store.EnsureProject(ctx, slug)
+	if err != nil {
+		return "", err
+	}
+	return proj.ID, nil
 }

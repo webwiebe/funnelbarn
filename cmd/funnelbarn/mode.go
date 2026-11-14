@@ -3,19 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sync/atomic"
-	"time"
 
-	"go.opentelemetry.io/otel/attribute"
-
-	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
-	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
+	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
-	"github.com/wiebe-xyz/funnelbarn/internal/spool"
-	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
-	"github.com/wiebe-xyz/funnelbarn/internal/workerhealth"
 )
 
 // FUNNELBARN_MODE splits one process into readers and a writer (spec 012).
@@ -24,14 +16,12 @@ import (
 // to Valkey, buffering on disk while Valkey is down.
 
 // isReader reports whether this process runs as a reader.
-func isReader(cfg config.Config) bool { return cfg.Mode == config.ModeReader }
+func isReader(cfg config.Config) bool { return pipeline.IsReader(cfg) }
 
 // isSplit reports whether this process is one half of a reader/writer pair.
 // Both halves move ingest and recordings through Valkey, whatever the
 // per-queue flags say.
-func isSplit(cfg config.Config) bool {
-	return cfg.Mode == config.ModeReader || cfg.Mode == config.ModeWriter
-}
+func isSplit(cfg config.Config) bool { return pipeline.IsSplit(cfg) }
 
 // forwardTarget is where this process forwards the requests that write the
 // database: the writer for a reader, nowhere otherwise.
@@ -81,78 +71,4 @@ func (g *schemaGate) Ready(ctx context.Context) error {
 	}
 	g.ok.Store(true)
 	return nil
-}
-
-// batchPublisher is the part of queue.RedisList a fallback forwarder uses.
-type batchPublisher interface {
-	PublishBatch(ctx context.Context, payloads [][]byte) error
-}
-
-// fallbackForwarder publishes what a reader buffered in a SpoolFallback while
-// Valkey could not be reached.
-type fallbackForwarder struct {
-	name     string
-	fallback *command.SpoolFallback
-	list     batchPublisher
-	outage   command.Outage // failed forwards; picks the log level
-}
-
-// forward runs on the reader's worker tick.
-func (f *fallbackForwarder) forward(ctx context.Context) {
-	pubCtx, cancel := context.WithTimeout(ctx, command.DefaultPublishTimeout)
-	defer cancel()
-	n, err := f.fallback.Forward(pubCtx, f.list.PublishBatch)
-	if err != nil {
-		level, outage := f.outage.Fail()
-		slog.Log(ctx, level, f.name+": forwarding buffered commands failed, keeping them on disk",
-			outage, "err", err, "handled", true)
-		return
-	}
-	if lasted, ok := f.outage.Recover(); ok {
-		slog.InfoContext(ctx, f.name+": forwarding buffered commands recovered", "lasted", lasted.Round(time.Millisecond).String())
-	}
-	if n > 0 {
-		slog.InfoContext(ctx, f.name+": forwarded buffered commands", "count", n)
-	}
-}
-
-// runReaderWorker is a reader's background loop. It forwards spool records to
-// the ingest queue and buffered commands to theirs. It runs no maintenance:
-// that needs the write connection, which only the writer has.
-func runReaderWorker(ctx context.Context, cfg config.Config, eventSpool *spool.Spool, ingestQ *ingestQueue, fallbacks []*fallbackForwarder) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	offset, err := spool.ReadCursor(cfg.SpoolDir)
-	if err != nil {
-		slog.Warn("reader: failed to read cursor, starting from 0", "err", err)
-		offset = 0
-	}
-	health := workerhealth.New(workerhealth.Options{})
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			tickCtx, tickSpan := tracing.StartSpan(ctx, "reader.tick",
-				attribute.Int64("spool.offset", offset),
-			)
-			entries, err := spool.ReadRecordsFrom(spool.Path(cfg.SpoolDir), offset)
-			if err != nil {
-				tracing.RecordError(tickSpan, err)
-				slog.ErrorContext(tickCtx, "reader read spool", "err", err)
-			} else {
-				tickSpan.SetAttributes(attribute.Int("spool.entries", len(entries)))
-				metrics.SpoolQueueDepth.Set(float64(len(entries)))
-				offset = ingestQ.forwarder.forward(tickCtx, entries, offset)
-			}
-			checkSpoolProgress(health, cfg.SpoolDir, offset)
-			for _, f := range fallbacks {
-				f.forward(tickCtx)
-			}
-			rotateSpool(tickCtx, eventSpool, tickSpan)
-			tickSpan.End()
-		}
-	}
 }

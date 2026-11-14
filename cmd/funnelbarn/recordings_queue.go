@@ -12,6 +12,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/blobstore"
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/queue"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -38,7 +39,7 @@ type recordingsQueue struct {
 	client *redis.Client
 	// fallback is set in a reader, which cannot apply a chunk itself: a chunk
 	// the queue does not take is buffered on disk and published later.
-	fallback *fallbackForwarder
+	fallback *pipeline.FallbackForwarder
 
 	// Requests enqueue concurrently, so the once-per-episode log state is
 	// safe for concurrent use.
@@ -105,7 +106,7 @@ func newRecordingsQueue(ctx context.Context, cfg config.Config, svc *service.Rec
 			list:     list,
 			maxLen:   cfg.RecordingsQueueMaxLen,
 			client:   client,
-			fallback: &fallbackForwarder{name: "recordings", fallback: fallback, list: list},
+			fallback: pipeline.NewFallbackForwarder("recordings", fallback, list),
 		}, nil
 	}
 
@@ -199,7 +200,7 @@ func (q *recordingsQueue) toFallback(ctx context.Context, chunk command.ApplyRec
 	if q.fallback == nil {
 		return false
 	}
-	q.fallback.fallback.Submit(ctx, chunk)
+	q.fallback.Submit(ctx, chunk)
 	return true
 }
 
@@ -214,7 +215,7 @@ func (q *recordingsQueue) Close(ctx context.Context) error {
 		errs = append(errs, q.bus.Close(ctx))
 	}
 	if q.fallback != nil {
-		errs = append(errs, q.fallback.fallback.Close(ctx))
+		errs = append(errs, q.fallback.Close(ctx))
 	}
 	return errors.Join(append(errs, q.client.Close())...)
 }

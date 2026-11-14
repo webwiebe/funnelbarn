@@ -1,4 +1,4 @@
-package workerhealth
+package pipeline
 
 import (
 	"testing"
@@ -12,7 +12,7 @@ func (c *fakeClock) now() time.Time      { return c.t }
 func (c *fakeClock) add(d time.Duration) { c.t = c.t.Add(d) }
 
 func newMonitor(clk *fakeClock, stallAfter time.Duration, geoSample int, geoReAlert time.Duration) *Monitor {
-	return New(Options{StallAfter: stallAfter, GeoSampleSize: geoSample, GeoReAlert: geoReAlert, Now: clk.now})
+	return NewMonitor(MonitorOptions{StallAfter: stallAfter, GeoSampleSize: geoSample, GeoReAlert: geoReAlert, Now: clk.now})
 }
 
 func TestCheckProgress_FiresOnceWhenBacklogNotDraining(t *testing.T) {

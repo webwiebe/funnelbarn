@@ -1,4 +1,4 @@
-package main
+package pipeline
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 
 func TestNewIngestQueueOffIsNil(t *testing.T) {
 	a, _ := newTestApplier(t)
-	q, err := newIngestQueue(context.Background(), config.Config{RedisQueueURL: "redis://unused"}, a, slog.New(slog.DiscardHandler))
+	q, err := NewIngestQueue(context.Background(), config.Config{RedisQueueURL: "redis://unused"}, a, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	require.Nil(t, q)
 	require.NoError(t, q.Close(context.Background()))
@@ -23,7 +23,7 @@ func TestNewIngestQueueOffIsNil(t *testing.T) {
 
 func TestNewIngestQueueNeedsRedisURL(t *testing.T) {
 	a, _ := newTestApplier(t)
-	_, err := newIngestQueue(context.Background(), config.Config{IngestViaQueue: true}, a, slog.New(slog.DiscardHandler))
+	_, err := NewIngestQueue(context.Background(), config.Config{IngestViaQueue: true}, a, slog.New(slog.DiscardHandler))
 	require.ErrorContains(t, err, "FUNNELBARN_REDIS_QUEUE_URL")
 }
 
@@ -43,7 +43,7 @@ func TestIngestQueueStoresForwardedRecords(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	q, err := newIngestQueue(ctx, cfg, a, slog.New(slog.DiscardHandler))
+	q, err := NewIngestQueue(ctx, cfg, a, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	defer func() { require.NoError(t, q.Close(ctx)) }()
 
@@ -52,10 +52,10 @@ func TestIngestQueueStoresForwardedRecords(t *testing.T) {
 		{Record: applyRecord("q-2", "", `{"name":"pageview","url":"https://example.com/"}`), EndOffset: 20},
 		{Record: applyRecord("q-3", "queue-site", `{"name":"signup","url":"https://example.com/","session_id":"s1"}`), EndOffset: 30},
 	}
-	require.Equal(t, int64(30), q.forwarder.forward(ctx, recs, 0))
+	require.Equal(t, int64(30), q.Forwarder.Forward(ctx, recs, 0))
 	// The cursor write was lost: the next tick sends the same records again.
-	require.Equal(t, int64(30), q.forwarder.forward(ctx, recs, 0))
-	require.NoError(t, q.bus.Flush(ctx))
+	require.Equal(t, int64(30), q.Forwarder.Forward(ctx, recs, 0))
+	require.NoError(t, q.Bus.Flush(ctx))
 
 	require.Equal(t, 1, countEvents(t, store, "q-1"))
 	require.Equal(t, 0, countEvents(t, store, "q-2"))

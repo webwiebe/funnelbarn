@@ -15,11 +15,11 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
+	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
-	"github.com/wiebe-xyz/funnelbarn/internal/worker"
 )
 
 const (
@@ -213,7 +213,7 @@ func (s *snapStack) ingestAndPersist(t *testing.T) {
 	// (e.g. worker.PersistRecord) once production code may change, so the
 	// harness exercises the same path as production.
 	for _, rec := range recs {
-		ev, err := worker.ProcessRecord(rec)
+		ev, err := pipeline.ProcessRecord(rec)
 		if err != nil {
 			t.Fatalf("ProcessRecord: %v", err)
 		}
@@ -222,7 +222,7 @@ func (s *snapStack) ingestAndPersist(t *testing.T) {
 			t.Fatalf("EnsureProject(%s): %v", rec.ProjectSlug, err)
 		}
 		ev.ProjectID = proj.ID
-		if err := worker.PersistEvent(context.Background(), s.store, ev, nil); err != nil {
+		if err := pipeline.PersistEvent(context.Background(), s.store, ev, nil); err != nil {
 			t.Fatalf("PersistEvent: %v", err)
 		}
 	}

@@ -1,4 +1,4 @@
-package main
+package pipeline
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
-	"github.com/wiebe-xyz/funnelbarn/internal/workerhealth"
 )
 
 // deadLetterRecord parks an unprocessable record and advances the cursor past
@@ -46,9 +45,9 @@ func parkRecord(spoolDir string, record spool.Record, reason string) {
 	metrics.EventErrors.WithLabelValues(reason).Inc()
 }
 
-// rotateSpool rotates the spool file once it passes workerRotateThreshold.
+// rotateSpool rotates the spool file once it passes rotateThreshold.
 func rotateSpool(ctx context.Context, eventSpool *spool.Spool, span trace.Span) {
-	if err := eventSpool.RotateIfExceeds(workerRotateThreshold); err != nil {
+	if err := eventSpool.RotateIfExceeds(rotateThreshold); err != nil {
 		tracing.RecordError(span, err)
 		slog.ErrorContext(ctx, "worker rotate spool", "err", err)
 	}
@@ -74,7 +73,7 @@ func skipMalformed(spoolDir string, entry spool.RecordAtOffset, offset int64) in
 // cursor isn't draining. This is the blindspot that hid a ~5-day ingestion
 // outage. It runs on every tick, a failed spool read included, because a read
 // that keeps failing is a stall too.
-func checkSpoolProgress(health *workerhealth.Monitor, spoolDir string, offset int64) {
+func checkSpoolProgress(health *Monitor, spoolDir string, offset int64) {
 	size, err := spool.ActiveSize(spoolDir)
 	if err != nil {
 		return
