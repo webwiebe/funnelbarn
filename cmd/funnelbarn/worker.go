@@ -18,7 +18,7 @@ import (
 // forwards its spool and fallback files to Valkey, and a gate that holds until
 // the writer has migrated the database. Any other mode gets the full worker
 // and no gate.
-func startWorker(ctx context.Context, cfg config.Config, store *repository.Store, eventSpool *spool.Spool, applier *pipeline.Applier, ingestQ *pipeline.IngestQueue, recordingsQ *recordingsQueue, recordings service.Recordings, commands command.Bus) (func(context.Context) error, error) {
+func startWorker(ctx context.Context, cfg config.Config, store *repository.Store, eventSpool *spool.Spool, applier *pipeline.Applier, ingestQ *pipeline.IngestQueue, recordingsQ *pipeline.RecordingQueue, recordings service.Recordings, commands command.Bus) (func(context.Context) error, error) {
 	if !isReader(cfg) {
 		bblog.Go("background-worker", func() {
 			pipeline.RunWorker(ctx, cfg, eventSpool, applier, ingestQ, workerJobs(cfg, store, recordings))
@@ -34,8 +34,8 @@ func startWorker(ctx context.Context, cfg config.Config, store *repository.Store
 	if rb, ok := commands.(*readerCommandBus); ok {
 		fallbacks = append(fallbacks, rb.fallback)
 	}
-	if recordingsQ != nil && recordingsQ.fallback != nil {
-		fallbacks = append(fallbacks, recordingsQ.fallback)
+	if recordingsQ != nil && recordingsQ.Fallback != nil {
+		fallbacks = append(fallbacks, recordingsQ.Fallback)
 	}
 	bblog.Go("reader-worker", func() {
 		pipeline.RunReaderWorker(ctx, cfg, eventSpool, ingestQ, fallbacks)

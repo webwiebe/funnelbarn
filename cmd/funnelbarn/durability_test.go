@@ -10,7 +10,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,7 +34,7 @@ import (
 type writerProcess struct {
 	commands   command.Bus
 	ingest     *pipeline.IngestQueue
-	recordings *recordingsQueue
+	recordings *pipeline.RecordingQueue
 }
 
 func startWriter(t *testing.T, ctx context.Context, cfg config.Config, applier *pipeline.Applier, recordings *service.RecordingService) *writerProcess {
@@ -47,7 +49,7 @@ func startWriter(t *testing.T, ctx context.Context, cfg config.Config, applier *
 	require.NoError(t, err)
 	iq, err := pipeline.NewIngestQueue(ctx, cfg, applier, logger)
 	require.NoError(t, err)
-	rq, err := newRecordingsQueue(ctx, cfg, recordings, logger)
+	rq, err := pipeline.NewRecordingQueue(ctx, cfg, recordings, logger)
 	require.NoError(t, err)
 	return &writerProcess{commands: commands, ingest: iq, recordings: rq}
 }
@@ -56,7 +58,7 @@ func startWriter(t *testing.T, ctx context.Context, cfg config.Config, applier *
 func (w *writerProcess) drain(t *testing.T, ctx context.Context) {
 	t.Helper()
 	require.NoError(t, w.ingest.Bus.Flush(ctx))
-	require.NoError(t, w.recordings.bus.Flush(ctx))
+	require.NoError(t, w.recordings.Bus.Flush(ctx))
 	require.NoError(t, w.commands.Flush(ctx))
 }
 
@@ -97,7 +99,7 @@ func readDurableRows(t *testing.T, db *sql.DB, ingestIDs []string, recordingID, 
 // queueKeys are the Valkey lists a reader publishes to.
 var queueKeys = []string{
 	"funnelbarn:queue:" + pipeline.IngestQueueName,
-	"funnelbarn:queue:" + recordingsQueueName,
+	"funnelbarn:queue:" + pipeline.RecordingsQueueName,
 	"funnelbarn:queue:" + bookkeepingQueue,
 }
 
@@ -139,7 +141,7 @@ func TestReaderTrafficSurvivesAStoppedWriter(t *testing.T) {
 	readerIngest, err := pipeline.NewIngestQueue(ctx, readerCfg, nil, logger)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, readerIngest.Close(context.Background())) }()
-	readerChunks, err := newRecordingsQueue(ctx, readerCfg, nil, logger)
+	readerChunks, err := pipeline.NewRecordingQueue(ctx, readerCfg, nil, logger)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, readerChunks.Close(context.Background())) }()
 	chunkStore := &memChunkStorage{data: map[string][]byte{}}
@@ -245,5 +247,45 @@ func applyRecord(ingestID, slug, body string) spool.Record {
 		ContentType: "application/json",
 		BodyBase64:  base64.StdEncoding.EncodeToString([]byte(body)),
 		ProjectSlug: slug,
+	}
+}
+
+// memChunkStorage keeps uploaded chunks in memory in place of R2.
+type memChunkStorage struct {
+	mu   sync.Mutex
+	data map[string][]byte
+}
+
+func (m *memChunkStorage) Put(_ context.Context, key string, b []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data[key] = b
+	return nil
+}
+
+func (m *memChunkStorage) Get(_ context.Context, key string) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.data[key], nil
+}
+
+func (m *memChunkStorage) Delete(_ context.Context, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.data, key)
+	return nil
+}
+
+func testChunk(projectID string) service.RecordingChunk {
+	start := time.Now().UTC().Truncate(time.Second)
+	return service.RecordingChunk{
+		RecordingID: "rec-q",
+		SessionID:   "sess-q",
+		ChunkIndex:  0,
+		Events:      json.RawMessage(`[{"type":2,"data":{},"timestamp":1000}]`),
+		StartedAt:   start,
+		DurationMs:  3000,
+		ProjectID:   projectID,
+		UserAgent:   "Mozilla/5.0",
 	}
 }
