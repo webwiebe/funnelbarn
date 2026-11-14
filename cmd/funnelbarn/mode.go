@@ -18,11 +18,6 @@ import (
 // isReader reports whether this process runs as a reader.
 func isReader(cfg config.Config) bool { return pipeline.IsReader(cfg) }
 
-// isSplit reports whether this process is one half of a reader/writer pair.
-// Both halves move ingest and recordings through Valkey, whatever the
-// per-queue flags say.
-func isSplit(cfg config.Config) bool { return pipeline.IsSplit(cfg) }
-
 // forwardTarget is where this process forwards the requests that write the
 // database: the writer for a reader, nowhere otherwise.
 func forwardTarget(cfg config.Config) string {
