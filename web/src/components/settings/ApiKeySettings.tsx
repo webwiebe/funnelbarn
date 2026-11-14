@@ -124,10 +124,7 @@ export function ApiKeySettings({
   }
 
   const handleDeleteKey = async (keyId: string) => {
-    if (deleteConfirm !== keyId) {
-      setDeleteConfirm(keyId)
-      return
-    }
+    if (deleteConfirm !== keyId) { setDeleteConfirm(keyId); return }
     setError(null)
     onError(null)
     try {
