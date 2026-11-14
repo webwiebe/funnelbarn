@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"log/slog"
 	"testing"
 	"time"
@@ -18,7 +19,9 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 )
@@ -27,21 +30,21 @@ import (
 // ingest and recordings consumers, as run() wires them.
 type writerProcess struct {
 	commands   command.Bus
-	ingest     *ingestQueue
+	ingest     *pipeline.IngestQueue
 	recordings *recordingsQueue
 }
 
-func startWriter(t *testing.T, ctx context.Context, cfg config.Config, applier *ingestApplier, recordings *service.RecordingService) *writerProcess {
+func startWriter(t *testing.T, ctx context.Context, cfg config.Config, applier *pipeline.Applier, recordings *service.RecordingService) *writerProcess {
 	t.Helper()
 	logger := slog.New(slog.DiscardHandler)
-	health := service.NewProjectHealthService(applier.store)
+	health := service.NewProjectHealthService(applier.Store)
 	commands, err := newCommandBus(ctx, cfg, command.Deps{
-		Store:              applier.store,
+		Store:              applier.Store,
 		MarkFlagsEvaluated: health.MarkFlagsEvaluated,
 		MarkProjectHealth:  service.ApplyHealthMark(health),
 	}, logger)
 	require.NoError(t, err)
-	iq, err := newIngestQueue(ctx, cfg, applier, logger)
+	iq, err := pipeline.NewIngestQueue(ctx, cfg, applier, logger)
 	require.NoError(t, err)
 	rq, err := newRecordingsQueue(ctx, cfg, recordings, logger)
 	require.NoError(t, err)
@@ -51,7 +54,7 @@ func startWriter(t *testing.T, ctx context.Context, cfg config.Config, applier *
 // drain applies everything queued.
 func (w *writerProcess) drain(t *testing.T, ctx context.Context) {
 	t.Helper()
-	require.NoError(t, w.ingest.bus.Flush(ctx))
+	require.NoError(t, w.ingest.Bus.Flush(ctx))
 	require.NoError(t, w.recordings.bus.Flush(ctx))
 	require.NoError(t, w.commands.Flush(ctx))
 }
@@ -92,7 +95,7 @@ func readDurableRows(t *testing.T, db *sql.DB, ingestIDs []string, recordingID, 
 
 // queueKeys are the Valkey lists a reader publishes to.
 var queueKeys = []string{
-	"funnelbarn:queue:" + ingestQueueName,
+	"funnelbarn:queue:" + pipeline.IngestQueueName,
 	"funnelbarn:queue:" + recordingsQueueName,
 	"funnelbarn:queue:" + bookkeepingQueue,
 }
@@ -132,7 +135,7 @@ func TestReaderTrafficSurvivesAStoppedWriter(t *testing.T) {
 	require.NoError(t, err)
 	reader := bus.(*readerCommandBus)
 	defer func() { require.NoError(t, reader.Close(context.Background())) }()
-	readerIngest, err := newIngestQueue(ctx, readerCfg, nil, logger)
+	readerIngest, err := pipeline.NewIngestQueue(ctx, readerCfg, nil, logger)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, readerIngest.Close(context.Background())) }()
 	readerChunks, err := newRecordingsQueue(ctx, readerCfg, nil, logger)
@@ -154,7 +157,7 @@ func TestReaderTrafficSurvivesAStoppedWriter(t *testing.T) {
 	entries, err := spool.ReadRecordsFrom(spool.Path(readerCfg.SpoolDir), 0)
 	require.NoError(t, err)
 	require.Len(t, entries, len(ingestIDs))
-	end := readerIngest.forwarder.forward(ctx, entries, 0)
+	end := readerIngest.Forwarder.Forward(ctx, entries, 0)
 	require.Equal(t, entries[len(entries)-1].EndOffset, end)
 	_, err = readerHealth.MarkEventsReceived(ctx, p.ID)
 	require.NoError(t, err)
@@ -174,8 +177,8 @@ func TestReaderTrafficSurvivesAStoppedWriter(t *testing.T) {
 	reader.Submit(ctx, eval)
 	reader.Submit(ctx, command.MarkProjectHealth{ProjectID: p.ID, Field: command.HealthSetupCalled})
 	mr.SetError("")
-	reader.fallback.forward(ctx)
-	require.False(t, reader.fallback.outage.Failing())
+	reader.fallback.Forward(ctx)
+	require.False(t, reader.fallback.Failing())
 
 	// The writer is down: nothing is stored, everything waits in Valkey.
 	before := readDurableRows(t, writerStore.DB(), ingestIDs, "rec-durable", p.ID)
@@ -221,5 +224,25 @@ func TestReaderTrafficSurvivesAStoppedWriter(t *testing.T) {
 	for _, key := range queueKeys {
 		require.False(t, mr.Exists(key), "%s still queued", key)
 		require.False(t, mr.Exists(key+":processing"), "%s left unacked", key)
+	}
+}
+
+func newTestApplier(t *testing.T) (*pipeline.Applier, *repository.Store) {
+	t.Helper()
+	store, err := repository.Open(repotest.Path(t, "apply.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	return &pipeline.Applier{Store: store, Health: pipeline.NewMonitor(pipeline.MonitorOptions{})}, store
+}
+
+func applyRecord(ingestID, slug, body string) spool.Record {
+	return spool.Record{
+		IngestID:    ingestID,
+		ReceivedAt:  time.Now().UTC(),
+		ContentType: "application/json",
+		BodyBase64:  base64.StdEncoding.EncodeToString([]byte(body)),
+		ProjectSlug: slug,
 	}
 }

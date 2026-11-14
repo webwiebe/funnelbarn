@@ -1,4 +1,4 @@
-package worker
+package pipeline
 
 // PersistEvent tests use an in-memory fake that satisfies EventPersister.
 // This validates the idempotency logic and session upsert without SQLite.

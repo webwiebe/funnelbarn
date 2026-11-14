@@ -16,6 +16,8 @@ internal/environment	100
 internal/geoip	50
 internal/ghwebhook	93
 internal/ingest	72
+internal/ingest/pipeline	70
+internal/maintenance	87
 internal/mcp	87
 internal/metrics	88
 internal/middleware	100
@@ -30,5 +32,3 @@ internal/storage	20
 internal/timerange	100
 internal/tracing	46
 internal/volumedrop	100
-internal/worker	61
-internal/workerhealth	89

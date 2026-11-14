@@ -1,11 +1,10 @@
-package main
+package pipeline
 
 import (
 	"errors"
 	"testing"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
-	"github.com/wiebe-xyz/funnelbarn/internal/workerhealth"
 )
 
 func TestSkipMalformedAdvancesCursor(t *testing.T) {
@@ -25,7 +24,7 @@ func TestSkipMalformedAdvancesCursor(t *testing.T) {
 }
 
 func TestCheckSpoolProgressWithoutSpool(t *testing.T) {
-	health := workerhealth.New(workerhealth.Options{})
+	health := NewMonitor(MonitorOptions{})
 	checkSpoolProgress(health, t.TempDir(), 0)
 	if health.Stalled() {
 		t.Error("an empty spool directory must not count as stalled")

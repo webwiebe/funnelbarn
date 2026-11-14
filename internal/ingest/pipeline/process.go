@@ -1,4 +1,4 @@
-package worker
+package pipeline
 
 import (
 	"context"

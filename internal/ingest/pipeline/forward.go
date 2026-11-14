@@ -1,4 +1,4 @@
-package main
+package pipeline
 
 import (
 	"context"
@@ -18,12 +18,12 @@ type forwardList interface {
 	QueuedLen(ctx context.Context) (int64, error)
 }
 
-// spoolForwarder moves spool records onto the ingest queue. The spool stays
+// SpoolForwarder moves spool records onto the ingest queue. The spool stays
 // the durable buffer: the cursor moves past a record only after the LPUSH that
 // carries it succeeded, so a Valkey outage or a full queue leaves records in
 // the spool, and the next tick sends them. A crash between the LPUSH and the
 // cursor write sends a record twice, which the consumer stores once.
-type spoolForwarder struct {
+type SpoolForwarder struct {
 	list     forwardList
 	spoolDir string
 	maxLen   int64
@@ -32,9 +32,9 @@ type spoolForwarder struct {
 	full   bool           // queue at its cap; logged once per episode
 }
 
-// forward publishes entries from offset on, up to the queue's cap, and returns
+// Forward publishes entries from offset on, up to the queue's cap, and returns
 // the new offset. It writes the cursor after each successful batch.
-func (f *spoolForwarder) forward(ctx context.Context, entries []spool.RecordAtOffset, offset int64) int64 {
+func (f *SpoolForwarder) Forward(ctx context.Context, entries []spool.RecordAtOffset, offset int64) int64 {
 	room := f.room(ctx)
 	if room <= 0 {
 		return offset
@@ -51,7 +51,7 @@ func (f *spoolForwarder) forward(ctx context.Context, entries []spool.RecordAtOf
 
 // room returns how many records the queue takes before it reaches its cap. It
 // returns zero when the queue is full or Valkey cannot be reached.
-func (f *spoolForwarder) room(ctx context.Context) int64 {
+func (f *SpoolForwarder) room(ctx context.Context) int64 {
 	queued, err := f.list.QueuedLen(ctx)
 	if err != nil {
 		f.publishFailed(ctx, err)
@@ -76,7 +76,7 @@ func (f *spoolForwarder) room(ctx context.Context) int64 {
 // forwardBatch collects encoded records for one forward call. offset is the
 // cursor as written; end is where the cursor moves once send is published.
 type forwardBatch struct {
-	f      *spoolForwarder
+	f      *SpoolForwarder
 	ctx    context.Context
 	send   [][]byte
 	offset int64
@@ -145,13 +145,13 @@ func (b *forwardBatch) flush() bool {
 // publishFailed logs at Warn for a short Valkey stall and at Error once when
 // the stall time adds up; see command.Outage. The records stay in the spool, so
 // a stall loses nothing. checkSpoolProgress stays for a read that keeps failing.
-func (f *spoolForwarder) publishFailed(ctx context.Context, err error) {
+func (f *SpoolForwarder) publishFailed(ctx context.Context, err error) {
 	level, outage := f.outage.Fail()
 	slog.Log(ctx, level, "ingest queue publish failed, leaving records in the spool",
 		outage, "err", err, "handled", true)
 }
 
-func (f *spoolForwarder) publishRecovered(ctx context.Context) {
+func (f *SpoolForwarder) publishRecovered(ctx context.Context) {
 	if lasted, ok := f.outage.Recover(); ok {
 		slog.InfoContext(ctx, "ingest queue publish recovered", "lasted", lasted.Round(time.Millisecond).String())
 	}

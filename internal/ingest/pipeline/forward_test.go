@@ -1,4 +1,4 @@
-package main
+package pipeline
 
 import (
 	"context"
@@ -60,9 +60,9 @@ func cursor(t *testing.T, dir string) int64 {
 func TestForwardPublishesInOrderAndMovesCursor(t *testing.T) {
 	dir := t.TempDir()
 	list := &fakeForwardList{}
-	f := &spoolForwarder{list: list, spoolDir: dir, maxLen: 100}
+	f := &SpoolForwarder{list: list, spoolDir: dir, maxLen: 100}
 
-	got := f.forward(context.Background(), entries("a", "b", "c"), 0)
+	got := f.Forward(context.Background(), entries("a", "b", "c"), 0)
 	if got != 300 || cursor(t, dir) != 300 {
 		t.Fatalf("offset = %d, cursor = %d, want 300", got, cursor(t, dir))
 	}
@@ -76,15 +76,15 @@ func TestForwardPublishesInOrderAndMovesCursor(t *testing.T) {
 func TestForwardKeepsRecordsInSpoolWhenPublishFails(t *testing.T) {
 	dir := t.TempDir()
 	list := &fakeForwardList{failNext: true}
-	f := &spoolForwarder{list: list, spoolDir: dir, maxLen: 100}
+	f := &SpoolForwarder{list: list, spoolDir: dir, maxLen: 100}
 
-	if got := f.forward(context.Background(), entries("a", "b"), 0); got != 0 {
+	if got := f.Forward(context.Background(), entries("a", "b"), 0); got != 0 {
 		t.Fatalf("offset = %d after a failed publish, want 0", got)
 	}
 	if cursor(t, dir) != 0 {
 		t.Fatalf("cursor moved after a failed publish")
 	}
-	if got := f.forward(context.Background(), entries("a", "b"), 0); got != 200 {
+	if got := f.Forward(context.Background(), entries("a", "b"), 0); got != 200 {
 		t.Fatalf("offset = %d on retry, want 200", got)
 	}
 	if want := []string{"a", "b"}; !equal(list.published, want) {
@@ -97,12 +97,12 @@ func TestForwardKeepsRecordsInSpoolWhenPublishFails(t *testing.T) {
 func TestForwardStopsAtTheCap(t *testing.T) {
 	dir := t.TempDir()
 	list := &fakeForwardList{queued: 8}
-	f := &spoolForwarder{list: list, spoolDir: dir, maxLen: 10}
+	f := &SpoolForwarder{list: list, spoolDir: dir, maxLen: 10}
 
-	if got := f.forward(context.Background(), entries("a", "b", "c"), 0); got != 200 {
+	if got := f.Forward(context.Background(), entries("a", "b", "c"), 0); got != 200 {
 		t.Fatalf("offset = %d, want 200 (two records fit)", got)
 	}
-	if got := f.forward(context.Background(), entries("c"), 200); got != 200 {
+	if got := f.Forward(context.Background(), entries("c"), 200); got != 200 {
 		t.Fatalf("offset = %d with a full queue, want 200", got)
 	}
 	if want := []string{"a", "b"}; !equal(list.published, want) {
@@ -114,9 +114,9 @@ func TestForwardStopsAtTheCap(t *testing.T) {
 func TestForwardSkipsMalformedLine(t *testing.T) {
 	dir := t.TempDir()
 	list := &fakeForwardList{}
-	f := &spoolForwarder{list: list, spoolDir: dir, maxLen: 100}
+	f := &SpoolForwarder{list: list, spoolDir: dir, maxLen: 100}
 
-	if got := f.forward(context.Background(), entries("a", "", "c"), 0); got != 300 {
+	if got := f.Forward(context.Background(), entries("a", "", "c"), 0); got != 300 {
 		t.Fatalf("offset = %d, want 300", got)
 	}
 	if want := []string{"a", "c"}; !equal(list.published, want) {
@@ -141,18 +141,18 @@ func TestForwardPublishFailureLogsWarnOnce(t *testing.T) {
 	count := levelCounts(t)
 	dir := t.TempDir()
 	list := &fakeForwardList{failNext: true}
-	f := &spoolForwarder{list: list, spoolDir: dir, maxLen: 100}
+	f := &SpoolForwarder{list: list, spoolDir: dir, maxLen: 100}
 
-	f.forward(context.Background(), entries("a"), 0)
+	f.Forward(context.Background(), entries("a"), 0)
 	list.failNext = true
-	f.forward(context.Background(), entries("a"), 0)
+	f.Forward(context.Background(), entries("a"), 0)
 	if got := count("WARN", "ingest queue publish failed"); got != 1 {
 		t.Errorf("WARN lines = %d, want 1", got)
 	}
 	if got := count("ERROR", "ingest queue publish failed"); got != 0 {
 		t.Errorf("ERROR lines = %d, want 0", got)
 	}
-	f.forward(context.Background(), entries("a"), 0)
+	f.Forward(context.Background(), entries("a"), 0)
 	if got := count("INFO", "ingest queue publish recovered"); got != 1 {
 		t.Errorf("INFO lines = %d, want 1", got)
 	}
@@ -165,17 +165,17 @@ func TestForwardRepeatedStallsLogErrorOnce(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC)
 	list := &fakeForwardList{}
-	f := &spoolForwarder{list: list, spoolDir: dir, maxLen: 100}
+	f := &SpoolForwarder{list: list, spoolDir: dir, maxLen: 100}
 	f.outage.Now = func() time.Time { return now }
 
 	stall := func() {
 		list.failNext = true
-		f.forward(context.Background(), entries("a"), 0)
+		f.Forward(context.Background(), entries("a"), 0)
 		now = now.Add(29 * time.Second)
 		list.failNext = true
-		f.forward(context.Background(), entries("a"), 0)
+		f.Forward(context.Background(), entries("a"), 0)
 		now = now.Add(time.Second)
-		f.forward(context.Background(), entries("a"), 0)
+		f.Forward(context.Background(), entries("a"), 0)
 	}
 
 	stall()

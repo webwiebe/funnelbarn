@@ -130,8 +130,3 @@ func (t *touchThrottle) due(key string, now time.Time) bool {
 	t.last[key] = now
 	return true
 }
-
-const (
-	workerMaxRetries      = 3
-	workerRotateThreshold = 64 << 20 // 64 MiB
-)

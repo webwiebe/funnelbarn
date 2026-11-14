@@ -1,15 +1,4 @@
-// Package workerhealth detects silent failure modes in the ingest worker so they
-// surface instead of going unnoticed. Its methods are pure state machines that
-// report when something looks wrong; the caller decides how to react (typically a
-// slog.Error, which the bblog handler forwards to BugBarn as an issue).
-//
-// It covers two failure modes that previously produced no signal at all:
-//   - the spool consumer stalling (cursor frozen while a backlog accumulates),
-//     which once halted all ingestion for ~5 days unnoticed;
-//   - geo enrichment being enabled but resolving nothing (e.g. the real client
-//     IP never reaching the service), which left country_code empty for every
-//     event ever recorded.
-package workerhealth
+package pipeline
 
 import "time"
 
@@ -31,16 +20,16 @@ type Monitor struct {
 	lastGeoAlert time.Time
 }
 
-// Options configures a Monitor. Zero values fall back to sensible defaults.
-type Options struct {
+// MonitorOptions configures a Monitor. Zero values fall back to sensible defaults.
+type MonitorOptions struct {
 	StallAfter    time.Duration // offset may stay frozen with pending data this long before alerting (default 5m)
 	GeoSampleSize int           // lookups per geo evaluation window (default 200)
 	GeoReAlert    time.Duration // minimum gap between geo alerts (default 6h)
 	Now           func() time.Time
 }
 
-// New returns a Monitor with defaults applied for any unset option.
-func New(o Options) *Monitor {
+// NewMonitor returns a Monitor with defaults applied for any unset option.
+func NewMonitor(o MonitorOptions) *Monitor {
 	if o.StallAfter <= 0 {
 		o.StallAfter = 5 * time.Minute
 	}

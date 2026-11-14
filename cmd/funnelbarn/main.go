@@ -23,11 +23,10 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
-	"github.com/wiebe-xyz/funnelbarn/internal/workerhealth"
 )
 
 // Version, Commit and BuildTime are injected at build time via -ldflags.
@@ -300,8 +299,8 @@ func run() error {
 		}
 	}
 
-	applier := &ingestApplier{store: store, geo: geoLookup, health: workerhealth.New(workerhealth.Options{})}
-	ingestQ, err := newIngestQueue(ctx, cfg, applier, slog.Default())
+	applier := &pipeline.Applier{Store: store, Geo: geoLookup, Health: pipeline.NewMonitor(pipeline.MonitorOptions{})}
+	ingestQ, err := pipeline.NewIngestQueue(ctx, cfg, applier, slog.Default())
 	if err != nil {
 		return fmt.Errorf("ingest queue: %w", err)
 	}
@@ -466,19 +465,4 @@ func run() error {
 	})
 
 	return waitServer(ctx, server, errCh)
-}
-
-// resolveEventProject looks up the project a spool record belongs to. A record
-// with no slug, or one whose slug can never resolve, comes back wrapped in
-// repository.ErrProjectUnresolvable: events.project_id is NOT NULL REFERENCES
-// projects(id), so persisting it could only ever fail the foreign key.
-func resolveEventProject(ctx context.Context, store *repository.Store, slug string) (string, error) {
-	if slug == "" {
-		return "", fmt.Errorf("%w: spool record carries no project slug", repository.ErrProjectUnresolvable)
-	}
-	proj, err := store.EnsureProject(ctx, slug)
-	if err != nil {
-		return "", err
-	}
-	return proj.ID, nil
 }
