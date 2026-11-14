@@ -51,8 +51,10 @@ func newWebhookStack(t *testing.T, secret string) *webhookStack {
 		IngestRateBurst:     1000,
 		DB:                  store,
 		Version:             "test",
+
+		GitHubWebhookSecret:  secret,
+		GitHubWebhookProject: "agents",
 	})
-	srv.SetGitHubWebhook(secret, "agents")
 	return &webhookStack{srv: srv, store: store, sp: sp, handler: handler}
 }
 

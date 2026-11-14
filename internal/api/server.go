@@ -134,6 +134,12 @@ type ServerConfig struct {
 	// subject). Zero means 120/min with a burst of 30.
 	MCPRatePerMinute float64
 	MCPRateBurst     float64
+
+	// GitHubWebhookSecret signs GitHub webhook deliveries; empty leaves the
+	// route unregistered (404). GitHubWebhookProject is the slug they are
+	// filed under.
+	GitHubWebhookSecret  string
+	GitHubWebhookProject string
 }
 
 // Server is the main HTTP API server.
@@ -200,6 +206,9 @@ type Server struct {
 	// securityMW is the precomputed security-headers middleware; its CSP
 	// whitelists the IAMBarn origin (if configured) for the hosted components.
 	securityMW func(http.Handler) http.Handler
+
+	githubWebhookSecret  string
+	githubWebhookProject string
 }
 
 // NewServer creates the API server and registers all routes.
@@ -283,6 +292,8 @@ func NewServer(cfg ServerConfig) *Server {
 		s.oidcRefreshGrace = time.Hour
 	}
 	s.securityMW = securityHeaders(originOf(s.iambarnIssuer()))
+	s.githubWebhookSecret = cfg.GitHubWebhookSecret
+	s.githubWebhookProject = cfg.GitHubWebhookProject
 	s.registerRoutes()
 	return s
 }
@@ -485,6 +496,8 @@ func (s *Server) registerRoutes() {
 
 	// MCP endpoint + protected-resource metadata (only with OIDC configured).
 	s.registerMCPRoutes()
+
+	s.registerGitHubWebhookRoutes()
 }
 
 // ServeHTTP adds CORS headers and dispatches to the router.

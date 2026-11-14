@@ -436,8 +436,10 @@ func run() error {
 		InternalToken:         cfg.InternalToken,
 		SpanRelay:             spanRelay,
 		MCPResourceURL:        cfg.MCPResourceURL,
+
+		GitHubWebhookSecret:  cfg.GitHubWebhookSecret,
+		GitHubWebhookProject: cfg.GitHubWebhookProject,
 	})
-	apiServer.SetGitHubWebhook(cfg.GitHubWebhookSecret, cfg.GitHubWebhookProject)
 	if cfg.MetricsToken != "" {
 		apiServer.SetMetricsToken(cfg.MetricsToken)
 	} else {
