@@ -1,15 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { Video, VideoOff, Trash2, ChevronLeft, ChevronRight, Monitor, Smartphone, Tablet, Bot, User } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { SessionReplay } from '../components/sessions/SessionReplay'
+import { PAGE_SIZE, loadRecordingPage, recordingPath } from '../components/sessions/loadRecordings'
 import { api, type Recording } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { reportError } from '../lib/bugbarn'
 import { trackEvent } from '../lib/analytics'
 import { C } from '../lib/theme'
-
-const PAGE_SIZE = 50
 
 function formatDuration(ms: number): string {
   const s = Math.floor(ms / 1000)
@@ -21,17 +20,6 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
   })
-}
-
-// pagePath is the path of a recording's page_url. The value comes from the
-// visitor's browser, so a relative or malformed one is shown as sent instead of
-// throwing during render.
-function pagePath(pageUrl: string): string {
-  try {
-    return new URL(pageUrl).pathname
-  } catch {
-    return pageUrl
-  }
 }
 
 function DeviceIcon({ type }: { type: string }) {
@@ -86,6 +74,10 @@ export default function Sessions() {
   const { projects } = useProjects()
   const [recordings, setRecordings] = useState<Recording[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
+  // Each load takes a number; only the newest one may write its result, so a
+  // slow older request cannot replace the list the current filters asked for.
+  const latestLoad = useRef(0)
   const [offset, setOffset] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [selected, setSelected] = useState<Recording | null>(null)
@@ -103,36 +95,21 @@ export default function Sessions() {
 
   const load = useCallback(async (off: number, f: FilterState) => {
     if (!projectId) return
+    const mine = ++latestLoad.current
     setLoading(true)
     try {
-      let sessionIds: string[] | undefined
-
-      if (funnelId && stepParam) {
-        const step = parseInt(stepParam, 10)
-        if (!isNaN(step)) {
-          const r = await api.getFunnelStepSessions(projectId, funnelId, step, { environment: f.environment || undefined })
-          sessionIds = r.session_ids
-        }
-      } else if (pageParam) {
-        const r = await api.getFlowPageSessions(projectId, pageParam)
-        sessionIds = r.session_ids
-      }
-
-      const result = await api.listRecordings(projectId, {
-        limit: PAGE_SIZE,
-        offset: off,
-        session_ids: sessionIds,
-        device_type: f.device !== 'all' ? f.device : undefined,
-        human_only: f.traffic === 'human',
-        environment: f.environment || undefined,
-        page_url: f.pageUrl || undefined,
-      })
-      setRecordings(result.recordings)
-      setHasMore(result.recordings.length === PAGE_SIZE)
-    } catch {
+      const page = await loadRecordingPage(projectId, off, f, { funnelId, step: stepParam, page: pageParam })
+      if (mine !== latestLoad.current) return
+      setRecordings(page)
+      setHasMore(page.length === PAGE_SIZE)
+      setLoadFailed(false)
+    } catch (e) {
+      if (mine !== latestLoad.current) return
+      reportError(e, { source: 'Sessions.load' })
       setRecordings([])
+      setLoadFailed(true)
     } finally {
-      setLoading(false)
+      if (mine === latestLoad.current) setLoading(false)
     }
   }, [projectId, funnelId, stepParam, pageParam])
 
@@ -364,10 +341,19 @@ export default function Sessions() {
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
           }}>
             <Video size={32} opacity={0.3} />
-            <div>No recordings found</div>
-            <div style={{ fontSize: 13 }}>
-              Enable recording by passing <code style={{ background: C.bg, padding: '1px 6px', borderRadius: 4 }}>record: true</code> to the SDK
-            </div>
+            {loadFailed ? (
+              <>
+                <div>Could not load recordings</div>
+                <div style={{ fontSize: 13 }}>Change a filter or reload the page to try again.</div>
+              </>
+            ) : (
+              <>
+                <div>No recordings found</div>
+                <div style={{ fontSize: 13 }}>
+                  Enable recording by passing <code style={{ background: C.bg, padding: '1px 6px', borderRadius: 4 }}>record: true</code> to the SDK
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <>
@@ -508,7 +494,7 @@ export default function Sessions() {
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(rec.started_at)}</div>
                       <div style={{ fontSize: 11, color: C.muted, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {rec.page_url ? pagePath(rec.page_url) : rec.session_id.slice(0, 12) + '…'}
+                        {rec.page_url ? recordingPath(rec.page_url) : rec.session_id.slice(0, 12) + '…'}
                       </div>
                       <div style={{ fontSize: 11, color: C.muted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
                         <span>{formatDuration(rec.duration_ms)}</span>
@@ -527,7 +513,7 @@ export default function Sessions() {
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(rec.started_at)}</div>
                       <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                        {rec.page_url ? pagePath(rec.page_url) : rec.session_id.slice(0, 12) + '…'}
+                        {rec.page_url ? recordingPath(rec.page_url) : rec.session_id.slice(0, 12) + '…'}
                       </div>
                     </div>
                   )}

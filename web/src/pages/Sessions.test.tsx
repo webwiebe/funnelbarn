@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, waitFor, cleanup, fireEvent, act } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import Sessions from './Sessions'
 import type { Recording } from '../lib/api'
@@ -124,6 +124,79 @@ describe('Sessions', () => {
       mockApi.listRecordings.mockResolvedValue({ recordings: [recording({})] })
       renderSessions()
       expect(await screen.findByText('abcdefghijkl…')).toBeInTheDocument()
+    })
+  })
+  describe('loading', () => {
+    function deferred<T>() {
+      let resolve!: (v: T) => void
+      let reject!: (e: unknown) => void
+      const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
+      return { promise, resolve, reject }
+    }
+
+    // Two loads in flight, the newer one answers first. The older answer
+    // used to land last and replace the list the filters on screen asked for.
+    it('keeps the newest load when an older one answers last', async () => {
+      const first = deferred<{ recordings: Recording[] }>()
+      const second = deferred<{ recordings: Recording[] }>()
+      mockApi.listRecordings.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+      renderSessions()
+      await waitFor(() => expect(mockApi.listRecordings).toHaveBeenCalledTimes(1))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Mobile' }))
+      await waitFor(() => expect(mockApi.listRecordings).toHaveBeenCalledTimes(2))
+
+      await act(async () => { second.resolve({ recordings: [recording({ id: 'new', page_url: '/newest' })] }) })
+      expect(await screen.findByText('/newest')).toBeInTheDocument()
+
+      await act(async () => { first.resolve({ recordings: [recording({ id: 'old', page_url: '/stale' })] }) })
+      expect(screen.getByText('/newest')).toBeInTheDocument()
+      expect(screen.queryByText('/stale')).not.toBeInTheDocument()
+    })
+
+    it('does not let an older failure replace a newer list', async () => {
+      const first = deferred<{ recordings: Recording[] }>()
+      const second = deferred<{ recordings: Recording[] }>()
+      mockApi.listRecordings.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+      renderSessions()
+      await waitFor(() => expect(mockApi.listRecordings).toHaveBeenCalledTimes(1))
+      fireEvent.click(screen.getByRole('button', { name: 'Mobile' }))
+      await waitFor(() => expect(mockApi.listRecordings).toHaveBeenCalledTimes(2))
+
+      await act(async () => { second.resolve({ recordings: [recording({ page_url: '/newest' })] }) })
+      await act(async () => { first.reject(new Error('late failure')) })
+
+      expect(screen.getByText('/newest')).toBeInTheDocument()
+      expect(mockReportError).not.toHaveBeenCalled()
+    })
+
+    // A failed load used to read as an empty project and was never reported.
+    it('reports a failed load and says so instead of "No recordings found"', async () => {
+      const boom = new Error('listRecordings failed')
+      mockApi.listRecordings.mockRejectedValue(boom)
+      renderSessions()
+
+      expect(await screen.findByText(/could not load recordings/i)).toBeInTheDocument()
+      expect(screen.queryByText(/no recordings found/i)).not.toBeInTheDocument()
+      expect(mockReportError).toHaveBeenCalledWith(boom, { source: 'Sessions.load' })
+    })
+
+    it('shows "No recordings found" for a project that has none', async () => {
+      mockApi.listRecordings.mockResolvedValue({ recordings: [] })
+      renderSessions()
+      expect(await screen.findByText(/no recordings found/i)).toBeInTheDocument()
+      expect(mockReportError).not.toHaveBeenCalled()
+    })
+
+    it('clears the failure after the next load succeeds', async () => {
+      mockApi.listRecordings.mockRejectedValueOnce(new Error('x'))
+      renderSessions()
+      await screen.findByText(/could not load recordings/i)
+
+      mockApi.listRecordings.mockResolvedValueOnce({ recordings: [recording({ page_url: '/back' })] })
+      fireEvent.click(screen.getByRole('button', { name: 'Mobile' }))
+      expect(await screen.findByText('/back')).toBeInTheDocument()
+      expect(screen.queryByText(/could not load recordings/i)).not.toBeInTheDocument()
     })
   })
 })
