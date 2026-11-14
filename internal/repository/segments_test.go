@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func TestStore_Segments_CRUD(t *testing.T) {
@@ -18,13 +18,13 @@ func TestStore_Segments_CRUD(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Seg Project", "seg-project")
 	require.NoError(t, err)
 
-	rules := []repository.SegmentRule{
+	rules := []domain.SegmentRule{
 		{Field: "country_code", Operator: "eq", Value: "NL"},
 		{Field: "device_type", Operator: "eq", Value: "mobile"},
 	}
 
 	// Create
-	seg, err := s.CreateSegment(ctx, repository.Segment{
+	seg, err := s.CreateSegment(ctx, domain.Segment{
 		ProjectID: p.ID,
 		Name:      "Dutch mobile",
 		Rules:     rules,
@@ -48,7 +48,7 @@ func TestStore_Segments_CRUD(t *testing.T) {
 
 	// UpdateSegment
 	seg.Name = "Dutch desktop"
-	seg.Rules = []repository.SegmentRule{{Field: "country_code", Operator: "eq", Value: "NL"}}
+	seg.Rules = []domain.SegmentRule{{Field: "country_code", Operator: "eq", Value: "NL"}}
 	updated, err := s.UpdateSegment(ctx, seg)
 	require.NoError(t, err)
 	assert.Equal(t, "Dutch desktop", updated.Name)
@@ -81,7 +81,7 @@ func TestStore_UpsertSessionSignals(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Signals", "signals")
 	require.NoError(t, err)
 
-	sess := repository.Session{
+	sess := domain.Session{
 		ID:          "sess-123",
 		ProjectID:   p.ID,
 		FirstSeenAt: time.Now().UTC(),
@@ -96,7 +96,7 @@ func TestStore_UpsertSessionSignals(t *testing.T) {
 	reduced := false
 	cores := 8
 
-	signals := repository.SessionSignals{
+	signals := domain.SessionSignals{
 		ScreenWidth:     &w,
 		ScreenHeight:    &h,
 		PixelRatio:      &ratio,
@@ -110,6 +110,6 @@ func TestStore_UpsertSessionSignals(t *testing.T) {
 
 	// Second upsert should be a no-op (signals_collected = 1 guard).
 	w2 := 800
-	signals2 := repository.SessionSignals{ScreenWidth: &w2}
+	signals2 := domain.SessionSignals{ScreenWidth: &w2}
 	require.NoError(t, s.UpsertSessionSignals(ctx, p.ID, "sess-123", signals2))
 }

@@ -8,7 +8,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // registerFunnelTools registers list_funnels and analyze_funnel (read-only),
@@ -62,13 +61,13 @@ func registerFunnelTools(s *mcp.Server, d *Deps) {
 // loadFunnel fetches a funnel and checks it belongs to projectID. Skipping
 // this check would let a call scoped to one project read, change or delete
 // another project's funnel by ID.
-func loadFunnel(ctx context.Context, c *Call, projectID, funnelID string) (repository.Funnel, error) {
+func loadFunnel(ctx context.Context, c *Call, projectID, funnelID string) (domain.Funnel, error) {
 	f, err := c.Deps.Funnels.GetFunnel(ctx, funnelID)
 	if err != nil {
-		return repository.Funnel{}, err
+		return domain.Funnel{}, err
 	}
 	if f.ProjectID != projectID {
-		return repository.Funnel{}, fmt.Errorf("%w: funnel %s", domain.ErrNotFound, funnelID)
+		return domain.Funnel{}, fmt.Errorf("%w: funnel %s", domain.ErrNotFound, funnelID)
 	}
 	return f, nil
 }
@@ -77,14 +76,14 @@ func loadFunnel(ctx context.Context, c *Call, projectID, funnelID string) (repos
 // only what the caller supplies. step_order is computed from position in the
 // list, and id/funnel_id are assigned on write.
 type funnelStepIn struct {
-	EventName string                    `json:"event_name" jsonschema:"Event name this step matches; see list_event_names."`
-	Filters   []repository.FunnelFilter `json:"filters,omitempty" jsonschema:"Optional property filters: the step counts only events where every filter's property equals its value."`
+	EventName string                `json:"event_name" jsonschema:"Event name this step matches; see list_event_names."`
+	Filters   []domain.FunnelFilter `json:"filters,omitempty" jsonschema:"Optional property filters: the step counts only events where every filter's property equals its value."`
 }
 
-func toFunnelSteps(in []funnelStepIn) []repository.FunnelStep {
-	steps := make([]repository.FunnelStep, len(in))
+func toFunnelSteps(in []funnelStepIn) []domain.FunnelStep {
+	steps := make([]domain.FunnelStep, len(in))
 	for i, s := range in {
-		steps[i] = repository.FunnelStep{EventName: s.EventName, Filters: s.Filters}
+		steps[i] = domain.FunnelStep{EventName: s.EventName, Filters: s.Filters}
 	}
 	return steps
 }
@@ -96,8 +95,8 @@ type listFunnelsIn struct {
 }
 
 type listFunnelsOut struct {
-	Project string              `json:"project" jsonschema:"Slug of the project these funnels are from."`
-	Funnels []repository.Funnel `json:"funnels" jsonschema:"Every funnel for the project, each with its steps."`
+	Project string          `json:"project" jsonschema:"Slug of the project these funnels are from."`
+	Funnels []domain.Funnel `json:"funnels" jsonschema:"Every funnel for the project, each with its steps."`
 }
 
 func listFunnels(ctx context.Context, c *Call, in listFunnelsIn) (listFunnelsOut, error) {
@@ -125,17 +124,17 @@ type analyzeFunnelIn struct {
 }
 
 type analyzeFunnelOut struct {
-	Project   string                        `json:"project" jsonschema:"Slug of the project this analysis is for."`
-	Funnel    repository.Funnel             `json:"funnel" jsonschema:"The analyzed funnel."`
-	From      time.Time                     `json:"from" jsonschema:"Start of the range (inclusive)."`
-	To        time.Time                     `json:"to" jsonschema:"End of the range (inclusive)."`
-	Results   []repository.FunnelStepResult `json:"results" jsonschema:"Per-step count, conversion and drop-off, in step order."`
-	Breakdown *analyzeFunnelBreakdown       `json:"breakdown,omitempty" jsonschema:"Present when breakdown was requested: the funnel split by the property's value, largest group first. The groups' counts add up to results."`
+	Project   string                    `json:"project" jsonschema:"Slug of the project this analysis is for."`
+	Funnel    domain.Funnel             `json:"funnel" jsonschema:"The analyzed funnel."`
+	From      time.Time                 `json:"from" jsonschema:"Start of the range (inclusive)."`
+	To        time.Time                 `json:"to" jsonschema:"End of the range (inclusive)."`
+	Results   []domain.FunnelStepResult `json:"results" jsonschema:"Per-step count, conversion and drop-off, in step order."`
+	Breakdown *analyzeFunnelBreakdown   `json:"breakdown,omitempty" jsonschema:"Present when breakdown was requested: the funnel split by the property's value, largest group first. The groups' counts add up to results."`
 }
 
 type analyzeFunnelBreakdown struct {
-	Property string                            `json:"property" jsonschema:"The property the funnel is split by."`
-	Groups   []repository.FunnelBreakdownGroup `json:"groups" jsonschema:"One group per property value with its own per-step results."`
+	Property string                        `json:"property" jsonschema:"The property the funnel is split by."`
+	Groups   []domain.FunnelBreakdownGroup `json:"groups" jsonschema:"One group per property value with its own per-step results."`
 }
 
 func analyzeFunnel(ctx context.Context, c *Call, in analyzeFunnelIn) (analyzeFunnelOut, error) {
@@ -160,7 +159,7 @@ func analyzeFunnel(ctx context.Context, c *Call, in analyzeFunnelIn) (analyzeFun
 	// handler (which treats a lookup failure as non-fatal and analyzes
 	// without a filter), a segment_id from another project is rejected
 	// like any other cross-project object ID rather than silently ignored.
-	var rules []repository.SegmentRule
+	var rules []domain.SegmentRule
 	if in.SegmentID != "" {
 		seg, err := loadSegment(ctx, c, p.ID, in.SegmentID)
 		if err != nil {
@@ -168,7 +167,7 @@ func analyzeFunnel(ctx context.Context, c *Call, in analyzeFunnelIn) (analyzeFun
 		}
 		rules = seg.Rules
 	}
-	rules = append(rules, repository.EnvironmentRule(in.Environment)...)
+	rules = append(rules, domain.EnvironmentRule(in.Environment)...)
 
 	results, err := c.Deps.Funnels.AnalyzeFunnel(ctx, funnel, from, to, nil, rules...)
 	if err != nil {
@@ -204,7 +203,7 @@ type createFunnelIn struct {
 }
 
 type createFunnelOut struct {
-	Funnel repository.Funnel `json:"funnel" jsonschema:"The created funnel."`
+	Funnel domain.Funnel `json:"funnel" jsonschema:"The created funnel."`
 }
 
 func createFunnel(ctx context.Context, c *Call, in createFunnelIn) (createFunnelOut, error) {
@@ -212,7 +211,7 @@ func createFunnel(ctx context.Context, c *Call, in createFunnelIn) (createFunnel
 	if err != nil {
 		return createFunnelOut{}, err
 	}
-	f, err := c.Deps.Funnels.CreateFunnel(ctx, repository.Funnel{
+	f, err := c.Deps.Funnels.CreateFunnel(ctx, domain.Funnel{
 		ProjectID:   p.ID,
 		Name:        in.Name,
 		Description: in.Description,
@@ -241,7 +240,7 @@ type updateFunnelIn struct {
 }
 
 type updateFunnelOut struct {
-	Funnel repository.Funnel `json:"funnel" jsonschema:"The updated funnel."`
+	Funnel domain.Funnel `json:"funnel" jsonschema:"The updated funnel."`
 }
 
 func updateFunnel(ctx context.Context, c *Call, in updateFunnelIn) (updateFunnelOut, error) {
@@ -255,7 +254,7 @@ func updateFunnel(ctx context.Context, c *Call, in updateFunnelIn) (updateFunnel
 	if _, err := loadFunnel(ctx, c, p.ID, in.FunnelID); err != nil {
 		return updateFunnelOut{}, err
 	}
-	f, err := c.Deps.Funnels.UpdateFunnel(ctx, repository.Funnel{
+	f, err := c.Deps.Funnels.UpdateFunnel(ctx, domain.Funnel{
 		ID:          in.FunnelID,
 		ProjectID:   p.ID,
 		Name:        in.Name,

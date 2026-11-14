@@ -9,7 +9,10 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,7 +21,10 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 )
@@ -27,23 +33,23 @@ import (
 // ingest and recordings consumers, as run() wires them.
 type writerProcess struct {
 	commands   command.Bus
-	ingest     *ingestQueue
-	recordings *recordingsQueue
+	ingest     *pipeline.IngestQueue
+	recordings *pipeline.RecordingQueue
 }
 
-func startWriter(t *testing.T, ctx context.Context, cfg config.Config, applier *ingestApplier, recordings *service.RecordingService) *writerProcess {
+func startWriter(t *testing.T, ctx context.Context, cfg config.Config, applier *pipeline.Applier, recordings *service.RecordingService) *writerProcess {
 	t.Helper()
 	logger := slog.New(slog.DiscardHandler)
-	health := service.NewProjectHealthService(applier.store)
+	health := service.NewProjectHealthService(applier.Store)
 	commands, err := newCommandBus(ctx, cfg, command.Deps{
-		Store:              applier.store,
+		Store:              applier.Store,
 		MarkFlagsEvaluated: health.MarkFlagsEvaluated,
 		MarkProjectHealth:  service.ApplyHealthMark(health),
 	}, logger)
 	require.NoError(t, err)
-	iq, err := newIngestQueue(ctx, cfg, applier, logger)
+	iq, err := pipeline.NewIngestQueue(ctx, cfg, applier, logger)
 	require.NoError(t, err)
-	rq, err := newRecordingsQueue(ctx, cfg, recordings, logger)
+	rq, err := pipeline.NewRecordingQueue(ctx, cfg, recordings, logger)
 	require.NoError(t, err)
 	return &writerProcess{commands: commands, ingest: iq, recordings: rq}
 }
@@ -51,8 +57,8 @@ func startWriter(t *testing.T, ctx context.Context, cfg config.Config, applier *
 // drain applies everything queued.
 func (w *writerProcess) drain(t *testing.T, ctx context.Context) {
 	t.Helper()
-	require.NoError(t, w.ingest.bus.Flush(ctx))
-	require.NoError(t, w.recordings.bus.Flush(ctx))
+	require.NoError(t, w.ingest.Bus.Flush(ctx))
+	require.NoError(t, w.recordings.Bus.Flush(ctx))
 	require.NoError(t, w.commands.Flush(ctx))
 }
 
@@ -92,8 +98,8 @@ func readDurableRows(t *testing.T, db *sql.DB, ingestIDs []string, recordingID, 
 
 // queueKeys are the Valkey lists a reader publishes to.
 var queueKeys = []string{
-	"funnelbarn:queue:" + ingestQueueName,
-	"funnelbarn:queue:" + recordingsQueueName,
+	"funnelbarn:queue:" + pipeline.IngestQueueName,
+	"funnelbarn:queue:" + pipeline.RecordingsQueueName,
 	"funnelbarn:queue:" + bookkeepingQueue,
 }
 
@@ -105,7 +111,7 @@ func TestReaderTrafficSurvivesAStoppedWriter(t *testing.T) {
 	applier, writerStore := newTestApplier(t)
 	p, err := service.NewProjectService(writerStore).CreateProject(ctx, "Durable", "durable-site")
 	require.NoError(t, err)
-	flag, err := writerStore.CreateFlag(ctx, repository.FeatureFlag{
+	flag, err := writerStore.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID: p.ID, FlagKey: "durable_flag", Name: "Durable", FlagType: "boolean",
 		Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":50,"off":50}`, Status: "active",
 	})
@@ -132,10 +138,10 @@ func TestReaderTrafficSurvivesAStoppedWriter(t *testing.T) {
 	require.NoError(t, err)
 	reader := bus.(*readerCommandBus)
 	defer func() { require.NoError(t, reader.Close(context.Background())) }()
-	readerIngest, err := newIngestQueue(ctx, readerCfg, nil, logger)
+	readerIngest, err := pipeline.NewIngestQueue(ctx, readerCfg, nil, logger)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, readerIngest.Close(context.Background())) }()
-	readerChunks, err := newRecordingsQueue(ctx, readerCfg, nil, logger)
+	readerChunks, err := pipeline.NewRecordingQueue(ctx, readerCfg, nil, logger)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, readerChunks.Close(context.Background())) }()
 	chunkStore := &memChunkStorage{data: map[string][]byte{}}
@@ -154,7 +160,7 @@ func TestReaderTrafficSurvivesAStoppedWriter(t *testing.T) {
 	entries, err := spool.ReadRecordsFrom(spool.Path(readerCfg.SpoolDir), 0)
 	require.NoError(t, err)
 	require.Len(t, entries, len(ingestIDs))
-	end := readerIngest.forwarder.forward(ctx, entries, 0)
+	end := readerIngest.Forwarder.Forward(ctx, entries, 0)
 	require.Equal(t, entries[len(entries)-1].EndOffset, end)
 	_, err = readerHealth.MarkEventsReceived(ctx, p.ID)
 	require.NoError(t, err)
@@ -167,15 +173,15 @@ func TestReaderTrafficSurvivesAStoppedWriter(t *testing.T) {
 	require.NoError(t, readerRecordings.IngestChunk(ctx, chunk))
 
 	// Evaluations: two published, one buffered on disk while Valkey is down.
-	eval := command.RecordEvaluation{Eval: repository.FlagEvaluation{FlagID: flag.ID, ProjectID: p.ID, Variant: "on"}}
+	eval := command.RecordEvaluation{Eval: domain.FlagEvaluation{FlagID: flag.ID, ProjectID: p.ID, Variant: "on"}}
 	reader.Submit(ctx, eval)
 	reader.Submit(ctx, eval)
 	mr.SetError("LOADING Valkey is down")
 	reader.Submit(ctx, eval)
 	reader.Submit(ctx, command.MarkProjectHealth{ProjectID: p.ID, Field: command.HealthSetupCalled})
 	mr.SetError("")
-	reader.fallback.forward(ctx)
-	require.False(t, reader.fallback.outage.Failing())
+	reader.fallback.Forward(ctx)
+	require.False(t, reader.fallback.Failing())
 
 	// The writer is down: nothing is stored, everything waits in Valkey.
 	before := readDurableRows(t, writerStore.DB(), ingestIDs, "rec-durable", p.ID)
@@ -221,5 +227,65 @@ func TestReaderTrafficSurvivesAStoppedWriter(t *testing.T) {
 	for _, key := range queueKeys {
 		require.False(t, mr.Exists(key), "%s still queued", key)
 		require.False(t, mr.Exists(key+":processing"), "%s left unacked", key)
+	}
+}
+
+func newTestApplier(t *testing.T) (*pipeline.Applier, *repository.Store) {
+	t.Helper()
+	store, err := repository.Open(repotest.Path(t, "apply.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	return &pipeline.Applier{Store: store, Health: pipeline.NewMonitor(pipeline.MonitorOptions{})}, store
+}
+
+func applyRecord(ingestID, slug, body string) spool.Record {
+	return spool.Record{
+		IngestID:    ingestID,
+		ReceivedAt:  time.Now().UTC(),
+		ContentType: "application/json",
+		BodyBase64:  base64.StdEncoding.EncodeToString([]byte(body)),
+		ProjectSlug: slug,
+	}
+}
+
+// memChunkStorage keeps uploaded chunks in memory in place of R2.
+type memChunkStorage struct {
+	mu   sync.Mutex
+	data map[string][]byte
+}
+
+func (m *memChunkStorage) Put(_ context.Context, key string, b []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data[key] = b
+	return nil
+}
+
+func (m *memChunkStorage) Get(_ context.Context, key string) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.data[key], nil
+}
+
+func (m *memChunkStorage) Delete(_ context.Context, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.data, key)
+	return nil
+}
+
+func testChunk(projectID string) service.RecordingChunk {
+	start := time.Now().UTC().Truncate(time.Second)
+	return service.RecordingChunk{
+		RecordingID: "rec-q",
+		SessionID:   "sess-q",
+		ChunkIndex:  0,
+		Events:      json.RawMessage(`[{"type":2,"data":{},"timestamp":1000}]`),
+		StartedAt:   start,
+		DurationMs:  3000,
+		ProjectID:   projectID,
+		UserAgent:   "Mozilla/5.0",
 	}
 }

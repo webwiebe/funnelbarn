@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
@@ -16,7 +17,7 @@ func userEvent(t *testing.T, s *repository.Store, projectID, user, name string, 
 	if props == "" {
 		props = "{}"
 	}
-	require.NoError(t, s.InsertEvent(context.Background(), repository.Event{
+	require.NoError(t, s.InsertEvent(context.Background(), domain.Event{
 		ID:         randomHex(t),
 		ProjectID:  projectID,
 		SessionID:  randomHex(t),
@@ -28,7 +29,7 @@ func userEvent(t *testing.T, s *repository.Store, projectID, user, name string, 
 	}))
 }
 
-func stepCounts(results []repository.FunnelStepResult) []int64 {
+func stepCounts(results []domain.FunnelStepResult) []int64 {
 	out := make([]int64, len(results))
 	for i, r := range results {
 		out[i] = r.Count
@@ -68,19 +69,19 @@ func TestAnalyzeFunnel_UserScopeOrderedWithinWindow(t *testing.T) {
 	userEvent(t, s, p.ID, "", "pr_opened", base.Add(day), "")
 
 	window := int64((5 * day).Seconds())
-	f, err := s.CreateFunnel(ctx, repository.Funnel{
+	f, err := s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID:               p.ID,
 		Name:                    "Issue to merge",
-		Scope:                   repository.FunnelScopeUser,
+		Scope:                   domain.FunnelScopeUser,
 		ConversionWindowSeconds: &window,
-		Steps: []repository.FunnelStep{
+		Steps: []domain.FunnelStep{
 			{EventName: "issue_opened"},
 			{EventName: "pr_opened"},
 			{EventName: "pr_merged"},
 		},
 	})
 	require.NoError(t, err)
-	require.Equal(t, repository.FunnelScopeUser, f.Scope)
+	require.Equal(t, domain.FunnelScopeUser, f.Scope)
 	require.NotNil(t, f.ConversionWindowSeconds)
 	require.Equal(t, window, *f.ConversionWindowSeconds)
 
@@ -93,7 +94,7 @@ func TestAnalyzeFunnel_UserScopeOrderedWithinWindow(t *testing.T) {
 
 	// The same events as a session funnel count each step on its own.
 	sessionFunnel := f
-	sessionFunnel.Scope = repository.FunnelScopeSession
+	sessionFunnel.Scope = domain.FunnelScopeSession
 	results, err = s.AnalyzeFunnel(ctx, sessionFunnel, base.Add(-day), base.Add(30*day), nil)
 	require.NoError(t, err)
 	require.Equal(t, []int64{7, 6, 2}, stepCounts(results))
@@ -117,18 +118,18 @@ func TestAnalyzeFunnel_UserScopeDefaultWindowAndFilters(t *testing.T) {
 	userEvent(t, s, p.ID, "c", "issue_opened", base, "")
 	userEvent(t, s, p.ID, "c", "deployment_status", base.Add(day), `{"environment":"staging"}`)
 
-	f, err := s.CreateFunnel(ctx, repository.Funnel{
+	f, err := s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Issue to production",
-		Scope:     repository.FunnelScopeUser,
-		Steps: []repository.FunnelStep{
+		Scope:     domain.FunnelScopeUser,
+		Steps: []domain.FunnelStep{
 			{EventName: "issue_opened"},
-			{EventName: "deployment_status", Filters: []repository.FunnelFilter{{Property: "environment", Value: "production"}}},
+			{EventName: "deployment_status", Filters: []domain.FunnelFilter{{Property: "environment", Value: "production"}}},
 		},
 	})
 	require.NoError(t, err)
 	require.Nil(t, f.ConversionWindowSeconds)
-	require.Equal(t, repository.DefaultConversionWindow, f.ConversionWindow())
+	require.Equal(t, domain.DefaultConversionWindow, f.ConversionWindow())
 
 	results, err := s.AnalyzeFunnel(ctx, f, base, base.Add(60*day), nil)
 	require.NoError(t, err)
@@ -142,12 +143,12 @@ func TestFunnelConversionWindowRoundTrips(t *testing.T) {
 	require.NoError(t, err)
 
 	window := int64(3600)
-	f, err := s.CreateFunnel(ctx, repository.Funnel{
+	f, err := s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID:               p.ID,
 		Name:                    "Hourly",
-		Scope:                   repository.FunnelScopeUser,
+		Scope:                   domain.FunnelScopeUser,
 		ConversionWindowSeconds: &window,
-		Steps:                   []repository.FunnelStep{{EventName: "a"}, {EventName: "b"}},
+		Steps:                   []domain.FunnelStep{{EventName: "a"}, {EventName: "b"}},
 	})
 	require.NoError(t, err)
 
@@ -157,9 +158,9 @@ func TestFunnelConversionWindowRoundTrips(t *testing.T) {
 	require.Equal(t, window, *listed[0].ConversionWindowSeconds)
 
 	f.ConversionWindowSeconds = nil
-	f.Scope = repository.FunnelScopeSession
+	f.Scope = domain.FunnelScopeSession
 	updated, err := s.UpdateFunnel(ctx, f)
 	require.NoError(t, err)
 	require.Nil(t, updated.ConversionWindowSeconds)
-	require.Equal(t, repository.FunnelScopeSession, updated.Scope)
+	require.Equal(t, domain.FunnelScopeSession, updated.Scope)
 }

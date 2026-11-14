@@ -2,21 +2,13 @@ package repository
 
 import (
 	"context"
-	"time"
-)
 
-// EventListFilter narrows ListEventsFiltered. An empty field matches everything and
-// a zero From or To leaves that side of the window open.
-type EventListFilter struct {
-	Name        string
-	Environment string
-	From        time.Time
-	To          time.Time
-}
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+)
 
 // ListEventsFiltered returns a paginated list of events for a project that
 // match f, newest first.
-func (s *ReadStore) ListEventsFiltered(ctx context.Context, projectID string, f EventListFilter, limit, offset int) ([]Event, error) {
+func (s *ReadStore) ListEventsFiltered(ctx context.Context, projectID string, f domain.EventListFilter, limit, offset int) ([]domain.Event, error) {
 	if limit <= 0 {
 		limit = 50
 	}

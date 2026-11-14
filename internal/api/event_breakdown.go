@@ -10,7 +10,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/timerange"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
@@ -19,7 +19,7 @@ import (
 // call with a project-scoped analytics:read token.
 func (s *Server) registerEventReadRoutes() {
 	read := func(h http.HandlerFunc) http.HandlerFunc {
-		return s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, h)
+		return s.requireSessionOrToken(domain.APIKeyScopeAnalyticsRead, h)
 	}
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/events", read(s.handleListEvents))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/event-names", read(s.handleEventNames))
@@ -29,8 +29,8 @@ func (s *Server) registerEventReadRoutes() {
 
 // parseCountFilter reads environment, exclude_bots and the property/value pair
 // shared by event-counts and event-breakdown. exclude_bots must be true or false.
-func parseCountFilter(q url.Values) (repository.EventCountFilter, error) {
-	f := repository.EventCountFilter{Environment: q.Get("environment")}
+func parseCountFilter(q url.Values) (domain.EventCountFilter, error) {
+	f := domain.EventCountFilter{Environment: q.Get("environment")}
 	if v := q.Get("exclude_bots"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
@@ -39,7 +39,7 @@ func parseCountFilter(q url.Values) (repository.EventCountFilter, error) {
 		f.ExcludeBots = b
 	}
 	if key := q.Get("property"); key != "" {
-		if !repository.ValidPropertyKey(key) {
+		if !domain.ValidPropertyKey(key) {
 			return f, errors.New("property must be letters, digits and underscores, at most 64 characters")
 		}
 		if !q.Has("value") {
@@ -73,7 +73,7 @@ func (s *Server) handleEventBreakdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	by := q.Get("by")
-	if _, ok := repository.BreakdownDimensions[by]; !ok {
+	if _, ok := domain.BreakdownDimensions[by]; !ok {
 		jsonError(w, fmt.Sprintf("by must be one of device_type, referrer_domain, utm_source, got %q", by), http.StatusBadRequest)
 		return
 	}
@@ -107,7 +107,7 @@ func (s *Server) handleEventBreakdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rows == nil {
-		rows = []repository.BreakdownRow{}
+		rows = []domain.BreakdownRow{}
 	}
 	var total int64
 	for _, row := range rows {

@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -17,13 +15,13 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
-	"github.com/wiebe-xyz/funnelbarn/internal/worker"
 )
-
-var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 // --------------------------------------------------------------------------
 // CLI subcommands
@@ -49,7 +47,7 @@ func runWorkerOnce(cfg config.Config) error {
 
 	processed := 0
 	for _, record := range records {
-		event, err := worker.SafeProcess(record)
+		event, err := pipeline.SafeProcess(record)
 		if err != nil {
 			tracing.RecordError(span, err)
 			slog.Error("worker-once: process record", "ingest_id", record.IngestID, "err", err)
@@ -61,7 +59,7 @@ func runWorkerOnce(cfg config.Config) error {
 				event.ProjectID = proj.ID
 			}
 		}
-		if err := worker.PersistEvent(ctx, store, event, nil); err != nil {
+		if err := pipeline.PersistEvent(ctx, store, event, nil); err != nil {
 			tracing.RecordError(span, err)
 			slog.Error("worker-once: persist event", "ingest_id", record.IngestID, "err", err)
 			continue
@@ -140,7 +138,7 @@ func replayRecord(ctx context.Context, store *repository.Store, record spool.Rec
 		return false
 	}
 
-	event, err := worker.SafeProcess(record)
+	event, err := pipeline.SafeProcess(record)
 	if err != nil {
 		slog.Error("replay: process record", "ingest_id", record.IngestID, "err", err)
 		return false
@@ -161,7 +159,7 @@ func replayRecord(ctx context.Context, store *repository.Store, record spool.Rec
 	}
 	event.ProjectID = proj.ID
 
-	if err := worker.PersistEvent(ctx, store, event, nil); err != nil {
+	if err := pipeline.PersistEvent(ctx, store, event, nil); err != nil {
 		slog.Error("replay: persist event", "ingest_id", record.IngestID, "err", err)
 		return false
 	}
@@ -228,7 +226,7 @@ func runProjectCmd(cfg config.Config, args []string) error {
 		if *slug == "" {
 			*slug = toSlugLocal(*name)
 		}
-		if !slugPattern.MatchString(*slug) {
+		if !domain.ValidProjectSlug(*slug) {
 			return fmt.Errorf("invalid slug %q: must be lowercase alphanumeric with hyphens", *slug)
 		}
 		store, err := repository.Open(cfg.DBPath)
@@ -236,7 +234,7 @@ func runProjectCmd(cfg config.Config, args []string) error {
 			return err
 		}
 		defer logShutdown(slog.LevelError, "store", store.Close)
-		p, err := store.CreateProject(context.Background(), *name, *slug)
+		p, err := service.NewProjectService(store).CreateProject(context.Background(), *name, *slug)
 		if err != nil {
 			return fmt.Errorf("create project: %w", err)
 		}
@@ -257,7 +255,7 @@ func runAPIKeyCmd(cfg config.Config, args []string) error {
 		fs := flag.NewFlagSet("apikey create", flag.ContinueOnError)
 		projectSlug := fs.String("project", "default", "project slug")
 		name := fs.String("name", "", "key name/label")
-		scope := fs.String("scope", repository.APIKeyScopeFull, "key scope: full or ingest")
+		scope := fs.String("scope", domain.APIKeyScopeFull, "key scope: full or ingest")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -265,8 +263,8 @@ func runAPIKeyCmd(cfg config.Config, args []string) error {
 		if *name == "" {
 			return fmt.Errorf("--name is required")
 		}
-		if *scope != repository.APIKeyScopeFull && *scope != repository.APIKeyScopeIngest {
-			return fmt.Errorf("--scope must be %q or %q", repository.APIKeyScopeFull, repository.APIKeyScopeIngest)
+		if *scope != domain.APIKeyScopeFull && *scope != domain.APIKeyScopeIngest {
+			return fmt.Errorf("--scope must be %q or %q", domain.APIKeyScopeFull, domain.APIKeyScopeIngest)
 		}
 		store, err := repository.Open(cfg.DBPath)
 		if err != nil {
@@ -274,24 +272,21 @@ func runAPIKeyCmd(cfg config.Config, args []string) error {
 		}
 		defer logShutdown(slog.LevelError, "store", store.Close)
 		ctx := context.Background()
-		project, err := store.ProjectBySlug(ctx, *projectSlug)
+		projects := service.NewProjectService(store)
+		project, err := projects.GetProjectBySlug(ctx, *projectSlug)
 		if err != nil {
-			project, err = store.CreateProject(ctx, *projectSlug, *projectSlug)
+			project, err = projects.CreateProject(ctx, *projectSlug, *projectSlug)
 			if err != nil {
 				return fmt.Errorf("create project %q: %w", *projectSlug, err)
 			}
 			fmt.Printf("Project %q created automatically.\n", *projectSlug)
 		}
-		var raw [32]byte
-		if _, err := rand.Read(raw[:]); err != nil {
-			return fmt.Errorf("generate key: %w", err)
-		}
-		plaintext := hex.EncodeToString(raw[:])
-		sum := sha256.Sum256([]byte(plaintext))
-		keySHA256 := hex.EncodeToString(sum[:])
-
-		key, err := store.CreateAPIKey(ctx, *name, project.ID, keySHA256, *scope)
+		key, plaintext, err := service.NewAPIKeyService(store).IssueAPIKey(ctx, *name, project.ID, *scope)
 		if err != nil {
+			var genErr *service.KeyGenerationError
+			if errors.As(err, &genErr) {
+				return fmt.Errorf("generate key: %w", genErr.Err)
+			}
 			return fmt.Errorf("create api key: %w", err)
 		}
 		fmt.Printf("API key created (id=%s, project=%s, name=%s, scope=%s)\n", key.ID, project.Slug, key.Name, key.Scope)

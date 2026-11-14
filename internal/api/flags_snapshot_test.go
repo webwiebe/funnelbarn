@@ -10,6 +10,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -63,9 +64,9 @@ type stallingFlagStore struct {
 	stall *dbStall
 }
 
-func (s stallingFlagStore) FlagByKey(ctx context.Context, projectID, key string) (repository.FeatureFlag, error) {
+func (s stallingFlagStore) FlagByKey(ctx context.Context, projectID, key string) (domain.FeatureFlag, error) {
 	if err := s.stall.wait(ctx); err != nil {
-		return repository.FeatureFlag{}, err
+		return domain.FeatureFlag{}, err
 	}
 	return s.FlagRepo.FlagByKey(ctx, projectID, key)
 }
@@ -110,7 +111,7 @@ func newSnapshotEvaluateServer(t *testing.T) (*Server, *repository.Store, *dbSta
 			}
 		},
 		authz: func(a *auth.Authorizer, store *repository.Store) *auth.Authorizer {
-			keys = auth.NewKeySnapshot(storeKeyGrants(store), repository.APIKeyScopeEvaluatesFlags, nil)
+			keys = auth.NewKeySnapshot(storeKeyGrants(store), domain.APIKeyScopeEvaluatesFlags, nil)
 			return a.WithEvaluateKeys(keys)
 		},
 		flags: func(store *repository.Store) *service.FlagService {
@@ -138,7 +139,7 @@ func TestEvaluate_BlockedDatabaseReadDoesNotBlockEvaluate(t *testing.T) {
 	srv, store, stall, refresh := newSnapshotEvaluateServer(t)
 	p, _ := store.CreateProject(context.Background(), "P", "p")
 	seedFlag(t, store, p.ID, "gate")
-	key := scopedKey(t, store, p.ID, "sdk-key", repository.APIKeyScopeIngest)
+	key := scopedKey(t, store, p.ID, "sdk-key", domain.APIKeyScopeIngest)
 	refresh()
 
 	stall.stalled.Store(true)
@@ -173,7 +174,7 @@ func TestEvaluate_ColdSnapshotsReadDatabase(t *testing.T) {
 	srv, store, stall, _ := newSnapshotEvaluateServer(t)
 	p, _ := store.CreateProject(context.Background(), "P", "p")
 	seedFlag(t, store, p.ID, "gate")
-	key := scopedKey(t, store, p.ID, "sdk-key", repository.APIKeyScopeIngest)
+	key := scopedKey(t, store, p.ID, "sdk-key", domain.APIKeyScopeIngest)
 
 	w := withKey(t, srv, http.MethodPost, "/api/v1/evaluate", key, map[string]any{"flag_key": "gate"})
 	if w.Code != http.StatusOK {
@@ -191,7 +192,7 @@ func TestEvaluate_RevokedFullKeyRefusedElsewhereAtOnce(t *testing.T) {
 	srv, store, _, refresh := newSnapshotEvaluateServer(t)
 	p, _ := store.CreateProject(context.Background(), "P", "p")
 	seedFlag(t, store, p.ID, "gate")
-	key := scopedKey(t, store, p.ID, "full-key", repository.APIKeyScopeFull)
+	key := scopedKey(t, store, p.ID, "full-key", domain.APIKeyScopeFull)
 	refresh()
 
 	keys, err := store.ListAPIKeys(context.Background(), p.ID)

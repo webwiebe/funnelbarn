@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -22,7 +22,7 @@ func TestSessionService_UpsertAndGet(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	sess := repository.Session{
+	sess := domain.Session{
 		ID:          "sess-001",
 		ProjectID:   p.ID,
 		FirstSeenAt: now,
@@ -51,7 +51,7 @@ func TestSessionService_ListSessions(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	for i := 0; i < 3; i++ {
-		sess := repository.Session{
+		sess := domain.Session{
 			ID:          "sess-list-" + string(rune('a'+i)),
 			ProjectID:   p.ID,
 			FirstSeenAt: now,
@@ -76,7 +76,7 @@ func TestSessionService_ActiveSessionCount(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	sess := repository.Session{
+	sess := domain.Session{
 		ID:          "active-sess",
 		ProjectID:   p.ID,
 		FirstSeenAt: now,

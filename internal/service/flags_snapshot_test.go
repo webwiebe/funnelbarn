@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/mock"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
@@ -23,13 +23,13 @@ type stallingFlagRepo struct {
 	reads   atomic.Int32
 }
 
-func (r *stallingFlagRepo) FlagByKey(ctx context.Context, projectID, key string) (repository.FeatureFlag, error) {
+func (r *stallingFlagRepo) FlagByKey(ctx context.Context, projectID, key string) (domain.FeatureFlag, error) {
 	r.reads.Add(1)
 	if r.stalled.Load() {
 		select {
 		case <-r.release:
 		case <-ctx.Done():
-			return repository.FeatureFlag{}, ctx.Err()
+			return domain.FeatureFlag{}, ctx.Err()
 		}
 	}
 	return r.FlagRepo.FlagByKey(ctx, projectID, key)
@@ -40,7 +40,7 @@ func newSnapshotFlagService(t *testing.T) (*service.FlagService, *service.FlagSn
 	store := mock.New()
 	repo := &stallingFlagRepo{FlagRepo: store, release: make(chan struct{})}
 	t.Cleanup(func() { close(repo.release) })
-	fs := service.NewFlagSnapshot(func(ctx context.Context) ([]repository.FeatureFlag, error) {
+	fs := service.NewFlagSnapshot(func(ctx context.Context) ([]domain.FeatureFlag, error) {
 		if repo.stalled.Load() {
 			select {
 			case <-repo.release:

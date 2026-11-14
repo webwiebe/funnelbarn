@@ -8,11 +8,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
-func makeRecording(projectID, sessionID string, start time.Time) repository.Recording {
-	return repository.Recording{
+func makeRecording(projectID, sessionID string, start time.Time) domain.Recording {
+	return domain.Recording{
 		ID:              "placeholder", // caller must override
 		ProjectID:       projectID,
 		SessionID:       sessionID,
@@ -176,7 +176,7 @@ func TestRecording_ListRecordings(t *testing.T) {
 		require.NoError(t, s.UpsertRecording(ctx, rec))
 	}
 
-	recs, err := s.ListRecordings(ctx, p.ID, repository.RecordingListOpts{Limit: 10})
+	recs, err := s.ListRecordings(ctx, p.ID, domain.RecordingListOpts{Limit: 10})
 	require.NoError(t, err)
 	assert.Len(t, recs, 3)
 }
@@ -200,7 +200,7 @@ func TestRecording_ListRecordings_BotFilter(t *testing.T) {
 	bot.IsBot = true
 	require.NoError(t, s.UpsertRecording(ctx, bot))
 
-	recs, err := s.ListRecordings(ctx, p.ID, repository.RecordingListOpts{HumanOnly: true, Limit: 10})
+	recs, err := s.ListRecordings(ctx, p.ID, domain.RecordingListOpts{HumanOnly: true, Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, recs, 1)
 	assert.Equal(t, "rec-human", recs[0].ID)
@@ -221,7 +221,7 @@ func TestRecording_ListRecordings_DeviceFilter(t *testing.T) {
 		require.NoError(t, s.UpsertRecording(ctx, rec))
 	}
 
-	recs, err := s.ListRecordings(ctx, p.ID, repository.RecordingListOpts{DeviceType: "mobile", Limit: 10})
+	recs, err := s.ListRecordings(ctx, p.ID, domain.RecordingListOpts{DeviceType: "mobile", Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, recs, 1)
 	assert.Equal(t, "rec-dev-mobile", recs[0].ID)
@@ -241,7 +241,7 @@ func TestRecording_ListRecordings_SessionIDFilter(t *testing.T) {
 		require.NoError(t, s.UpsertRecording(ctx, rec))
 	}
 
-	recs, err := s.ListRecordings(ctx, p.ID, repository.RecordingListOpts{
+	recs, err := s.ListRecordings(ctx, p.ID, domain.RecordingListOpts{
 		SessionIDs: []string{"sess-si-a", "sess-si-c"},
 		Limit:      10,
 	})

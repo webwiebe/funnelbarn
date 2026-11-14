@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -24,7 +24,7 @@ func replayChunk(projectID string) service.RecordingChunk {
 		DurationMs:  4000,
 		ProjectID:   projectID,
 		UserAgent:   "Mozilla/5.0",
-		Traces:      []repository.TraceLink{{TraceID: "t-replay", OccurredAt: start.Add(time.Second)}},
+		Traces:      []domain.TraceLink{{TraceID: "t-replay", OccurredAt: start.Add(time.Second)}},
 	}
 }
 

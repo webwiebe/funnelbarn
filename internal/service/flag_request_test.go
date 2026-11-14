@@ -6,16 +6,16 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/mock"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
 func strp(s string) *string { return &s }
 
-func storedFlag(t *testing.T, svc *service.FlagService) repository.FeatureFlag {
+func storedFlag(t *testing.T, svc *service.FlagService) domain.FeatureFlag {
 	t.Helper()
-	f, err := svc.CreateFlag(context.Background(), repository.FeatureFlag{
+	f, err := svc.CreateFlag(context.Background(), domain.FeatureFlag{
 		ProjectID:       "proj-1",
 		FlagKey:         "patched",
 		Name:            "Original",
@@ -54,19 +54,19 @@ func TestFlagService_PatchFlag_EachFieldReplacesItsOwn(t *testing.T) {
 	cases := []struct {
 		name  string
 		req   service.FlagRequest
-		check func(t *testing.T, got repository.FeatureFlag)
+		check func(t *testing.T, got domain.FeatureFlag)
 	}{
-		{"name", service.FlagRequest{Name: strp("New")}, func(t *testing.T, g repository.FeatureFlag) { require.Equal(t, "New", g.Name) }},
-		{"flag_type", service.FlagRequest{FlagType: strp("number")}, func(t *testing.T, g repository.FeatureFlag) { require.Equal(t, "number", g.FlagType) }},
-		{"variants", service.FlagRequest{Variants: strp(`{"a":"A","b":"B","c":"C"}`)}, func(t *testing.T, g repository.FeatureFlag) {
+		{"name", service.FlagRequest{Name: strp("New")}, func(t *testing.T, g domain.FeatureFlag) { require.Equal(t, "New", g.Name) }},
+		{"flag_type", service.FlagRequest{FlagType: strp("number")}, func(t *testing.T, g domain.FeatureFlag) { require.Equal(t, "number", g.FlagType) }},
+		{"variants", service.FlagRequest{Variants: strp(`{"a":"A","b":"B","c":"C"}`)}, func(t *testing.T, g domain.FeatureFlag) {
 			require.Equal(t, `{"a":"A","b":"B","c":"C"}`, g.Variants)
 		}},
-		{"default_variant", service.FlagRequest{DefaultVariant: strp("b")}, func(t *testing.T, g repository.FeatureFlag) { require.Equal(t, "b", g.DefaultVariant) }},
-		{"split", service.FlagRequest{Split: strp(`{"a":10,"b":90}`)}, func(t *testing.T, g repository.FeatureFlag) { require.Equal(t, `{"a":10,"b":90}`, g.Split) }},
-		{"conversion_event", service.FlagRequest{ConversionEvent: strp("purchase")}, func(t *testing.T, g repository.FeatureFlag) { require.Equal(t, "purchase", g.ConversionEvent) }},
-		{"targeting_rules", service.FlagRequest{TargetingRules: strp(`[]`)}, func(t *testing.T, g repository.FeatureFlag) { require.Equal(t, `[]`, g.TargetingRules) }},
-		{"status", service.FlagRequest{Status: strp("paused")}, func(t *testing.T, g repository.FeatureFlag) { require.Equal(t, "paused", g.Status) }},
-		{"kind", service.FlagRequest{Kind: strp("config")}, func(t *testing.T, g repository.FeatureFlag) { require.Equal(t, "config", g.Kind) }},
+		{"default_variant", service.FlagRequest{DefaultVariant: strp("b")}, func(t *testing.T, g domain.FeatureFlag) { require.Equal(t, "b", g.DefaultVariant) }},
+		{"split", service.FlagRequest{Split: strp(`{"a":10,"b":90}`)}, func(t *testing.T, g domain.FeatureFlag) { require.Equal(t, `{"a":10,"b":90}`, g.Split) }},
+		{"conversion_event", service.FlagRequest{ConversionEvent: strp("purchase")}, func(t *testing.T, g domain.FeatureFlag) { require.Equal(t, "purchase", g.ConversionEvent) }},
+		{"targeting_rules", service.FlagRequest{TargetingRules: strp(`[]`)}, func(t *testing.T, g domain.FeatureFlag) { require.Equal(t, `[]`, g.TargetingRules) }},
+		{"status", service.FlagRequest{Status: strp("paused")}, func(t *testing.T, g domain.FeatureFlag) { require.Equal(t, "paused", g.Status) }},
+		{"kind", service.FlagRequest{Kind: strp("config")}, func(t *testing.T, g domain.FeatureFlag) { require.Equal(t, "config", g.Kind) }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

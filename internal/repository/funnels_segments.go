@@ -5,40 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/environment"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
-
-// environmentField is the events column the funnel environment argument filters
-// on. It is deliberately absent from AllowedSegmentFields so a stored segment
-// cannot name it; only EnvironmentRule produces a rule for it.
-const environmentField = "environment"
-
-// EnvironmentRule narrows a funnel analysis to one environment. env goes through
-// the same normalisation as ingest ("prod" is "production"); an empty env means
-// all environments and returns no rules. Events are matched by equality, like
-// the event-count filters.
-func EnvironmentRule(env string) []SegmentRule {
-	if strings.TrimSpace(env) == "" {
-		return nil
-	}
-	return []SegmentRule{{Field: environmentField, Operator: "eq", Value: environment.Normalize(env)}}
-}
-
-// SegmentFilter filters funnel analysis by a field condition on the events (or joined sessions) table.
-type SegmentFilter struct {
-	// Field is the column to filter on: "device_type", "user_id_hash", "browser",
-	// "country_code", or the special value "session_returning".
-	Field string
-	// Op is the comparison operator: "eq", "neq", "is_null", "is_not_null".
-	Op string
-	// Value is the right-hand side for "eq" / "neq" operators.
-	Value string
-}
 
 // segmentParam returns a SQL WHERE fragment with a placeholder and the value to bind,
 // plus whether a sessions JOIN is needed.
 // arg is nil when no bind parameter is needed for the clause (e.g. IS NULL checks).
-func segmentParam(seg *SegmentFilter) (clause string, arg any, needSessionJoin bool) {
+func segmentParam(seg *domain.SegmentFilter) (clause string, arg any, needSessionJoin bool) {
 	if seg == nil {
 		return "", nil, false
 	}
@@ -79,15 +52,15 @@ func segmentParam(seg *SegmentFilter) (clause string, arg any, needSessionJoin b
 // only reachable through EnvironmentRule, so it is resolved here and not listed
 // in AllowedSegmentFields.
 func ruleTableAlias(field string) (string, bool) {
-	if field == environmentField {
+	if field == domain.SegmentFieldEnvironment {
 		return "e", true
 	}
-	alias, ok := AllowedSegmentFields[field]
+	alias, ok := domain.AllowedSegmentFields[field]
 	return alias, ok
 }
 
 // buildSegmentRuleClause converts stored segment rules into a SQL WHERE fragment.
-func buildSegmentRuleClause(rules []SegmentRule) (clause string, args []any, needJoin bool) {
+func buildSegmentRuleClause(rules []domain.SegmentRule) (clause string, args []any, needJoin bool) {
 	if len(rules) == 0 {
 		return "", nil, false
 	}
@@ -126,16 +99,9 @@ func buildSegmentRuleClause(rules []SegmentRule) (clause string, args []any, nee
 	return strings.Join(parts, " AND "), args, needJoin
 }
 
-// FunnelSegments holds distinct values available for dynamic segment filtering.
-type FunnelSegments struct {
-	DeviceTypes []string `json:"device_types"`
-	Browsers    []string `json:"browsers"`
-	Countries   []string `json:"countries"`
-}
-
 // FunnelSegmentData returns distinct field values present in the events for a project.
-func (s *ReadStore) FunnelSegmentData(ctx context.Context, projectID string) (FunnelSegments, error) {
-	var out FunnelSegments
+func (s *ReadStore) FunnelSegmentData(ctx context.Context, projectID string) (domain.FunnelSegments, error) {
+	var out domain.FunnelSegments
 
 	// Column names are interpolated into SQL, so guard against any caller ever
 	// passing an unvetted value: only an explicit allowlist of event columns is

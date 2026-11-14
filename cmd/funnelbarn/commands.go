@@ -9,6 +9,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/queue"
 )
 
@@ -87,7 +88,7 @@ const bookkeepingFallbackName = "bookkeeping-fallback"
 // the spool directory, and the reader's worker publishes it later.
 type readerCommandBus struct {
 	*command.RedisBus
-	fallback *fallbackForwarder
+	fallback *pipeline.FallbackForwarder
 	client   *redis.Client
 }
 
@@ -106,7 +107,7 @@ func newReaderCommandBus(ctx context.Context, cfg config.Config, client *redis.C
 	bus.Start(ctx)
 	return &readerCommandBus{
 		RedisBus: bus,
-		fallback: &fallbackForwarder{name: "bookkeeping", fallback: fallback, list: list},
+		fallback: pipeline.NewFallbackForwarder("bookkeeping", fallback, list),
 		client:   client,
 	}, nil
 }

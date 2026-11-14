@@ -6,7 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // Limits used by the analytics tools below. Named so a tool's description
@@ -105,22 +105,22 @@ type getStatsIn struct {
 }
 
 type getStatsOut struct {
-	Project             string                       `json:"project" jsonschema:"Slug of the project these stats are for."`
-	From                time.Time                    `json:"from" jsonschema:"Start of the range (inclusive)."`
-	To                  time.Time                    `json:"to" jsonschema:"End of the range (inclusive)."`
-	Environment         string                       `json:"environment,omitempty" jsonschema:"The environment filter applied, empty if none."`
-	TotalEvents         int64                        `json:"total_events" jsonschema:"Total events in range."`
-	UniqueSessions      int64                        `json:"unique_sessions" jsonschema:"Distinct sessions in range."`
-	BounceRate          float64                      `json:"bounce_rate" jsonschema:"Share of sessions with exactly one event, 0-1."`
-	AvgEventsPerSession float64                      `json:"avg_events_per_session" jsonschema:"Average events per session."`
-	TopPages            []repository.PageStat        `json:"top_pages" jsonschema:"Up to 10 most-viewed pages."`
-	TopReferrers        []repository.ReferrerStat    `json:"top_referrers" jsonschema:"Up to 10 top referrer domains."`
-	TopBrowsers         []repository.BrowserStat     `json:"top_browsers" jsonschema:"Up to 5 top browsers."`
-	DeviceTypes         []repository.DeviceStat      `json:"device_types" jsonschema:"Breakdown by device type."`
-	TopEventNames       []repository.EventNameStat   `json:"top_event_names" jsonschema:"Up to 10 most frequent event names."`
-	TopUTMSources       []repository.UTMStat         `json:"top_utm_sources" jsonschema:"Up to 5 top UTM sources."`
-	EventsTimeSeries    []repository.TimeSeriesPoint `json:"events_time_series" jsonschema:"Daily event counts across the range."`
-	SessionsTimeSeries  []repository.TimeSeriesPoint `json:"sessions_time_series" jsonschema:"Daily unique-session counts across the range."`
+	Project             string                   `json:"project" jsonschema:"Slug of the project these stats are for."`
+	From                time.Time                `json:"from" jsonschema:"Start of the range (inclusive)."`
+	To                  time.Time                `json:"to" jsonschema:"End of the range (inclusive)."`
+	Environment         string                   `json:"environment,omitempty" jsonschema:"The environment filter applied, empty if none."`
+	TotalEvents         int64                    `json:"total_events" jsonschema:"Total events in range."`
+	UniqueSessions      int64                    `json:"unique_sessions" jsonschema:"Distinct sessions in range."`
+	BounceRate          float64                  `json:"bounce_rate" jsonschema:"Share of sessions with exactly one event, 0-1."`
+	AvgEventsPerSession float64                  `json:"avg_events_per_session" jsonschema:"Average events per session."`
+	TopPages            []domain.PageStat        `json:"top_pages" jsonschema:"Up to 10 most-viewed pages."`
+	TopReferrers        []domain.ReferrerStat    `json:"top_referrers" jsonschema:"Up to 10 top referrer domains."`
+	TopBrowsers         []domain.BrowserStat     `json:"top_browsers" jsonschema:"Up to 5 top browsers."`
+	DeviceTypes         []domain.DeviceStat      `json:"device_types" jsonschema:"Breakdown by device type."`
+	TopEventNames       []domain.EventNameStat   `json:"top_event_names" jsonschema:"Up to 10 most frequent event names."`
+	TopUTMSources       []domain.UTMStat         `json:"top_utm_sources" jsonschema:"Up to 5 top UTM sources."`
+	EventsTimeSeries    []domain.TimeSeriesPoint `json:"events_time_series" jsonschema:"Daily event counts across the range."`
+	SessionsTimeSeries  []domain.TimeSeriesPoint `json:"sessions_time_series" jsonschema:"Daily unique-session counts across the range."`
 }
 
 func getStats(ctx context.Context, c *Call, in getStatsIn) (getStatsOut, error) {
@@ -208,12 +208,12 @@ type getEventCountsIn struct {
 }
 
 type getEventCountsOut struct {
-	Project     string                     `json:"project" jsonschema:"Slug of the project these counts are from."`
-	From        time.Time                  `json:"from" jsonschema:"Start of the range (inclusive)."`
-	To          time.Time                  `json:"to" jsonschema:"End of the range (inclusive)."`
-	Environment string                     `json:"environment,omitempty" jsonschema:"The environment filter applied, empty if none."`
-	Events      []repository.EventNameStat `json:"events" jsonschema:"Event name and count, most frequent first."`
-	TotalEvents int64                      `json:"total_events" jsonschema:"Sum of count across the returned events."`
+	Project     string                 `json:"project" jsonschema:"Slug of the project these counts are from."`
+	From        time.Time              `json:"from" jsonschema:"Start of the range (inclusive)."`
+	To          time.Time              `json:"to" jsonschema:"End of the range (inclusive)."`
+	Environment string                 `json:"environment,omitempty" jsonschema:"The environment filter applied, empty if none."`
+	Events      []domain.EventNameStat `json:"events" jsonschema:"Event name and count, most frequent first."`
+	TotalEvents int64                  `json:"total_events" jsonschema:"Sum of count across the returned events."`
 }
 
 func getEventCounts(ctx context.Context, c *Call, in getEventCountsIn) (getEventCountsOut, error) {
@@ -268,12 +268,12 @@ func getEventCounts(ctx context.Context, c *Call, in getEventCountsIn) (getEvent
 
 // keepEventNames returns the entries of counts whose name is in names, in
 // their original order.
-func keepEventNames(counts []repository.EventNameStat, names []string) []repository.EventNameStat {
+func keepEventNames(counts []domain.EventNameStat, names []string) []domain.EventNameStat {
 	want := make(map[string]bool, len(names))
 	for _, n := range names {
 		want[n] = true
 	}
-	kept := make([]repository.EventNameStat, 0, len(counts))
+	kept := make([]domain.EventNameStat, 0, len(counts))
 	for _, es := range counts {
 		if want[es.Name] {
 			kept = append(kept, es)
@@ -291,11 +291,11 @@ type listEventsIn struct {
 }
 
 type listEventsOut struct {
-	Project string             `json:"project" jsonschema:"Slug of the project these events are from."`
-	Events  []repository.Event `json:"events" jsonschema:"Events, newest first."`
-	Limit   int                `json:"limit" jsonschema:"Page size used."`
-	Offset  int                `json:"offset" jsonschema:"Offset used."`
-	HasMore bool               `json:"has_more" jsonschema:"Whether another page may exist; pass offset+limit as the next call's offset."`
+	Project string         `json:"project" jsonschema:"Slug of the project these events are from."`
+	Events  []domain.Event `json:"events" jsonschema:"Events, newest first."`
+	Limit   int            `json:"limit" jsonschema:"Page size used."`
+	Offset  int            `json:"offset" jsonschema:"Offset used."`
+	HasMore bool           `json:"has_more" jsonschema:"Whether another page may exist; pass offset+limit as the next call's offset."`
 }
 
 func listEvents(ctx context.Context, c *Call, in listEventsIn) (listEventsOut, error) {

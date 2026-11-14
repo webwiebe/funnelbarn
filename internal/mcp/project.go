@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -19,7 +18,7 @@ import (
 // This is the single place project selection happens, so it is also the
 // single place a future per-project access check (restricting a caller to a
 // subset of projects) belongs.
-func ResolveProject(ctx context.Context, projects service.Projects, arg, header string) (repository.Project, error) {
+func ResolveProject(ctx context.Context, projects service.Projects, arg, header string) (domain.Project, error) {
 	value := arg
 	if value == "" {
 		value = header
@@ -33,7 +32,7 @@ func ResolveProject(ctx context.Context, projects service.Projects, arg, header 
 		return p, nil
 	}
 	if !domain.IsNotFound(err) {
-		return repository.Project{}, err
+		return domain.Project{}, err
 	}
 
 	p, err = projects.GetProject(ctx, value)
@@ -41,22 +40,22 @@ func ResolveProject(ctx context.Context, projects service.Projects, arg, header 
 		return p, nil
 	}
 	if !domain.IsNotFound(err) {
-		return repository.Project{}, err
+		return domain.Project{}, err
 	}
 
 	slugs, lerr := availableSlugs(ctx, projects)
 	if lerr != nil {
-		return repository.Project{}, lerr
+		return domain.Project{}, lerr
 	}
-	return repository.Project{}, invalidInput("project %q not found; available: %s", value, strings.Join(slugs, ", "))
+	return domain.Project{}, invalidInput("project %q not found; available: %s", value, strings.Join(slugs, ", "))
 }
 
 // onlyProject resolves a call that names no project: the single project when
 // there is exactly one, else an input error listing the slugs to choose from.
-func onlyProject(ctx context.Context, projects service.Projects) (repository.Project, error) {
+func onlyProject(ctx context.Context, projects service.Projects) (domain.Project, error) {
 	list, err := projects.ListProjects(ctx)
 	if err != nil {
-		return repository.Project{}, err
+		return domain.Project{}, err
 	}
 	if len(list) == 1 {
 		return list[0], nil
@@ -66,7 +65,7 @@ func onlyProject(ctx context.Context, projects service.Projects) (repository.Pro
 		slugs[i] = p.Slug
 	}
 	sort.Strings(slugs)
-	return repository.Project{}, invalidInput(
+	return domain.Project{}, invalidInput(
 		"no project is selected: pass a project argument (slug or ID), or set the %s header to pick a default; available: %s",
 		ProjectHeader, strings.Join(slugs, ", "))
 }

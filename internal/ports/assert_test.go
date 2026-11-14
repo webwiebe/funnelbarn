@@ -38,3 +38,8 @@ var _ ports.WidgetCommands = (*repository.Store)(nil)
 var _ ports.SegmentCommands = (*repository.Store)(nil)
 var _ ports.CanonicalCommands = (*repository.Store)(nil)
 var _ ports.EventPersister = (*repository.Store)(nil)
+
+var _ ports.ProjectRecordingSettingsRepo = (*repository.Store)(nil)
+var _ ports.GeoAnonymizerRepo = (*repository.Store)(nil)
+var _ ports.WebSessionRepo = (*repository.Store)(nil)
+var _ ports.IAMBarnUserRepo = (*repository.Store)(nil)

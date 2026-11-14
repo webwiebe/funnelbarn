@@ -33,14 +33,15 @@ type githubWebhook struct {
 	now      func() time.Time
 }
 
-// SetGitHubWebhook serves POST /api/v1/integrations/github with secret, filing
-// events into the project with slug project. With an empty secret the route
-// is not registered and answers 404.
-func (s *Server) SetGitHubWebhook(secret, project string) {
-	if secret == "" || s.ingest == nil {
+// registerGitHubWebhookRoutes serves POST /api/v1/integrations/github with the
+// configured secret, filing events into the project with the configured slug.
+// With an empty secret or no ingest handler the route is not registered and
+// answers 404.
+func (s *Server) registerGitHubWebhookRoutes() {
+	if s.githubWebhookSecret == "" || s.ingest == nil {
 		return
 	}
-	h := &githubWebhook{secret: secret, project: project, ingest: s.ingest, clientIP: s.clientIP, now: time.Now}
+	h := &githubWebhook{secret: s.githubWebhookSecret, project: s.githubWebhookProject, ingest: s.ingest, clientIP: s.clientIP, now: time.Now}
 	s.mux.Handle("POST "+githubWebhookPath, s.limit(s.eventsLimiter, h))
 }
 
