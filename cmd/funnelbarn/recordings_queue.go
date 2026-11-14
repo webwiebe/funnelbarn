@@ -9,12 +9,12 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/blobstore"
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/queue"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
-	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 )
 
 // recordingsQueueName is the name of the Redis list that carries recording
@@ -55,7 +55,7 @@ func newRecordings(ctx context.Context, cfg config.Config, store *repository.Sto
 	if cfg.R2Endpoint == "" || cfg.R2AccessKeyID == "" || cfg.R2SecretAccessKey == "" || cfg.R2Bucket == "" {
 		return nil, nil, nil
 	}
-	r2, err := storage.NewR2(cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
+	r2, err := blobstore.NewR2(cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
 	if err != nil {
 		logger.Warn("session recording disabled: failed to initialize R2 storage", "err", err)
 		return nil, nil, nil

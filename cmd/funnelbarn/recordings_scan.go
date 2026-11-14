@@ -14,10 +14,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/blobstore"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
-	"github.com/wiebe-xyz/funnelbarn/internal/storage"
 )
 
 const recordingsUsage = "usage: funnelbarn recordings scan-url-params [--project <slug>] [--max-memory-mib <n>] [--by-url] [--max-duration <d>] [--fresh]"
@@ -79,7 +79,7 @@ func runRecordingsCmd(cfg config.Config, args []string) error {
 		return err
 	}
 	defer func() { _ = store.Close() }()
-	r2, err := storage.NewR2(cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
+	r2, err := blobstore.NewR2(cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket)
 	if err != nil {
 		return fmt.Errorf("recordings scan: object storage: %w", err)
 	}

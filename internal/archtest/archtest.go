@@ -162,7 +162,7 @@ func layerRules() []*Rule {
 		not    []string
 	}{
 		{"internal/domain", "domain holds the types every layer shares; it imports no other internal package",
-			[]string{"internal/api", "internal/service", "internal/ports", "internal/command", "internal/mcp", "internal/auth", "internal/spool", "internal/storage", "internal/worker"}},
+			[]string{"internal/api", "internal/service", "internal/ports", "internal/command", "internal/mcp", "internal/auth", "internal/spool", "internal/blobstore", "internal/worker"}},
 		{"internal/enrich", "enrich holds pure functions over event data; it imports no application layer",
 			[]string{"internal/api", "internal/service", "internal/repository", "internal/ports", "internal/command"}},
 		{"internal/auth", "auth is below the HTTP, service and storage layers",

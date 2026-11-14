@@ -49,7 +49,7 @@ func (svc *ProjectService) CreateProject(ctx context.Context, name, slug string)
 	}
 	p, err := svc.store.CreateProject(ctx, strings.TrimSpace(name), slug)
 	if err != nil {
-		if isUniqueConstraint(err) {
+		if domain.IsConflict(err) {
 			return repository.Project{}, fmt.Errorf("%w: slug %q", domain.ErrConflict, slug)
 		}
 		return repository.Project{}, err
