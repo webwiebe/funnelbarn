@@ -81,6 +81,7 @@ export default function Settings() {
   const handleGeoToggle = async (enabled: boolean) => {
     setGeoEnabled(enabled)
     setSavingGeo(true)
+    setError(null)
     try {
       await api.setInstanceSettings({ geo_enabled: enabled ? 'true' : 'false' })
     } catch (e) {
@@ -93,6 +94,7 @@ export default function Settings() {
 
   const handleSaveRecordingSettings = async () => {
     setSavingRecording(true)
+    setError(null)
     try {
       await api.setInstanceSettings({
         recording_enabled: recordingEnabled ? 'true' : 'false',
@@ -275,6 +277,8 @@ export default function Settings() {
           <button
             onClick={() => handleGeoToggle(!geoEnabled)}
             disabled={savingGeo}
+            aria-label="Geo enrichment"
+            aria-pressed={geoEnabled}
             style={{
               position: 'relative',
               width: 44,
