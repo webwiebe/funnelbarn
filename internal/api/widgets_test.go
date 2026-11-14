@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func widgetsTestSetup(t *testing.T) (*Server, string) {
@@ -37,7 +37,7 @@ func TestHandleWidgets_CRUD(t *testing.T) {
 	if wc.Code != http.StatusCreated {
 		t.Fatalf("create: expected 201, got %d (body: %s)", wc.Code, wc.Body.String())
 	}
-	var widget repository.DashboardWidget
+	var widget domain.DashboardWidget
 	_ = json.Unmarshal(wc.Body.Bytes(), &widget)
 	if widget.ID == "" {
 		t.Fatal("expected widget id in response")

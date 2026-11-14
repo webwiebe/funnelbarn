@@ -16,6 +16,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/blobstore"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
@@ -139,7 +140,7 @@ type scanOptions struct {
 
 // projectLister is the one store method the scan needs besides the service.
 type projectLister interface {
-	ListProjects(ctx context.Context) ([]repository.Project, error)
+	ListProjects(ctx context.Context) ([]domain.Project, error)
 }
 
 type chunkScanner interface {
@@ -162,7 +163,7 @@ type scanLine struct {
 }
 
 // selectProjects returns every project, or the one whose slug is wanted.
-func selectProjects(ctx context.Context, projects projectLister, slug string) ([]repository.Project, error) {
+func selectProjects(ctx context.Context, projects projectLister, slug string) ([]domain.Project, error) {
 	list, err := projects.ListProjects(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("recordings scan: list projects: %w", err)
@@ -172,7 +173,7 @@ func selectProjects(ctx context.Context, projects projectLister, slug string) ([
 	}
 	for _, p := range list {
 		if p.Slug == slug {
-			return []repository.Project{p}, nil
+			return []domain.Project{p}, nil
 		}
 	}
 	return nil, fmt.Errorf("recordings scan: no project with slug %q", slug)

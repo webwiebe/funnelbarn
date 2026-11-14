@@ -13,7 +13,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -71,7 +71,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	// Local sessions get a row too (token columns NULL): one middleware, one
 	// revocation story — deleting the row logs the user out everywhere.
-	if _, err := s.issueWebSession(r.Context(), w, secure, repository.WebSession{
+	if _, err := s.issueWebSession(r.Context(), w, secure, domain.WebSession{
 		Username:   body.Username,
 		AuthMethod: "local",
 	}); err != nil {
@@ -192,7 +192,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tokenProject := tokenProjectFromContext(r.Context()); tokenProject != "" {
-		mine := make([]repository.Project, 0, 1)
+		mine := make([]domain.Project, 0, 1)
 		for _, p := range projects {
 			if p.ID == tokenProject {
 				mine = append(mine, p)
@@ -253,7 +253,7 @@ type safeKey struct {
 	LastUsedAt string `json:"last_used_at,omitempty"`
 }
 
-func toSafeKey(k repository.APIKey) safeKey {
+func toSafeKey(k domain.APIKey) safeKey {
 	sk := safeKey{
 		ID:        k.ID,
 		ProjectID: k.ProjectID,
@@ -273,7 +273,7 @@ func toSafeKey(k repository.APIKey) safeKey {
 func (s *Server) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
 
-	var keys []repository.APIKey
+	var keys []domain.APIKey
 	var err error
 	if projectID != "" {
 		keys, err = s.apikeys.ListAPIKeys(r.Context(), projectID)
@@ -323,7 +323,7 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if body.Scope == "" {
-		body.Scope = repository.APIKeyScopeIngest
+		body.Scope = domain.APIKeyScopeIngest
 	}
 
 	// Verify project exists.

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
@@ -166,7 +167,7 @@ func TestProjectHealthService_CacheEvictedOnReset(t *testing.T) {
 }
 
 // createTestProject is a helper that creates a project directly via the store.
-func createTestProject(ctx context.Context, t *testing.T, store *repository.Store, name, slug string) repository.Project {
+func createTestProject(ctx context.Context, t *testing.T, store *repository.Store, name, slug string) domain.Project {
 	t.Helper()
 	projSvc := service.NewProjectService(store)
 	p, err := projSvc.CreateProject(ctx, name, slug)

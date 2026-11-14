@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // execer is the write surface shared by *sql.DB and *sql.Tx.
@@ -35,7 +37,7 @@ const insertEventSQL = `
 
 // insertEvent writes e unless its ingest_id is already stored, and reports
 // whether a row was inserted.
-func insertEvent(ctx context.Context, ex execer, e Event) (bool, error) {
+func insertEvent(ctx context.Context, ex execer, e domain.Event) (bool, error) {
 	res, err := ex.ExecContext(ctx, insertEventSQL,
 		e.ID, e.ProjectID, e.SessionID, nullStr(e.UserIDHash), e.Name,
 		nullStr(e.URL), nullStr(e.Referrer), nullStr(e.ReferrerDomain),
@@ -56,7 +58,7 @@ func insertEvent(ctx context.Context, ex execer, e Event) (bool, error) {
 
 // InsertEvent writes a new event to the database. An event whose ingest_id is
 // already stored is skipped.
-func (s *Store) InsertEvent(ctx context.Context, e Event) error {
+func (s *Store) InsertEvent(ctx context.Context, e domain.Event) error {
 	_, err := insertEvent(ctx, s.db, e)
 	return err
 }
@@ -67,7 +69,7 @@ func (s *Store) InsertEvent(ctx context.Context, e Event) error {
 // together with the insert, so a replay cannot count twice, and a failure
 // part-way leaves neither the event nor the session change behind.
 // signals may be nil.
-func (s *Store) PersistEvent(ctx context.Context, e Event, sess Session, signals *SessionSignals) (inserted bool, err error) {
+func (s *Store) PersistEvent(ctx context.Context, e domain.Event, sess domain.Session, signals *domain.SessionSignals) (inserted bool, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("begin: %w", err)

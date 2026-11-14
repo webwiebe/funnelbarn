@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // Flag CRUD and analytics reads used to be reachable only with a browser
@@ -104,18 +104,18 @@ func (s *Server) serveScopedToken(w http.ResponseWriter, r *http.Request, wantSc
 // Read is implied by write; "ingest" covers neither, and an unknown scope
 // covers nothing.
 func scopeAllows(have, want string) bool {
-	if have == repository.APIKeyScopeFull {
+	if have == domain.APIKeyScopeFull {
 		return true
 	}
 	switch want {
-	case repository.APIKeyScopeFlagsRead:
-		return have == repository.APIKeyScopeFlagsRead || have == repository.APIKeyScopeFlagsWrite
-	case repository.APIKeyScopeFlagsWrite:
-		return have == repository.APIKeyScopeFlagsWrite
-	case repository.APIKeyScopeAnalyticsRead:
+	case domain.APIKeyScopeFlagsRead:
+		return have == domain.APIKeyScopeFlagsRead || have == domain.APIKeyScopeFlagsWrite
+	case domain.APIKeyScopeFlagsWrite:
+		return have == domain.APIKeyScopeFlagsWrite
+	case domain.APIKeyScopeAnalyticsRead:
 		// Deliberately not implied by flags:write — a token that can toggle a
 		// flag has no business reading the whole event stream.
-		return have == repository.APIKeyScopeAnalyticsRead
+		return have == domain.APIKeyScopeAnalyticsRead
 	}
 	return false
 }

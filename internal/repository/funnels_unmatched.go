@@ -1,6 +1,10 @@
 package repository
 
-import "context"
+import (
+	"context"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+)
 
 // annotateUnmatchedSteps fills UnmatchedSteps on each funnel from the set of
 // event names the project has actually emitted. One query for the whole list,
@@ -9,7 +13,7 @@ import "context"
 // "Never emitted" means within the event retention window: a name the project
 // sent once a year ago and whose events have since been purged reads as
 // unmatched, which is the same thing the funnel itself experiences.
-func (s *ReadStore) annotateUnmatchedSteps(ctx context.Context, db querier, projectID string, funnels []Funnel) error {
+func (s *ReadStore) annotateUnmatchedSteps(ctx context.Context, db querier, projectID string, funnels []domain.Funnel) error {
 	if len(funnels) == 0 {
 		return nil
 	}

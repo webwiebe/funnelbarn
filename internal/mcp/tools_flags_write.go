@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -17,7 +17,7 @@ type createFlagIn struct {
 	FlagKey string `json:"flag_key" jsonschema:"Unique key SDKs will evaluate by, e.g. \"new_checkout\". Required."`
 	// Description names the argument the way an assistant thinks of it (what
 	// is this flag for); it maps onto the flag's Name, the only human-readable
-	// label repository.FeatureFlag has.
+	// label domain.FeatureFlag has.
 	Description    string `json:"description,omitempty" jsonschema:"Human-readable name shown on the Flags page; defaults to flag_key."`
 	Kind           string `json:"flag_kind,omitempty" jsonschema:"\"experiment\" (default; bucketed per user, every evaluation recorded) or \"config\" (one value read on a loop)."`
 	DefaultValue   any    `json:"default_value,omitempty" jsonschema:"Value returned when no targeting rule matches. Defaults to false."`
@@ -77,7 +77,7 @@ func createFlag(ctx context.Context, c *Call, in createFlagIn) (flagDetail, erro
 	// FlagService.CreateFlag validates flag_key/name, defaults flag_type,
 	// validates targeting_rules and normalizes flag_kind, and always sets
 	// origin "manual". handleCreateFlag uses the same path.
-	f, err := c.Deps.Flags.CreateFlag(ctx, repository.FeatureFlag{
+	f, err := c.Deps.Flags.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID:      p.ID,
 		FlagKey:        in.FlagKey,
 		Name:           name,
@@ -115,7 +115,7 @@ type updateFlagIn struct {
 // stored variants JSON, leaving any other variant untouched, so an update on a
 // flag with more than one variant (created from the dashboard) doesn't clobber
 // the others.
-func updatedVariants(existing repository.FeatureFlag, in updateFlagIn) (string, error) {
+func updatedVariants(existing domain.FeatureFlag, in updateFlagIn) (string, error) {
 	if in.DefaultValue == nil && len(in.Variants) == 0 {
 		return existing.Variants, nil
 	}
@@ -149,7 +149,7 @@ func updatedVariants(existing repository.FeatureFlag, in updateFlagIn) (string, 
 
 // applyVariant sets one variant, or removes it when value is nil. FlagService
 // rejects the removal of a variant a rule names, when it validates the rules.
-func applyVariant(variants map[string]any, existing repository.FeatureFlag, defaultVariant, name string, value any) error {
+func applyVariant(variants map[string]any, existing domain.FeatureFlag, defaultVariant, name string, value any) error {
 	if name == "" {
 		return invalidInput("variants: a variant needs a name")
 	}
@@ -203,7 +203,7 @@ func updateFlag(ctx context.Context, c *Call, in updateFlagIn) (flagDetail, erro
 	// FlagService.UpdateFlag validates targeting_rules and normalizes
 	// flag_kind, and the store claims the flag as origin "manual" on any
 	// update. handleUpdateFlag uses the same path.
-	updated, err := c.Deps.Flags.UpdateFlag(ctx, repository.FeatureFlag{
+	updated, err := c.Deps.Flags.UpdateFlag(ctx, domain.FeatureFlag{
 		ID:              existing.ID,
 		Name:            name,
 		FlagType:        existing.FlagType,

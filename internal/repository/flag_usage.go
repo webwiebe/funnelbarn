@@ -3,16 +3,9 @@ package repository
 import (
 	"context"
 	"time"
-)
 
-// FlagUsageRow is the number of recorded evaluations of one flag that resolved
-// to one variant on one UTC day.
-type FlagUsageRow struct {
-	FlagID  string
-	Day     string // YYYY-MM-DD, UTC
-	Variant string
-	Count   int64
-}
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+)
 
 // flagUsageTimeLayout matches how SQLite stores created_at (CURRENT_TIMESTAMP).
 const flagUsageTimeLayout = "2006-01-02 15:04:05"
@@ -30,16 +23,16 @@ const flagUsageDailyQuery = `
 // day and variant in [from, to). The rows are one per recorded evaluation: an
 // evaluation of a config flag, a dry run (preview) or a disabled flag writes no
 // row and is not counted.
-func (r *ReadStore) FlagUsageDaily(ctx context.Context, projectID string, from, to time.Time) ([]FlagUsageRow, error) {
+func (r *ReadStore) FlagUsageDaily(ctx context.Context, projectID string, from, to time.Time) ([]domain.FlagUsageRow, error) {
 	rows, err := r.rdb.QueryContext(ctx, flagUsageDailyQuery,
 		projectID, from.UTC().Format(flagUsageTimeLayout), to.UTC().Format(flagUsageTimeLayout))
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	var out []FlagUsageRow
+	var out []domain.FlagUsageRow
 	for rows.Next() {
-		var row FlagUsageRow
+		var row domain.FlagUsageRow
 		if err := rows.Scan(&row.FlagID, &row.Day, &row.Variant, &row.Count); err != nil {
 			return nil, err
 		}

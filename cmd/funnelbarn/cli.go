@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
@@ -257,7 +258,7 @@ func runAPIKeyCmd(cfg config.Config, args []string) error {
 		fs := flag.NewFlagSet("apikey create", flag.ContinueOnError)
 		projectSlug := fs.String("project", "default", "project slug")
 		name := fs.String("name", "", "key name/label")
-		scope := fs.String("scope", repository.APIKeyScopeFull, "key scope: full or ingest")
+		scope := fs.String("scope", domain.APIKeyScopeFull, "key scope: full or ingest")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -265,8 +266,8 @@ func runAPIKeyCmd(cfg config.Config, args []string) error {
 		if *name == "" {
 			return fmt.Errorf("--name is required")
 		}
-		if *scope != repository.APIKeyScopeFull && *scope != repository.APIKeyScopeIngest {
-			return fmt.Errorf("--scope must be %q or %q", repository.APIKeyScopeFull, repository.APIKeyScopeIngest)
+		if *scope != domain.APIKeyScopeFull && *scope != domain.APIKeyScopeIngest {
+			return fmt.Errorf("--scope must be %q or %q", domain.APIKeyScopeFull, domain.APIKeyScopeIngest)
 		}
 		store, err := repository.Open(cfg.DBPath)
 		if err != nil {

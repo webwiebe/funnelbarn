@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
@@ -48,7 +49,7 @@ func seedHours(t *testing.T, store *repository.Store, projectID, env string, fro
 // seedFallingProject gives a project 3 production events an hour for 9 days,
 // ending 22 hours before start. Its baseline is 72, so it is low under 7.2, and
 // the 6 events left in the window at start make that the first low hour.
-func seedFallingProject(t *testing.T, store *repository.Store, start time.Time) repository.Project {
+func seedFallingProject(t *testing.T, store *repository.Store, start time.Time) domain.Project {
 	t.Helper()
 	p, err := store.CreateProject(context.Background(), "shop", "shop")
 	require.NoError(t, err)

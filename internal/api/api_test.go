@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
@@ -186,7 +187,7 @@ func sessionWithRow(t *testing.T, srv *Server, username string) (*http.Cookie, s
 		t.Fatalf("Create session token: %v", err)
 	}
 	idHash := auth.HashSessionToken(token)
-	err = srv.webSessions.CreateWebSession(context.Background(), repository.WebSession{
+	err = srv.webSessions.CreateWebSession(context.Background(), domain.WebSession{
 		IDHash:            idHash,
 		Username:          username,
 		AuthMethod:        "local",
@@ -392,7 +393,7 @@ func TestHandleCreateProject(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Errorf("create project: expected 201, got %d (body: %s)", w.Code, w.Body.String())
 	}
-	var p repository.Project
+	var p domain.Project
 	_ = json.Unmarshal(w.Body.Bytes(), &p)
 	if p.Name != "My Site" {
 		t.Errorf("Name: want My Site, got %q", p.Name)
@@ -616,7 +617,7 @@ func TestHandleFunnelCRUD(t *testing.T) {
 		t.Fatalf("create funnel: expected 201, got %d (body: %s)", wc.Code, wc.Body.String())
 	}
 
-	var created repository.Funnel
+	var created domain.Funnel
 	_ = json.Unmarshal(wc.Body.Bytes(), &created)
 	if created.ID == "" {
 		t.Fatal("expected funnel ID in response")
@@ -643,7 +644,7 @@ func TestHandleApproveProject(t *testing.T) {
 		t.Errorf("approve project: expected 200, got %d (body: %s)", w.Code, w.Body.String())
 	}
 
-	var updated repository.Project
+	var updated domain.Project
 	_ = json.Unmarshal(w.Body.Bytes(), &updated)
 	if updated.Status != "active" {
 		t.Errorf("expected status=active, got %q", updated.Status)

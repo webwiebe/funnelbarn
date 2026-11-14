@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -53,15 +53,15 @@ func TestInstanceSettingsService(t *testing.T) {
 }
 
 type fakeRecordingSettings struct {
-	stored *repository.ProjectRecordingSettings
+	stored *domain.ProjectRecordingSettings
 	err    error
 }
 
-func (f *fakeRecordingSettings) GetProjectRecordingSettings(context.Context, string) (*repository.ProjectRecordingSettings, error) {
+func (f *fakeRecordingSettings) GetProjectRecordingSettings(context.Context, string) (*domain.ProjectRecordingSettings, error) {
 	return f.stored, f.err
 }
 
-func (f *fakeRecordingSettings) UpsertProjectRecordingSettings(_ context.Context, s *repository.ProjectRecordingSettings) error {
+func (f *fakeRecordingSettings) UpsertProjectRecordingSettings(_ context.Context, s *domain.ProjectRecordingSettings) error {
 	if f.err != nil {
 		return f.err
 	}
@@ -75,7 +75,7 @@ func TestRecordingSettingsService(t *testing.T) {
 	svc := service.NewRecordingSettingsService(fake)
 
 	enabled, rate := true, 0.5
-	in := &repository.ProjectRecordingSettings{ProjectID: "p1", Enabled: &enabled, SampleRate: &rate}
+	in := &domain.ProjectRecordingSettings{ProjectID: "p1", Enabled: &enabled, SampleRate: &rate}
 	require.NoError(t, svc.UpsertProjectRecordingSettings(ctx, in))
 	got, err := svc.GetProjectRecordingSettings(ctx, "p1")
 	require.NoError(t, err)
@@ -124,20 +124,20 @@ func TestPrivacyService(t *testing.T) {
 
 type fakeWebSessions struct {
 	calls []string
-	ws    repository.WebSession
+	ws    domain.WebSession
 	n     int64
 	err   error
 }
 
 func (f *fakeWebSessions) rec(name string) { f.calls = append(f.calls, name) }
 
-func (f *fakeWebSessions) CreateWebSession(_ context.Context, ws repository.WebSession) error {
+func (f *fakeWebSessions) CreateWebSession(_ context.Context, ws domain.WebSession) error {
 	f.rec("create")
 	f.ws = ws
 	return f.err
 }
 
-func (f *fakeWebSessions) GetWebSession(context.Context, string) (repository.WebSession, error) {
+func (f *fakeWebSessions) GetWebSession(context.Context, string) (domain.WebSession, error) {
 	f.rec("get")
 	return f.ws, f.err
 }
@@ -172,7 +172,7 @@ func TestWebSessionService_OneRepoCallPerMethod(t *testing.T) {
 	fake := &fakeWebSessions{n: 2}
 	svc := service.NewWebSessionService(fake)
 
-	require.NoError(t, svc.CreateWebSession(ctx, repository.WebSession{IDHash: "h"}))
+	require.NoError(t, svc.CreateWebSession(ctx, domain.WebSession{IDHash: "h"}))
 	got, err := svc.GetWebSession(ctx, "h")
 	require.NoError(t, err)
 	assert.Equal(t, "h", got.IDHash)
@@ -194,7 +194,7 @@ func TestWebSessionService_ErrorsPassThroughUnchanged(t *testing.T) {
 	fake := &fakeWebSessions{err: errBoom}
 	svc := service.NewWebSessionService(fake)
 
-	assert.Same(t, errBoom, svc.CreateWebSession(ctx, repository.WebSession{}))
+	assert.Same(t, errBoom, svc.CreateWebSession(ctx, domain.WebSession{}))
 	_, err := svc.GetWebSession(ctx, "h")
 	assert.Same(t, errBoom, err)
 	assert.Same(t, errBoom, svc.UpdateWebSessionTokens(ctx, "h", "", "", "", 0, "", 0))
@@ -207,21 +207,21 @@ func TestWebSessionService_ErrorsPassThroughUnchanged(t *testing.T) {
 }
 
 type fakeIAMBarnUsers struct {
-	user repository.User
+	user domain.User
 	err  error
 }
 
-func (f *fakeIAMBarnUsers) FindUserByIAMBarnSub(context.Context, string) (repository.User, error) {
+func (f *fakeIAMBarnUsers) FindUserByIAMBarnSub(context.Context, string) (domain.User, error) {
 	return f.user, f.err
 }
 
-func (f *fakeIAMBarnUsers) CreateIAMBarnUser(_ context.Context, sub, username string) (repository.User, error) {
-	return repository.User{Username: username, IAMBarnSub: sub}, f.err
+func (f *fakeIAMBarnUsers) CreateIAMBarnUser(_ context.Context, sub, username string) (domain.User, error) {
+	return domain.User{Username: username, IAMBarnSub: sub}, f.err
 }
 
 func TestIAMBarnUserService(t *testing.T) {
 	ctx := context.Background()
-	fake := &fakeIAMBarnUsers{user: repository.User{Username: "found"}}
+	fake := &fakeIAMBarnUsers{user: domain.User{Username: "found"}}
 	svc := service.NewIAMBarnUserService(fake)
 
 	created, err := svc.CreateIAMBarnUser(ctx, "sub-1", "alice")

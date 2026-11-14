@@ -3,10 +3,8 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"regexp"
-	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/sqlcgen"
@@ -18,106 +16,47 @@ import (
 // projects with arbitrary/garbage names.
 var projectSlugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
-// APIKeyScopeFull allows full API access.
-const APIKeyScopeFull = "full"
-
-// APIKeyScopeIngest allows only event ingest.
-const APIKeyScopeIngest = "ingest"
-
-// APIKeyScopeFlagsRead allows reading a project's feature flags without a
-// dashboard session, so a service can report what the project actually holds
-// rather than what its own client resolved — "the flag is off" and "the flag
-// does not exist and you are seeing your own default" are very different
-// answers when the question is whether mail is about to go out.
-const APIKeyScopeFlagsRead = "flags:read"
-
-// APIKeyScopeAnalyticsRead allows reading a project's analytics — event
-// counts, the event catalog, funnels and funnel-step conversion — without a
-// dashboard session, so a scheduled job can publish a weekly readout instead
-// of asking someone to open the dashboard and copy numbers out of it. It is
-// read-only by construction: no route that mutates anything accepts it.
-const APIKeyScopeAnalyticsRead = "analytics:read"
-
-// APIKeyScopeFlagsWrite additionally allows updating an existing flag
-// (enable / disable / change its value). It deliberately does not allow
-// creating or deleting flags: auto-registration already covers creation, and a
-// token that can turn an outbound-email gate on should not also be able to
-// delete the gate.
-const APIKeyScopeFlagsWrite = "flags:write"
-
-// APIKeyScopeEvaluatesFlags reports whether a key with this scope is served
-// from the in-memory key snapshot on the flag evaluate path. SDKs evaluate
-// with ingest keys; analytics:read keys keep the live lookup.
-func APIKeyScopeEvaluatesFlags(scope string) bool {
-	switch scope {
-	case APIKeyScopeIngest, APIKeyScopeFull, APIKeyScopeFlagsRead, APIKeyScopeFlagsWrite:
-		return true
-	}
-	return false
-}
-
-// Project represents a tracked website or application.
-//
-// Domain is a display label for the site the project measures (shown on the
-// dashboard and in settings). Nothing resolves a project from it: ingest uses
-// the API key plus x-funnelbarn-project, which is what lets any f.<domain>
-// alias work without per-project wiring.
-type Project struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Slug      string    `json:"slug"`
-	Status    string    `json:"status"`
-	Domain    string    `json:"domain"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 // CreateProject inserts a new project.
-func (s *Store) CreateProject(ctx context.Context, name, slug string) (Project, error) {
+func (s *Store) CreateProject(ctx context.Context, name, slug string) (domain.Project, error) {
 	id, err := generateUUID()
 	if err != nil {
-		return Project{}, fmt.Errorf("create project: %w", err)
+		return domain.Project{}, fmt.Errorf("create project: %w", err)
 	}
 	if err := s.q.InsertProject(ctx, sqlcgen.InsertProjectParams{ID: id, Name: name, Slug: slug}); err != nil {
 		if isUniqueViolation(err) {
-			return Project{}, fmt.Errorf("create project: %w: %w", domain.ErrConflict, err)
+			return domain.Project{}, fmt.Errorf("create project: %w: %w", domain.ErrConflict, err)
 		}
-		return Project{}, fmt.Errorf("create project: %w", err)
+		return domain.Project{}, fmt.Errorf("create project: %w", err)
 	}
 	return s.projectByID(ctx, s.q, id)
 }
 
 // ProjectByID fetches a project by its ID.
-func (s *ReadStore) ProjectByID(ctx context.Context, id string) (Project, error) {
+func (s *ReadStore) ProjectByID(ctx context.Context, id string) (domain.Project, error) {
 	return s.projectByID(ctx, s.rq, id)
 }
 
 // projectByID reads through q so write paths can read back on the write pool.
-func (s *ReadStore) projectByID(ctx context.Context, q *sqlcgen.Queries, id string) (Project, error) {
+func (s *ReadStore) projectByID(ctx context.Context, q *sqlcgen.Queries, id string) (domain.Project, error) {
 	p, err := q.GetProjectByID(ctx, id)
 	if err != nil {
-		return Project{}, err
+		return domain.Project{}, err
 	}
 	return projectFromGen(p), nil
 }
 
 // ProjectBySlug fetches a project by its slug.
-func (s *ReadStore) ProjectBySlug(ctx context.Context, slug string) (Project, error) {
+func (s *ReadStore) ProjectBySlug(ctx context.Context, slug string) (domain.Project, error) {
 	return s.projectBySlug(ctx, s.rq, slug)
 }
 
-func (s *ReadStore) projectBySlug(ctx context.Context, q *sqlcgen.Queries, slug string) (Project, error) {
+func (s *ReadStore) projectBySlug(ctx context.Context, q *sqlcgen.Queries, slug string) (domain.Project, error) {
 	p, err := q.GetProjectBySlug(ctx, slug)
 	if err != nil {
-		return Project{}, err
+		return domain.Project{}, err
 	}
 	return projectFromGen(p), nil
 }
-
-// ErrProjectUnresolvable marks a slug that can never resolve to a project, no
-// matter how often the caller retries: a UUID with no matching project, or a
-// slug we refuse to auto-create from. Callers use it to fail fast instead of
-// burning retries on a lookup that is deterministically hopeless.
-var ErrProjectUnresolvable = errors.New("project cannot be resolved from slug")
 
 // EnsureProject fetches a project by slug, creating it if absent.
 //
@@ -127,10 +66,10 @@ var ErrProjectUnresolvable = errors.New("project cannot be resolved from slug")
 // header), if the supplied slug parses as a UUID and a project with that
 // exact ID already exists, we route the event to that existing project
 // instead of auto-creating a duplicate named after the UUID.
-func (s *Store) EnsureProject(ctx context.Context, slug string) (Project, error) {
+func (s *Store) EnsureProject(ctx context.Context, slug string) (domain.Project, error) {
 	p, found, err := s.findProject(ctx, slug)
 	if err != nil {
-		return Project{}, err
+		return domain.Project{}, err
 	}
 	if found {
 		return p, nil
@@ -147,35 +86,35 @@ func (s *Store) CheckProjectSlug(ctx context.Context, slug string) error {
 
 // findProject resolves slug to an existing project. found is false with no
 // error when the project is absent and the slug is fit to create one from.
-func (s *Store) findProject(ctx context.Context, slug string) (p Project, found bool, err error) {
+func (s *Store) findProject(ctx context.Context, slug string) (p domain.Project, found bool, err error) {
 	p, err = s.projectBySlug(ctx, s.q, slug)
 	if err == nil {
 		return p, true, nil
 	}
 	if err != sql.ErrNoRows {
-		return Project{}, false, err
+		return domain.Project{}, false, err
 	}
 
 	if looksLikeUUID(slug) {
 		if byID, idErr := s.projectByID(ctx, s.q, slug); idErr == nil {
 			return byID, true, nil
 		} else if idErr != sql.ErrNoRows {
-			return Project{}, false, idErr
+			return domain.Project{}, false, idErr
 		}
 		// UUID-shaped slug with no matching project either way — refuse to
 		// auto-create. A UUID is never a meaningful slug; creating one
 		// produces the "project shows up as a UUID in the picker" UX bug.
-		return Project{}, false, fmt.Errorf("%w: slug %q looks like a UUID but no project with that ID exists; refusing to auto-create", ErrProjectUnresolvable, slug)
+		return domain.Project{}, false, fmt.Errorf("%w: slug %q looks like a UUID but no project with that ID exists; refusing to auto-create", domain.ErrProjectUnresolvable, slug)
 	}
 
 	// Only auto-create for well-formed slugs. This blocks path-traversal /
 	// garbage values (e.g. from a forged x-funnelbarn-project header on an
 	// instance-wide key) from spawning junk projects.
 	if !projectSlugPattern.MatchString(slug) {
-		return Project{}, false, fmt.Errorf("%w: refusing to auto-create project for invalid slug %q", ErrProjectUnresolvable, slug)
+		return domain.Project{}, false, fmt.Errorf("%w: refusing to auto-create project for invalid slug %q", domain.ErrProjectUnresolvable, slug)
 	}
 
-	return Project{}, false, nil
+	return domain.Project{}, false, nil
 }
 
 // looksLikeUUID matches the canonical 8-4-4-4-12 hex layout, case-insensitive.
@@ -203,39 +142,39 @@ func looksLikeUUID(s string) bool {
 
 // EnsureProjectPending fetches a project by slug or creates it with status='pending'.
 // If the project already exists (any status) it is returned as-is.
-func (s *Store) EnsureProjectPending(ctx context.Context, name, slug string) (Project, error) {
+func (s *Store) EnsureProjectPending(ctx context.Context, name, slug string) (domain.Project, error) {
 	p, err := s.projectBySlug(ctx, s.q, slug)
 	if err == nil {
 		return p, nil
 	}
 	if err != sql.ErrNoRows {
-		return Project{}, err
+		return domain.Project{}, err
 	}
 	id, err := generateUUID()
 	if err != nil {
-		return Project{}, fmt.Errorf("create pending project: %w", err)
+		return domain.Project{}, fmt.Errorf("create pending project: %w", err)
 	}
 	if err := s.q.InsertProjectPending(ctx, sqlcgen.InsertProjectPendingParams{ID: id, Name: name, Slug: slug}); err != nil {
-		return Project{}, fmt.Errorf("create pending project: %w", err)
+		return domain.Project{}, fmt.Errorf("create pending project: %w", err)
 	}
 	return s.projectByID(ctx, s.q, id)
 }
 
 // ApproveProject sets status='active' for a project and returns the updated project.
-func (s *Store) ApproveProject(ctx context.Context, id string) (Project, error) {
+func (s *Store) ApproveProject(ctx context.Context, id string) (domain.Project, error) {
 	if err := s.q.ApproveProject(ctx, id); err != nil {
-		return Project{}, fmt.Errorf("approve project: %w", err)
+		return domain.Project{}, fmt.Errorf("approve project: %w", err)
 	}
 	return s.projectByID(ctx, s.q, id)
 }
 
 // ListProjects returns all projects.
-func (s *ReadStore) ListProjects(ctx context.Context) ([]Project, error) {
+func (s *ReadStore) ListProjects(ctx context.Context) ([]domain.Project, error) {
 	rows, err := s.rq.ListProjects(ctx)
 	if err != nil {
 		return nil, err
 	}
-	projects := make([]Project, 0, len(rows))
+	projects := make([]domain.Project, 0, len(rows))
 	for _, p := range rows {
 		projects = append(projects, projectFromGen(p))
 	}
@@ -268,10 +207,10 @@ func (s *Store) DeleteProject(ctx context.Context, id string) error {
 }
 
 // UpdateProject updates a project's name and domain.
-func (s *Store) UpdateProject(ctx context.Context, id, name, domain string) (Project, error) {
-	domainVal := sql.NullString{String: domain, Valid: domain != ""}
+func (s *Store) UpdateProject(ctx context.Context, id, name, siteDomain string) (domain.Project, error) {
+	domainVal := sql.NullString{String: siteDomain, Valid: siteDomain != ""}
 	if err := s.q.UpdateProject(ctx, sqlcgen.UpdateProjectParams{Name: name, Domain: domainVal, ID: id}); err != nil {
-		return Project{}, fmt.Errorf("update project: %w", err)
+		return domain.Project{}, fmt.Errorf("update project: %w", err)
 	}
 	return s.projectByID(ctx, s.q, id)
 }
@@ -285,8 +224,8 @@ func (s *ReadStore) HasProjects(ctx context.Context) (bool, error) {
 	return n > 0, nil
 }
 
-func projectFromGen(p sqlcgen.Project) Project {
-	return Project{
+func projectFromGen(p sqlcgen.Project) domain.Project {
+	return domain.Project{
 		ID:        p.ID,
 		Name:      p.Name,
 		Slug:      p.Slug,

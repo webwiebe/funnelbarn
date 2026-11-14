@@ -10,19 +10,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // fakeEventStore is an in-memory implementation of EventPersister.
 type fakeEventStore struct {
-	events   []repository.Event
-	sessions []repository.Session
-	signals  []*repository.SessionSignals
+	events   []domain.Event
+	sessions []domain.Session
+	signals  []*domain.SessionSignals
 	err      error
 }
 
-func (f *fakeEventStore) PersistEvent(_ context.Context, e repository.Event, sess repository.Session, signals *repository.SessionSignals) (bool, error) {
+func (f *fakeEventStore) PersistEvent(_ context.Context, e domain.Event, sess domain.Session, signals *domain.SessionSignals) (bool, error) {
 	if f.err != nil {
 		return false, f.err
 	}
@@ -41,7 +41,7 @@ func (f *fakeEventStore) PersistEvent(_ context.Context, e repository.Event, ses
 // record. It used to log a failed session upsert and report success.
 func TestPersistEvent_ReturnsStoreError(t *testing.T) {
 	store := &fakeEventStore{err: errors.New("database is locked")}
-	event := repository.Event{ID: "evt-err", ProjectID: "proj-1", SessionID: "sess-1", Name: "signup", IngestID: "ingest-err", OccurredAt: time.Now().UTC()}
+	event := domain.Event{ID: "evt-err", ProjectID: "proj-1", SessionID: "sess-1", Name: "signup", IngestID: "ingest-err", OccurredAt: time.Now().UTC()}
 
 	err := PersistEvent(context.Background(), store, event, nil)
 	if err == nil || !strings.Contains(err.Error(), "database is locked") {
@@ -51,7 +51,7 @@ func TestPersistEvent_ReturnsStoreError(t *testing.T) {
 
 func TestPersistEvent_PassesSessionSignals(t *testing.T) {
 	store := &fakeEventStore{}
-	event := repository.Event{
+	event := domain.Event{
 		ID: "evt-sig", ProjectID: "proj-1", SessionID: "sess-sig", Name: "pageview", IngestID: "ingest-sig",
 		OccurredAt:        time.Now().UTC(),
 		SessionSignalsRaw: map[string]any{"screen_width": float64(1440), "dark_mode": true},
@@ -76,7 +76,7 @@ func TestPersistEvent_PassesSessionSignals(t *testing.T) {
 
 func TestPersistEvent_InsertsEventAndUpsertSession(t *testing.T) {
 	store := &fakeEventStore{}
-	event := repository.Event{
+	event := domain.Event{
 		ID:         "evt-1",
 		ProjectID:  "proj-1",
 		SessionID:  "sess-1",
@@ -101,7 +101,7 @@ func TestPersistEvent_InsertsEventAndUpsertSession(t *testing.T) {
 
 func TestPersistEvent_Idempotency(t *testing.T) {
 	store := &fakeEventStore{}
-	event := repository.Event{
+	event := domain.Event{
 		ID:         "evt-dup",
 		ProjectID:  "proj-dup",
 		SessionID:  "sess-dup",
@@ -133,7 +133,7 @@ func TestPersistEvent_Idempotency(t *testing.T) {
 // (787)". PersistEvent names the cause before the insert is attempted.
 func TestPersistEvent_RejectsEventWithoutProject(t *testing.T) {
 	store := &fakeEventStore{}
-	event := repository.Event{
+	event := domain.Event{
 		ID:         "evt-1",
 		SessionID:  "sess-1",
 		Name:       "signup",
@@ -161,7 +161,7 @@ func TestPersistEvent_RejectsEventWithoutProject(t *testing.T) {
 // empty on every project until the event carries the code too.
 func TestPersistEvent_CopiesGeoCountryOntoEvent(t *testing.T) {
 	store := &fakeEventStore{}
-	event := repository.Event{
+	event := domain.Event{
 		ID:         "evt-geo",
 		ProjectID:  "proj-geo",
 		SessionID:  "sess-geo",
@@ -189,7 +189,7 @@ func TestPersistEvent_CopiesGeoCountryOntoEvent(t *testing.T) {
 // carried.
 func TestPersistEvent_EmptyGeoLookupKeepsExistingCountry(t *testing.T) {
 	store := &fakeEventStore{}
-	event := repository.Event{
+	event := domain.Event{
 		ID:          "evt-geo-keep",
 		ProjectID:   "proj-geo",
 		SessionID:   "sess-geo-keep",
@@ -210,7 +210,7 @@ func TestPersistEvent_EmptyGeoLookupKeepsExistingCountry(t *testing.T) {
 // No geo lookup at all (collection disabled) leaves the event untouched.
 func TestPersistEvent_NilGeoLeavesCountryUnset(t *testing.T) {
 	store := &fakeEventStore{}
-	event := repository.Event{
+	event := domain.Event{
 		ID:         "evt-geo-nil",
 		ProjectID:  "proj-geo",
 		SessionID:  "sess-geo-nil",

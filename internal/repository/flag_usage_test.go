@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func openFlagUsageStore(t *testing.T) *Store {
@@ -27,7 +29,7 @@ func TestFlagUsageDailyCountsPerFlagDayAndVariantInsideTheWindow(t *testing.T) {
 	other, err := s.CreateProject(ctx, "Other", "usage-other")
 	require.NoError(t, err)
 	mk := func(proj, key string) string {
-		f, err := s.CreateFlag(ctx, FeatureFlag{ProjectID: proj, FlagKey: key, Name: key, FlagType: "boolean",
+		f, err := s.CreateFlag(ctx, domain.FeatureFlag{ProjectID: proj, FlagKey: key, Name: key, FlagType: "boolean",
 			Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":50,"off":50}`, Status: "active"})
 		require.NoError(t, err)
 		return f.ID

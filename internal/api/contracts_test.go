@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ func TestProjectCRUD(t *testing.T) {
 	// Create
 	w := postJSON(t, srv, "/api/v1/projects", map[string]string{"name": "CRUD Test", "slug": "crud-test"}, nil)
 	assertStatus(t, w, 201)
-	var proj repository.Project
+	var proj domain.Project
 	decodeJSON(t, w, &proj)
 	assert(t, proj.ID != "", "project has ID")
 	assert(t, proj.Name == "CRUD Test", "project name correct")
@@ -76,7 +76,7 @@ func TestProjectCRUD(t *testing.T) {
 	// Update
 	w = putJSON(t, srv, "/api/v1/projects/"+proj.ID, map[string]string{"name": "Updated"}, nil)
 	assertStatus(t, w, 200)
-	var updated repository.Project
+	var updated domain.Project
 	decodeJSON(t, w, &updated)
 	assert(t, updated.Name == "Updated", "project name updated")
 
@@ -108,7 +108,7 @@ func TestFunnelCRUD(t *testing.T) {
 	}
 	w := postJSON(t, srv, "/api/v1/projects/"+proj.ID+"/funnels", body, nil)
 	assertStatus(t, w, 201)
-	var f repository.Funnel
+	var f domain.Funnel
 	decodeJSON(t, w, &f)
 	assert(t, f.ID != "", "funnel has ID")
 	assert(t, f.Name == "Onboarding", "funnel name correct")
@@ -133,7 +133,7 @@ func TestFunnelCRUD(t *testing.T) {
 	body["name"] = "Onboarding v2"
 	w = putJSON(t, srv, "/api/v1/projects/"+proj.ID+"/funnels/"+f.ID, body, nil)
 	assertStatus(t, w, 200)
-	var updatedFunnel repository.Funnel
+	var updatedFunnel domain.Funnel
 	decodeJSON(t, w, &updatedFunnel)
 	assert(t, updatedFunnel.Name == "Onboarding v2", "funnel name updated")
 
@@ -159,7 +159,7 @@ func TestFunnelWrongProject(t *testing.T) {
 		"steps": []map[string]string{{"event_name": "click"}},
 	}, nil)
 	assertStatus(t, w, 201)
-	var f repository.Funnel
+	var f domain.Funnel
 	decodeJSON(t, w, &f)
 
 	// Accessing it via proj2 should return 404
@@ -184,7 +184,7 @@ func TestABTestCreate(t *testing.T) {
 	}
 	w := postJSON(t, srv, "/api/v1/projects/"+proj.ID+"/abtests", body, nil)
 	assertStatus(t, w, 201)
-	var test repository.ABTest
+	var test domain.ABTest
 	decodeJSON(t, w, &test)
 	assert(t, test.ID != "", "ab test has ID")
 	assert(t, test.Name == "Button color", "ab test name correct")
@@ -377,7 +377,7 @@ func TestFunnelSegmentsEndpoint(t *testing.T) {
 		"steps": []map[string]string{{"event_name": "page_view"}},
 	}, nil)
 	assertStatus(t, w, 201)
-	var f repository.Funnel
+	var f domain.Funnel
 	decodeJSON(t, w, &f)
 
 	// Segments endpoint returns 200

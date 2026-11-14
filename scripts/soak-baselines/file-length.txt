@@ -5,10 +5,10 @@
 # ENFORCE AT 0 entries: set MAX_FILE_LINES=500 in scripts/go-quality-gates.sh,
 # extend that scan to sdks/, set eslint max-lines to 500, drop this dimension.
 # Refresh with: python3 scripts/quality-soak.py file-length --update-baseline
-# entries: 9  total: 6007
+# entries: 9  total: 5921
 #
 552 internal/api/server.go
-753 internal/repository/events.go
+667 internal/repository/events.go
 1069 sdks/js/src/index.ts
 502 web/src/components/settings/ApiKeySettings.tsx
 767 web/src/lib/api.ts

@@ -6,45 +6,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
-
-// Recording holds metadata for a session recording.
-type Recording struct {
-	ID              string     `json:"id"`
-	ProjectID       string     `json:"project_id"`
-	SessionID       string     `json:"session_id"`
-	Environment     string     `json:"environment"`
-	FirstChunkIndex int        `json:"first_chunk_index"`
-	LastChunkIndex  int        `json:"last_chunk_index"`
-	ChunkCount      int        `json:"chunk_count"`
-	HasSnapshot     bool       `json:"has_snapshot"`
-	DurationMs      int64      `json:"duration_ms"`
-	StartedAt       time.Time  `json:"started_at"`
-	EndedAt         *time.Time `json:"ended_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	DeviceType      string     `json:"device_type"`
-	UserAgent       string     `json:"user_agent,omitempty"`
-	IsBot           bool       `json:"is_bot"`
-	PageURL         string     `json:"page_url,omitempty"`
-}
-
-// FlagEvaluationEntry is a flag evaluation linked to a session.
-type FlagEvaluationEntry struct {
-	FlagName    string    `json:"flag_name"`
-	Variant     string    `json:"variant"`
-	EvaluatedAt time.Time `json:"evaluated_at"`
-}
-
-// RecordingListOpts holds optional filter/pagination parameters for ListRecordings.
-type RecordingListOpts struct {
-	Environment string
-	SessionIDs  []string
-	DeviceType  string // "mobile" | "desktop" | "tablet" | ""
-	HumanOnly   bool
-	PageURL     string
-	Limit       int
-	Offset      int
-}
 
 // UpsertRecording inserts a new recording or folds another chunk into an
 // existing one. The playable span is tracked as first_chunk_index (the lowest
@@ -52,11 +16,11 @@ type RecordingListOpts struct {
 // chunk arriving out of order can never strand the snapshot. has_snapshot is
 // sticky once any chunk carrying the rrweb full snapshot lands. Metadata fields
 // (device_type, user_agent, is_bot, page_url) are set only on insert.
-func (s *Store) UpsertRecording(ctx context.Context, r Recording) error {
+func (s *Store) UpsertRecording(ctx context.Context, r domain.Recording) error {
 	return upsertRecording(ctx, s.db, r)
 }
 
-func upsertRecording(ctx context.Context, ex execer, r Recording) error {
+func upsertRecording(ctx context.Context, ex execer, r domain.Recording) error {
 	const q = `
 		INSERT INTO recordings
 			(id, project_id, session_id, environment, first_chunk_index, last_chunk_index, chunk_count, has_snapshot,
@@ -91,7 +55,7 @@ func upsertRecording(ctx context.Context, ex execer, r Recording) error {
 }
 
 // GetRecording fetches a single recording by ID.
-func (s *ReadStore) GetRecording(ctx context.Context, id string) (Recording, error) {
+func (s *ReadStore) GetRecording(ctx context.Context, id string) (domain.Recording, error) {
 	const q = `
 		SELECT id, project_id, session_id, environment, first_chunk_index, last_chunk_index, chunk_count, has_snapshot, duration_ms, started_at, ended_at, created_at,
 		       device_type, user_agent, is_bot, page_url
@@ -100,7 +64,7 @@ func (s *ReadStore) GetRecording(ctx context.Context, id string) (Recording, err
 }
 
 // ListRecordings returns recordings for a project with optional filters.
-func (s *ReadStore) ListRecordings(ctx context.Context, projectID string, opts RecordingListOpts) ([]Recording, error) {
+func (s *ReadStore) ListRecordings(ctx context.Context, projectID string, opts domain.RecordingListOpts) ([]domain.Recording, error) {
 	where := []string{"project_id = ?"}
 	args := []any{projectID}
 
@@ -149,7 +113,7 @@ func (s *ReadStore) ListRecordings(ctx context.Context, projectID string, opts R
 	}
 	defer rows.Close()
 
-	var out []Recording
+	var out []domain.Recording
 	for rows.Next() {
 		r, err := scanRecordingRow(rows.Scan)
 		if err != nil {
@@ -161,7 +125,7 @@ func (s *ReadStore) ListRecordings(ctx context.Context, projectID string, opts R
 }
 
 // ListOldRecordings returns recordings older than the given threshold (by created_at).
-func (s *ReadStore) ListOldRecordings(ctx context.Context, before time.Time) ([]Recording, error) {
+func (s *ReadStore) ListOldRecordings(ctx context.Context, before time.Time) ([]domain.Recording, error) {
 	const q = `
 		SELECT id, project_id, chunk_count
 		FROM recordings
@@ -172,9 +136,9 @@ func (s *ReadStore) ListOldRecordings(ctx context.Context, before time.Time) ([]
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Recording
+	var out []domain.Recording
 	for rows.Next() {
-		var r Recording
+		var r domain.Recording
 		if err := rows.Scan(&r.ID, &r.ProjectID, &r.ChunkCount); err != nil {
 			return nil, err
 		}
@@ -187,7 +151,7 @@ func (s *ReadStore) ListOldRecordings(ctx context.Context, before time.Time) ([]
 // whose rrweb full snapshot never reached storage (has_snapshot = 0) or that
 // hold no chunks at all. last_chunk_index/chunk_count are returned so callers
 // can clean up any orphaned R2 chunks.
-func (s *ReadStore) ListBrokenRecordings(ctx context.Context) ([]Recording, error) {
+func (s *ReadStore) ListBrokenRecordings(ctx context.Context) ([]domain.Recording, error) {
 	const q = `
 		SELECT id, project_id, last_chunk_index, chunk_count
 		FROM recordings
@@ -198,9 +162,9 @@ func (s *ReadStore) ListBrokenRecordings(ctx context.Context) ([]Recording, erro
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Recording
+	var out []domain.Recording
 	for rows.Next() {
-		var r Recording
+		var r domain.Recording
 		if err := rows.Scan(&r.ID, &r.ProjectID, &r.LastChunkIndex, &r.ChunkCount); err != nil {
 			return nil, err
 		}
@@ -212,7 +176,7 @@ func (s *ReadStore) ListBrokenRecordings(ctx context.Context) ([]Recording, erro
 // ListBotRecordings returns recordings flagged as bot traffic.
 // last_chunk_index/chunk_count are returned so the caller can delete the
 // matching R2 chunk objects, which no SQL delete can reach.
-func (s *ReadStore) ListBotRecordings(ctx context.Context) ([]Recording, error) {
+func (s *ReadStore) ListBotRecordings(ctx context.Context) ([]domain.Recording, error) {
 	const q = `
 		SELECT id, project_id, last_chunk_index, chunk_count
 		FROM recordings
@@ -223,9 +187,9 @@ func (s *ReadStore) ListBotRecordings(ctx context.Context) ([]Recording, error) 
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Recording
+	var out []domain.Recording
 	for rows.Next() {
-		var r Recording
+		var r domain.Recording
 		if err := rows.Scan(&r.ID, &r.ProjectID, &r.LastChunkIndex, &r.ChunkCount); err != nil {
 			return nil, err
 		}
@@ -248,7 +212,7 @@ func (s *Store) DeleteRecording(ctx context.Context, id string) error {
 
 // FlagEvaluationsForSession returns all flag evaluations that occurred
 // during the session associated with a recording.
-func (s *ReadStore) FlagEvaluationsForSession(ctx context.Context, sessionID, projectID string) ([]FlagEvaluationEntry, error) {
+func (s *ReadStore) FlagEvaluationsForSession(ctx context.Context, sessionID, projectID string) ([]domain.FlagEvaluationEntry, error) {
 	const q = `
 		SELECT f.name, fe.variant, fe.created_at
 		FROM flag_evaluations fe
@@ -261,9 +225,9 @@ func (s *ReadStore) FlagEvaluationsForSession(ctx context.Context, sessionID, pr
 	}
 	defer rows.Close()
 
-	var out []FlagEvaluationEntry
+	var out []domain.FlagEvaluationEntry
 	for rows.Next() {
-		var e FlagEvaluationEntry
+		var e domain.FlagEvaluationEntry
 		if err := rows.Scan(&e.FlagName, &e.Variant, &e.EvaluatedAt); err != nil {
 			return nil, err
 		}
@@ -272,12 +236,12 @@ func (s *ReadStore) FlagEvaluationsForSession(ctx context.Context, sessionID, pr
 	return out, rows.Err()
 }
 
-func scanRecording(row *sql.Row) (Recording, error) {
+func scanRecording(row *sql.Row) (domain.Recording, error) {
 	return scanRecordingRow(row.Scan)
 }
 
-func scanRecordingRow(scan func(...any) error) (Recording, error) {
-	var r Recording
+func scanRecordingRow(scan func(...any) error) (domain.Recording, error) {
+	var r domain.Recording
 	var endedAt sql.NullTime
 	var isBot, hasSnapshot int
 	err := scan(

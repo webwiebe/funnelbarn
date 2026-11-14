@@ -7,12 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 func seedEvent(t *testing.T, store *repository.Store, projectID, sessionID, name, url string) {
 	t.Helper()
-	e := repository.Event{
+	e := domain.Event{
 		ID:         name + "-" + sessionID + "-" + url,
 		ProjectID:  projectID,
 		SessionID:  sessionID,

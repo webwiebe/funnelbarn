@@ -13,16 +13,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/mock"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
-func createTestFlag(t *testing.T, svc *service.FlagService, projectID string, flagKey string, variants map[string]any, split map[string]int, defaultVariant string) repository.FeatureFlag {
+func createTestFlag(t *testing.T, svc *service.FlagService, projectID string, flagKey string, variants map[string]any, split map[string]int, defaultVariant string) domain.FeatureFlag {
 	t.Helper()
 	variantsJSON, _ := json.Marshal(variants)
 	splitJSON, _ := json.Marshal(split)
-	f, err := svc.CreateFlag(context.Background(), repository.FeatureFlag{
+	f, err := svc.CreateFlag(context.Background(), domain.FeatureFlag{
 		ProjectID:      projectID,
 		FlagKey:        flagKey,
 		Name:           flagKey,
@@ -60,7 +59,7 @@ func TestFlagService_EvaluateFlag_Disabled(t *testing.T) {
 	svc := service.NewFlagService(store)
 	variantsJSON, _ := json.Marshal(map[string]any{"on": true, "off": false})
 	splitJSON, _ := json.Marshal(map[string]int{"on": 50, "off": 50})
-	_, err := svc.CreateFlag(context.Background(), repository.FeatureFlag{
+	_, err := svc.CreateFlag(context.Background(), domain.FeatureFlag{
 		ProjectID:      "proj-1",
 		FlagKey:        "disabled-flag",
 		Name:           "disabled-flag",
@@ -107,7 +106,7 @@ func TestFlagService_EvaluateFlag_TargetingMatch(t *testing.T) {
 
 	variantsJSON, _ := json.Marshal(map[string]any{"on": true, "off": false})
 	splitJSON, _ := json.Marshal(map[string]int{"on": 100})
-	_, err := svc.CreateFlag(context.Background(), repository.FeatureFlag{
+	_, err := svc.CreateFlag(context.Background(), domain.FeatureFlag{
 		ProjectID:      "proj-1",
 		FlagKey:        "launch-gate",
 		Name:           "Launch Gate",
@@ -149,7 +148,7 @@ func TestFlagService_EvaluateFlag_TargetingNoMatch_FallsThrough(t *testing.T) {
 
 	variantsJSON, _ := json.Marshal(map[string]any{"on": true, "off": false})
 	splitJSON, _ := json.Marshal(map[string]int{"on": 100})
-	_, err := svc.CreateFlag(context.Background(), repository.FeatureFlag{
+	_, err := svc.CreateFlag(context.Background(), domain.FeatureFlag{
 		ProjectID:      "proj-1",
 		FlagKey:        "launch-gate",
 		Name:           "Launch Gate",
@@ -188,7 +187,7 @@ func TestFlagService_EvaluateFlag_TargetingAnyMatch(t *testing.T) {
 	rulesJSON, _ := json.Marshal(rules)
 	variantsJSON, _ := json.Marshal(map[string]any{"on": true, "off": false})
 	splitJSON, _ := json.Marshal(map[string]int{"off": 100})
-	_, err := svc.CreateFlag(context.Background(), repository.FeatureFlag{
+	_, err := svc.CreateFlag(context.Background(), domain.FeatureFlag{
 		ProjectID:      "proj-1",
 		FlagKey:        "beta-feature",
 		Name:           "Beta Feature",
@@ -291,7 +290,7 @@ func TestFlagService_EvaluateFlag_Operators(t *testing.T) {
 			variantsJSON, _ := json.Marshal(map[string]any{"on": true, "off": false})
 			splitJSON, _ := json.Marshal(map[string]int{"off": 100})
 
-			_, err := svc.CreateFlag(context.Background(), repository.FeatureFlag{
+			_, err := svc.CreateFlag(context.Background(), domain.FeatureFlag{
 				ProjectID:      "proj-1",
 				FlagKey:        "op-test-" + tt.name,
 				Name:           "op-test",
@@ -342,7 +341,7 @@ func TestFlagService_CRUD(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 
-	updated, err := svc.UpdateFlag(ctx, repository.FeatureFlag{
+	updated, err := svc.UpdateFlag(ctx, domain.FeatureFlag{
 		ID:             f.ID,
 		Name:           "Updated Name",
 		Variants:       f.Variants,
@@ -501,10 +500,10 @@ func TestUpdateFlag_ClaimsAutoFlagAsManual(t *testing.T) {
 // Config-kind flags
 // ---------------------------------------------------------------------------
 
-func createConfigFlag(t *testing.T, svc *service.FlagService, projectID, flagKey string, value any) repository.FeatureFlag {
+func createConfigFlag(t *testing.T, svc *service.FlagService, projectID, flagKey string, value any) domain.FeatureFlag {
 	t.Helper()
 	variantsJSON, _ := json.Marshal(map[string]any{"default": value})
-	f, err := svc.CreateFlag(context.Background(), repository.FeatureFlag{
+	f, err := svc.CreateFlag(context.Background(), domain.FeatureFlag{
 		ProjectID:      projectID,
 		FlagKey:        flagKey,
 		Name:           flagKey,
@@ -514,7 +513,7 @@ func createConfigFlag(t *testing.T, svc *service.FlagService, projectID, flagKey
 		Split:          `{"default":100}`,
 		TargetingRules: "[]",
 		Status:         "active",
-		Kind:           repository.FlagKindConfig,
+		Kind:           domain.FlagKindConfig,
 	})
 	require.NoError(t, err)
 	return f
@@ -560,7 +559,7 @@ func TestEvaluateFlag_ConfigKindIgnoresBucketing(t *testing.T) {
 	store := mock.New()
 	svc := service.NewFlagService(store)
 	variantsJSON, _ := json.Marshal(map[string]any{"low": float64(10), "high": float64(999)})
-	_, err := svc.CreateFlag(context.Background(), repository.FeatureFlag{
+	_, err := svc.CreateFlag(context.Background(), domain.FeatureFlag{
 		ProjectID:      "proj-1",
 		FlagKey:        "batch_size",
 		Name:           "batch_size",
@@ -570,7 +569,7 @@ func TestEvaluateFlag_ConfigKindIgnoresBucketing(t *testing.T) {
 		Split:          `{"low":50,"high":50}`,
 		TargetingRules: "[]",
 		Status:         "active",
-		Kind:           repository.FlagKindConfig,
+		Kind:           domain.FlagKindConfig,
 	})
 	require.NoError(t, err)
 
@@ -628,13 +627,13 @@ func TestEvaluateOrRegisterFlag_HonoursDeclaredKind(t *testing.T) {
 	svc := service.NewFlagService(store)
 
 	res, err := svc.EvaluateOrRegisterFlag(context.Background(), "proj-1", "daily_cap",
-		nil, float64(500), 100, repository.FlagKindConfig)
+		nil, float64(500), 100, domain.FlagKindConfig)
 	require.NoError(t, err)
 	require.Equal(t, float64(500), res.Value)
 
 	f, err := svc.GetFlagByKey(context.Background(), "proj-1", "daily_cap")
 	require.NoError(t, err)
-	require.Equal(t, repository.FlagKindConfig, f.Kind)
+	require.Equal(t, domain.FlagKindConfig, f.Kind)
 	require.Equal(t, "number", f.FlagType)
 
 	// Unset (and unknown) kinds stay experiments — the pre-existing behaviour.
@@ -642,7 +641,7 @@ func TestEvaluateOrRegisterFlag_HonoursDeclaredKind(t *testing.T) {
 	require.NoError(t, err)
 	other, err := svc.GetFlagByKey(context.Background(), "proj-1", "other")
 	require.NoError(t, err)
-	require.Equal(t, repository.FlagKindExperiment, other.Kind)
+	require.Equal(t, domain.FlagKindExperiment, other.Kind)
 }
 
 // The two flags responsible for every evaluation in production are manual and
@@ -764,7 +763,7 @@ func TestFlagService_CreateFlag_RejectsRuleNamingMissingVariant(t *testing.T) {
 	store := mock.New()
 	svc := service.NewFlagService(store)
 
-	_, err := svc.CreateFlag(context.Background(), repository.FeatureFlag{
+	_, err := svc.CreateFlag(context.Background(), domain.FeatureFlag{
 		ProjectID: "proj-1", FlagKey: "outreach", Name: "outreach",
 		Variants: `{"default":false}`, DefaultVariant: "default", TargetingRules: missingVariantRule,
 	})
@@ -800,14 +799,14 @@ func TestFlagService_UpdateFlag_RuleVariantCheck(t *testing.T) {
 			store := mock.New()
 			svc := service.NewFlagService(store)
 			// Written to the store directly: this is data from before the check.
-			f, err := store.CreateFlag(ctx, repository.FeatureFlag{
+			f, err := store.CreateFlag(ctx, domain.FeatureFlag{
 				ProjectID: "proj-1", FlagKey: "outreach", Name: "outreach", FlagType: "boolean",
 				Variants: `{"default":false}`, DefaultVariant: "default", Split: "{}",
 				TargetingRules: missingVariantRule, Status: "active",
 			})
 			require.NoError(t, err)
 
-			_, err = svc.UpdateFlag(ctx, repository.FeatureFlag{
+			_, err = svc.UpdateFlag(ctx, domain.FeatureFlag{
 				ID: f.ID, Name: f.Name, FlagType: f.FlagType, Variants: tt.variants,
 				DefaultVariant: f.DefaultVariant, Split: f.Split, TargetingRules: tt.rules, Status: tt.status,
 			})
@@ -825,13 +824,13 @@ func TestFlagService_UpdateFlag_RejectsRemovingAVariantARuleNames(t *testing.T) 
 	ctx := context.Background()
 	store := mock.New()
 	svc := service.NewFlagService(store)
-	f, err := svc.CreateFlag(ctx, repository.FeatureFlag{
+	f, err := svc.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID: "proj-1", FlagKey: "outreach", Name: "outreach",
 		Variants: `{"default":false,"on":true}`, DefaultVariant: "default", TargetingRules: missingVariantRule,
 	})
 	require.NoError(t, err)
 
-	_, err = svc.UpdateFlag(ctx, repository.FeatureFlag{
+	_, err = svc.UpdateFlag(ctx, domain.FeatureFlag{
 		ID: f.ID, Name: f.Name, Variants: `{"default":false}`,
 		DefaultVariant: f.DefaultVariant, TargetingRules: f.TargetingRules, Status: "active",
 	})
@@ -841,11 +840,11 @@ func TestFlagService_UpdateFlag_RejectsRemovingAVariantARuleNames(t *testing.T) 
 
 func TestFlagService_EvaluateFlag_StoredRuleNamingMissingVariant(t *testing.T) {
 	ctx := context.Background()
-	for _, kind := range []string{repository.FlagKindExperiment, repository.FlagKindConfig} {
+	for _, kind := range []string{domain.FlagKindExperiment, domain.FlagKindConfig} {
 		t.Run(kind, func(t *testing.T) {
 			store := mock.New()
 			svc := service.NewFlagService(store)
-			_, err := store.CreateFlag(ctx, repository.FeatureFlag{
+			_, err := store.CreateFlag(ctx, domain.FeatureFlag{
 				ProjectID: "proj-1", FlagKey: "outreach", Name: "outreach", FlagType: "boolean",
 				Variants: `{"default":false}`, DefaultVariant: "default", Split: "{}",
 				TargetingRules: missingVariantRule, Status: "active", Kind: kind,
@@ -885,7 +884,7 @@ func TestFlagService_EvaluateFlag_MissingVariantLogsWarnOncePerFlag(t *testing.T
 	store := mock.New()
 	svc := service.NewFlagService(store)
 	for _, key := range []string{"outreach", "other"} {
-		_, err := store.CreateFlag(ctx, repository.FeatureFlag{
+		_, err := store.CreateFlag(ctx, domain.FeatureFlag{
 			ProjectID: "proj-1", FlagKey: key, Name: key, FlagType: "boolean",
 			Variants: `{"default":false}`, DefaultVariant: "default", Split: "{}",
 			TargetingRules: missingVariantRule, Status: "active",

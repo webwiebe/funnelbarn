@@ -18,6 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
@@ -104,7 +105,7 @@ func TestMCP_SessionCookieAloneIs401(t *testing.T) {
 	f := newFakeIdP(t)
 	srv, _ := mcpServer(t, f, nil)
 	// A live dashboard session, holding a token that would itself be valid.
-	cookie, _ := insertOIDCSession(t, srv, repository.WebSession{
+	cookie, _ := insertOIDCSession(t, srv, domain.WebSession{
 		Username:        "alice",
 		IdpSub:          fakeIdPSub,
 		AccessToken:     f.mcpAccessToken(t, nil),
@@ -120,7 +121,7 @@ func TestMCP_APIKeyAloneIs401(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	key := scopedKey(t, store, p.ID, "fb_mcp_test_key", repository.APIKeyScopeAnalyticsRead)
+	key := scopedKey(t, store, p.ID, "fb_mcp_test_key", domain.APIKeyScopeAnalyticsRead)
 	for _, hdr := range []http.Header{
 		{http.CanonicalHeaderKey(auth.HeaderAPIKey): {key}},
 		{http.CanonicalHeaderKey(auth.HeaderAPIKey): {"test-key"}}, // the ingest key

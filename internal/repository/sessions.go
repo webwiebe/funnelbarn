@@ -4,37 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
-
-// Session represents an analytics session.
-type Session struct {
-	ID          string    `json:"id"`
-	ProjectID   string    `json:"project_id"`
-	FirstSeenAt time.Time `json:"first_seen_at"`
-	LastSeenAt  time.Time `json:"last_seen_at"`
-	EventCount  int       `json:"event_count"`
-	EntryURL    string    `json:"entry_url"`
-	ExitURL     string    `json:"exit_url"`
-	Referrer    string    `json:"referrer"`
-	UTMSource   string    `json:"utm_source"`
-	UTMMedium   string    `json:"utm_medium"`
-	UTMCampaign string    `json:"utm_campaign"`
-	DeviceType  string    `json:"device_type"`
-	CountryCode string    `json:"country_code"`
-	Environment string    `json:"environment,omitempty"`
-
-	// Geo fields — populated from IP on first event, nullable, clearable on request.
-	IP              string  `json:"ip,omitempty"`
-	City            string  `json:"city,omitempty"`
-	Region          string  `json:"region,omitempty"`
-	Latitude        float64 `json:"latitude,omitempty"`
-	Longitude       float64 `json:"longitude,omitempty"`
-	Timezone        string  `json:"timezone,omitempty"`
-	ASNOrg          string  `json:"asn_org,omitempty"`
-	ConnectionClass string  `json:"connection_class,omitempty"`
-	GeoAnonymized   bool    `json:"geo_anonymized,omitempty"`
-}
 
 // UpsertSession inserts or updates a session record. Geo fields are written
 // on INSERT only; subsequent updates to the same session preserve them.
@@ -42,11 +14,11 @@ type Session struct {
 // The conflict target is (project_id, id), matching the primary key. Keyed on
 // id alone, two projects that emitted the same session ID upserted the same
 // row and its project_id was decided by whichever wrote last.
-func (s *Store) UpsertSession(ctx context.Context, sess Session) error {
+func (s *Store) UpsertSession(ctx context.Context, sess domain.Session) error {
 	return upsertSession(ctx, s.db, sess)
 }
 
-func upsertSession(ctx context.Context, ex execer, sess Session) error {
+func upsertSession(ctx context.Context, ex execer, sess domain.Session) error {
 	const q = `
 		INSERT INTO sessions (
 			id, project_id, first_seen_at, last_seen_at, event_count,
@@ -74,7 +46,7 @@ func upsertSession(ctx context.Context, ex execer, sess Session) error {
 // SessionByID fetches one project's session. The project is part of the key:
 // a session ID can legitimately exist under several projects, so an id-only
 // lookup would return an arbitrary one of them.
-func (s *ReadStore) SessionByID(ctx context.Context, projectID, id string) (Session, error) {
+func (s *ReadStore) SessionByID(ctx context.Context, projectID, id string) (domain.Session, error) {
 	const q = `
 		SELECT id, project_id, first_seen_at, last_seen_at, event_count,
 			COALESCE(entry_url,''), COALESCE(exit_url,''), COALESCE(referrer,''),
@@ -89,7 +61,7 @@ func (s *ReadStore) SessionByID(ctx context.Context, projectID, id string) (Sess
 }
 
 // ListSessions returns paginated sessions for a project.
-func (s *ReadStore) ListSessions(ctx context.Context, projectID string, limit, offset int) ([]Session, error) {
+func (s *ReadStore) ListSessions(ctx context.Context, projectID string, limit, offset int) ([]domain.Session, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -112,9 +84,9 @@ func (s *ReadStore) ListSessions(ctx context.Context, projectID string, limit, o
 	}
 	defer rows.Close()
 
-	var sessions []Session
+	var sessions []domain.Session
 	for rows.Next() {
-		var sess Session
+		var sess domain.Session
 		if err := scanSessionRow(rows.Scan, &sess); err != nil {
 			return nil, err
 		}
@@ -168,8 +140,8 @@ func (s *Store) AnonymizeSessionsByIP(ctx context.Context, ip string) (int64, er
 	return res.RowsAffected()
 }
 
-func scanSession(row *sql.Row) (Session, error) {
-	var sess Session
+func scanSession(row *sql.Row) (domain.Session, error) {
+	var sess domain.Session
 	err := row.Scan(
 		&sess.ID, &sess.ProjectID, &sess.FirstSeenAt, &sess.LastSeenAt, &sess.EventCount,
 		&sess.EntryURL, &sess.ExitURL, &sess.Referrer,
@@ -183,7 +155,7 @@ func scanSession(row *sql.Row) (Session, error) {
 	return sess, err
 }
 
-func scanSessionRow(scan func(...any) error, sess *Session) error {
+func scanSessionRow(scan func(...any) error, sess *domain.Session) error {
 	return scan(
 		&sess.ID, &sess.ProjectID, &sess.FirstSeenAt, &sess.LastSeenAt, &sess.EventCount,
 		&sess.EntryURL, &sess.ExitURL, &sess.Referrer,

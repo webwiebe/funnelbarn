@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // ApplyChunk folds one recording chunk into the recording row and stores its
@@ -15,7 +17,7 @@ import (
 // The check, the recording upsert, the chunk marker and the trace links run in
 // one transaction, so a failure leaves nothing behind and the redelivered chunk
 // is applied in full.
-func (s *Store) ApplyChunk(ctx context.Context, r Recording, chunkIndex int, links []TraceLink) (applied bool, err error) {
+func (s *Store) ApplyChunk(ctx context.Context, r domain.Recording, chunkIndex int, links []domain.TraceLink) (applied bool, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("apply chunk: begin: %w", err)

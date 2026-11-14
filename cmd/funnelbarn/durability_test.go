@@ -19,6 +19,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
@@ -108,7 +109,7 @@ func TestReaderTrafficSurvivesAStoppedWriter(t *testing.T) {
 	applier, writerStore := newTestApplier(t)
 	p, err := service.NewProjectService(writerStore).CreateProject(ctx, "Durable", "durable-site")
 	require.NoError(t, err)
-	flag, err := writerStore.CreateFlag(ctx, repository.FeatureFlag{
+	flag, err := writerStore.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID: p.ID, FlagKey: "durable_flag", Name: "Durable", FlagType: "boolean",
 		Variants: `{"on":true,"off":false}`, DefaultVariant: "off", Split: `{"on":50,"off":50}`, Status: "active",
 	})
@@ -170,7 +171,7 @@ func TestReaderTrafficSurvivesAStoppedWriter(t *testing.T) {
 	require.NoError(t, readerRecordings.IngestChunk(ctx, chunk))
 
 	// Evaluations: two published, one buffered on disk while Valkey is down.
-	eval := command.RecordEvaluation{Eval: repository.FlagEvaluation{FlagID: flag.ID, ProjectID: p.ID, Variant: "on"}}
+	eval := command.RecordEvaluation{Eval: domain.FlagEvaluation{FlagID: flag.ID, ProjectID: p.ID, Variant: "on"}}
 	reader.Submit(ctx, eval)
 	reader.Submit(ctx, eval)
 	mr.SetError("LOADING Valkey is down")

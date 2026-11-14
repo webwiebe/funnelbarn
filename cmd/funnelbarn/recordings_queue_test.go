@@ -15,6 +15,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/queue"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -160,7 +161,7 @@ func TestRecordingsQueueRefusesWhenFullOrDown(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = client.Close() })
 	q := &recordingsQueue{list: queue.NewRedisList(client, recordingsQueueName), maxLen: 1}
-	meta := service.ChunkMeta{Recording: repository.Recording{ID: "rec-1", ProjectID: "p"}, ChunkIndex: 0}
+	meta := service.ChunkMeta{Recording: domain.Recording{ID: "rec-1", ProjectID: "p"}, ChunkIndex: 0}
 
 	require.True(t, q.Enqueue(ctx, meta))
 	require.False(t, q.Enqueue(ctx, meta), "the queue is at its cap")
@@ -193,7 +194,7 @@ func TestRecordingsQueueRefusesWhenPublishFails(t *testing.T) {
 	ctx := context.Background()
 	list := &flakyChunkList{failPublish: true}
 	q := &recordingsQueue{list: list, maxLen: 10}
-	meta := service.ChunkMeta{Recording: repository.Recording{ID: "rec-1", ProjectID: "p"}}
+	meta := service.ChunkMeta{Recording: domain.Recording{ID: "rec-1", ProjectID: "p"}}
 
 	require.False(t, q.Enqueue(ctx, meta))
 	list.failPublish = false
@@ -207,7 +208,7 @@ func TestRecordingsQueueRefusesUnencodableChunk(t *testing.T) {
 	list := &flakyChunkList{}
 	q := &recordingsQueue{list: list, maxLen: 10}
 	bad := time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC) // outside RFC 3339
-	meta := service.ChunkMeta{Recording: repository.Recording{ID: "rec-1", StartedAt: bad}}
+	meta := service.ChunkMeta{Recording: domain.Recording{ID: "rec-1", StartedAt: bad}}
 	require.False(t, q.Enqueue(context.Background(), meta))
 	require.Zero(t, list.published)
 }
@@ -215,7 +216,7 @@ func TestRecordingsQueueRefusesUnencodableChunk(t *testing.T) {
 func TestDeadLetterChunkLogsAnUnhandledError(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, nil))
-	c := command.ApplyRecordingChunk{Recording: repository.Recording{ID: "rec-9", ProjectID: "p-9"}, ChunkIndex: 4}
+	c := command.ApplyRecordingChunk{Recording: domain.Recording{ID: "rec-9", ProjectID: "p-9"}, ChunkIndex: 4}
 	deadLetterChunk(logger)(context.Background(), c, errors.New("database is locked"))
 
 	var line map[string]any
@@ -273,7 +274,7 @@ func TestRecordingsQueuePublishFailureLevels(t *testing.T) {
 	list := &flakyChunkList{failPublish: true}
 	q := &recordingsQueue{list: list, maxLen: 10}
 	q.outage.Now = func() time.Time { return now }
-	meta := service.ChunkMeta{Recording: repository.Recording{ID: "rec-1", ProjectID: "p"}}
+	meta := service.ChunkMeta{Recording: domain.Recording{ID: "rec-1", ProjectID: "p"}}
 
 	q.Enqueue(ctx, meta)
 	now = now.Add(5 * time.Second)

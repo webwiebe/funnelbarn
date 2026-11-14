@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func TestIsBrandedAliasHost(t *testing.T) {
@@ -127,7 +127,7 @@ func TestHandleCreateProject_PersistsDomain(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create project: want 201, got %d (body: %s)", w.Code, w.Body.String())
 	}
-	var p repository.Project
+	var p domain.Project
 	if err := json.Unmarshal(w.Body.Bytes(), &p); err != nil {
 		t.Fatalf("decode: %v", err)
 	}

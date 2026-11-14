@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/volumedrop"
@@ -53,7 +54,7 @@ func TestEnvironmentEventsByHour_ReadsTheProductionInsert(t *testing.T) {
 	require.NoError(t, err)
 
 	before := time.Now().UTC()
-	require.NoError(t, s.InsertEvent(ctx, repository.Event{
+	require.NoError(t, s.InsertEvent(ctx, domain.Event{
 		ID: "e1", ProjectID: p.ID, SessionID: "s1", Name: "page_view",
 		IngestID: "ing1", OccurredAt: before.Add(-24 * time.Hour), Environment: "production",
 	}))

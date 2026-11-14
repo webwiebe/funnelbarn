@@ -6,7 +6,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -19,27 +19,27 @@ func (s *Server) handleListCanonicalFunnels(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if funnels == nil {
-		funnels = []repository.CanonicalFunnel{}
+		funnels = []domain.CanonicalFunnel{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"funnels": funnels})
 }
 
 // canonicalFunnelBody is the request shape for creating/updating a canonical funnel.
 type canonicalFunnelBody struct {
-	Name        string                           `json:"name"`
-	Description string                           `json:"description"`
-	Scope       string                           `json:"scope"`
-	ProjectIDs  []string                         `json:"project_ids"`
-	Segment     string                           `json:"segment"`
-	Steps       []repository.CanonicalFunnelStep `json:"steps"`
+	Name        string                       `json:"name"`
+	Description string                       `json:"description"`
+	Scope       string                       `json:"scope"`
+	ProjectIDs  []string                     `json:"project_ids"`
+	Segment     string                       `json:"segment"`
+	Steps       []domain.CanonicalFunnelStep `json:"steps"`
 }
 
-func (b canonicalFunnelBody) toFunnel(id string) repository.CanonicalFunnel {
+func (b canonicalFunnelBody) toFunnel(id string) domain.CanonicalFunnel {
 	scope := b.Scope
 	if scope == "" {
 		scope = "session"
 	}
-	return repository.CanonicalFunnel{
+	return domain.CanonicalFunnel{
 		ID:          id,
 		Name:        b.Name,
 		Description: b.Description,

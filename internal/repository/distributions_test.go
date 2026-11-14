@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func TestStore_SessionDistributions(t *testing.T) {
@@ -22,7 +22,7 @@ func TestStore_SessionDistributions(t *testing.T) {
 
 	// Insert two sessions with different device types.
 	for i, dt := range []string{"mobile", "mobile", "desktop"} {
-		sess := repository.Session{
+		sess := domain.Session{
 			ID:          "sess-dist-" + string(rune('a'+i)),
 			ProjectID:   p.ID,
 			FirstSeenAt: now,

@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // instanceSettingsService passes instance-level settings through to the store.
@@ -37,10 +37,10 @@ func NewRecordingSettingsService(repo ports.ProjectRecordingSettingsRepo) Record
 	return &recordingSettingsService{repo: repo}
 }
 
-func (s *recordingSettingsService) GetProjectRecordingSettings(ctx context.Context, projectID string) (*repository.ProjectRecordingSettings, error) {
+func (s *recordingSettingsService) GetProjectRecordingSettings(ctx context.Context, projectID string) (*domain.ProjectRecordingSettings, error) {
 	return s.repo.GetProjectRecordingSettings(ctx, projectID)
 }
 
-func (s *recordingSettingsService) UpsertProjectRecordingSettings(ctx context.Context, settings *repository.ProjectRecordingSettings) error {
+func (s *recordingSettingsService) UpsertProjectRecordingSettings(ctx context.Context, settings *domain.ProjectRecordingSettings) error {
 	return s.repo.UpsertProjectRecordingSettings(ctx, settings)
 }

@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // webSessionService passes dashboard session reads and writes straight to the
@@ -19,11 +19,11 @@ func NewWebSessionService(repo ports.WebSessionRepo) WebSessions {
 	return &webSessionService{repo: repo}
 }
 
-func (s *webSessionService) CreateWebSession(ctx context.Context, ws repository.WebSession) error {
+func (s *webSessionService) CreateWebSession(ctx context.Context, ws domain.WebSession) error {
 	return s.repo.CreateWebSession(ctx, ws)
 }
 
-func (s *webSessionService) GetWebSession(ctx context.Context, idHash string) (repository.WebSession, error) {
+func (s *webSessionService) GetWebSession(ctx context.Context, idHash string) (domain.WebSession, error) {
 	return s.repo.GetWebSession(ctx, idHash)
 }
 
@@ -57,10 +57,10 @@ func NewIAMBarnUserService(repo ports.IAMBarnUserRepo) IAMBarnUsers {
 	return &iambarnUserService{repo: repo}
 }
 
-func (s *iambarnUserService) CreateIAMBarnUser(ctx context.Context, sub, username string) (repository.User, error) {
+func (s *iambarnUserService) CreateIAMBarnUser(ctx context.Context, sub, username string) (domain.User, error) {
 	return s.repo.CreateIAMBarnUser(ctx, sub, username)
 }
 
-func (s *iambarnUserService) FindUserByIAMBarnSub(ctx context.Context, sub string) (repository.User, error) {
+func (s *iambarnUserService) FindUserByIAMBarnSub(ctx context.Context, sub string) (domain.User, error) {
 	return s.repo.FindUserByIAMBarnSub(ctx, sub)
 }

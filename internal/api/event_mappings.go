@@ -5,7 +5,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -30,7 +30,7 @@ func (s *Server) handleListMappings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if mappings == nil {
-		mappings = []repository.EventNameMapping{}
+		mappings = []domain.EventNameMapping{}
 	}
 	span.SetAttributes(attribute.Int("mappings.count", len(mappings)))
 	writeJSON(w, http.StatusOK, map[string]any{"mappings": mappings})
@@ -43,7 +43,7 @@ func (s *Server) handleSetMappings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Mappings []repository.EventNameMapping `json:"mappings"`
+		Mappings []domain.EventNameMapping `json:"mappings"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -111,7 +111,7 @@ func (s *Server) handleMappingSuggestions(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if suggestions == nil {
-		suggestions = []repository.MappingSuggestion{}
+		suggestions = []domain.MappingSuggestion{}
 	}
 	span.SetAttributes(attribute.Int("suggestions.count", len(suggestions)))
 	writeJSON(w, http.StatusOK, map[string]any{"suggestions": suggestions})

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
@@ -220,7 +221,7 @@ func oidcFlowServer(t *testing.T, f *fakeIdP, mutate func(cfg *ServerConfig)) (*
 }
 
 // insertOIDCSession seeds a web_sessions row directly, as the callback would.
-func insertOIDCSession(t *testing.T, srv *Server, ws repository.WebSession) (*http.Cookie, string) {
+func insertOIDCSession(t *testing.T, srv *Server, ws domain.WebSession) (*http.Cookie, string) {
 	t.Helper()
 	token, expires, err := srv.sessionManager.Create()
 	if err != nil {
@@ -461,7 +462,7 @@ func TestSessionRefresh_ExpiredAccessTokenRotatesAndResnapshotsClaims(t *testing
 	f := newFakeIdP(t)
 	srv, store := oidcFlowServer(t, f, nil)
 
-	cookie, idHash := insertOIDCSession(t, srv, repository.WebSession{
+	cookie, idHash := insertOIDCSession(t, srv, domain.WebSession{
 		Username:        "alice",
 		IdpSub:          fakeIdPSub,
 		IdpSid:          fakeIdPSid,
@@ -509,7 +510,7 @@ func TestSessionRefresh_InvalidGrantKillsSession(t *testing.T) {
 	f := newFakeIdP(t)
 	srv, store := oidcFlowServer(t, f, nil)
 
-	cookie, idHash := insertOIDCSession(t, srv, repository.WebSession{
+	cookie, idHash := insertOIDCSession(t, srv, domain.WebSession{
 		Username:        "alice",
 		IdpSub:          fakeIdPSub,
 		RefreshToken:    "rt-dead",
@@ -534,7 +535,7 @@ func TestSessionRefresh_TransientFailureServesStaleWithinGrace(t *testing.T) {
 	f := newFakeIdP(t)
 	srv, store := oidcFlowServer(t, f, nil)
 
-	cookie, idHash := insertOIDCSession(t, srv, repository.WebSession{
+	cookie, idHash := insertOIDCSession(t, srv, domain.WebSession{
 		Username:        "alice",
 		IdpSub:          fakeIdPSub,
 		RefreshToken:    "rt-1",
@@ -563,7 +564,7 @@ func TestSessionRefresh_GraceExceededCutsOff(t *testing.T) {
 	srv, store := oidcFlowServer(t, f, nil)
 
 	// Failing since 2h ago with the default 1h grace → cut off.
-	cookie, idHash := insertOIDCSession(t, srv, repository.WebSession{
+	cookie, idHash := insertOIDCSession(t, srv, domain.WebSession{
 		Username:            "alice",
 		IdpSub:              fakeIdPSub,
 		RefreshToken:        "rt-1",
@@ -587,7 +588,7 @@ func TestSession_AbsoluteExpiryEnforced(t *testing.T) {
 	f := newFakeIdP(t)
 	srv, store := oidcFlowServer(t, f, nil)
 
-	cookie, idHash := insertOIDCSession(t, srv, repository.WebSession{
+	cookie, idHash := insertOIDCSession(t, srv, domain.WebSession{
 		Username:          "alice",
 		IdpSub:            fakeIdPSub,
 		AccessToken:       "at",
@@ -626,13 +627,13 @@ func TestBackchannelLogout_BySid(t *testing.T) {
 	f := newFakeIdP(t)
 	srv, store := oidcFlowServer(t, f, nil)
 
-	_, idHash := insertOIDCSession(t, srv, repository.WebSession{
+	_, idHash := insertOIDCSession(t, srv, domain.WebSession{
 		Username: "alice", IdpSub: fakeIdPSub, IdpSid: fakeIdPSid,
 		AccessToken: "at", RefreshToken: "rt",
 		AccessExpiresAt: time.Now().Add(10 * time.Minute).Unix(),
 	})
 	// A session for another sid must survive.
-	_, otherHash := insertOIDCSession(t, srv, repository.WebSession{
+	_, otherHash := insertOIDCSession(t, srv, domain.WebSession{
 		Username: "bob", IdpSub: "other-sub", IdpSid: "other-sid",
 		AccessToken: "at2", RefreshToken: "rt2",
 		AccessExpiresAt: time.Now().Add(10 * time.Minute).Unix(),
@@ -658,11 +659,11 @@ func TestBackchannelLogout_BySubWhenNoSid(t *testing.T) {
 	srv, store := oidcFlowServer(t, f, nil)
 
 	// Two sessions for the same subject, different sids — both must die.
-	_, h1 := insertOIDCSession(t, srv, repository.WebSession{
+	_, h1 := insertOIDCSession(t, srv, domain.WebSession{
 		Username: "alice", IdpSub: fakeIdPSub, IdpSid: "sid-a",
 		AccessExpiresAt: time.Now().Add(10 * time.Minute).Unix(),
 	})
-	_, h2 := insertOIDCSession(t, srv, repository.WebSession{
+	_, h2 := insertOIDCSession(t, srv, domain.WebSession{
 		Username: "alice", IdpSub: fakeIdPSub, IdpSid: "sid-b",
 		AccessExpiresAt: time.Now().Add(10 * time.Minute).Unix(),
 	})
@@ -720,7 +721,7 @@ func TestLogout_OIDCSessionRevokesAndReturnsEndSessionURL(t *testing.T) {
 	srv, store := oidcFlowServer(t, f, nil)
 
 	idToken := f.idToken(t, "", nil)
-	cookie, idHash := insertOIDCSession(t, srv, repository.WebSession{
+	cookie, idHash := insertOIDCSession(t, srv, domain.WebSession{
 		Username: "alice", IdpSub: fakeIdPSub, IdpSid: fakeIdPSid,
 		IDToken: idToken, AccessToken: "at", RefreshToken: "rt-logout",
 		AccessExpiresAt: time.Now().Add(10 * time.Minute).Unix(),

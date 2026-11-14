@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/session"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 )
@@ -53,21 +53,21 @@ func resolveSessionID(sent string, in session.FingerprintInput) string {
 	return session.Fingerprint(in)
 }
 
-// ProcessRecord decodes and enriches a spool record into a repository.Event.
+// ProcessRecord decodes and enriches a spool record into a domain.Event.
 // It does not touch the database.
-func ProcessRecord(record spool.Record) (repository.Event, error) {
+func ProcessRecord(record spool.Record) (domain.Event, error) {
 	body, err := base64.StdEncoding.DecodeString(record.BodyBase64)
 	if err != nil {
-		return repository.Event{}, fmt.Errorf("decode body: %w", err)
+		return domain.Event{}, fmt.Errorf("decode body: %w", err)
 	}
 
 	var payload EventPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return repository.Event{}, fmt.Errorf("unmarshal payload: %w", err)
+		return domain.Event{}, fmt.Errorf("unmarshal payload: %w", err)
 	}
 
 	if payload.Name == "" {
-		return repository.Event{}, fmt.Errorf("event name is required")
+		return domain.Event{}, fmt.Errorf("event name is required")
 	}
 
 	occurredAt := payload.Timestamp
@@ -155,10 +155,10 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 
 	eventID, err := generateUUIDLocal()
 	if err != nil {
-		return repository.Event{}, fmt.Errorf("generate uuid: %w", err)
+		return domain.Event{}, fmt.Errorf("generate uuid: %w", err)
 	}
 
-	event := repository.Event{
+	event := domain.Event{
 		ID:             eventID,
 		SessionID:      sessionID,
 		UserIDHash:     userIDHash,
@@ -194,7 +194,7 @@ func ProcessRecord(record spool.Record) (repository.Event, error) {
 // PersistEvent stores the event, the session upsert and the session signals
 // in one transaction and skips an ingest_id that is already stored.
 type EventPersister interface {
-	PersistEvent(ctx context.Context, e repository.Event, sess repository.Session, signals *repository.SessionSignals) (bool, error)
+	PersistEvent(ctx context.Context, e domain.Event, sess domain.Session, signals *domain.SessionSignals) (bool, error)
 }
 
 // ErrNoProject means the event carries no project ID. events.project_id is
@@ -205,7 +205,7 @@ var ErrNoProject = errors.New("event has no project ID")
 
 // PersistEvent stores an event and upserts the associated session.
 // geo may be nil when geo collection is disabled or the database is unconfigured.
-func PersistEvent(ctx context.Context, store EventPersister, event repository.Event, geo *geoip.GeoResult) error {
+func PersistEvent(ctx context.Context, store EventPersister, event domain.Event, geo *geoip.GeoResult) error {
 	if event.ProjectID == "" {
 		return fmt.Errorf("%w (ingest_id %s, event %q)", ErrNoProject, event.IngestID, event.Name)
 	}
@@ -219,7 +219,7 @@ func PersistEvent(ctx context.Context, store EventPersister, event repository.Ev
 		event.CountryCode = geo.CountryCode
 	}
 
-	sess := repository.Session{
+	sess := domain.Session{
 		ID:          event.SessionID,
 		ProjectID:   event.ProjectID,
 		FirstSeenAt: event.OccurredAt,
@@ -246,7 +246,7 @@ func PersistEvent(ctx context.Context, store EventPersister, event repository.Ev
 		sess.ConnectionClass = geo.ConnectionClass
 	}
 	// Device/browser signals arrive on the first event of a session only.
-	var signals *repository.SessionSignals
+	var signals *domain.SessionSignals
 	if len(event.SessionSignalsRaw) > 0 {
 		parsed := parseSessionSignals(event.SessionSignalsRaw)
 		signals = &parsed
@@ -273,8 +273,8 @@ func PersistEvent(ctx context.Context, store EventPersister, event repository.Ev
 	return nil
 }
 
-func parseSessionSignals(raw map[string]any) repository.SessionSignals {
-	var s repository.SessionSignals
+func parseSessionSignals(raw map[string]any) domain.SessionSignals {
+	var s domain.SessionSignals
 	if v, ok := raw["screen_width"].(float64); ok {
 		n := int(v)
 		s.ScreenWidth = &n
@@ -307,7 +307,7 @@ func parseSessionSignals(raw map[string]any) repository.SessionSignals {
 
 // SafeProcess wraps ProcessRecord with a panic recovery so that a panicking
 // record does not crash the background worker goroutine.
-func SafeProcess(rec spool.Record) (event repository.Event, err error) {
+func SafeProcess(rec spool.Record) (event domain.Event, err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			slog.Error("worker panic", "ingest_id", rec.IngestID, "panic", fmt.Sprint(p))

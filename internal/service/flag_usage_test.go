@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func TestFlagUsageWindowIsExactlyThirtyUTCDays(t *testing.T) {
@@ -26,14 +26,14 @@ func TestBuildFlagUsageFoldsRowsAndMarksStale(t *testing.T) {
 	old := now.AddDate(0, 0, -60)
 	recent := now.AddDate(0, 0, -3)
 
-	flags := []repository.FeatureFlag{
+	flags := []domain.FeatureFlag{
 		{ID: "busy", FlagKey: "busy", Kind: "experiment", Status: "active", CreatedAt: old},
 		{ID: "quiet", FlagKey: "quiet", Kind: "experiment", Status: "active", CreatedAt: old},
 		{ID: "cfg", FlagKey: "cfg", Kind: "config", Status: "active", CreatedAt: old, LastEvaluatedAt: &recent},
 		{ID: "fresh", FlagKey: "fresh", Kind: "experiment", Status: "active", CreatedAt: recent},
 		{ID: "gone", FlagKey: "gone", Kind: "experiment", Status: "active", CreatedAt: old, LastEvaluatedAt: &old},
 	}
-	rows := []repository.FlagUsageRow{
+	rows := []domain.FlagUsageRow{
 		{FlagID: "busy", Day: "2026-10-15", Variant: "on", Count: 5},  // today: last daily slot, in 7d
 		{FlagID: "busy", Day: "2026-10-09", Variant: "off", Count: 2}, // 6 days ago: still in 7d
 		{FlagID: "busy", Day: "2026-10-08", Variant: "on", Count: 4},  // 7 days ago: 30d only

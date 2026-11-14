@@ -7,12 +7,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 func canonEvent(t *testing.T, s *repository.Store, projectID, session, pageView, env, name string, at time.Time) {
 	t.Helper()
-	require.NoError(t, s.InsertEvent(context.Background(), repository.Event{
+	require.NoError(t, s.InsertEvent(context.Background(), domain.Event{
 		ID: randomHex(t), ProjectID: projectID, SessionID: session, PageViewID: pageView,
 		Name: name, Environment: env, Properties: "{}", IngestID: "ingest-" + randomHex(t), OccurredAt: at,
 	}))
@@ -51,11 +52,11 @@ func TestAnalyzeCanonicalFunnel_ScopeSubsetEnvironmentAndExclusion(t *testing.T)
 	canonEvent(t, s, b.ID, "b1", "bpv1", "production", "view", at)
 	canonEvent(t, s, c.ID, "c1", "cpv1", "production", "view", at)
 
-	steps := []repository.CanonicalFunnelStep{
+	steps := []domain.CanonicalFunnelStep{
 		{StepOrder: 1, CanonicalKey: "page_view"},
 		{StepOrder: 2, CanonicalKey: "purchase"},
 	}
-	counts := func(res repository.CanonicalFunnelResult) []int64 {
+	counts := func(res domain.CanonicalFunnelResult) []int64 {
 		out := make([]int64, len(res.Steps))
 		for i, st := range res.Steps {
 			out[i] = st.Count
@@ -63,34 +64,34 @@ func TestAnalyzeCanonicalFunnel_ScopeSubsetEnvironmentAndExclusion(t *testing.T)
 		return out
 	}
 
-	sess, err := s.AnalyzeCanonicalFunnel(ctx, repository.CanonicalFunnel{Scope: "session", Steps: steps}, nil, from, to, nil)
+	sess, err := s.AnalyzeCanonicalFunnel(ctx, domain.CanonicalFunnel{Scope: "session", Steps: steps}, nil, from, to, nil)
 	require.NoError(t, err)
 	require.Equal(t, []int64{4, 1}, counts(sess), "session scope: s1,s2,s3 in A plus b1; one purchase")
 
-	pv, err := s.AnalyzeCanonicalFunnel(ctx, repository.CanonicalFunnel{Scope: "page_view", Steps: steps}, nil, from, to, nil)
+	pv, err := s.AnalyzeCanonicalFunnel(ctx, domain.CanonicalFunnel{Scope: "page_view", Steps: steps}, nil, from, to, nil)
 	require.NoError(t, err)
 	require.Equal(t, []int64{4, 1}, counts(pv), "page_view scope: pv1,pv2,pv3 in A plus bpv1; s3 has no page view id")
 
-	empty, err := s.AnalyzeCanonicalFunnel(ctx, repository.CanonicalFunnel{Scope: ""}, nil, from, to, nil)
+	empty, err := s.AnalyzeCanonicalFunnel(ctx, domain.CanonicalFunnel{Scope: ""}, nil, from, to, nil)
 	require.NoError(t, err)
 	require.Empty(t, empty.Steps)
 	require.Empty(t, empty.ByProject)
 
 	// Empty scope defaults to session.
-	def, err := s.AnalyzeCanonicalFunnel(ctx, repository.CanonicalFunnel{Steps: steps}, nil, from, to, nil)
+	def, err := s.AnalyzeCanonicalFunnel(ctx, domain.CanonicalFunnel{Steps: steps}, nil, from, to, nil)
 	require.NoError(t, err)
 	require.Equal(t, counts(sess), counts(def))
 
 	// A project subset keeps only the named projects.
-	only, err := s.AnalyzeCanonicalFunnel(ctx, repository.CanonicalFunnel{Scope: "session", Steps: steps}, []string{b.ID}, from, to, nil)
+	only, err := s.AnalyzeCanonicalFunnel(ctx, domain.CanonicalFunnel{Scope: "session", Steps: steps}, []string{b.ID}, from, to, nil)
 	require.NoError(t, err)
 	require.Equal(t, []int64{1, 0}, counts(only))
 	require.Len(t, only.ByProject, 1)
 	require.Equal(t, "B", only.ByProject[0].ProjectName)
 
 	// The environment rule narrows every step (and forces the sessions join).
-	prod, err := s.AnalyzeCanonicalFunnel(ctx, repository.CanonicalFunnel{Scope: "session", Steps: steps}, nil, from, to, nil,
-		repository.EnvironmentRule("production")...)
+	prod, err := s.AnalyzeCanonicalFunnel(ctx, domain.CanonicalFunnel{Scope: "session", Steps: steps}, nil, from, to, nil,
+		domain.EnvironmentRule("production")...)
 	require.NoError(t, err)
 	require.Equal(t, []int64{3, 1}, counts(prod), "staging session s2 is out")
 

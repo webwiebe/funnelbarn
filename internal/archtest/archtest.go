@@ -205,6 +205,26 @@ func baseRules() []*Rule {
 		},
 		{
 			From:          "internal/ports",
+			MustNotImport: "internal/repository",
+			Reason:        "ports are interfaces over the domain types; the repository implements them and the ports must not point back at it",
+		},
+		{
+			From:          "internal/api",
+			MustNotImport: "internal/repository",
+			Reason:        "HTTP handlers use domain types and ports; the repository is wired in cmd/funnelbarn",
+		},
+		{
+			From:          "internal/mcp",
+			MustNotImport: "internal/repository",
+			Reason:        "the MCP server uses domain types and ports; the repository is wired in cmd/funnelbarn",
+		},
+		{
+			From:          "internal/service",
+			MustNotImport: "internal/repository",
+			Reason:        "services use domain types and ports; the repository is wired in cmd/funnelbarn",
+		},
+		{
+			From:          "internal/ports",
 			MustNotImport: "internal/service",
 			Reason:        "ports are interfaces; they must not depend on service implementations",
 		},

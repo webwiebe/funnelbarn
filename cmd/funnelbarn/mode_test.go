@@ -13,6 +13,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -27,8 +28,8 @@ type readerWriterPair struct {
 	writer      command.Bus
 	readerStore *repository.Store
 	reader      *readerCommandBus
-	project     repository.Project
-	flag        repository.FeatureFlag
+	project     domain.Project
+	flag        domain.FeatureFlag
 }
 
 func newReaderWriterPair(t *testing.T) *readerWriterPair {
@@ -82,7 +83,7 @@ func TestReaderPublishesAndTheWriterApplies(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pair.reader.Submit(ctx, command.RecordEvaluation{Eval: repository.FlagEvaluation{
+	pair.reader.Submit(ctx, command.RecordEvaluation{Eval: domain.FlagEvaluation{
 		FlagID: pair.flag.ID, ProjectID: pair.project.ID, Variant: "on",
 	}})
 	readerHealth := service.NewProjectHealthService(service.HealthViaCommands{ProjectHealthRepo: pair.readerStore, Bus: pair.reader})
@@ -105,7 +106,7 @@ func TestReaderBuffersWhileValkeyIsDown(t *testing.T) {
 	defer cancel()
 
 	pair.mr.SetError("LOADING Valkey is down")
-	pair.reader.Submit(ctx, command.RecordEvaluation{Eval: repository.FlagEvaluation{
+	pair.reader.Submit(ctx, command.RecordEvaluation{Eval: domain.FlagEvaluation{
 		FlagID: pair.flag.ID, ProjectID: pair.project.ID, Variant: "on",
 	}})
 	pair.reader.Submit(ctx, command.MarkProjectHealth{ProjectID: pair.project.ID, Field: command.HealthSetupCalled})
@@ -143,7 +144,7 @@ func TestReaderQueuesDoNotConsume(t *testing.T) {
 	// Valkey down: the chunk is buffered and reported queued, so the
 	// recording service does not try to apply it on the read-only store.
 	mr.SetError("LOADING Valkey is down")
-	require.True(t, rq.Enqueue(ctx, service.ChunkMeta{Recording: repository.Recording{ID: "r1", ProjectID: "p1"}, ChunkIndex: 0}))
+	require.True(t, rq.Enqueue(ctx, service.ChunkMeta{Recording: domain.Recording{ID: "r1", ProjectID: "p1"}, ChunkIndex: 0}))
 	mr.SetError("")
 	rq.fallback.Forward(ctx)
 	require.False(t, rq.fallback.Failing())

@@ -5,7 +5,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -28,7 +28,7 @@ func (s *Server) handleListSegments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if segs == nil {
-		segs = []repository.Segment{}
+		segs = []domain.Segment{}
 	}
 	span.SetAttributes(attribute.Int("segments.count", len(segs)))
 	writeJSON(w, http.StatusOK, map[string]any{"segments": segs})
@@ -41,8 +41,8 @@ func (s *Server) handleCreateSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name  string                   `json:"name"`
-		Rules []repository.SegmentRule `json:"rules"`
+		Name  string               `json:"name"`
+		Rules []domain.SegmentRule `json:"rules"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid json", http.StatusBadRequest)
@@ -53,7 +53,7 @@ func (s *Server) handleCreateSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Rules == nil {
-		body.Rules = []repository.SegmentRule{}
+		body.Rules = []domain.SegmentRule{}
 	}
 
 	ctx, span := tracing.StartSpan(r.Context(), "segments.create",
@@ -93,15 +93,15 @@ func (s *Server) handleUpdateSegment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name  string                   `json:"name"`
-		Rules []repository.SegmentRule `json:"rules"`
+		Name  string               `json:"name"`
+		Rules []domain.SegmentRule `json:"rules"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonError(w, "invalid json", http.StatusBadRequest)
 		return
 	}
 	if body.Rules == nil {
-		body.Rules = []repository.SegmentRule{}
+		body.Rules = []domain.SegmentRule{}
 	}
 
 	ctx, span := tracing.StartSpan(r.Context(), "segments.update",

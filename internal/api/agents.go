@@ -6,7 +6,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/timerange"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
@@ -19,8 +19,8 @@ func (s *Server) registerAgentRoutes() {
 	if s.agents == nil {
 		return
 	}
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/agents/lead-times", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleAgentLeadTimes))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/agents/scoreboard", s.requireSessionOrToken(repository.APIKeyScopeAnalyticsRead, s.handleAgentScoreboard))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/agents/lead-times", s.requireSessionOrToken(domain.APIKeyScopeAnalyticsRead, s.handleAgentLeadTimes))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/agents/scoreboard", s.requireSessionOrToken(domain.APIKeyScopeAnalyticsRead, s.handleAgentScoreboard))
 }
 
 // handleAgentLeadTimes reports lead times over ?from/?to (or ?range),

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
@@ -18,7 +19,7 @@ func seedEvents(t *testing.T, store *repository.Store, projectID, name string, n
 	t.Helper()
 	now := time.Now().UTC()
 	for i := 0; i < n; i++ {
-		err := store.InsertEvent(context.Background(), repository.Event{
+		err := store.InsertEvent(context.Background(), domain.Event{
 			ID:         fmt.Sprintf("ev-%s-%s-%d", projectID, name, i),
 			ProjectID:  projectID,
 			SessionID:  fmt.Sprintf("sess-%s-%d", name, i),
@@ -42,15 +43,15 @@ func TestAnalyticsToken_ReadsTheRoutesAReadoutNeeds(t *testing.T) {
 	p, _ := store.CreateProject(ctx, "Professionals", "professionals")
 	seedEvents(t, store, p.ID, "first_run_started", 5)
 	seedEvents(t, store, p.ID, "first_run_completed", 2)
-	f, _ := store.CreateFunnel(ctx, repository.Funnel{
+	f, _ := store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "First run",
-		Steps: []repository.FunnelStep{
+		Steps: []domain.FunnelStep{
 			{EventName: "first_run_started"},
 			{EventName: "first_run_completed"},
 		},
 	})
-	key := scopedKey(t, store, p.ID, "readout-key", repository.APIKeyScopeAnalyticsRead)
+	key := scopedKey(t, store, p.ID, "readout-key", domain.APIKeyScopeAnalyticsRead)
 
 	for _, path := range []string{
 		"/api/v1/projects",
@@ -75,14 +76,14 @@ func TestAnalyticsToken_ProjectListIsNarrowedToTheToken(t *testing.T) {
 	ctx := context.Background()
 	mine, _ := store.CreateProject(ctx, "Mine", "mine")
 	other, _ := store.CreateProject(ctx, "Someone Else", "someone-else")
-	key := scopedKey(t, store, mine.ID, "readout-key", repository.APIKeyScopeAnalyticsRead)
+	key := scopedKey(t, store, mine.ID, "readout-key", domain.APIKeyScopeAnalyticsRead)
 
 	w := withKey(t, srv, http.MethodGet, "/api/v1/projects", key, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d (body: %s)", w.Code, w.Body.String())
 	}
 	var resp struct {
-		Projects []repository.Project `json:"projects"`
+		Projects []domain.Project `json:"projects"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -100,7 +101,7 @@ func TestAnalyticsToken_ProjectListIsNarrowedToTheToken(t *testing.T) {
 	sw := httptest.NewRecorder()
 	srv.ServeHTTP(sw, req)
 	var all struct {
-		Projects []repository.Project `json:"projects"`
+		Projects []domain.Project `json:"projects"`
 	}
 	_ = json.Unmarshal(sw.Body.Bytes(), &all)
 	if len(all.Projects) != 2 {
@@ -117,7 +118,7 @@ func TestAnalyticsToken_CannotWriteOrTouchFlags(t *testing.T) {
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "P", "p")
 	flag := seedFlag(t, store, p.ID, "outbound_email")
-	key := scopedKey(t, store, p.ID, "readout-key", repository.APIKeyScopeAnalyticsRead)
+	key := scopedKey(t, store, p.ID, "readout-key", domain.APIKeyScopeAnalyticsRead)
 
 	// Flags are a different scope entirely — reading analytics grants nothing there.
 	if w := withKey(t, srv, http.MethodGet, "/api/v1/projects/"+p.ID+"/flags", key, nil); w.Code != http.StatusForbidden {
@@ -144,7 +145,7 @@ func TestAnalyticsToken_CannotReadAnotherProject(t *testing.T) {
 	mine, _ := store.CreateProject(ctx, "Mine", "mine")
 	other, _ := store.CreateProject(ctx, "Other", "other")
 	seedEvents(t, store, other.ID, "secret_event", 3)
-	key := scopedKey(t, store, mine.ID, "readout-key", repository.APIKeyScopeAnalyticsRead)
+	key := scopedKey(t, store, mine.ID, "readout-key", domain.APIKeyScopeAnalyticsRead)
 
 	w := withKey(t, srv, http.MethodGet, "/api/v1/projects/"+other.ID+"/event-counts", key, nil)
 	if w.Code != http.StatusForbidden {
@@ -157,7 +158,7 @@ func TestAnalyticsToken_CannotReadAnotherProject(t *testing.T) {
 func TestAnalyticsToken_IngestScopeCannotRead(t *testing.T) {
 	srv, store := newFlagTokenServer(t)
 	p, _ := store.CreateProject(context.Background(), "P", "p")
-	key := scopedKey(t, store, p.ID, "ingest-key", repository.APIKeyScopeIngest)
+	key := scopedKey(t, store, p.ID, "ingest-key", domain.APIKeyScopeIngest)
 
 	if w := withKey(t, srv, http.MethodGet, "/api/v1/projects/"+p.ID+"/event-counts", key, nil); w.Code != http.StatusForbidden {
 		t.Errorf("want 403, got %d (body: %s)", w.Code, w.Body.String())
@@ -184,12 +185,12 @@ func TestAnalyticsToken_GlobalKeyIsRefused(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 type eventCountsResponse struct {
-	ProjectID   string                     `json:"project_id"`
-	From        string                     `json:"from"`
-	To          string                     `json:"to"`
-	Limit       int                        `json:"limit"`
-	Events      []repository.EventNameStat `json:"events"`
-	TotalEvents int64                      `json:"total_events"`
+	ProjectID   string                 `json:"project_id"`
+	From        string                 `json:"from"`
+	To          string                 `json:"to"`
+	Limit       int                    `json:"limit"`
+	Events      []domain.EventNameStat `json:"events"`
+	TotalEvents int64                  `json:"total_events"`
 }
 
 func TestEventCounts_CountsPerNameOverRange(t *testing.T) {
@@ -197,7 +198,7 @@ func TestEventCounts_CountsPerNameOverRange(t *testing.T) {
 	p, _ := store.CreateProject(context.Background(), "P", "p")
 	seedEvents(t, store, p.ID, "first_run_started", 5)
 	seedEvents(t, store, p.ID, "first_run_completed", 2)
-	key := scopedKey(t, store, p.ID, "readout-key", repository.APIKeyScopeAnalyticsRead)
+	key := scopedKey(t, store, p.ID, "readout-key", domain.APIKeyScopeAnalyticsRead)
 
 	w := withKey(t, srv, http.MethodGet, "/api/v1/projects/"+p.ID+"/event-counts?range=24h", key, nil)
 	if w.Code != http.StatusOK {
@@ -228,7 +229,7 @@ func TestEventCounts_EmptyWindowIsAnEmptyList(t *testing.T) {
 	srv, store := newFlagTokenServer(t)
 	p, _ := store.CreateProject(context.Background(), "P", "p")
 	seedEvents(t, store, p.ID, "signup", 3)
-	key := scopedKey(t, store, p.ID, "readout-key", repository.APIKeyScopeAnalyticsRead)
+	key := scopedKey(t, store, p.ID, "readout-key", domain.APIKeyScopeAnalyticsRead)
 
 	old := time.Now().UTC().AddDate(-1, 0, 0)
 	path := fmt.Sprintf("/api/v1/projects/%s/event-counts?from=%s&to=%s",
@@ -256,7 +257,7 @@ func jsonHasEmptyEvents(t *testing.T, body string) bool {
 func TestEventCounts_RejectsUnparseableRange(t *testing.T) {
 	srv, store := newFlagTokenServer(t)
 	p, _ := store.CreateProject(context.Background(), "P", "p")
-	key := scopedKey(t, store, p.ID, "readout-key", repository.APIKeyScopeAnalyticsRead)
+	key := scopedKey(t, store, p.ID, "readout-key", domain.APIKeyScopeAnalyticsRead)
 
 	for _, q := range []string{
 		"?range=90d",
@@ -298,7 +299,7 @@ func TestCreateAPIKey_AcceptsAnalyticsReadScope(t *testing.T) {
 	cookie, csrf := sessionAndCSRF(t, srv, "u")
 
 	w := postJSONWithCSRF(t, srv, "/api/v1/apikeys", map[string]any{
-		"project_id": p.ID, "name": "weekly readout", "scope": repository.APIKeyScopeAnalyticsRead,
+		"project_id": p.ID, "name": "weekly readout", "scope": domain.APIKeyScopeAnalyticsRead,
 	}, cookie, csrf)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d (body: %s)", w.Code, w.Body.String())
@@ -306,7 +307,7 @@ func TestCreateAPIKey_AcceptsAnalyticsReadScope(t *testing.T) {
 	var body map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &body)
 	apiKey, _ := body["api_key"].(map[string]any)
-	if apiKey["scope"] != repository.APIKeyScopeAnalyticsRead {
-		t.Errorf("scope: want %s, got %v", repository.APIKeyScopeAnalyticsRead, apiKey["scope"])
+	if apiKey["scope"] != domain.APIKeyScopeAnalyticsRead {
+		t.Errorf("scope: want %s, got %v", domain.APIKeyScopeAnalyticsRead, apiKey["scope"])
 	}
 }

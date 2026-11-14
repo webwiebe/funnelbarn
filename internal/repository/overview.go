@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // This file holds cross-project ("instance-wide") analytics queries. Unlike the
@@ -11,15 +13,8 @@ import (
 // carry project_id in the result so the UI can attribute each row and drill down.
 // The shared WHERE clause matches events.go: occurred_at range + optional env.
 
-// ProjectRollup is a per-project summary row for the overview dashboard.
-type ProjectRollup struct {
-	ProjectID      string `json:"project_id"`
-	Events         int64  `json:"events"`
-	UniqueSessions int64  `json:"unique_sessions"`
-}
-
 // ProjectRollups returns one summary row per project that has events in range.
-func (s *ReadStore) ProjectRollups(ctx context.Context, from, to time.Time, env string) ([]ProjectRollup, error) {
+func (s *ReadStore) ProjectRollups(ctx context.Context, from, to time.Time, env string) ([]domain.ProjectRollup, error) {
 	const q = `
 		SELECT project_id, COUNT(*) AS events, COUNT(DISTINCT session_id) AS sessions
 		FROM events
@@ -32,9 +27,9 @@ func (s *ReadStore) ProjectRollups(ctx context.Context, from, to time.Time, env 
 	}
 	defer rows.Close()
 
-	var out []ProjectRollup
+	var out []domain.ProjectRollup
 	for rows.Next() {
-		var r ProjectRollup
+		var r domain.ProjectRollup
 		if err := rows.Scan(&r.ProjectID, &r.Events, &r.UniqueSessions); err != nil {
 			return nil, err
 		}
@@ -53,18 +48,9 @@ func (s *ReadStore) OverviewTotals(ctx context.Context, from, to time.Time, env 
 	return events, sessions, err
 }
 
-// ProjectDayCount is a (bucket, project) unique-session count for the per-site
-// chart. Day holds "YYYY-MM-DD" for daily buckets and "YYYY-MM-DDTHH:00:00Z"
-// for hourly buckets.
-type ProjectDayCount struct {
-	Day       string `json:"day"`
-	ProjectID string `json:"project_id"`
-	Count     int64  `json:"count"`
-}
-
 // OverviewVisitorsByProject returns unique sessions grouped by project and time
 // bucket (hourly or daily), feeding the "visitors per site" multi-line chart.
-func (s *ReadStore) OverviewVisitorsByProject(ctx context.Context, from, to time.Time, env string, hourly bool) ([]ProjectDayCount, error) {
+func (s *ReadStore) OverviewVisitorsByProject(ctx context.Context, from, to time.Time, env string, hourly bool) ([]domain.ProjectDayCount, error) {
 	bucket := `substr(occurred_at, 1, 10)`
 	if hourly {
 		bucket = `replace(substr(occurred_at, 1, 13), ' ', 'T') || ':00:00Z'`
@@ -81,9 +67,9 @@ func (s *ReadStore) OverviewVisitorsByProject(ctx context.Context, from, to time
 	}
 	defer rows.Close()
 
-	var out []ProjectDayCount
+	var out []domain.ProjectDayCount
 	for rows.Next() {
-		var p ProjectDayCount
+		var p domain.ProjectDayCount
 		if err := rows.Scan(&p.Day, &p.ProjectID, &p.Count); err != nil {
 			return nil, err
 		}
@@ -92,16 +78,9 @@ func (s *ReadStore) OverviewVisitorsByProject(ctx context.Context, from, to time
 	return out, rows.Err()
 }
 
-// OverviewPageStat is a top page attributed to its project.
-type OverviewPageStat struct {
-	ProjectID string `json:"project_id"`
-	URL       string `json:"url"`
-	Views     int64  `json:"views"`
-}
-
 // OverviewTopPages returns the most-viewed pages across all projects, each row
 // attributed to its project for drill-down.
-func (s *ReadStore) OverviewTopPages(ctx context.Context, from, to time.Time, limit int, env string) ([]OverviewPageStat, error) {
+func (s *ReadStore) OverviewTopPages(ctx context.Context, from, to time.Time, limit int, env string) ([]domain.OverviewPageStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -118,9 +97,9 @@ func (s *ReadStore) OverviewTopPages(ctx context.Context, from, to time.Time, li
 	}
 	defer rows.Close()
 
-	var out []OverviewPageStat
+	var out []domain.OverviewPageStat
 	for rows.Next() {
-		var p OverviewPageStat
+		var p domain.OverviewPageStat
 		if err := rows.Scan(&p.ProjectID, &p.URL, &p.Views); err != nil {
 			return nil, err
 		}
@@ -129,16 +108,9 @@ func (s *ReadStore) OverviewTopPages(ctx context.Context, from, to time.Time, li
 	return out, rows.Err()
 }
 
-// OverviewReferrerStat is a top referrer attributed to its project.
-type OverviewReferrerStat struct {
-	ProjectID string `json:"project_id"`
-	Domain    string `json:"domain"`
-	Visits    int64  `json:"visits"`
-}
-
 // OverviewTopReferrers returns the most common referrer domains across all
 // projects, attributed to project for drill-down.
-func (s *ReadStore) OverviewTopReferrers(ctx context.Context, from, to time.Time, limit int, env string) ([]OverviewReferrerStat, error) {
+func (s *ReadStore) OverviewTopReferrers(ctx context.Context, from, to time.Time, limit int, env string) ([]domain.OverviewReferrerStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -155,9 +127,9 @@ func (s *ReadStore) OverviewTopReferrers(ctx context.Context, from, to time.Time
 	}
 	defer rows.Close()
 
-	var out []OverviewReferrerStat
+	var out []domain.OverviewReferrerStat
 	for rows.Next() {
-		var r OverviewReferrerStat
+		var r domain.OverviewReferrerStat
 		if err := rows.Scan(&r.ProjectID, &r.Domain, &r.Visits); err != nil {
 			return nil, err
 		}
@@ -166,15 +138,8 @@ func (s *ReadStore) OverviewTopReferrers(ctx context.Context, from, to time.Time
 	return out, rows.Err()
 }
 
-// OverviewCountryStat is a top country attributed to its project.
-type OverviewCountryStat struct {
-	ProjectID   string `json:"project_id"`
-	CountryCode string `json:"country_code"`
-	Count       int64  `json:"count"`
-}
-
 // OverviewTopCountries returns visitor counts by country across all projects.
-func (s *ReadStore) OverviewTopCountries(ctx context.Context, from, to time.Time, limit int, env string) ([]OverviewCountryStat, error) {
+func (s *ReadStore) OverviewTopCountries(ctx context.Context, from, to time.Time, limit int, env string) ([]domain.OverviewCountryStat, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -191,9 +156,9 @@ func (s *ReadStore) OverviewTopCountries(ctx context.Context, from, to time.Time
 	}
 	defer rows.Close()
 
-	var out []OverviewCountryStat
+	var out []domain.OverviewCountryStat
 	for rows.Next() {
-		var c OverviewCountryStat
+		var c domain.OverviewCountryStat
 		if err := rows.Scan(&c.ProjectID, &c.CountryCode, &c.Count); err != nil {
 			return nil, err
 		}
@@ -213,16 +178,10 @@ var overviewDimensionColumns = map[string]string{
 	"utm_source":      "utm_source",
 }
 
-// DimensionStat is a single value+count for a dimension breakdown.
-type DimensionStat struct {
-	Value string `json:"value"`
-	Count int64  `json:"count"`
-}
-
 // OverviewDimensionBreakdown returns instance-wide counts grouped by one
 // whitelisted dimension (device/country/browser/os/referrer/utm_source),
 // powering the "visitors per type" view. Unknown dimensions return nil.
-func (s *ReadStore) OverviewDimensionBreakdown(ctx context.Context, dimension string, from, to time.Time, limit int, env string) ([]DimensionStat, error) {
+func (s *ReadStore) OverviewDimensionBreakdown(ctx context.Context, dimension string, from, to time.Time, limit int, env string) ([]domain.DimensionStat, error) {
 	col, ok := overviewDimensionColumns[dimension]
 	if !ok {
 		return nil, fmt.Errorf("unsupported dimension %q", dimension)
@@ -243,9 +202,9 @@ func (s *ReadStore) OverviewDimensionBreakdown(ctx context.Context, dimension st
 	}
 	defer rows.Close()
 
-	var out []DimensionStat
+	var out []domain.DimensionStat
 	for rows.Next() {
-		var d DimensionStat
+		var d domain.DimensionStat
 		if err := rows.Scan(&d.Value, &d.Count); err != nil {
 			return nil, err
 		}
@@ -254,20 +213,9 @@ func (s *ReadStore) OverviewDimensionBreakdown(ctx context.Context, dimension st
 	return out, rows.Err()
 }
 
-// EventFilter narrows a cross-project event listing. Empty fields are ignored.
-type EventFilter struct {
-	ProjectID   string
-	Name        string
-	Environment string
-	// Keyset cursor: return rows strictly older than (CursorOccurredAt, CursorID).
-	// Zero time means "from the newest".
-	CursorOccurredAt time.Time
-	CursorID         string
-}
-
 // ListAllEvents returns events across all projects, newest first, using keyset
 // pagination on (occurred_at, id) so deep pages don't degrade into full scans.
-func (s *ReadStore) ListAllEvents(ctx context.Context, f EventFilter, limit int) ([]Event, error) {
+func (s *ReadStore) ListAllEvents(ctx context.Context, f domain.EventFilter, limit int) ([]domain.Event, error) {
 	if limit <= 0 {
 		limit = 50
 	}

@@ -6,7 +6,6 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // APIKeyService handles API key business logic.
@@ -19,15 +18,15 @@ func NewAPIKeyService(store ports.APIKeyRepo) *APIKeyService {
 	return &APIKeyService{store: store}
 }
 
-func (svc *APIKeyService) CreateAPIKey(ctx context.Context, name, projectID, keySHA256, scope string) (repository.APIKey, error) {
+func (svc *APIKeyService) CreateAPIKey(ctx context.Context, name, projectID, keySHA256, scope string) (domain.APIKey, error) {
 	if strings.TrimSpace(name) == "" {
-		return repository.APIKey{}, &domain.ValidationError{Field: "name", Message: "required"}
+		return domain.APIKey{}, &domain.ValidationError{Field: "name", Message: "required"}
 	}
 	if strings.TrimSpace(projectID) == "" {
-		return repository.APIKey{}, &domain.ValidationError{Field: "project_id", Message: "required"}
+		return domain.APIKey{}, &domain.ValidationError{Field: "project_id", Message: "required"}
 	}
 	if !validAPIKeyScope(scope) {
-		return repository.APIKey{}, &domain.ValidationError{
+		return domain.APIKey{}, &domain.ValidationError{
 			Field:   "scope",
 			Message: `must be one of "full", "ingest", "analytics:read", "flags:read", "flags:write"`,
 		}
@@ -39,21 +38,21 @@ func (svc *APIKeyService) CreateAPIKey(ctx context.Context, name, projectID, key
 // refused outright rather than stored and silently treated as no access.
 func validAPIKeyScope(scope string) bool {
 	switch scope {
-	case repository.APIKeyScopeFull,
-		repository.APIKeyScopeIngest,
-		repository.APIKeyScopeAnalyticsRead,
-		repository.APIKeyScopeFlagsRead,
-		repository.APIKeyScopeFlagsWrite:
+	case domain.APIKeyScopeFull,
+		domain.APIKeyScopeIngest,
+		domain.APIKeyScopeAnalyticsRead,
+		domain.APIKeyScopeFlagsRead,
+		domain.APIKeyScopeFlagsWrite:
 		return true
 	}
 	return false
 }
 
-func (svc *APIKeyService) ListAPIKeys(ctx context.Context, projectID string) ([]repository.APIKey, error) {
+func (svc *APIKeyService) ListAPIKeys(ctx context.Context, projectID string) ([]domain.APIKey, error) {
 	return svc.store.ListAPIKeys(ctx, projectID)
 }
 
-func (svc *APIKeyService) ListAllAPIKeys(ctx context.Context) ([]repository.APIKey, error) {
+func (svc *APIKeyService) ListAllAPIKeys(ctx context.Context) ([]domain.APIKey, error) {
 	return svc.store.ListAllAPIKeys(ctx)
 }
 

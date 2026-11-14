@@ -9,6 +9,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -34,7 +35,7 @@ type Applier struct {
 //
 // The error says what the caller should do with the record:
 //   - nil: stored, or skipped as a duplicate.
-//   - wraps repository.ErrProjectUnresolvable: it can never apply; dead-letter
+//   - wraps domain.ErrProjectUnresolvable: it can never apply; dead-letter
 //     it now instead of retrying.
 //   - wraps errProcessRecord, or any other error: retry it.
 func (a *Applier) apply(ctx context.Context, record spool.Record, geoEnabled bool) error {
@@ -59,7 +60,7 @@ func (a *Applier) apply(ctx context.Context, record spool.Record, geoEnabled boo
 	switch {
 	case projectErr == nil:
 		event.ProjectID = projectID
-	case errors.Is(projectErr, repository.ErrProjectUnresolvable):
+	case errors.Is(projectErr, domain.ErrProjectUnresolvable):
 		// Unrecoverable: retrying an insert that must fail the
 		// project_id foreign key only burns attempts.
 		tracing.RecordError(span, projectErr)
@@ -121,7 +122,7 @@ func (a *Applier) applyEntries(ctx context.Context, spoolDir string, entries []s
 		record := entry.Record
 
 		err := a.apply(ctx, record, geoEnabled)
-		if errors.Is(err, repository.ErrProjectUnresolvable) {
+		if errors.Is(err, domain.ErrProjectUnresolvable) {
 			delete(retryCounts, record.IngestID)
 			offset = deadLetterRecord(spoolDir, record, entry.EndOffset, "unresolved_project")
 			continue
@@ -162,11 +163,11 @@ func (a *Applier) applyEntries(ctx context.Context, spoolDir string, entries []s
 
 // resolveEventProject looks up the project a spool record belongs to. A record
 // with no slug, or one whose slug can never resolve, comes back wrapped in
-// repository.ErrProjectUnresolvable: events.project_id is NOT NULL REFERENCES
+// domain.ErrProjectUnresolvable: events.project_id is NOT NULL REFERENCES
 // projects(id), so persisting it could only ever fail the foreign key.
 func resolveEventProject(ctx context.Context, store *repository.Store, slug string) (string, error) {
 	if slug == "" {
-		return "", fmt.Errorf("%w: spool record carries no project slug", repository.ErrProjectUnresolvable)
+		return "", fmt.Errorf("%w: spool record carries no project slug", domain.ErrProjectUnresolvable)
 	}
 	proj, err := store.EnsureProject(ctx, slug)
 	if err != nil {

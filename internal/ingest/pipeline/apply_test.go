@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
@@ -62,7 +63,7 @@ func TestIngestApply_NoSlugIsUnresolvable(t *testing.T) {
 	rec := applyRecord("ing-apply-2", "", `{"name":"pageview","url":"https://example.com/"}`)
 
 	err := a.apply(context.Background(), rec, false)
-	if !errors.Is(err, repository.ErrProjectUnresolvable) {
+	if !errors.Is(err, domain.ErrProjectUnresolvable) {
 		t.Fatalf("err = %v, want ErrProjectUnresolvable", err)
 	}
 	if n := countEvents(t, store, "ing-apply-2"); n != 0 {
@@ -79,14 +80,14 @@ func TestIngestApply_BadPayloadIsAProcessError(t *testing.T) {
 	if !errors.Is(err, errProcessRecord) {
 		t.Fatalf("err = %v, want errProcessRecord", err)
 	}
-	if errors.Is(err, repository.ErrProjectUnresolvable) {
+	if errors.Is(err, domain.ErrProjectUnresolvable) {
 		t.Error("a process error must be retried, not dead-lettered as unresolvable")
 	}
 }
 
 func TestResolveEventProject_EmptySlugIsUnresolvable(t *testing.T) {
 	_, err := resolveEventProject(context.Background(), nil, "")
-	if !errors.Is(err, repository.ErrProjectUnresolvable) {
+	if !errors.Is(err, domain.ErrProjectUnresolvable) {
 		t.Fatalf("got %v, want ErrProjectUnresolvable", err)
 	}
 }

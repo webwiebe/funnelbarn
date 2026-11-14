@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -139,7 +139,7 @@ func TestRecordingService_IngestChunk_RedactsSensitiveURLParams(t *testing.T) {
 		StartedAt:   time.Now().UTC().Truncate(time.Second),
 		DurationMs:  1000,
 		PageURL:     "https://id.example.com/verify?token=one-time&lang=nl",
-		Traces: []repository.TraceLink{{
+		Traces: []domain.TraceLink{{
 			TraceID:    "4bf92f3577b34da6a3ce929d0e0e4736",
 			URL:        "https://api.example.com/session?code=abc",
 			OccurredAt: time.Now().UTC().Truncate(time.Second),
@@ -446,7 +446,7 @@ func TestRecordingService_PurgeOldRecordings(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	// Ingest an "old" recording (timestamp is in the past; we'll fake created_at via direct insert).
-	oldRec := repository.Recording{
+	oldRec := domain.Recording{
 		ID:         "rec-purge-old",
 		ProjectID:  p.ID,
 		SessionID:  "sess-purge",
@@ -500,7 +500,7 @@ func TestRecordingService_ListRecordings(t *testing.T) {
 	}
 	require.NoError(t, svc.IngestChunk(ctx, chunk))
 
-	recs, err := svc.ListRecordings(ctx, p.ID, repository.RecordingListOpts{Limit: 10})
+	recs, err := svc.ListRecordings(ctx, p.ID, domain.RecordingListOpts{Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, recs, 1)
 	assert.Equal(t, "rec-list-001", recs[0].ID)
@@ -550,7 +550,7 @@ func TestRecordingService_FlagEvaluationsForSession(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a flag in the real store.
-	flag, err := store.CreateFlag(ctx, repository.FeatureFlag{
+	flag, err := store.CreateFlag(ctx, domain.FeatureFlag{
 		ProjectID:      p.ID,
 		FlagKey:        "my-flag",
 		Name:           "My Flag",
@@ -564,7 +564,7 @@ func TestRecordingService_FlagEvaluationsForSession(t *testing.T) {
 	require.NoError(t, err)
 
 	// Record an evaluation tied to a session.
-	require.NoError(t, store.RecordEvaluation(ctx, repository.FlagEvaluation{
+	require.NoError(t, store.RecordEvaluation(ctx, domain.FlagEvaluation{
 		ID:          "eval-001",
 		FlagID:      flag.ID,
 		ProjectID:   p.ID,
@@ -649,7 +649,7 @@ func TestRecordingService_PurgeBotRecordings(t *testing.T) {
 	// have to be seeded directly.
 	ended := now.Add(time.Second)
 	for _, id := range []string{"rec-bot-a", "rec-bot-b"} {
-		require.NoError(t, store.UpsertRecording(ctx, repository.Recording{
+		require.NoError(t, store.UpsertRecording(ctx, domain.Recording{
 			ID: id, ProjectID: p.ID, SessionID: "sess-" + id,
 			FirstChunkIndex: 0, LastChunkIndex: 1, ChunkCount: 2,
 			HasSnapshot: true, DurationMs: 1000,
@@ -660,7 +660,7 @@ func TestRecordingService_PurgeBotRecordings(t *testing.T) {
 		require.NoError(t, storage.Put(ctx, "recordings/"+p.ID+"/"+id+"/00000.json.gz", []byte("chunk-0")))
 		require.NoError(t, storage.Put(ctx, "recordings/"+p.ID+"/"+id+"/00001.json.gz", []byte("chunk-1")))
 	}
-	require.NoError(t, store.InsertTraceLinks(ctx, p.ID, "sess-rec-bot-a", "rec-bot-a", []repository.TraceLink{
+	require.NoError(t, store.InsertTraceLinks(ctx, p.ID, "sess-rec-bot-a", "rec-bot-a", []domain.TraceLink{
 		{TraceID: "trace-bot-a", SpanID: "span-1", URL: "https://example.com", OccurredAt: now},
 	}))
 

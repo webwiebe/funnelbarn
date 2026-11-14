@@ -11,14 +11,14 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
-type fakeProjects []repository.Project
+type fakeProjects []domain.Project
 
-func (f fakeProjects) ListProjects(context.Context) ([]repository.Project, error) { return f, nil }
+func (f fakeProjects) ListProjects(context.Context) ([]domain.Project, error) { return f, nil }
 
 type fakeScanner map[string]service.ChunkURLScan
 

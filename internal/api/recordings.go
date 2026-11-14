@@ -12,7 +12,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
@@ -190,8 +189,8 @@ func isValidStorageID(s string) bool {
 // parseRecordingListOpts reads the recordings list filters. limit defaults to
 // 50 and offset to 0; a value that is not a number, or out of range (limit 1 to
 // 500, offset from 0), keeps the default. session_ids is a comma-separated list.
-func parseRecordingListOpts(q url.Values) repository.RecordingListOpts {
-	opts := repository.RecordingListOpts{
+func parseRecordingListOpts(q url.Values) domain.RecordingListOpts {
+	opts := domain.RecordingListOpts{
 		Limit:       50,
 		Environment: q.Get("environment"),
 		DeviceType:  q.Get("device_type"),
@@ -233,7 +232,7 @@ func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if recordings == nil {
-		recordings = []repository.Recording{}
+		recordings = []domain.Recording{}
 	}
 	span.SetAttributes(attribute.Int("recordings.count", len(recordings)))
 	addPaginationHeaders(w, r, limit, offset, len(recordings))
@@ -299,7 +298,7 @@ func (s *Server) handleGetRecordingFlags(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if evals == nil {
-		evals = []repository.FlagEvaluationEntry{}
+		evals = []domain.FlagEvaluationEntry{}
 	}
 	span.SetAttributes(attribute.Int("evaluations.count", len(evals)))
 	writeJSON(w, http.StatusOK, map[string]any{"evaluations": evals})
@@ -314,7 +313,7 @@ func (s *Server) fullScopeProject(w http.ResponseWriter, r *http.Request) (strin
 		jsonError(w, "unauthorized", http.StatusUnauthorized)
 		return "", false
 	}
-	if scope != repository.APIKeyScopeFull {
+	if scope != domain.APIKeyScopeFull {
 		jsonError(w, "forbidden: full-scope API key required", http.StatusForbidden)
 		return "", false
 	}
@@ -396,7 +395,7 @@ func (s *Server) handleGetRecordingTraces(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if traces == nil {
-		traces = []repository.TraceLink{}
+		traces = []domain.TraceLink{}
 	}
 	span.SetAttributes(attribute.Int("traces.count", len(traces)))
 	writeJSON(w, http.StatusOK, map[string]any{"traces": traces})

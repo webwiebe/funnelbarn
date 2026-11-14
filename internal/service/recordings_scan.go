@@ -12,8 +12,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 // ChunkURLScan counts, for one project, the stored chunks whose rrweb events
@@ -98,7 +98,7 @@ func (svc *RecordingService) ScanChunkURLs(ctx context.Context, projectID string
 	}
 	defer out.finishShapes()
 	for offset := 0; ; offset += batch {
-		recs, err := svc.store.ListRecordings(ctx, projectID, repository.RecordingListOpts{Limit: batch, Offset: offset})
+		recs, err := svc.store.ListRecordings(ctx, projectID, domain.RecordingListOpts{Limit: batch, Offset: offset})
 		if err != nil {
 			return out, fmt.Errorf("recordings: list for chunk scan: %w", err)
 		}
@@ -114,7 +114,7 @@ func (svc *RecordingService) ScanChunkURLs(ctx context.Context, projectID string
 }
 
 // scanRecording adds one recording's chunks to out.
-func (svc *RecordingService) scanRecording(ctx context.Context, rec repository.Recording, opts ChunkScanOpts, out *ChunkURLScan) error {
+func (svc *RecordingService) scanRecording(ctx context.Context, rec domain.Recording, opts ChunkScanOpts, out *ChunkURLScan) error {
 	out.Recordings++
 	upper := rec.LastChunkIndex
 	if upper < rec.ChunkCount-1 {

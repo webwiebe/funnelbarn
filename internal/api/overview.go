@@ -8,7 +8,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/timerange"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
@@ -76,7 +76,7 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	)
 
 	// Optional dimension breakdown for the "per type" view.
-	var dimension []repository.DimensionStat
+	var dimension []domain.DimensionStat
 	if dim := r.URL.Query().Get("dimension"); dim != "" {
 		span.SetAttributes(attribute.String("overview.dimension", dim))
 		dimension, err = s.overview.OverviewDimensionBreakdown(ctx, dim, from, to, 10, env)
@@ -109,7 +109,7 @@ func (s *Server) handleOverviewEvents(w http.ResponseWriter, r *http.Request) {
 			limit = n
 		}
 	}
-	f := repository.EventFilter{
+	f := domain.EventFilter{
 		ProjectID:   r.URL.Query().Get("project_id"),
 		Name:        r.URL.Query().Get("name"),
 		Environment: r.URL.Query().Get("environment"),
@@ -136,7 +136,7 @@ func (s *Server) handleOverviewEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if events == nil {
-		events = []repository.Event{}
+		events = []domain.Event{}
 	}
 	span.SetAttributes(attribute.Int("events.count", len(events)))
 

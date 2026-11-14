@@ -10,8 +10,8 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/queue"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 )
 
@@ -62,7 +62,7 @@ func NewIngestQueue(ctx context.Context, cfg config.Config, applier *Applier, lo
 		DeadLetter: func(ctx context.Context, c command.Command, err error) {
 			rec := c.(command.IngestRecord).Record
 			reason := "dead_letter"
-			if errors.Is(err, repository.ErrProjectUnresolvable) {
+			if errors.Is(err, domain.ErrProjectUnresolvable) {
 				reason = "unresolved_project"
 			}
 			logger.ErrorContext(ctx, "ingest queue dead-lettering record",
@@ -98,7 +98,7 @@ func (a *Applier) applyQueued(ctx context.Context, rec spool.Record) error {
 		geoEnabled = val != "false"
 	}
 	err := a.apply(ctx, rec, geoEnabled)
-	if errors.Is(err, repository.ErrProjectUnresolvable) {
+	if errors.Is(err, domain.ErrProjectUnresolvable) {
 		return fmt.Errorf("%w: %w", command.ErrPermanent, err)
 	}
 	return err

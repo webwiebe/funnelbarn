@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -111,7 +111,7 @@ func TestABTestService_AnalyzeABTest(t *testing.T) {
 	abtestSvc := service.NewABTestService(store)
 
 	p, _ := projSvc.CreateProject(ctx, "ABAnalyze", "abanalyze")
-	test, err := abtestSvc.CreateABTest(ctx, repository.ABTest{
+	test, err := abtestSvc.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       p.ID,
 		Name:            "Button Colour",
 		Status:          "running",
@@ -133,10 +133,10 @@ func TestFunnelService_AnalyzeFunnel(t *testing.T) {
 	funnelSvc := service.NewFunnelService(store)
 
 	p, _ := projSvc.CreateProject(ctx, "FunnelAnalyze", "funnelanalyze")
-	f, err := funnelSvc.CreateFunnel(ctx, repository.Funnel{
+	f, err := funnelSvc.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Checkout",
-		Steps: []repository.FunnelStep{
+		Steps: []domain.FunnelStep{
 			{EventName: "cart_view"},
 			{EventName: "checkout"},
 		},

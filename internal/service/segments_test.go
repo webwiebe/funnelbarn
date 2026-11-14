@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -21,7 +20,7 @@ func TestSegmentService_CRUD(t *testing.T) {
 	p, err := projSvc.CreateProject(ctx, "Seg Svc Project", "seg-svc-project")
 	require.NoError(t, err)
 
-	rules := []repository.SegmentRule{
+	rules := []domain.SegmentRule{
 		{Field: "country_code", Operator: "eq", Value: "NL"},
 	}
 
@@ -75,7 +74,7 @@ func TestSegmentService_CreateSegment_Validation(t *testing.T) {
 	assert.True(t, domain.IsValidation(err))
 
 	// Invalid field.
-	_, err = segSvc.CreateSegment(ctx, "proj-1", "bad field", []repository.SegmentRule{
+	_, err = segSvc.CreateSegment(ctx, "proj-1", "bad field", []domain.SegmentRule{
 		{Field: "invalid_field", Operator: "eq", Value: "x"},
 	})
 	require.Error(t, err)
@@ -83,7 +82,7 @@ func TestSegmentService_CreateSegment_Validation(t *testing.T) {
 	assert.True(t, domain.IsValidation(err))
 
 	// Invalid operator.
-	_, err = segSvc.CreateSegment(ctx, "proj-1", "bad op", []repository.SegmentRule{
+	_, err = segSvc.CreateSegment(ctx, "proj-1", "bad op", []domain.SegmentRule{
 		{Field: "country_code", Operator: "like", Value: "NL"},
 	})
 	require.Error(t, err)

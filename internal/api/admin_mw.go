@@ -11,7 +11,7 @@ import (
 	"net/http"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 const sessionAdminKey contextKey = "session_admin"
@@ -37,7 +37,7 @@ func sessionAdmin(ctx context.Context) bool {
 // refresh returns new claims (#481 makes that happen with IAMBarn, whose
 // refresh response carries no id_token). Groups do not count, for the reason
 // given on OIDCClient.Allowed.
-func (s *Server) sessionIsAdmin(ws repository.WebSession) bool {
+func (s *Server) sessionIsAdmin(ws domain.WebSession) bool {
 	if ws.AuthMethod != "oidc" {
 		return true
 	}

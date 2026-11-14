@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // accessToken builds an IAMBarn-style access token for the dashboard client.
@@ -34,7 +34,7 @@ func (f *fakeIdP) accessToken(t *testing.T, extra map[string]any) string {
 // the next request runs the refresh grant.
 func expiredOwnerSession(t *testing.T, srv *Server) (*http.Cookie, string) {
 	t.Helper()
-	return insertOIDCSession(t, srv, repository.WebSession{
+	return insertOIDCSession(t, srv, domain.WebSession{
 		Username:        "alice",
 		IdpSub:          fakeIdPSub,
 		IdpSid:          fakeIdPSid,

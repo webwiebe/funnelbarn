@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -100,9 +101,9 @@ func scopedKey(t *testing.T, store *repository.Store, projectID, plaintext, scop
 	return plaintext
 }
 
-func seedFlag(t *testing.T, store *repository.Store, projectID, key string) repository.FeatureFlag {
+func seedFlag(t *testing.T, store *repository.Store, projectID, key string) domain.FeatureFlag {
 	t.Helper()
-	f, err := store.CreateFlag(context.Background(), repository.FeatureFlag{
+	f, err := store.CreateFlag(context.Background(), domain.FeatureFlag{
 		ProjectID: projectID, FlagKey: key, Name: key, FlagType: "boolean",
 		Variants: `{"on":true,"off":false}`, DefaultVariant: "on",
 		Split: `{"on":100,"off":0}`, TargetingRules: "[]", Status: "active",
@@ -139,14 +140,14 @@ func TestFlagToken_ReadsWithoutSession(t *testing.T) {
 	srv, store := newFlagTokenServer(t)
 	p, _ := store.CreateProject(context.Background(), "Scherpstel", "scherpstel")
 	seedFlag(t, store, p.ID, "outbound_email")
-	key := scopedKey(t, store, p.ID, "read-key", repository.APIKeyScopeFlagsRead)
+	key := scopedKey(t, store, p.ID, "read-key", domain.APIKeyScopeFlagsRead)
 
 	w := withKey(t, srv, http.MethodGet, "/api/v1/projects/"+p.ID+"/flags", key, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d (body: %s)", w.Code, w.Body.String())
 	}
 	var resp struct {
-		Flags []repository.FeatureFlag `json:"flags"`
+		Flags []domain.FeatureFlag `json:"flags"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	if len(resp.Flags) != 1 || resp.Flags[0].FlagKey != "outbound_email" {
@@ -164,7 +165,7 @@ func TestFlagToken_ReadScopeCannotWrite(t *testing.T) {
 	srv, store := newFlagTokenServer(t)
 	p, _ := store.CreateProject(context.Background(), "P", "p")
 	f := seedFlag(t, store, p.ID, "gate")
-	key := scopedKey(t, store, p.ID, "read-key", repository.APIKeyScopeFlagsRead)
+	key := scopedKey(t, store, p.ID, "read-key", domain.APIKeyScopeFlagsRead)
 
 	w := withKey(t, srv, http.MethodPut, "/api/v1/projects/"+p.ID+"/flags/"+f.ID, key,
 		map[string]any{"status": "paused"})
@@ -187,7 +188,7 @@ func TestFlagToken_WriteTogglesFlag(t *testing.T) {
 	srv, store := newFlagTokenServer(t)
 	p, _ := store.CreateProject(context.Background(), "P", "p")
 	f := seedFlag(t, store, p.ID, "outbound_email")
-	key := scopedKey(t, store, p.ID, "write-key", repository.APIKeyScopeFlagsWrite)
+	key := scopedKey(t, store, p.ID, "write-key", domain.APIKeyScopeFlagsWrite)
 
 	w := withKey(t, srv, http.MethodPut, "/api/v1/projects/"+p.ID+"/flags/"+f.ID, key,
 		map[string]any{"status": "paused"})
@@ -210,7 +211,7 @@ func TestFlagToken_WriteScopeCanRead(t *testing.T) {
 	srv, store := newFlagTokenServer(t)
 	p, _ := store.CreateProject(context.Background(), "P", "p")
 	seedFlag(t, store, p.ID, "gate")
-	key := scopedKey(t, store, p.ID, "write-key", repository.APIKeyScopeFlagsWrite)
+	key := scopedKey(t, store, p.ID, "write-key", domain.APIKeyScopeFlagsWrite)
 
 	if w := withKey(t, srv, http.MethodGet, "/api/v1/projects/"+p.ID+"/flags", key, nil); w.Code != http.StatusOK {
 		t.Errorf("want 200, got %d", w.Code)
@@ -223,7 +224,7 @@ func TestFlagToken_CannotCreateOrDelete(t *testing.T) {
 	srv, store := newFlagTokenServer(t)
 	p, _ := store.CreateProject(context.Background(), "P", "p")
 	f := seedFlag(t, store, p.ID, "gate")
-	key := scopedKey(t, store, p.ID, "write-key", repository.APIKeyScopeFlagsWrite)
+	key := scopedKey(t, store, p.ID, "write-key", domain.APIKeyScopeFlagsWrite)
 
 	w := withKey(t, srv, http.MethodPost, "/api/v1/projects/"+p.ID+"/flags", key,
 		map[string]any{"flag_key": "new", "name": "New"})
@@ -251,7 +252,7 @@ func TestFlagToken_CannotCrossProjects(t *testing.T) {
 	mine, _ := store.CreateProject(ctx, "Scherpstel", "scherpstel")
 	theirs, _ := store.CreateProject(ctx, "Places", "places")
 	theirFlag := seedFlag(t, store, theirs.ID, "their_gate")
-	key := scopedKey(t, store, mine.ID, "write-key", repository.APIKeyScopeFlagsWrite)
+	key := scopedKey(t, store, mine.ID, "write-key", domain.APIKeyScopeFlagsWrite)
 
 	w := withKey(t, srv, http.MethodGet, "/api/v1/projects/"+theirs.ID+"/flags", key, nil)
 	if w.Code != http.StatusForbidden {
@@ -273,7 +274,7 @@ func TestFlagToken_CannotReachForeignFlagIDThroughOwnProject(t *testing.T) {
 	mine, _ := store.CreateProject(ctx, "Scherpstel", "scherpstel")
 	theirs, _ := store.CreateProject(ctx, "Places", "places")
 	theirFlag := seedFlag(t, store, theirs.ID, "their_gate")
-	key := scopedKey(t, store, mine.ID, "write-key", repository.APIKeyScopeFlagsWrite)
+	key := scopedKey(t, store, mine.ID, "write-key", domain.APIKeyScopeFlagsWrite)
 
 	// 404, not 403: a caller scoped elsewhere shouldn't learn the ID exists.
 	w := withKey(t, srv, http.MethodGet, "/api/v1/projects/"+mine.ID+"/flags/"+theirFlag.ID, key, nil)
@@ -297,7 +298,7 @@ func TestFlagToken_IngestScopeRejected(t *testing.T) {
 	srv, store := newFlagTokenServer(t)
 	p, _ := store.CreateProject(context.Background(), "P", "p")
 	seedFlag(t, store, p.ID, "gate")
-	key := scopedKey(t, store, p.ID, "ingest-key", repository.APIKeyScopeIngest)
+	key := scopedKey(t, store, p.ID, "ingest-key", domain.APIKeyScopeIngest)
 
 	if w := withKey(t, srv, http.MethodGet, "/api/v1/projects/"+p.ID+"/flags", key, nil); w.Code != http.StatusForbidden {
 		t.Errorf("want 403 for an ingest-scoped key, got %d (body: %s)", w.Code, w.Body.String())
@@ -364,26 +365,26 @@ func TestScopeAllows(t *testing.T) {
 		have, want string
 		ok         bool
 	}{
-		{repository.APIKeyScopeFull, repository.APIKeyScopeFlagsRead, true},
-		{repository.APIKeyScopeFull, repository.APIKeyScopeFlagsWrite, true},
-		{repository.APIKeyScopeFlagsWrite, repository.APIKeyScopeFlagsRead, true},
-		{repository.APIKeyScopeFlagsWrite, repository.APIKeyScopeFlagsWrite, true},
-		{repository.APIKeyScopeFlagsRead, repository.APIKeyScopeFlagsRead, true},
-		{repository.APIKeyScopeFlagsRead, repository.APIKeyScopeFlagsWrite, false},
-		{repository.APIKeyScopeIngest, repository.APIKeyScopeFlagsRead, false},
-		{repository.APIKeyScopeIngest, repository.APIKeyScopeFlagsWrite, false},
-		{"something-new", repository.APIKeyScopeFlagsRead, false},
+		{domain.APIKeyScopeFull, domain.APIKeyScopeFlagsRead, true},
+		{domain.APIKeyScopeFull, domain.APIKeyScopeFlagsWrite, true},
+		{domain.APIKeyScopeFlagsWrite, domain.APIKeyScopeFlagsRead, true},
+		{domain.APIKeyScopeFlagsWrite, domain.APIKeyScopeFlagsWrite, true},
+		{domain.APIKeyScopeFlagsRead, domain.APIKeyScopeFlagsRead, true},
+		{domain.APIKeyScopeFlagsRead, domain.APIKeyScopeFlagsWrite, false},
+		{domain.APIKeyScopeIngest, domain.APIKeyScopeFlagsRead, false},
+		{domain.APIKeyScopeIngest, domain.APIKeyScopeFlagsWrite, false},
+		{"something-new", domain.APIKeyScopeFlagsRead, false},
 
 		// analytics:read is its own axis: full covers it, flag scopes do not,
 		// and it grants nothing on the flag routes in return.
-		{repository.APIKeyScopeFull, repository.APIKeyScopeAnalyticsRead, true},
-		{repository.APIKeyScopeAnalyticsRead, repository.APIKeyScopeAnalyticsRead, true},
-		{repository.APIKeyScopeAnalyticsRead, repository.APIKeyScopeFlagsRead, false},
-		{repository.APIKeyScopeAnalyticsRead, repository.APIKeyScopeFlagsWrite, false},
-		{repository.APIKeyScopeFlagsRead, repository.APIKeyScopeAnalyticsRead, false},
-		{repository.APIKeyScopeFlagsWrite, repository.APIKeyScopeAnalyticsRead, false},
-		{repository.APIKeyScopeIngest, repository.APIKeyScopeAnalyticsRead, false},
-		{"something-new", repository.APIKeyScopeAnalyticsRead, false},
+		{domain.APIKeyScopeFull, domain.APIKeyScopeAnalyticsRead, true},
+		{domain.APIKeyScopeAnalyticsRead, domain.APIKeyScopeAnalyticsRead, true},
+		{domain.APIKeyScopeAnalyticsRead, domain.APIKeyScopeFlagsRead, false},
+		{domain.APIKeyScopeAnalyticsRead, domain.APIKeyScopeFlagsWrite, false},
+		{domain.APIKeyScopeFlagsRead, domain.APIKeyScopeAnalyticsRead, false},
+		{domain.APIKeyScopeFlagsWrite, domain.APIKeyScopeAnalyticsRead, false},
+		{domain.APIKeyScopeIngest, domain.APIKeyScopeAnalyticsRead, false},
+		{"something-new", domain.APIKeyScopeAnalyticsRead, false},
 	}
 	for _, c := range cases {
 		if got := scopeAllows(c.have, c.want); got != c.ok {
@@ -401,7 +402,7 @@ func TestCreateAPIKey_AcceptsFlagScopes(t *testing.T) {
 	p, _ := store.CreateProject(context.Background(), "P", "p")
 	cookie, csrf := sessionAndCSRF(t, srv, "u")
 
-	for _, scope := range []string{repository.APIKeyScopeFlagsRead, repository.APIKeyScopeFlagsWrite} {
+	for _, scope := range []string{domain.APIKeyScopeFlagsRead, domain.APIKeyScopeFlagsWrite} {
 		w := postJSONWithCSRF(t, srv, "/api/v1/apikeys", map[string]any{
 			"project_id": p.ID, "name": "flags " + scope, "scope": scope,
 		}, cookie, csrf)
@@ -434,7 +435,7 @@ func TestAPIKeyList_ReportsLastUsed(t *testing.T) {
 	srv, store := newFlagTokenServer(t)
 	p, _ := store.CreateProject(context.Background(), "P", "p")
 	seedFlag(t, store, p.ID, "gate")
-	key := scopedKey(t, store, p.ID, "read-key", repository.APIKeyScopeFlagsRead)
+	key := scopedKey(t, store, p.ID, "read-key", domain.APIKeyScopeFlagsRead)
 	cookie := sessionCookieFor(t, srv, "admin")
 
 	read := func() map[string]any {

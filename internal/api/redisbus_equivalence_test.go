@@ -20,6 +20,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/queue"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -76,7 +77,7 @@ type fallbackGuard struct{ t *testing.T }
 
 func (g fallbackGuard) fail(kind string) { g.t.Errorf("command reached the fallback: %s", kind) }
 
-func (g fallbackGuard) RecordEvaluation(context.Context, repository.FlagEvaluation) error {
+func (g fallbackGuard) RecordEvaluation(context.Context, domain.FlagEvaluation) error {
 	g.fail("record_evaluation")
 	return nil
 }
@@ -86,9 +87,9 @@ func (g fallbackGuard) TouchAPIKey(context.Context, string) error {
 	return nil
 }
 
-func (g fallbackGuard) FlagByKey(context.Context, string, string) (repository.FeatureFlag, error) {
+func (g fallbackGuard) FlagByKey(context.Context, string, string) (domain.FeatureFlag, error) {
 	g.fail("touch_flag_evaluated")
-	return repository.FeatureFlag{}, nil
+	return domain.FeatureFlag{}, nil
 }
 
 func (g fallbackGuard) TouchFlagEvaluated(context.Context, string) error {
@@ -96,7 +97,7 @@ func (g fallbackGuard) TouchFlagEvaluated(context.Context, string) error {
 	return nil
 }
 
-func (g fallbackGuard) EnsureAutoFlag(_ context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error) {
+func (g fallbackGuard) EnsureAutoFlag(_ context.Context, f domain.FeatureFlag) (domain.FeatureFlag, error) {
 	g.fail("ensure_auto_flag")
 	return f, nil
 }

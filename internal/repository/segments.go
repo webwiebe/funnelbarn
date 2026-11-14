@@ -7,68 +7,40 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
-// Segment is a named, reusable filter applied to funnel analysis.
-type Segment struct {
-	ID        string        `json:"id"`
-	ProjectID string        `json:"project_id"`
-	Name      string        `json:"name"`
-	Rules     []SegmentRule `json:"rules"`
-	CreatedAt time.Time     `json:"created_at"`
-}
-
-// SegmentRule is one condition within a segment.
-type SegmentRule struct {
-	Field    string `json:"field"`    // see allowedSegmentFields
-	Operator string `json:"operator"` // "eq", "neq", "contains", "not_contains", "is_null", "is_not_null"
-	Value    string `json:"value"`
-}
-
-// AllowedSegmentFields maps field name → table alias for the funnel JOIN query.
-// Fields with alias "s" require a sessions JOIN; "e" don't.
-var AllowedSegmentFields = map[string]string{
-	"device_type":      "e",
-	"browser":          "e",
-	"os":               "e",
-	"country_code":     "s",
-	"city":             "s",
-	"connection_class": "s",
-	"dark_mode":        "s",
-	"browser_timezone": "s",
-}
-
 // CreateSegment inserts a new segment.
-func (s *Store) CreateSegment(ctx context.Context, seg Segment) (Segment, error) {
+func (s *Store) CreateSegment(ctx context.Context, seg domain.Segment) (domain.Segment, error) {
 	id, err := generateUUID()
 	if err != nil {
-		return Segment{}, fmt.Errorf("generate uuid: %w", err)
+		return domain.Segment{}, fmt.Errorf("generate uuid: %w", err)
 	}
 	seg.ID = id
 	rulesJSON, _ := json.Marshal(seg.Rules)
 	const q = `INSERT INTO segments (id, project_id, name, rules) VALUES (?, ?, ?, ?)`
 	if _, err := s.db.ExecContext(ctx, q, seg.ID, seg.ProjectID, seg.Name, string(rulesJSON)); err != nil {
-		return Segment{}, err
+		return domain.Segment{}, err
 	}
 	return s.segmentByID(ctx, s.db, seg.ID)
 }
 
 // SegmentByID fetches a segment by ID.
-func (s *ReadStore) SegmentByID(ctx context.Context, id string) (Segment, error) {
+func (s *ReadStore) SegmentByID(ctx context.Context, id string) (domain.Segment, error) {
 	return s.segmentByID(ctx, s.rdb, id)
 }
 
-func (s *ReadStore) segmentByID(ctx context.Context, db querier, id string) (Segment, error) {
+func (s *ReadStore) segmentByID(ctx context.Context, db querier, id string) (domain.Segment, error) {
 	const q = `SELECT id, project_id, name, rules, created_at FROM segments WHERE id = ?`
-	var seg Segment
+	var seg domain.Segment
 	var rulesJSON string
 	err := db.QueryRowContext(ctx, q, id).Scan(&seg.ID, &seg.ProjectID, &seg.Name, &rulesJSON, &seg.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Segment{}, fmt.Errorf("segment not found: %w", err)
+		return domain.Segment{}, fmt.Errorf("segment not found: %w", err)
 	}
 	if err != nil {
-		return Segment{}, err
+		return domain.Segment{}, err
 	}
 	if err := json.Unmarshal([]byte(rulesJSON), &seg.Rules); err != nil {
 		slog.WarnContext(ctx, "segment: malformed rules JSON", "segment_id", seg.ID, "raw_len", len(rulesJSON), "error", err)
@@ -77,7 +49,7 @@ func (s *ReadStore) segmentByID(ctx context.Context, db querier, id string) (Seg
 }
 
 // ListSegments returns all segments for a project.
-func (s *ReadStore) ListSegments(ctx context.Context, projectID string) ([]Segment, error) {
+func (s *ReadStore) ListSegments(ctx context.Context, projectID string) ([]domain.Segment, error) {
 	const q = `SELECT id, project_id, name, rules, created_at FROM segments WHERE project_id = ? ORDER BY created_at DESC`
 	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
@@ -85,9 +57,9 @@ func (s *ReadStore) ListSegments(ctx context.Context, projectID string) ([]Segme
 	}
 	defer rows.Close()
 
-	var segs []Segment
+	var segs []domain.Segment
 	for rows.Next() {
-		var seg Segment
+		var seg domain.Segment
 		var rulesJSON string
 		if err := rows.Scan(&seg.ID, &seg.ProjectID, &seg.Name, &rulesJSON, &seg.CreatedAt); err != nil {
 			return nil, err
@@ -101,11 +73,11 @@ func (s *ReadStore) ListSegments(ctx context.Context, projectID string) ([]Segme
 }
 
 // UpdateSegment replaces a segment's name and rules.
-func (s *Store) UpdateSegment(ctx context.Context, seg Segment) (Segment, error) {
+func (s *Store) UpdateSegment(ctx context.Context, seg domain.Segment) (domain.Segment, error) {
 	rulesJSON, _ := json.Marshal(seg.Rules)
 	const q = `UPDATE segments SET name = ?, rules = ? WHERE id = ?`
 	if _, err := s.db.ExecContext(ctx, q, seg.Name, string(rulesJSON), seg.ID); err != nil {
-		return Segment{}, err
+		return domain.Segment{}, err
 	}
 	return s.segmentByID(ctx, s.db, seg.ID)
 }
@@ -120,11 +92,11 @@ func (s *Store) DeleteSegment(ctx context.Context, id string) error {
 // UpsertSessionSignals sets device/browser signals on a session only if not
 // already collected. Scoped by project: the same session ID can exist under
 // several projects, and one project's screen size is not another's.
-func (s *Store) UpsertSessionSignals(ctx context.Context, projectID, sessionID string, signals SessionSignals) error {
+func (s *Store) UpsertSessionSignals(ctx context.Context, projectID, sessionID string, signals domain.SessionSignals) error {
 	return updateSessionSignals(ctx, s.db, projectID, sessionID, signals)
 }
 
-func updateSessionSignals(ctx context.Context, ex execer, projectID, sessionID string, signals SessionSignals) error {
+func updateSessionSignals(ctx context.Context, ex execer, projectID, sessionID string, signals domain.SessionSignals) error {
 	const q = `
 		UPDATE sessions SET
 			screen_width      = ?,
@@ -146,18 +118,6 @@ func updateSessionSignals(ctx context.Context, ex execer, projectID, sessionID s
 		projectID, sessionID,
 	)
 	return err
-}
-
-// SessionSignals holds the device/browser signals collected by the SDK.
-type SessionSignals struct {
-	ScreenWidth     *int
-	ScreenHeight    *int
-	PixelRatio      *float64
-	Touch           *bool
-	DarkMode        *bool
-	ReducedMotion   *bool
-	BrowserTimezone string
-	CPUCores        *int
 }
 
 func nullInt(v *int) any {

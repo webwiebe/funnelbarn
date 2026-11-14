@@ -6,35 +6,14 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
-
-// MaxBreakdownGroups caps the groups of one breakdown; the rest collapse into
-// one "other" group so the response stays bounded.
-const MaxBreakdownGroups = 20
-
-// FunnelBreakdownGroup is one value of the breakdown property and the funnel
-// numbers of the entries that carry it.
-type FunnelBreakdownGroup struct {
-	// Value is the property value on the entry event. Empty for entries without
-	// the property.
-	Value string `json:"value"`
-	// Label is what a UI shows: the value, "(none)" or "(other)".
-	Label string `json:"label"`
-	// Other marks the group that collects every value beyond the cap.
-	Other bool `json:"other,omitempty"`
-	// Entries is the number of funnel entries in the group (step 1 count).
-	Entries int64              `json:"entries"`
-	Results []FunnelStepResult `json:"results"`
-}
-
-// ValidBreakdownProperty reports whether name can be used as a breakdown
-// property. Names go into a JSON path, so only a safe subset is accepted.
-func ValidBreakdownProperty(name string) bool { return validPropertyName.MatchString(name) }
 
 // funnelExtraWhere builds the WHERE fragment shared by every funnel query: the
 // preset segment, stored segment rules and the scope's own requirements. The
 // fragment starts with " AND " (or is empty) and uses the alias e for events.
-func funnelExtraWhere(f Funnel, seg *SegmentFilter, rules []SegmentRule) (where string, args []any, needJoin bool) {
+func funnelExtraWhere(f domain.Funnel, seg *domain.SegmentFilter, rules []domain.SegmentRule) (where string, args []any, needJoin bool) {
 	presetClause, presetArg, needJoin := segmentParam(seg)
 	ruleClause, ruleArgs, rulesNeedJoin := buildSegmentRuleClause(rules)
 	needJoin = needJoin || rulesNeedJoin
@@ -51,9 +30,9 @@ func funnelExtraWhere(f Funnel, seg *SegmentFilter, rules []SegmentRule) (where 
 		args = append(args, ruleArgs...)
 	}
 	switch f.Scope {
-	case FunnelScopePageView:
+	case domain.FunnelScopePageView:
 		clauses = append(clauses, "e.page_view_id IS NOT NULL")
-	case FunnelScopeUser:
+	case domain.FunnelScopeUser:
 		clauses = append(clauses, "e.user_id_hash IS NOT NULL AND e.user_id_hash != ''")
 	}
 	if len(clauses) > 0 {
@@ -66,18 +45,18 @@ func funnelExtraWhere(f Funnel, seg *SegmentFilter, rules []SegmentRule) (where 
 // the value property has on each entry's first step event. Every entry lands in
 // exactly one group, so the group counts add up to the unbroken funnel. Groups
 // come back ordered by entries (then value), capped at MaxBreakdownGroups.
-func (s *ReadStore) AnalyzeFunnelBreakdown(ctx context.Context, f Funnel, from, to time.Time, seg *SegmentFilter, property string, rules ...SegmentRule) ([]FunnelBreakdownGroup, error) {
+func (s *ReadStore) AnalyzeFunnelBreakdown(ctx context.Context, f domain.Funnel, from, to time.Time, seg *domain.SegmentFilter, property string, rules ...domain.SegmentRule) ([]domain.FunnelBreakdownGroup, error) {
 	if len(f.Steps) == 0 {
 		return nil, nil
 	}
-	if !validPropertyName.MatchString(property) {
+	if !domain.ValidBreakdownProperty(property) {
 		return nil, fmt.Errorf("breakdown property %q: only letters, digits and underscore are allowed", property)
 	}
 	extraWhere, extraArgs, needJoin := funnelExtraWhere(f, seg, rules)
 
 	var counts map[string][]int64
 	var err error
-	if f.Scope == FunnelScopeUser {
+	if f.Scope == domain.FunnelScopeUser {
 		counts, err = s.userBreakdownCounts(ctx, f, from, to, extraWhere, extraArgs, needJoin, property)
 	} else {
 		counts, err = s.entryBreakdownCounts(ctx, f, from, to, extraWhere, extraArgs, needJoin, property)
@@ -90,7 +69,7 @@ func (s *ReadStore) AnalyzeFunnelBreakdown(ctx context.Context, f Funnel, from, 
 
 // breakdownGroups orders the per-value step counts, caps them and turns them
 // into groups with conversion and drop-off.
-func breakdownGroups(f Funnel, counts map[string][]int64) []FunnelBreakdownGroup {
+func breakdownGroups(f domain.Funnel, counts map[string][]int64) []domain.FunnelBreakdownGroup {
 	values := make([]string, 0, len(counts))
 	for v := range counts {
 		values = append(values, v)
@@ -103,10 +82,10 @@ func breakdownGroups(f Funnel, counts map[string][]int64) []FunnelBreakdownGroup
 		return values[i] < values[j]
 	})
 
-	groups := make([]FunnelBreakdownGroup, 0, min(len(values), MaxBreakdownGroups+1))
+	groups := make([]domain.FunnelBreakdownGroup, 0, min(len(values), domain.MaxBreakdownGroups+1))
 	var other []int64
 	for i, v := range values {
-		if i >= MaxBreakdownGroups {
+		if i >= domain.MaxBreakdownGroups {
 			if other == nil {
 				other = make([]int64, len(f.Steps))
 			}
@@ -119,12 +98,12 @@ func breakdownGroups(f Funnel, counts map[string][]int64) []FunnelBreakdownGroup
 		if v == "" {
 			label = "(none)"
 		}
-		groups = append(groups, FunnelBreakdownGroup{
+		groups = append(groups, domain.FunnelBreakdownGroup{
 			Value: v, Label: label, Entries: counts[v][0], Results: funnelResults(f, counts[v]),
 		})
 	}
 	if other != nil {
-		groups = append(groups, FunnelBreakdownGroup{
+		groups = append(groups, domain.FunnelBreakdownGroup{
 			Label: "(other)", Other: true, Entries: other[0], Results: funnelResults(f, other),
 		})
 	}
@@ -134,7 +113,7 @@ func breakdownGroups(f Funnel, counts map[string][]int64) []FunnelBreakdownGroup
 // entryBreakdownCounts counts, per entry value and per step, the distinct
 // sessions (or page views) that fired the step, among those whose first step
 // event carries the value. Like the unbroken funnel, the steps are not ordered.
-func (s *ReadStore) entryBreakdownCounts(ctx context.Context, f Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool, property string) (map[string][]int64, error) {
+func (s *ReadStore) entryBreakdownCounts(ctx context.Context, f domain.Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool, property string) (map[string][]int64, error) {
 	counts := map[string][]int64{}
 	for i := range f.Steps {
 		q, args := entryBreakdownStepSQL(f, i, from, to, extraWhere, extraArgs, needJoin, property)
@@ -165,9 +144,9 @@ func (s *ReadStore) entryBreakdownCounts(ctx context.Context, f Funnel, from, to
 
 // entryBreakdownStepSQL is the query entryBreakdownCounts runs for step i: per
 // entry value, the distinct sessions (or page views) that fired the step.
-func entryBreakdownStepSQL(f Funnel, i int, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool, property string) (string, []any) {
+func entryBreakdownStepSQL(f domain.Funnel, i int, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool, property string) (string, []any) {
 	key := "e.session_id"
-	if f.Scope == FunnelScopePageView {
+	if f.Scope == domain.FunnelScopePageView {
 		key = "e.page_view_id"
 	}
 	join := ""
@@ -204,7 +183,7 @@ func entryBreakdownStepSQL(f Funnel, i int, from, to time.Time, extraWhere strin
 // userBreakdownCounts is the user-scope breakdown: each user is grouped by the
 // property on their earliest step 1 event and counted through the same ordered
 // steps as the unbroken funnel.
-func (s *ReadStore) userBreakdownCounts(ctx context.Context, f Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool, property string) (map[string][]int64, error) {
+func (s *ReadStore) userBreakdownCounts(ctx context.Context, f domain.Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool, property string) (map[string][]int64, error) {
 	depths, err := s.orderedUserDepths(ctx, f, from, to, extraWhere, extraArgs, needJoin)
 	if err != nil {
 		return nil, err
@@ -238,7 +217,7 @@ func (s *ReadStore) userBreakdownCounts(ctx context.Context, f Funnel, from, to 
 
 // userBreakdownEntrySQL selects each user's property value from their earliest
 // step 1 event.
-func userBreakdownEntrySQL(f Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool, property string) (string, []any) {
+func userBreakdownEntrySQL(f domain.Funnel, from, to time.Time, extraWhere string, extraArgs []any, needJoin bool, property string) (string, []any) {
 	join := ""
 	if needJoin {
 		join = " JOIN sessions s ON s.id = e.session_id AND s.project_id = e.project_id"

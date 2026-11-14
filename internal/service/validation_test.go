@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -77,10 +76,10 @@ func TestFunnelService_CreateFunnel_EmptyName(t *testing.T) {
 	p, err := projectSvc.CreateProject(ctx, "My Project", "my-project")
 	require.NoError(t, err)
 
-	_, err = funnelSvc.CreateFunnel(ctx, repository.Funnel{
+	_, err = funnelSvc.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "",
-		Steps:     []repository.FunnelStep{{EventName: "step1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step1"}},
 	})
 	require.Error(t, err)
 	require.True(t, domain.IsValidation(err), "expected validation error, got: %v", err)
@@ -95,10 +94,10 @@ func TestFunnelService_CreateFunnel_NoSteps(t *testing.T) {
 	p, err := projectSvc.CreateProject(ctx, "My Project", "my-project-2")
 	require.NoError(t, err)
 
-	_, err = funnelSvc.CreateFunnel(ctx, repository.Funnel{
+	_, err = funnelSvc.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "My Funnel",
-		Steps:     []repository.FunnelStep{},
+		Steps:     []domain.FunnelStep{},
 	})
 	require.Error(t, err)
 	require.True(t, domain.IsValidation(err), "expected validation error, got: %v", err)
@@ -186,10 +185,10 @@ func TestFunnelService_CreateFunnel_EmptyProjectID(t *testing.T) {
 	ctx := context.Background()
 	funnelSvc := service.NewFunnelService(newTestStore(t))
 
-	_, err := funnelSvc.CreateFunnel(ctx, repository.Funnel{
+	_, err := funnelSvc.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: "",
 		Name:      "My Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "step1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step1"}},
 	})
 	require.Error(t, err)
 	require.True(t, domain.IsValidation(err), "expected validation error, got: %v", err)
@@ -204,10 +203,10 @@ func TestFunnelService_CreateFunnel_EmptyStepEventName(t *testing.T) {
 	p, err := projectSvc.CreateProject(ctx, "My Project", "my-project-step-name")
 	require.NoError(t, err)
 
-	_, err = funnelSvc.CreateFunnel(ctx, repository.Funnel{
+	_, err = funnelSvc.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "My Funnel",
-		Steps:     []repository.FunnelStep{{EventName: ""}},
+		Steps:     []domain.FunnelStep{{EventName: ""}},
 	})
 	require.Error(t, err)
 	require.True(t, domain.IsValidation(err), "expected validation error, got: %v", err)
@@ -236,10 +235,10 @@ func TestFunnelService_StepEventNameRequired(t *testing.T) {
 	p, err := projectSvc.CreateProject(ctx, "My Project", "my-project-ws-event")
 	require.NoError(t, err)
 
-	_, err = funnelSvc.CreateFunnel(ctx, repository.Funnel{
+	_, err = funnelSvc.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "My Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "   "}},
+		Steps:     []domain.FunnelStep{{EventName: "   "}},
 	})
 	require.Error(t, err, "whitespace-only EventName must be rejected")
 }
@@ -252,7 +251,7 @@ func TestABTestService_CreateABTest_EmptyProjectID(t *testing.T) {
 	ctx := context.Background()
 	svc := service.NewABTestService(newTestStore(t))
 
-	_, err := svc.CreateABTest(ctx, repository.ABTest{
+	_, err := svc.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       "",
 		Name:            "My Test",
 		ConversionEvent: "purchase",
@@ -270,7 +269,7 @@ func TestABTestService_CreateABTest_InvalidStatus(t *testing.T) {
 	p, err := projSvc.CreateProject(ctx, "AB Project", "ab-project-invalid-status")
 	require.NoError(t, err)
 
-	_, err = abSvc.CreateABTest(ctx, repository.ABTest{
+	_, err = abSvc.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       p.ID,
 		Name:            "My Test",
 		Status:          "launched",
@@ -290,7 +289,7 @@ func TestABTestService_CreateABTest_ValidStatuses(t *testing.T) {
 	require.NoError(t, err)
 
 	for i, status := range []string{"running", "paused", "completed"} {
-		_, err = abSvc.CreateABTest(ctx, repository.ABTest{
+		_, err = abSvc.CreateABTest(ctx, domain.ABTest{
 			ProjectID:       p.ID,
 			Name:            fmt.Sprintf("Test %d", i),
 			Status:          status,

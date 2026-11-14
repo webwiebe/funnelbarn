@@ -3,20 +3,15 @@ package repository
 import (
 	"context"
 	"fmt"
-)
 
-// DistributionEntry is one value in a field distribution breakdown.
-type DistributionEntry struct {
-	Value string `json:"value"`
-	Count int64  `json:"count"`
-	Pct   int    `json:"pct"`
-}
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+)
 
 // SessionDistributions returns project-wide value distributions for the fields
 // used by the segment system: device_type, country_code, connection_class,
 // dark_mode, browser_timezone (all from sessions), plus browser and os from events.
-func (s *ReadStore) SessionDistributions(ctx context.Context, projectID string) (map[string][]DistributionEntry, error) {
-	result := make(map[string][]DistributionEntry)
+func (s *ReadStore) SessionDistributions(ctx context.Context, projectID string) (map[string][]domain.DistributionEntry, error) {
+	result := make(map[string][]domain.DistributionEntry)
 
 	// Fields on the sessions table.
 	sessionFields := []struct{ key, col string }{
@@ -46,7 +41,7 @@ func (s *ReadStore) SessionDistributions(ctx context.Context, projectID string) 
 	return result, nil
 }
 
-func (s *ReadStore) sessionColDistribution(ctx context.Context, table, projectID, col, key string) ([]DistributionEntry, error) {
+func (s *ReadStore) sessionColDistribution(ctx context.Context, table, projectID, col, key string) ([]domain.DistributionEntry, error) {
 	// Friendly label for dark_mode values.
 	var labelExpr string
 	if key == "dark_mode" {
@@ -84,9 +79,9 @@ func (s *ReadStore) sessionColDistribution(ctx context.Context, table, projectID
 	}
 	defer rows.Close()
 
-	var entries []DistributionEntry
+	var entries []domain.DistributionEntry
 	for rows.Next() {
-		var e DistributionEntry
+		var e domain.DistributionEntry
 		if err := rows.Scan(&e.Value, &e.Count, &e.Pct); err != nil {
 			return nil, err
 		}

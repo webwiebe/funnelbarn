@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
@@ -13,7 +14,7 @@ import (
 // derived IngestID), for tests that need control over fields seedEvent
 // (internal/api's helper, in a different package) doesn't expose:
 // Environment, Properties, OccurredAt, Browser and friends.
-func seedAnalyticsEvent(t *testing.T, store *repository.Store, id string, e repository.Event) {
+func seedAnalyticsEvent(t *testing.T, store *repository.Store, id string, e domain.Event) {
 	t.Helper()
 	e.ID = id
 	if e.IngestID == "" {
@@ -33,7 +34,7 @@ func seedEventsNamed(t *testing.T, store *repository.Store, projectID, name stri
 	t.Helper()
 	for i := 0; i < n; i++ {
 		id := fmt.Sprintf("%s-%s-%d", projectID, name, i)
-		seedAnalyticsEvent(t, store, id, repository.Event{
+		seedAnalyticsEvent(t, store, id, domain.Event{
 			ProjectID:  projectID,
 			SessionID:  id,
 			Name:       name,
@@ -200,14 +201,14 @@ func TestListEventsTool_ProjectIsolationAndPaging(t *testing.T) {
 	b := env.createProject(t, "Beta", "beta")
 	base := time.Now().UTC().Truncate(time.Second)
 	for i := 0; i < 3; i++ {
-		seedAnalyticsEvent(t, env.Store, fmt.Sprintf("a-evt-%d", i), repository.Event{
+		seedAnalyticsEvent(t, env.Store, fmt.Sprintf("a-evt-%d", i), domain.Event{
 			ProjectID:  a.ID,
 			SessionID:  fmt.Sprintf("a-s-%d", i),
 			Name:       "pageview",
 			OccurredAt: base.Add(time.Duration(i) * time.Second),
 		})
 	}
-	seedAnalyticsEvent(t, env.Store, "b-evt-0", repository.Event{
+	seedAnalyticsEvent(t, env.Store, "b-evt-0", domain.Event{
 		ProjectID: b.ID, SessionID: "b-s-0", Name: "pageview", OccurredAt: base,
 	})
 
@@ -239,11 +240,11 @@ func TestListEventPropertiesTool(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	b := env.createProject(t, "Beta", "beta")
-	seedAnalyticsEvent(t, env.Store, "a-signup", repository.Event{
+	seedAnalyticsEvent(t, env.Store, "a-signup", domain.Event{
 		ProjectID: a.ID, SessionID: "a-s", Name: "signup",
 		Properties: `{"plan":"pro"}`, Browser: "Chrome",
 	})
-	seedAnalyticsEvent(t, env.Store, "b-signup", repository.Event{
+	seedAnalyticsEvent(t, env.Store, "b-signup", domain.Event{
 		ProjectID: b.ID, SessionID: "b-s", Name: "signup",
 	})
 
@@ -280,13 +281,13 @@ func TestListEventPropertyValuesTool(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	b := env.createProject(t, "Beta", "beta")
-	seedAnalyticsEvent(t, env.Store, "a-signup-1", repository.Event{
+	seedAnalyticsEvent(t, env.Store, "a-signup-1", domain.Event{
 		ProjectID: a.ID, SessionID: "a-s-1", Name: "signup", Properties: `{"plan":"pro"}`,
 	})
-	seedAnalyticsEvent(t, env.Store, "a-signup-2", repository.Event{
+	seedAnalyticsEvent(t, env.Store, "a-signup-2", domain.Event{
 		ProjectID: a.ID, SessionID: "a-s-2", Name: "signup", Properties: `{"plan":"free"}`,
 	})
-	seedAnalyticsEvent(t, env.Store, "b-signup-1", repository.Event{
+	seedAnalyticsEvent(t, env.Store, "b-signup-1", domain.Event{
 		ProjectID: b.ID, SessionID: "b-s-1", Name: "signup", Properties: `{"plan":"enterprise"}`,
 	})
 
@@ -321,9 +322,9 @@ func TestListEnvironmentsTool_ProjectIsolation(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	b := env.createProject(t, "Beta", "beta")
-	seedAnalyticsEvent(t, env.Store, "a-prod", repository.Event{ProjectID: a.ID, SessionID: "a-s1", Name: "pageview", Environment: "production"})
-	seedAnalyticsEvent(t, env.Store, "a-staging", repository.Event{ProjectID: a.ID, SessionID: "a-s2", Name: "pageview", Environment: "staging"})
-	seedAnalyticsEvent(t, env.Store, "b-dev", repository.Event{ProjectID: b.ID, SessionID: "b-s1", Name: "pageview", Environment: "development"})
+	seedAnalyticsEvent(t, env.Store, "a-prod", domain.Event{ProjectID: a.ID, SessionID: "a-s1", Name: "pageview", Environment: "production"})
+	seedAnalyticsEvent(t, env.Store, "a-staging", domain.Event{ProjectID: a.ID, SessionID: "a-s2", Name: "pageview", Environment: "staging"})
+	seedAnalyticsEvent(t, env.Store, "b-dev", domain.Event{ProjectID: b.ID, SessionID: "b-s1", Name: "pageview", Environment: "development"})
 
 	cs := env.connect(t, tokenRead, a.Slug)
 
