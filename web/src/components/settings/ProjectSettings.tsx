@@ -20,7 +20,7 @@ interface ProjectSettingsProps {
   refetchProjects: () => void
   defaultProjectId: string | null
   setDefaultProjectId: (id: string) => void
-  onError: (msg: string) => void
+  onError: (msg: string | null) => void
   publicURL: string
 }
 
@@ -62,6 +62,7 @@ export function ProjectSettings({
 
   const handleApproveProject = async (projectId: string) => {
     setApprovingProject(projectId)
+    onError(null)
     try {
       await api.approveProject(projectId)
       refetchProjects()
@@ -77,6 +78,7 @@ export function ProjectSettings({
     if (!name) return
     const domain = editedDomains[projectId]?.trim() ?? ''
     setSavingProject(projectId)
+    onError(null)
     try {
       await api.updateProject(projectId, { name, domain })
       refetchProjects()
@@ -95,6 +97,7 @@ export function ProjectSettings({
       return
     }
     setDeletingProject(projectId)
+    onError(null)
     try {
       await api.deleteProject(projectId)
       setDeleteProjectConfirm(null)
