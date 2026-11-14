@@ -7,7 +7,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
@@ -26,7 +26,7 @@ func (s *Server) handleListABTests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tests == nil {
-		tests = []repository.ABTest{}
+		tests = []domain.ABTest{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tests": tests})
 }
@@ -56,7 +56,7 @@ func (s *Server) handleCreateABTest(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
-	test, err := s.abtests.CreateABTest(ctx, repository.ABTest{
+	test, err := s.abtests.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       projectID,
 		Name:            body.Name,
 		Status:          "running",
@@ -90,7 +90,7 @@ func abTestRange(r *http.Request) (from, to time.Time) {
 
 // splitABResults maps the per-variant results into the flat control and
 // variant totals the UI expects.
-func splitABResults(results []repository.ABTestResult) (controlSample, controlConversions, variantSample, variantConversions int64) {
+func splitABResults(results []domain.ABTestResult) (controlSample, controlConversions, variantSample, variantConversions int64) {
 	for _, r := range results {
 		switch r.Variant {
 		case "control":

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
@@ -31,7 +32,7 @@ func TestAgentLeadTimes_ReportsMergedPRs(t *testing.T) {
 		name string
 		at   time.Time
 	}{{"pr_opened", opened}, {"pr_merged", opened.Add(2 * time.Hour)}} {
-		err := store.InsertEvent(ctx, repository.Event{
+		err := store.InsertEvent(ctx, domain.Event{
 			ID: e.name, ProjectID: projectID, Name: e.name, IngestID: e.name, OccurredAt: e.at,
 			SessionID:  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			Properties: `{"source":"github","repo":"o/r","pr":7,"branch":"issue-1/x","merge_sha":"abc"}`,

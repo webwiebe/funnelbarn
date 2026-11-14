@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -21,8 +21,8 @@ import (
 // snapshot.
 type noFlagRepo struct{ ports.FlagRepo }
 
-func (noFlagRepo) FlagByKey(context.Context, string, string) (repository.FeatureFlag, error) {
-	return repository.FeatureFlag{}, sql.ErrNoRows
+func (noFlagRepo) FlagByKey(context.Context, string, string) (domain.FeatureFlag, error) {
+	return domain.FeatureFlag{}, sql.ErrNoRows
 }
 
 func sha(s string) string {
@@ -36,9 +36,9 @@ func TestStartEvaluateSnapshots(t *testing.T) {
 	store, p, f := newCommandTestStore(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, err := store.CreateAPIKey(ctx, "sdk", p.ID, sha("sdk-key"), repository.APIKeyScopeIngest)
+	_, err := store.CreateAPIKey(ctx, "sdk", p.ID, sha("sdk-key"), domain.APIKeyScopeIngest)
 	require.NoError(t, err)
-	_, err = store.CreateAPIKey(ctx, "report", p.ID, sha("report-key"), repository.APIKeyScopeAnalyticsRead)
+	_, err = store.CreateAPIKey(ctx, "report", p.ID, sha("report-key"), domain.APIKeyScopeAnalyticsRead)
 	require.NoError(t, err)
 
 	flags, keys := startEvaluateSnapshots(ctx, store)
@@ -59,13 +59,13 @@ func TestStartEvaluateSnapshots(t *testing.T) {
 }
 
 func TestKeyGrants(t *testing.T) {
-	grants, err := keyGrants(func(context.Context) ([]repository.APIKey, error) {
-		return []repository.APIKey{{KeyHash: "aa", ProjectID: "p", Scope: "ingest"}}, nil
+	grants, err := keyGrants(func(context.Context) ([]domain.APIKey, error) {
+		return []domain.APIKey{{KeyHash: "aa", ProjectID: "p", Scope: "ingest"}}, nil
 	})(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, []auth.KeyGrant{{KeySHA256: "aa", ProjectID: "p", Scope: "ingest"}}, grants)
 
-	_, err = keyGrants(func(context.Context) ([]repository.APIKey, error) {
+	_, err = keyGrants(func(context.Context) ([]domain.APIKey, error) {
 		return nil, errors.New("disk stall")
 	})(context.Background())
 	require.Error(t, err)

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // These tests cover handleUpdateFunnel's move to FunnelService.UpdateFunnel
@@ -19,10 +19,10 @@ func TestHandleUpdateFunnel_MissingName_Returns422(t *testing.T) {
 	srv, store := newTestServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "FUpdVal2", "fupdval2")
-	f, _ := store.CreateFunnel(ctx, repository.Funnel{
+	f, _ := store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "ev"}},
+		Steps:     []domain.FunnelStep{{EventName: "ev"}},
 	})
 
 	w := putJSON(t, srv, "/api/v1/projects/"+p.ID+"/funnels/"+f.ID, map[string]any{
@@ -42,10 +42,10 @@ func TestHandleUpdateFunnel_NoSteps_Returns422(t *testing.T) {
 	srv, store := newTestServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "FUpdVal3", "fupdval3")
-	f, _ := store.CreateFunnel(ctx, repository.Funnel{
+	f, _ := store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "ev"}},
+		Steps:     []domain.FunnelStep{{EventName: "ev"}},
 	})
 
 	w := putJSON(t, srv, "/api/v1/projects/"+p.ID+"/funnels/"+f.ID, map[string]any{
@@ -61,10 +61,10 @@ func TestHandleUpdateFunnel_EmptyStepEventName_Returns422(t *testing.T) {
 	srv, store := newTestServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "FUpdVal4", "fupdval4")
-	f, _ := store.CreateFunnel(ctx, repository.Funnel{
+	f, _ := store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "ev"}},
+		Steps:     []domain.FunnelStep{{EventName: "ev"}},
 	})
 
 	w := putJSON(t, srv, "/api/v1/projects/"+p.ID+"/funnels/"+f.ID, map[string]any{
@@ -83,11 +83,11 @@ func TestHandleUpdateFunnel_PreservesScopeWhenOmitted(t *testing.T) {
 	srv, store := newTestServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "FUpdScope", "fupdscope")
-	f, _ := store.CreateFunnel(ctx, repository.Funnel{
+	f, _ := store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Funnel",
 		Scope:     "page_view",
-		Steps:     []repository.FunnelStep{{EventName: "ev"}},
+		Steps:     []domain.FunnelStep{{EventName: "ev"}},
 	})
 	if f.Scope != "page_view" {
 		t.Fatalf("setup: want scope page_view, got %q", f.Scope)
@@ -100,7 +100,7 @@ func TestHandleUpdateFunnel_PreservesScopeWhenOmitted(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d (body: %s)", w.Code, w.Body.String())
 	}
-	var updated repository.Funnel
+	var updated domain.Funnel
 	_ = json.Unmarshal(w.Body.Bytes(), &updated)
 	if updated.Scope != "page_view" {
 		t.Errorf("scope: want page_view to be preserved, got %q", updated.Scope)

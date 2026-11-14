@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // wideRange returns a from/to that comfortably brackets "now".
@@ -31,7 +31,7 @@ func TestOverview_ProjectRollupsAndTotals(t *testing.T) {
 
 	rollups, err := s.ProjectRollups(ctx, from, to, "")
 	require.NoError(t, err)
-	byID := map[string]repository.ProjectRollup{}
+	byID := map[string]domain.ProjectRollup{}
 	for _, r := range rollups {
 		byID[r.ProjectID] = r
 	}
@@ -83,10 +83,10 @@ func TestOverview_DeleteCanonicalEventBlockedByFunnel(t *testing.T) {
 	ctx := context.Background()
 
 	// A saved funnel references sign_up; deleting that canonical must conflict.
-	_, err := s.CreateCanonicalFunnel(ctx, repository.CanonicalFunnel{
+	_, err := s.CreateCanonicalFunnel(ctx, domain.CanonicalFunnel{
 		Name:  "f",
 		Scope: "session",
-		Steps: []repository.CanonicalFunnelStep{{CanonicalKey: "sign_up"}},
+		Steps: []domain.CanonicalFunnelStep{{CanonicalKey: "sign_up"}},
 	})
 	require.NoError(t, err)
 
@@ -130,10 +130,10 @@ func TestAnalyzeCanonicalFunnel_Aggregates(t *testing.T) {
 	require.NoError(t, s.UpsertMapping(ctx, c.ID, "pageview", "page_view"))
 	insertEvent(t, s, c.ID, "c1", "pageview", "https://c/1")
 
-	funnel := repository.CanonicalFunnel{
+	funnel := domain.CanonicalFunnel{
 		Name:  "signup flow",
 		Scope: "session",
-		Steps: []repository.CanonicalFunnelStep{
+		Steps: []domain.CanonicalFunnelStep{
 			{CanonicalKey: "page_view"},
 			{CanonicalKey: "sign_up"},
 		},
@@ -174,10 +174,10 @@ func TestAnalyzeCanonicalFunnel_SegmentThreadsThrough(t *testing.T) {
 	require.NoError(t, s.UpsertMapping(ctx, a.ID, "pageview", "page_view"))
 	insertEvent(t, s, a.ID, "a1", "pageview", "https://a/1") // device_type=desktop
 
-	funnel := repository.CanonicalFunnel{
+	funnel := domain.CanonicalFunnel{
 		Name:  "pv",
 		Scope: "session",
-		Steps: []repository.CanonicalFunnelStep{{CanonicalKey: "page_view"}},
+		Steps: []domain.CanonicalFunnelStep{{CanonicalKey: "page_view"}},
 	}
 
 	// No segment: one session.
@@ -186,7 +186,7 @@ func TestAnalyzeCanonicalFunnel_SegmentThreadsThrough(t *testing.T) {
 	require.EqualValues(t, 1, res.Steps[0].Count)
 
 	// device_type=mobile: the seeded event is desktop, so zero.
-	seg := &repository.SegmentFilter{Field: "device_type", Op: "eq", Value: "mobile"}
+	seg := &domain.SegmentFilter{Field: "device_type", Op: "eq", Value: "mobile"}
 	res2, err := s.AnalyzeCanonicalFunnel(ctx, funnel, nil, from, to, seg)
 	require.NoError(t, err)
 	require.EqualValues(t, 0, res2.Steps[0].Count)
@@ -201,12 +201,12 @@ func TestOverview_ListAllEventsCrossProject(t *testing.T) {
 	insertEvent(t, s, a.ID, "a1", "pageview", "https://a/1")
 	insertEvent(t, s, b.ID, "b1", "pageview", "https://b/1")
 
-	all, err := s.ListAllEvents(ctx, repository.EventFilter{}, 50)
+	all, err := s.ListAllEvents(ctx, domain.EventFilter{}, 50)
 	require.NoError(t, err)
 	require.Len(t, all, 2)
 
 	// Filter by project.
-	onlyA, err := s.ListAllEvents(ctx, repository.EventFilter{ProjectID: a.ID}, 50)
+	onlyA, err := s.ListAllEvents(ctx, domain.EventFilter{ProjectID: a.ID}, 50)
 	require.NoError(t, err)
 	require.Len(t, onlyA, 1)
 	require.Equal(t, a.ID, onlyA[0].ProjectID)
@@ -259,20 +259,20 @@ func TestOverview_CanonicalCatalogCRUD(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	created, err := s.CreateCanonicalEvent(ctx, repository.CanonicalEvent{Key: "contact_form", Label: "Contact Form", SortOrder: 99})
+	created, err := s.CreateCanonicalEvent(ctx, domain.CanonicalEvent{Key: "contact_form", Label: "Contact Form", SortOrder: 99})
 	require.NoError(t, err)
 	require.Equal(t, "contact_form", created.Key)
 
 	// Duplicate key conflicts.
-	_, err = s.CreateCanonicalEvent(ctx, repository.CanonicalEvent{Key: "contact_form", Label: "dup"})
+	_, err = s.CreateCanonicalEvent(ctx, domain.CanonicalEvent{Key: "contact_form", Label: "dup"})
 	require.Error(t, err)
 
-	updated, err := s.UpdateCanonicalEvent(ctx, repository.CanonicalEvent{Key: "contact_form", Label: "Contact", SortOrder: 5})
+	updated, err := s.UpdateCanonicalEvent(ctx, domain.CanonicalEvent{Key: "contact_form", Label: "Contact", SortOrder: 5})
 	require.NoError(t, err)
 	require.Equal(t, "Contact", updated.Label)
 
 	// Update of unknown key is a not-found.
-	_, err = s.UpdateCanonicalEvent(ctx, repository.CanonicalEvent{Key: "nope", Label: "x"})
+	_, err = s.UpdateCanonicalEvent(ctx, domain.CanonicalEvent{Key: "nope", Label: "x"})
 	require.Error(t, err)
 
 	keys, err := s.CanonicalKeySet(ctx)
@@ -306,12 +306,12 @@ func TestOverview_CanonicalFunnelCRUD(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	f, err := s.CreateCanonicalFunnel(ctx, repository.CanonicalFunnel{
+	f, err := s.CreateCanonicalFunnel(ctx, domain.CanonicalFunnel{
 		Name:       "Flow",
 		Scope:      "session",
 		ProjectIDs: []string{"p1", "p2"},
 		Segment:    "mobile",
-		Steps: []repository.CanonicalFunnelStep{
+		Steps: []domain.CanonicalFunnelStep{
 			{CanonicalKey: "page_view"},
 			{CanonicalKey: "sign_up"},
 		},
@@ -331,7 +331,7 @@ func TestOverview_CanonicalFunnelCRUD(t *testing.T) {
 	require.Len(t, list, 1)
 
 	f.Name = "Renamed"
-	f.Steps = []repository.CanonicalFunnelStep{{CanonicalKey: "login"}}
+	f.Steps = []domain.CanonicalFunnelStep{{CanonicalKey: "login"}}
 	updated, err := s.UpdateCanonicalFunnel(ctx, f)
 	require.NoError(t, err)
 	require.Equal(t, "Renamed", updated.Name)

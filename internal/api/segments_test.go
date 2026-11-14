@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func segmentsTestSetup(t *testing.T) (*Server, string) {
@@ -28,14 +28,14 @@ func TestHandleSegments_CRUD(t *testing.T) {
 	// Create.
 	wc := postJSON(t, srv, "/api/v1/projects/"+pid+"/segments", map[string]any{
 		"name": "Dutch",
-		"rules": []repository.SegmentRule{
+		"rules": []domain.SegmentRule{
 			{Field: "country_code", Operator: "eq", Value: "NL"},
 		},
 	}, nil)
 	if wc.Code != http.StatusCreated {
 		t.Fatalf("create: expected 201, got %d (body: %s)", wc.Code, wc.Body.String())
 	}
-	var seg repository.Segment
+	var seg domain.Segment
 	_ = json.Unmarshal(wc.Body.Bytes(), &seg)
 	if seg.ID == "" {
 		t.Fatal("expected segment id in response")
@@ -44,7 +44,7 @@ func TestHandleSegments_CRUD(t *testing.T) {
 	// Update.
 	wu := putJSON(t, srv, "/api/v1/projects/"+pid+"/segments/"+seg.ID, map[string]any{
 		"name":  "Dutch Visitors",
-		"rules": []repository.SegmentRule{},
+		"rules": []domain.SegmentRule{},
 	}, nil)
 	if wu.Code != http.StatusOK {
 		t.Fatalf("update: expected 200, got %d (body: %s)", wu.Code, wu.Body.String())
@@ -77,7 +77,7 @@ func TestHandleCreateSegment_InvalidField(t *testing.T) {
 	srv, pid := segmentsTestSetup(t)
 	w := postJSON(t, srv, "/api/v1/projects/"+pid+"/segments", map[string]any{
 		"name": "Bad field",
-		"rules": []repository.SegmentRule{
+		"rules": []domain.SegmentRule{
 			{Field: "not_a_real_field", Operator: "eq", Value: "x"},
 		},
 	}, nil)
@@ -90,7 +90,7 @@ func TestHandleCreateSegment_InvalidOperator(t *testing.T) {
 	srv, pid := segmentsTestSetup(t)
 	w := postJSON(t, srv, "/api/v1/projects/"+pid+"/segments", map[string]any{
 		"name": "Bad operator",
-		"rules": []repository.SegmentRule{
+		"rules": []domain.SegmentRule{
 			{Field: "country_code", Operator: "like", Value: "NL"},
 		},
 	}, nil)
@@ -102,13 +102,13 @@ func TestHandleCreateSegment_InvalidOperator(t *testing.T) {
 func TestHandleUpdateSegment_MissingName(t *testing.T) {
 	srv, pid := segmentsTestSetup(t)
 	wc := postJSON(t, srv, "/api/v1/projects/"+pid+"/segments", map[string]any{
-		"name": "Original", "rules": []repository.SegmentRule{},
+		"name": "Original", "rules": []domain.SegmentRule{},
 	}, nil)
-	var seg repository.Segment
+	var seg domain.Segment
 	_ = json.Unmarshal(wc.Body.Bytes(), &seg)
 
 	w := putJSON(t, srv, "/api/v1/projects/"+pid+"/segments/"+seg.ID, map[string]any{
-		"name": "", "rules": []repository.SegmentRule{},
+		"name": "", "rules": []domain.SegmentRule{},
 	}, nil)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422 for missing name on update, got %d (body: %s)", w.Code, w.Body.String())
@@ -124,17 +124,17 @@ func TestHandleSegment_CrossProject(t *testing.T) {
 	p2, _ := store.CreateProject(ctx, "SegProj2", "seg-proj2")
 
 	wc := postJSON(t, srv, "/api/v1/projects/"+p1.ID+"/segments", map[string]any{
-		"name": "P1 Segment", "rules": []repository.SegmentRule{},
+		"name": "P1 Segment", "rules": []domain.SegmentRule{},
 	}, nil)
 	if wc.Code != http.StatusCreated {
 		t.Fatalf("create: expected 201, got %d (body: %s)", wc.Code, wc.Body.String())
 	}
-	var seg repository.Segment
+	var seg domain.Segment
 	_ = json.Unmarshal(wc.Body.Bytes(), &seg)
 
 	// Update via the other project's URL: 404.
 	wu := putJSON(t, srv, "/api/v1/projects/"+p2.ID+"/segments/"+seg.ID, map[string]any{
-		"name": "Hijacked", "rules": []repository.SegmentRule{},
+		"name": "Hijacked", "rules": []domain.SegmentRule{},
 	}, nil)
 	if wu.Code != http.StatusNotFound {
 		t.Fatalf("update via wrong project: expected 404, got %d (body: %s)", wu.Code, wu.Body.String())
@@ -158,7 +158,7 @@ func TestHandleSegment_CrossProject(t *testing.T) {
 func TestHandleUpdateSegment_NotFound(t *testing.T) {
 	srv, pid := segmentsTestSetup(t)
 	w := putJSON(t, srv, "/api/v1/projects/"+pid+"/segments/does-not-exist", map[string]any{
-		"name": "X", "rules": []repository.SegmentRule{},
+		"name": "X", "rules": []domain.SegmentRule{},
 	}, nil)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for nonexistent segment, got %d (body: %s)", w.Code, w.Body.String())

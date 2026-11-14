@@ -62,7 +62,7 @@ type getProjectIn struct {
 	Project string `json:"project,omitempty" jsonschema:"Project slug or ID; defaults to the repository's project from the x-funnelbarn-project header."`
 }
 
-// projectHealthOut mirrors repository.ProjectHealth's flags without the
+// projectHealthOut mirrors domain.ProjectHealth's flags without the
 // bookkeeping fields (project ID, updated-at).
 type projectHealthOut struct {
 	SetupCalled        bool `json:"setup_called" jsonschema:"Whether the project's SDK setup call has been received."`

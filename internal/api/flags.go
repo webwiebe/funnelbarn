@@ -8,8 +8,8 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
@@ -26,7 +26,7 @@ func (s *Server) handleListFlags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if flags == nil {
-		flags = []repository.FeatureFlag{}
+		flags = []domain.FeatureFlag{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"flags": flags})
 }
@@ -62,23 +62,23 @@ func (s *Server) handleCreateFlag(w http.ResponseWriter, r *http.Request) {
 // project named by {id}. Without this, a project-scoped API token could reach
 // any flag in the instance by ID and the URL's project would be decoration —
 // the scoping these routes advertise has to be real.
-func (s *Server) flagInProject(w http.ResponseWriter, r *http.Request, op string) (repository.FeatureFlag, bool) {
+func (s *Server) flagInProject(w http.ResponseWriter, r *http.Request, op string) (domain.FeatureFlag, bool) {
 	projectID := r.PathValue("id")
 	flagID := r.PathValue("fid")
 	if flagID == "" {
 		jsonError(w, "flag id required", http.StatusBadRequest)
-		return repository.FeatureFlag{}, false
+		return domain.FeatureFlag{}, false
 	}
 	flag, err := s.flags.GetFlag(r.Context(), flagID)
 	if err != nil {
 		mapServiceError(w, err, op)
-		return repository.FeatureFlag{}, false
+		return domain.FeatureFlag{}, false
 	}
 	// 404 rather than 403: a caller scoped to another project should not learn
 	// that this flag ID exists at all.
 	if projectID != "" && flag.ProjectID != projectID {
 		jsonError(w, "flag not found", http.StatusNotFound)
-		return repository.FeatureFlag{}, false
+		return domain.FeatureFlag{}, false
 	}
 	return flag, true
 }
@@ -156,11 +156,11 @@ func (s *Server) handleFlagAnalysis(w http.ResponseWriter, r *http.Request) {
 
 	// A config flag records no evaluations, so a variant/conversion report for
 	// it would be an empty table dressed up as a result. Say so instead.
-	if flag.Kind == repository.FlagKindConfig {
+	if flag.Kind == domain.FlagKindConfig {
 		span.SetAttributes(attribute.String("flag.kind", flag.Kind))
 		writeJSON(w, http.StatusOK, map[string]any{
 			"flag":        flag,
-			"results":     []repository.FlagAnalysisResult{},
+			"results":     []domain.FlagAnalysisResult{},
 			"significant": false,
 			"z_score":     0,
 			"from":        from.Format(time.RFC3339),
@@ -177,7 +177,7 @@ func (s *Server) handleFlagAnalysis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if results == nil {
-		results = []repository.FlagAnalysisResult{}
+		results = []domain.FlagAnalysisResult{}
 	}
 
 	// Run z-test if we have exactly 2 variants.
@@ -361,7 +361,7 @@ func (s *Server) handleFlagContextKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if suggestions == nil {
-		suggestions = []repository.ContextKeySuggestion{}
+		suggestions = []domain.ContextKeySuggestion{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"suggestions": suggestions})
 }

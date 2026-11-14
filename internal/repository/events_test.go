@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
@@ -20,13 +21,13 @@ import (
 // Helpers
 // ---------------------------------------------------------------------------
 
-func insertEvent(t *testing.T, s *repository.Store, projectID, sessionID, name, url string) repository.Event {
+func insertEvent(t *testing.T, s *repository.Store, projectID, sessionID, name, url string) domain.Event {
 	t.Helper()
 	ctx := context.Background()
 
 	// Truncate to seconds so SQLite's strftime can parse it correctly.
 	now := time.Now().UTC().Truncate(time.Second)
-	e := repository.Event{
+	e := domain.Event{
 		ID:             randomHex(t),
 		ProjectID:      projectID,
 		SessionID:      sessionID,
@@ -55,7 +56,7 @@ func randomHex(t *testing.T) string {
 
 func insertSession(t *testing.T, s *repository.Store, projectID, sessionID string, lastSeen time.Time) {
 	t.Helper()
-	sess := repository.Session{
+	sess := domain.Session{
 		ID:          sessionID,
 		ProjectID:   projectID,
 		FirstSeenAt: lastSeen.Add(-5 * time.Minute),
@@ -224,7 +225,7 @@ func TestTopUTMSources(t *testing.T) {
 	p, _ := s.CreateProject(ctx, "UTMSrc", "utmsrc")
 
 	// Insert event with UTM source.
-	e := repository.Event{
+	e := domain.Event{
 		ID:         randomHex(t),
 		ProjectID:  p.ID,
 		SessionID:  "s1",
@@ -350,7 +351,7 @@ func TestUpsertSession_UpdatesExisting(t *testing.T) {
 	s := newTestStore(t)
 	p, _ := s.CreateProject(ctx, "SessUpdate", "sessupdate")
 
-	first := repository.Session{
+	first := domain.Session{
 		ID:          "s-update",
 		ProjectID:   p.ID,
 		FirstSeenAt: time.Now().UTC().Add(-10 * time.Minute),
@@ -381,7 +382,7 @@ func TestCreateABTest_ListABTests(t *testing.T) {
 	s := newTestStore(t)
 	p, _ := s.CreateProject(ctx, "ABRepo", "abrepo")
 
-	test, err := s.CreateABTest(ctx, repository.ABTest{
+	test, err := s.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       p.ID,
 		Name:            "Headline",
 		Status:          "running",
@@ -401,7 +402,7 @@ func TestABTestByID(t *testing.T) {
 	s := newTestStore(t)
 	p, _ := s.CreateProject(ctx, "ABByID", "abbyid")
 
-	test, _ := s.CreateABTest(ctx, repository.ABTest{
+	test, _ := s.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       p.ID,
 		Name:            "CTA",
 		Status:          "running",
@@ -419,7 +420,7 @@ func TestAnalyzeABTest_EmptyReturnsNoError(t *testing.T) {
 	s := newTestStore(t)
 	p, _ := s.CreateProject(ctx, "ABAnalyze", "abanalyze")
 
-	test, _ := s.CreateABTest(ctx, repository.ABTest{
+	test, _ := s.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       p.ID,
 		Name:            "Button",
 		Status:          "running",
@@ -536,7 +537,7 @@ func TestCheckProjectSlug(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			err := store.CheckProjectSlug(ctx, tc.slug)
-			if got := errors.Is(err, repository.ErrProjectUnresolvable); got != tc.wantUnresolved {
+			if got := errors.Is(err, domain.ErrProjectUnresolvable); got != tc.wantUnresolved {
 				t.Errorf("CheckProjectSlug(%q) = %v, want unresolvable %v", tc.slug, err, tc.wantUnresolved)
 			}
 			if !tc.wantUnresolved && err != nil {
@@ -616,17 +617,17 @@ func TestUpdateFunnel(t *testing.T) {
 	s := newTestStore(t)
 	p, _ := s.CreateProject(ctx, "FunnelUpd", "funnelupd")
 
-	f, _ := s.CreateFunnel(ctx, repository.Funnel{
+	f, _ := s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Old",
-		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step-1"}},
 	})
 
-	updated, err := s.UpdateFunnel(ctx, repository.Funnel{
+	updated, err := s.UpdateFunnel(ctx, domain.Funnel{
 		ID:        f.ID,
 		ProjectID: p.ID,
 		Name:      "New",
-		Steps: []repository.FunnelStep{
+		Steps: []domain.FunnelStep{
 			{EventName: "step-a"},
 			{EventName: "step-b"},
 		},
@@ -641,10 +642,10 @@ func TestAnalyzeFunnel_EmptyReturnsNoError(t *testing.T) {
 	s := newTestStore(t)
 	p, _ := s.CreateProject(ctx, "FunnelAnalysis", "funnelanalysis")
 
-	f, _ := s.CreateFunnel(ctx, repository.Funnel{
+	f, _ := s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Checkout",
-		Steps: []repository.FunnelStep{
+		Steps: []domain.FunnelStep{
 			{EventName: "cart"},
 			{EventName: "purchase"},
 		},
@@ -674,7 +675,7 @@ func TestDistinctEventProperties(t *testing.T) {
 	p, _ := s.CreateProject(ctx, "EvtProps", "evtprops")
 
 	// Insert events with JSON properties.
-	e1 := repository.Event{
+	e1 := domain.Event{
 		ID:         randomHex(t),
 		ProjectID:  p.ID,
 		SessionID:  "s1",
@@ -683,7 +684,7 @@ func TestDistinctEventProperties(t *testing.T) {
 		IngestID:   "ingest-" + randomHex(t),
 		OccurredAt: time.Now().UTC().Truncate(time.Second),
 	}
-	e2 := repository.Event{
+	e2 := domain.Event{
 		ID:         randomHex(t),
 		ProjectID:  p.ID,
 		SessionID:  "s2",
@@ -711,7 +712,7 @@ func TestDistinctPropertyValues(t *testing.T) {
 	p, _ := s.CreateProject(ctx, "PropVals", "propvals")
 
 	for _, plan := range []string{"pro", "free", "enterprise", "pro"} {
-		e := repository.Event{
+		e := domain.Event{
 			ID:         randomHex(t),
 			ProjectID:  p.ID,
 			SessionID:  "s1",
@@ -751,23 +752,23 @@ func TestAnalyzeFunnel_WithEqSegment(t *testing.T) {
 	s := newTestStore(t)
 	p, _ := s.CreateProject(ctx, "FunnelEq", "funneleq")
 
-	f, _ := s.CreateFunnel(ctx, repository.Funnel{
+	f, _ := s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Mobile Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "page_view"}},
+		Steps:     []domain.FunnelStep{{EventName: "page_view"}},
 	})
 
 	from := time.Now().UTC().Add(-24 * time.Hour)
 	to := time.Now().UTC().Add(time.Hour)
 
 	// Op "eq" exercises escapeSQLLiteral.
-	seg := &repository.SegmentFilter{Field: "device_type", Op: "eq", Value: "mobile"}
+	seg := &domain.SegmentFilter{Field: "device_type", Op: "eq", Value: "mobile"}
 	results, err := s.AnalyzeFunnel(ctx, f, from, to, seg)
 	require.NoError(t, err)
 	_ = results
 
 	// Op "neq" also exercises escapeSQLLiteral.
-	seg2 := &repository.SegmentFilter{Field: "device_type", Op: "neq", Value: "tablet"}
+	seg2 := &domain.SegmentFilter{Field: "device_type", Op: "neq", Value: "tablet"}
 	results2, err := s.AnalyzeFunnel(ctx, f, from, to, seg2)
 	require.NoError(t, err)
 	_ = results2
@@ -803,7 +804,7 @@ func TestStore_DistinctEnvironments(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, env := range []string{"production", "staging", "staging"} {
-		e := repository.Event{
+		e := domain.Event{
 			ID:          randomHex(t),
 			ProjectID:   p.ID,
 			SessionID:   "sess-env",
@@ -830,7 +831,7 @@ func TestStore_DistinctEventNames(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, name := range []string{"page_view", "click", "page_view"} {
-		e := repository.Event{
+		e := domain.Event{
 			ID:         randomHex(t),
 			ProjectID:  p.ID,
 			SessionID:  "sess-names",
@@ -866,25 +867,25 @@ func TestAnalyzeFunnel_SegmentJoinIsProjectScoped(t *testing.T) {
 
 	// Project A's visitor is new: one event, so event_count = 1.
 	insertEvent(t, s, pa.ID, shared, "page_view", "https://a.example/")
-	require.NoError(t, s.UpsertSession(ctx, repository.Session{
+	require.NoError(t, s.UpsertSession(ctx, domain.Session{
 		ID: shared, ProjectID: pa.ID, FirstSeenAt: now, LastSeenAt: now,
 	}))
 
 	// Project B's visitor, under the SAME session ID, is returning: three
 	// events, so event_count > 1.
-	require.NoError(t, s.UpsertSession(ctx, repository.Session{
+	require.NoError(t, s.UpsertSession(ctx, domain.Session{
 		ID: shared, ProjectID: pb.ID, FirstSeenAt: now, LastSeenAt: now,
 	}))
 	for range 2 {
-		require.NoError(t, s.UpsertSession(ctx, repository.Session{
+		require.NoError(t, s.UpsertSession(ctx, domain.Session{
 			ID: shared, ProjectID: pb.ID, FirstSeenAt: now, LastSeenAt: now,
 		}))
 	}
 
-	f, err := s.CreateFunnel(ctx, repository.Funnel{
+	f, err := s.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: pa.ID,
 		Name:      "A's funnel",
-		Steps:     []repository.FunnelStep{{EventName: "page_view"}},
+		Steps:     []domain.FunnelStep{{EventName: "page_view"}},
 	})
 	require.NoError(t, err)
 
@@ -892,7 +893,7 @@ func TestAnalyzeFunnel_SegmentJoinIsProjectScoped(t *testing.T) {
 
 	// Segmenting A's funnel to new visitors must find A's own session.
 	newVisitors, err := s.AnalyzeFunnel(ctx, f, from, to,
-		&repository.SegmentFilter{Field: "session_returning", Value: "false"})
+		&domain.SegmentFilter{Field: "session_returning", Value: "false"})
 	require.NoError(t, err)
 	require.Len(t, newVisitors, 1)
 	assert.Equal(t, int64(1), newVisitors[0].Count,
@@ -901,7 +902,7 @@ func TestAnalyzeFunnel_SegmentJoinIsProjectScoped(t *testing.T) {
 	// Segmenting to returning visitors must find nothing: A has none. A count
 	// of 1 here means the join read project B's session row.
 	returning, err := s.AnalyzeFunnel(ctx, f, from, to,
-		&repository.SegmentFilter{Field: "session_returning", Value: "true"})
+		&domain.SegmentFilter{Field: "session_returning", Value: "true"})
 	require.NoError(t, err)
 	require.Len(t, returning, 1)
 	assert.Equal(t, int64(0), returning[0].Count,
@@ -920,10 +921,10 @@ func TestSessionByID_IsProjectScoped(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	require.NoError(t, s.UpsertSession(ctx, repository.Session{
+	require.NoError(t, s.UpsertSession(ctx, domain.Session{
 		ID: "dup", ProjectID: pa.ID, FirstSeenAt: now, LastSeenAt: now, EntryURL: "https://a.example/",
 	}))
-	require.NoError(t, s.UpsertSession(ctx, repository.Session{
+	require.NoError(t, s.UpsertSession(ctx, domain.Session{
 		ID: "dup", ProjectID: pb.ID, FirstSeenAt: now, LastSeenAt: now, EntryURL: "https://b.example/",
 	}))
 
@@ -953,19 +954,19 @@ func TestUpsertSessionSignals_IsProjectScoped(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, pid := range []string{pa.ID, pb.ID} {
-		require.NoError(t, s.UpsertSession(ctx, repository.Session{
+		require.NoError(t, s.UpsertSession(ctx, domain.Session{
 			ID: "dup-sig", ProjectID: pid, FirstSeenAt: now, LastSeenAt: now,
 		}))
 	}
 
 	w := 1920
 	require.NoError(t, s.UpsertSessionSignals(ctx, pa.ID, "dup-sig",
-		repository.SessionSignals{ScreenWidth: &w}))
+		domain.SessionSignals{ScreenWidth: &w}))
 
 	// Project B's row must be untouched, so its own signals still land.
 	w2 := 390
 	require.NoError(t, s.UpsertSessionSignals(ctx, pb.ID, "dup-sig",
-		repository.SessionSignals{ScreenWidth: &w2}))
+		domain.SessionSignals{ScreenWidth: &w2}))
 
 	sessions, err := s.ListSessions(ctx, pb.ID, 10, 0)
 	require.NoError(t, err)
@@ -975,5 +976,5 @@ func TestUpsertSessionSignals_IsProjectScoped(t *testing.T) {
 	// the first write landed on A and not on B.
 	w3 := 111
 	require.NoError(t, s.UpsertSessionSignals(ctx, pa.ID, "dup-sig",
-		repository.SessionSignals{ScreenWidth: &w3}))
+		domain.SessionSignals{ScreenWidth: &w3}))
 }

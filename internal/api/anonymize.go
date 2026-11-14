@@ -10,7 +10,7 @@ import (
 )
 
 func (s *Server) handleAnonymizeGeo(w http.ResponseWriter, r *http.Request) {
-	if s.geoAnonymizer == nil {
+	if s.privacy == nil {
 		jsonError(w, "geo anonymization unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -37,7 +37,7 @@ func (s *Server) handleAnonymizeGeo(w http.ResponseWriter, r *http.Request) {
 	var anonymized int64
 
 	if body.SessionID != "" {
-		if err := s.geoAnonymizer.AnonymizeSessionGeo(ctx, body.SessionID); err != nil {
+		if err := s.privacy.AnonymizeSessionGeo(ctx, body.SessionID); err != nil {
 			tracing.RecordError(span, err)
 			mapServiceError(w, err, "handleAnonymizeGeo.session")
 			return
@@ -50,7 +50,7 @@ func (s *Server) handleAnonymizeGeo(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, "invalid ip address", http.StatusUnprocessableEntity)
 			return
 		}
-		n, err := s.geoAnonymizer.AnonymizeSessionsByIP(ctx, body.IP)
+		n, err := s.privacy.AnonymizeSessionsByIP(ctx, body.IP)
 		if err != nil {
 			tracing.RecordError(span, err)
 			mapServiceError(w, err, "handleAnonymizeGeo.ip")

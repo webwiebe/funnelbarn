@@ -7,22 +7,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func TestHandleFunnelAnalysis_Breakdown(t *testing.T) {
 	srv, store := newTestServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "FBreak", "fbreak")
-	f, _ := store.CreateFunnel(ctx, repository.Funnel{
+	f, _ := store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Surface Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "visit"}, {EventName: "signup"}},
+		Steps:     []domain.FunnelStep{{EventName: "visit"}, {EventName: "signup"}},
 	})
 	at := time.Now().UTC().Add(-time.Hour)
 	insert := func(id, session, name, props string) {
 		t.Helper()
-		if err := store.InsertEvent(ctx, repository.Event{
+		if err := store.InsertEvent(ctx, domain.Event{
 			ID: "ev-" + id, ProjectID: p.ID, SessionID: session, Name: name,
 			Properties: props, IngestID: "ing-" + id, OccurredAt: at, Environment: "production",
 		}); err != nil {
@@ -56,10 +56,10 @@ func TestHandleFunnelAnalysis_Breakdown(t *testing.T) {
 		Breakdown struct {
 			Property string `json:"property"`
 			Groups   []struct {
-				Value   string                        `json:"value"`
-				Label   string                        `json:"label"`
-				Entries int64                         `json:"entries"`
-				Results []repository.FunnelStepResult `json:"results"`
+				Value   string                    `json:"value"`
+				Label   string                    `json:"label"`
+				Entries int64                     `json:"entries"`
+				Results []domain.FunnelStepResult `json:"results"`
 			} `json:"groups"`
 		} `json:"breakdown"`
 	}
@@ -85,8 +85,8 @@ func TestHandleFunnelAnalysis_BreakdownRejectsBadProperty(t *testing.T) {
 	srv, store := newTestServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "FBreakBad", "fbreakbad")
-	f, _ := store.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: p.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "visit"}},
+	f, _ := store.CreateFunnel(ctx, domain.Funnel{
+		ProjectID: p.ID, Name: "F", Steps: []domain.FunnelStep{{EventName: "visit"}},
 	})
 	w := getJSON(t, srv, "/api/v1/projects/"+p.ID+"/funnels/"+f.ID+"/analysis?breakdown=a%27)%20OR%201=1", nil)
 	if w.Code != http.StatusUnprocessableEntity {

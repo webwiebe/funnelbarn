@@ -5,40 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
-// ABTest represents an A/B test experiment.
-type ABTest struct {
-	ID              string    `json:"id"`
-	ProjectID       string    `json:"project_id"`
-	Name            string    `json:"name"`
-	Status          string    `json:"status"`
-	ControlFilter   string    `json:"control_filter"`
-	VariantFilter   string    `json:"variant_filter"`
-	ConversionEvent string    `json:"conversion_event"`
-	CreatedAt       time.Time `json:"created_at"`
-}
-
-// ABTestFilter is a JSON-serialisable event property filter.
-type ABTestFilter struct {
-	Property string `json:"property"`
-	Value    string `json:"value"`
-}
-
-// ABTestResult holds per-variant analysis results.
-type ABTestResult struct {
-	Variant     string  `json:"variant"`
-	Total       int64   `json:"total"`
-	Conversions int64   `json:"conversions"`
-	Rate        float64 `json:"rate"`
-}
-
 // CreateABTest inserts a new A/B test.
-func (s *Store) CreateABTest(ctx context.Context, t ABTest) (ABTest, error) {
+func (s *Store) CreateABTest(ctx context.Context, t domain.ABTest) (domain.ABTest, error) {
 	var err error
 	t.ID, err = generateUUID()
 	if err != nil {
-		return ABTest{}, fmt.Errorf("generate uuid: %w", err)
+		return domain.ABTest{}, fmt.Errorf("generate uuid: %w", err)
 	}
 	const q = `
 		INSERT INTO ab_tests (id, project_id, name, status, control_filter, variant_filter, conversion_event)
@@ -47,37 +23,37 @@ func (s *Store) CreateABTest(ctx context.Context, t ABTest) (ABTest, error) {
 		t.ID, t.ProjectID, t.Name, t.Status,
 		nullStr(t.ControlFilter), nullStr(t.VariantFilter), t.ConversionEvent,
 	); err != nil {
-		return ABTest{}, fmt.Errorf("create ab_test: %w", err)
+		return domain.ABTest{}, fmt.Errorf("create ab_test: %w", err)
 	}
 	return s.abTestByID(ctx, s.db, t.ID)
 }
 
 // ABTestByID fetches a single A/B test.
-func (s *ReadStore) ABTestByID(ctx context.Context, id string) (ABTest, error) {
+func (s *ReadStore) ABTestByID(ctx context.Context, id string) (domain.ABTest, error) {
 	return s.abTestByID(ctx, s.rdb, id)
 }
 
 // abTestByID reads through db, so write paths can read back on the write pool.
-func (s *ReadStore) abTestByID(ctx context.Context, db querier, id string) (ABTest, error) {
+func (s *ReadStore) abTestByID(ctx context.Context, db querier, id string) (domain.ABTest, error) {
 	const q = `
 		SELECT id, project_id, name, status,
 		       COALESCE(control_filter,''), COALESCE(variant_filter,''),
 		       conversion_event, created_at
 		FROM ab_tests WHERE id = ?`
-	var t ABTest
+	var t domain.ABTest
 	err := db.QueryRowContext(ctx, q, id).Scan(
 		&t.ID, &t.ProjectID, &t.Name, &t.Status,
 		&t.ControlFilter, &t.VariantFilter,
 		&t.ConversionEvent, &t.CreatedAt,
 	)
 	if err != nil {
-		return ABTest{}, err // sql.ErrNoRows propagated to caller; service wraps as domain.ErrNotFound
+		return domain.ABTest{}, err // sql.ErrNoRows propagated to caller; service wraps as domain.ErrNotFound
 	}
 	return t, nil
 }
 
 // ListABTests returns all A/B tests for a project.
-func (s *ReadStore) ListABTests(ctx context.Context, projectID string) ([]ABTest, error) {
+func (s *ReadStore) ListABTests(ctx context.Context, projectID string) ([]domain.ABTest, error) {
 	const q = `
 		SELECT id, project_id, name, status,
 		       COALESCE(control_filter,''), COALESCE(variant_filter,''),
@@ -89,9 +65,9 @@ func (s *ReadStore) ListABTests(ctx context.Context, projectID string) ([]ABTest
 	}
 	defer rows.Close()
 
-	var tests []ABTest
+	var tests []domain.ABTest
 	for rows.Next() {
-		var t ABTest
+		var t domain.ABTest
 		if err := rows.Scan(
 			&t.ID, &t.ProjectID, &t.Name, &t.Status,
 			&t.ControlFilter, &t.VariantFilter,
@@ -105,7 +81,7 @@ func (s *ReadStore) ListABTests(ctx context.Context, projectID string) ([]ABTest
 }
 
 // AnalyzeABTest counts control vs variant totals and conversions over a time window.
-func (s *ReadStore) AnalyzeABTest(ctx context.Context, t ABTest, from, to time.Time) ([]ABTestResult, error) {
+func (s *ReadStore) AnalyzeABTest(ctx context.Context, t domain.ABTest, from, to time.Time) ([]domain.ABTestResult, error) {
 	type arm struct {
 		name   string
 		filter string
@@ -115,9 +91,9 @@ func (s *ReadStore) AnalyzeABTest(ctx context.Context, t ABTest, from, to time.T
 		{name: "variant", filter: t.VariantFilter},
 	}
 
-	var results []ABTestResult
+	var results []domain.ABTestResult
 	for _, a := range arms {
-		var f ABTestFilter
+		var f domain.ABTestFilter
 		if a.filter != "" {
 			if err := json.Unmarshal([]byte(a.filter), &f); err != nil {
 				return nil, fmt.Errorf("parse filter for %s: %w", a.name, err)
@@ -139,7 +115,7 @@ func (s *ReadStore) AnalyzeABTest(ctx context.Context, t ABTest, from, to time.T
 			rate = float64(conversions) / float64(total)
 		}
 
-		results = append(results, ABTestResult{
+		results = append(results, domain.ABTestResult{
 			Variant:     a.name,
 			Total:       total,
 			Conversions: conversions,
@@ -150,7 +126,7 @@ func (s *ReadStore) AnalyzeABTest(ctx context.Context, t ABTest, from, to time.T
 }
 
 // countSessionsWithFilter counts distinct sessions where any event matches the filter.
-func (s *ReadStore) countSessionsWithFilter(ctx context.Context, projectID string, f ABTestFilter, from, to time.Time) (int64, error) {
+func (s *ReadStore) countSessionsWithFilter(ctx context.Context, projectID string, f domain.ABTestFilter, from, to time.Time) (int64, error) {
 	if f.Property == "" {
 		const q = `SELECT COUNT(DISTINCT session_id) FROM events WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?`
 		var n int64
@@ -165,7 +141,7 @@ func (s *ReadStore) countSessionsWithFilter(ctx context.Context, projectID strin
 }
 
 // countConversionsWithFilter counts sessions matching the filter that also fired the conversion event.
-func (s *ReadStore) countConversionsWithFilter(ctx context.Context, projectID string, f ABTestFilter, conversionEvent string, from, to time.Time) (int64, error) {
+func (s *ReadStore) countConversionsWithFilter(ctx context.Context, projectID string, f domain.ABTestFilter, conversionEvent string, from, to time.Time) (int64, error) {
 	if f.Property == "" {
 		const q = `
 			SELECT COUNT(DISTINCT session_id) FROM events

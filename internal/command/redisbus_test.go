@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // fakeQueue models the reliable list: Receive moves a payload to the
@@ -138,10 +138,10 @@ func (q *fakeQueue) pendingPayloads() [][]byte {
 type recordingStore struct {
 	mu    sync.Mutex
 	keys  []string
-	evals []repository.FlagEvaluation
+	evals []domain.FlagEvaluation
 }
 
-func (s *recordingStore) RecordEvaluation(_ context.Context, e repository.FlagEvaluation) error {
+func (s *recordingStore) RecordEvaluation(_ context.Context, e domain.FlagEvaluation) error {
 	s.mu.Lock()
 	s.evals = append(s.evals, e)
 	s.mu.Unlock()
@@ -155,11 +155,11 @@ func (s *recordingStore) TouchAPIKey(_ context.Context, hash string) error {
 	return nil
 }
 
-func (s *recordingStore) FlagByKey(context.Context, string, string) (repository.FeatureFlag, error) {
-	return repository.FeatureFlag{}, nil
+func (s *recordingStore) FlagByKey(context.Context, string, string) (domain.FeatureFlag, error) {
+	return domain.FeatureFlag{}, nil
 }
 func (s *recordingStore) TouchFlagEvaluated(context.Context, string) error { return nil }
-func (s *recordingStore) EnsureAutoFlag(_ context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error) {
+func (s *recordingStore) EnsureAutoFlag(_ context.Context, f domain.FeatureFlag) (domain.FeatureFlag, error) {
 	return f, nil
 }
 func (s *recordingStore) CountAutoFlags(context.Context, string) (int, error) { return 0, nil }
@@ -170,10 +170,10 @@ func (s *recordingStore) appliedKeys() []string {
 	return append([]string(nil), s.keys...)
 }
 
-func (s *recordingStore) appliedEvals() []repository.FlagEvaluation {
+func (s *recordingStore) appliedEvals() []domain.FlagEvaluation {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]repository.FlagEvaluation(nil), s.evals...)
+	return append([]domain.FlagEvaluation(nil), s.evals...)
 }
 
 // logCapture collects JSON log lines written through a slog logger.
@@ -363,7 +363,7 @@ func TestRedisBusAmbiguousPublishKeepsOneEvaluationID(t *testing.T) {
 	e.queue.mu.Lock()
 	e.queue.storeThenFail = true
 	e.queue.mu.Unlock()
-	e.bus.Submit(ctx, command.RecordEvaluation{Eval: repository.FlagEvaluation{FlagID: "f", ProjectID: "p"}})
+	e.bus.Submit(ctx, command.RecordEvaluation{Eval: domain.FlagEvaluation{FlagID: "f", ProjectID: "p"}})
 	require.NoError(t, e.bus.Flush(ctx))
 
 	queued, fallback := e.store.appliedEvals(), e.fbStore.appliedEvals()

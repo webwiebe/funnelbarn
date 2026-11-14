@@ -6,17 +6,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func TestListFunnelsTool(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
+	f, err := env.Store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: a.ID,
 		Name:      "Checkout",
-		Steps:     []repository.FunnelStep{{EventName: "cart_viewed"}, {EventName: "purchased"}},
+		Steps:     []domain.FunnelStep{{EventName: "cart_viewed"}, {EventName: "purchased"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
@@ -43,8 +43,8 @@ func TestListFunnelsTool_EmptyForOtherProject(t *testing.T) {
 	a := env.createProject(t, "Alpha", "alpha")
 	b := env.createProject(t, "Beta", "beta")
 	ctx := context.Background()
-	if _, err := env.Store.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: a.ID, Name: "A Funnel", Steps: []repository.FunnelStep{{EventName: "ev"}},
+	if _, err := env.Store.CreateFunnel(ctx, domain.Funnel{
+		ProjectID: a.ID, Name: "A Funnel", Steps: []domain.FunnelStep{{EventName: "ev"}},
 	}); err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
 	}
@@ -155,11 +155,11 @@ func TestUpdateFunnelTool(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
+	f, err := env.Store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: a.ID,
 		Name:      "Old Name",
 		Scope:     "page_view",
-		Steps:     []repository.FunnelStep{{EventName: "step1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step1"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
@@ -193,8 +193,8 @@ func TestUpdateFunnelTool_ValidationError(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: a.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "ev"}},
+	f, err := env.Store.CreateFunnel(ctx, domain.Funnel{
+		ProjectID: a.ID, Name: "F", Steps: []domain.FunnelStep{{EventName: "ev"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
@@ -215,8 +215,8 @@ func TestUpdateFunnelTool_CrossProjectNotFound(t *testing.T) {
 	a := env.createProject(t, "Alpha", "alpha")
 	b := env.createProject(t, "Beta", "beta")
 	ctx := context.Background()
-	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: a.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "ev"}},
+	f, err := env.Store.CreateFunnel(ctx, domain.Funnel{
+		ProjectID: a.ID, Name: "F", Steps: []domain.FunnelStep{{EventName: "ev"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
@@ -246,8 +246,8 @@ func TestUpdateFunnelTool_ReadTokenScopeError(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: a.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "ev"}},
+	f, err := env.Store.CreateFunnel(ctx, domain.Funnel{
+		ProjectID: a.ID, Name: "F", Steps: []domain.FunnelStep{{EventName: "ev"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
@@ -266,8 +266,8 @@ func TestDeleteFunnelTool(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: a.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "ev"}},
+	f, err := env.Store.CreateFunnel(ctx, domain.Funnel{
+		ProjectID: a.ID, Name: "F", Steps: []domain.FunnelStep{{EventName: "ev"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
@@ -290,8 +290,8 @@ func TestDeleteFunnelTool_CrossProjectNotFound(t *testing.T) {
 	a := env.createProject(t, "Alpha", "alpha")
 	b := env.createProject(t, "Beta", "beta")
 	ctx := context.Background()
-	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: a.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "ev"}},
+	f, err := env.Store.CreateFunnel(ctx, domain.Funnel{
+		ProjectID: a.ID, Name: "F", Steps: []domain.FunnelStep{{EventName: "ev"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
@@ -312,8 +312,8 @@ func TestDeleteFunnelTool_ReadTokenScopeError(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: a.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "ev"}},
+	f, err := env.Store.CreateFunnel(ctx, domain.Funnel{
+		ProjectID: a.ID, Name: "F", Steps: []domain.FunnelStep{{EventName: "ev"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
@@ -330,10 +330,10 @@ func TestAnalyzeFunnelTool(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
+	f, err := env.Store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: a.ID,
 		Name:      "Checkout",
-		Steps:     []repository.FunnelStep{{EventName: "cart_viewed"}, {EventName: "purchased"}},
+		Steps:     []domain.FunnelStep{{EventName: "cart_viewed"}, {EventName: "purchased"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
@@ -358,15 +358,15 @@ func TestAnalyzeFunnelTool_WithSegment(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: a.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "ev"}},
+	f, err := env.Store.CreateFunnel(ctx, domain.Funnel{
+		ProjectID: a.ID, Name: "F", Steps: []domain.FunnelStep{{EventName: "ev"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
 	}
-	seg, err := env.Store.CreateSegment(ctx, repository.Segment{
+	seg, err := env.Store.CreateSegment(ctx, domain.Segment{
 		ProjectID: a.ID, Name: "Dutch",
-		Rules: []repository.SegmentRule{{Field: "country_code", Operator: "eq", Value: "NL"}},
+		Rules: []domain.SegmentRule{{Field: "country_code", Operator: "eq", Value: "NL"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateSegment: %v", err)
@@ -384,8 +384,8 @@ func TestAnalyzeFunnelTool_WithEnvironment(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: a.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "ev"}},
+	f, err := env.Store.CreateFunnel(ctx, domain.Funnel{
+		ProjectID: a.ID, Name: "F", Steps: []domain.FunnelStep{{EventName: "ev"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
@@ -393,7 +393,7 @@ func TestAnalyzeFunnelTool_WithEnvironment(t *testing.T) {
 	at := time.Now().UTC().Add(-time.Hour)
 	for i, e := range []string{"production", "staging", "staging"} {
 		id := string(rune('a' + i))
-		if err := env.Store.InsertEvent(ctx, repository.Event{
+		if err := env.Store.InsertEvent(ctx, domain.Event{
 			ID: "ev-" + id, ProjectID: a.ID, SessionID: "s-" + id, Name: "ev",
 			Properties: "{}", IngestID: "ing-" + id, OccurredAt: at, Environment: e,
 		}); err != nil {
@@ -419,8 +419,8 @@ func TestAnalyzeFunnelTool_Breakdown(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: a.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "ev"}},
+	f, err := env.Store.CreateFunnel(ctx, domain.Funnel{
+		ProjectID: a.ID, Name: "F", Steps: []domain.FunnelStep{{EventName: "ev"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
@@ -428,7 +428,7 @@ func TestAnalyzeFunnelTool_Breakdown(t *testing.T) {
 	at := time.Now().UTC().Add(-time.Hour)
 	for i, surface := range []string{"wordpress", "wordpress", "lightroom"} {
 		id := string(rune('a' + i))
-		if err := env.Store.InsertEvent(ctx, repository.Event{
+		if err := env.Store.InsertEvent(ctx, domain.Event{
 			ID: "ev-" + id, ProjectID: a.ID, SessionID: "s-" + id, Name: "ev",
 			Properties: `{"surface":"` + surface + `"}`, IngestID: "ing-" + id, OccurredAt: at,
 			Environment: "production",
@@ -464,14 +464,14 @@ func TestAnalyzeFunnelTool_CrossProjectSegmentNotFound(t *testing.T) {
 	a := env.createProject(t, "Alpha", "alpha")
 	b := env.createProject(t, "Beta", "beta")
 	ctx := context.Background()
-	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: a.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "ev"}},
+	f, err := env.Store.CreateFunnel(ctx, domain.Funnel{
+		ProjectID: a.ID, Name: "F", Steps: []domain.FunnelStep{{EventName: "ev"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
 	}
 	// Segment belongs to project b, funnel and call are scoped to project a.
-	seg, err := env.Store.CreateSegment(ctx, repository.Segment{
+	seg, err := env.Store.CreateSegment(ctx, domain.Segment{
 		ProjectID: b.ID, Name: "Other Project Segment",
 	})
 	if err != nil {
@@ -490,8 +490,8 @@ func TestAnalyzeFunnelTool_CrossProjectFunnelNotFound(t *testing.T) {
 	a := env.createProject(t, "Alpha", "alpha")
 	b := env.createProject(t, "Beta", "beta")
 	ctx := context.Background()
-	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: a.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "ev"}},
+	f, err := env.Store.CreateFunnel(ctx, domain.Funnel{
+		ProjectID: a.ID, Name: "F", Steps: []domain.FunnelStep{{EventName: "ev"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
@@ -508,8 +508,8 @@ func TestAnalyzeFunnelTool_InvalidRange(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	f, err := env.Store.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: a.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "ev"}},
+	f, err := env.Store.CreateFunnel(ctx, domain.Funnel{
+		ProjectID: a.ID, Name: "F", Steps: []domain.FunnelStep{{EventName: "ev"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)

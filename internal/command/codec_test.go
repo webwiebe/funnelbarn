@@ -7,13 +7,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 )
 
-func fullFlag() repository.FeatureFlag {
+func fullFlag() domain.FeatureFlag {
 	evaluated := time.Date(2026, 10, 6, 12, 30, 0, 0, time.UTC)
-	return repository.FeatureFlag{
+	return domain.FeatureFlag{
 		ID:              "flag-1",
 		ProjectID:       "proj-1",
 		FlagKey:         "new-checkout",
@@ -32,8 +32,8 @@ func fullFlag() repository.FeatureFlag {
 	}
 }
 
-func fullEvaluation() repository.FlagEvaluation {
-	return repository.FlagEvaluation{
+func fullEvaluation() domain.FlagEvaluation {
+	return domain.FlagEvaluation{
 		ID:          "eval-1",
 		FlagID:      "flag-1",
 		ProjectID:   "proj-1",
@@ -49,7 +49,7 @@ func fullRecordingChunk() command.ApplyRecordingChunk {
 	started := time.Date(2026, 10, 9, 10, 0, 0, 0, time.UTC)
 	ended := started.Add(5 * time.Second)
 	return command.ApplyRecordingChunk{
-		Recording: repository.Recording{
+		Recording: domain.Recording{
 			ID:              "rec-1",
 			ProjectID:       "proj-1",
 			SessionID:       "sess-1",
@@ -67,7 +67,7 @@ func fullRecordingChunk() command.ApplyRecordingChunk {
 			PageURL:         "https://example.com/checkout",
 		},
 		ChunkIndex: 2,
-		Traces: []repository.TraceLink{{
+		Traces: []domain.TraceLink{{
 			TraceID:    "4bf92f3577b34da6a3ce929d0e0e4736",
 			SpanID:     "00f067aa0ba902b7",
 			URL:        "/api/cart",

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // queryPlan returns the EXPLAIN QUERY PLAN detail lines of q.
@@ -43,24 +45,24 @@ func TestAnalyzeFunnelBreakdown_QueryPlanSearchesEvents(t *testing.T) {
 
 	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	to := from.Add(7 * 24 * time.Hour)
-	steps := []FunnelStep{{EventName: "visit"}, {EventName: "signup"}}
+	steps := []domain.FunnelStep{{EventName: "visit"}, {EventName: "signup"}}
 
 	filters := map[string]struct {
-		seg   *SegmentFilter
-		rules []SegmentRule
+		seg   *domain.SegmentFilter
+		rules []domain.SegmentRule
 	}{
 		"none":              {},
-		"environment":       {rules: EnvironmentRule("production")},
-		"preset event":      {seg: &SegmentFilter{Field: "device_type", Op: "eq", Value: "mobile"}},
-		"preset session":    {seg: &SegmentFilter{Field: "session_returning", Value: "true"}},
-		"stored on session": {rules: []SegmentRule{{Field: "country_code", Operator: "eq", Value: "NL"}}},
+		"environment":       {rules: domain.EnvironmentRule("production")},
+		"preset event":      {seg: &domain.SegmentFilter{Field: "device_type", Op: "eq", Value: "mobile"}},
+		"preset session":    {seg: &domain.SegmentFilter{Field: "session_returning", Value: "true"}},
+		"stored on session": {rules: []domain.SegmentRule{{Field: "country_code", Operator: "eq", Value: "NL"}}},
 	}
-	for _, scope := range []string{FunnelScopeSession, FunnelScopePageView, FunnelScopeUser} {
-		f := Funnel{ProjectID: "p", Scope: scope, Steps: steps}
+	for _, scope := range []string{domain.FunnelScopeSession, domain.FunnelScopePageView, domain.FunnelScopeUser} {
+		f := domain.Funnel{ProjectID: "p", Scope: scope, Steps: steps}
 		for name, filter := range filters {
 			extraWhere, extraArgs, needJoin := funnelExtraWhere(f, filter.seg, filter.rules)
 			var queries [][2]any
-			if scope == FunnelScopeUser {
+			if scope == domain.FunnelScopeUser {
 				q, args := userBreakdownEntrySQL(f, from, to, extraWhere, extraArgs, needJoin, "surface")
 				queries = append(queries, [2]any{q, args})
 			} else {

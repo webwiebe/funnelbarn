@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // Pins the parts of SessionsAtStep the environment test leaves open: the
@@ -27,8 +27,8 @@ func TestSessionsAtStep_OrderLimitAndRange(t *testing.T) {
 	envEvent(t, s, p.ID, "a", "", "production", "cart", "Chrome", at.Add(time.Minute))
 	envEvent(t, s, p.ID, "a", "", "production", "checkout", "Chrome", at.Add(2*time.Minute))
 
-	f, err := s.CreateFunnel(ctx, repository.Funnel{ProjectID: p.ID, Name: "Shop",
-		Steps: []repository.FunnelStep{{EventName: "view"}, {EventName: "cart"}, {EventName: "checkout"}}})
+	f, err := s.CreateFunnel(ctx, domain.Funnel{ProjectID: p.ID, Name: "Shop",
+		Steps: []domain.FunnelStep{{EventName: "view"}, {EventName: "cart"}, {EventName: "checkout"}}})
 	require.NoError(t, err)
 	from, to := at.Add(-time.Hour), at.Add(time.Hour)
 
@@ -45,8 +45,8 @@ func TestSessionsAtStep_OrderLimitAndRange(t *testing.T) {
 	require.Equal(t, []string{"a"}, got, "the last step lists converters")
 
 	// Limit keeps the ascending head; zero falls back to the default of 100.
-	f2, err := s.CreateFunnel(ctx, repository.Funnel{ProjectID: p.ID, Name: "Views",
-		Steps: []repository.FunnelStep{{EventName: "view"}}})
+	f2, err := s.CreateFunnel(ctx, domain.Funnel{ProjectID: p.ID, Name: "Views",
+		Steps: []domain.FunnelStep{{EventName: "view"}}})
 	require.NoError(t, err)
 	got, err = s.SessionsAtStep(ctx, f2, 1, from, to, 2)
 	require.NoError(t, err)

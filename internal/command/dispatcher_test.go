@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 type fn struct {
@@ -155,19 +155,19 @@ type fakeStore struct {
 }
 
 func (f *fakeStore) rec(s string) { f.mu.Lock(); f.calls = append(f.calls, s); f.mu.Unlock() }
-func (f *fakeStore) RecordEvaluation(_ context.Context, e repository.FlagEvaluation) error {
+func (f *fakeStore) RecordEvaluation(_ context.Context, e domain.FlagEvaluation) error {
 	f.rec("eval:" + e.ID)
 	return nil
 }
 func (f *fakeStore) TouchAPIKey(_ context.Context, h string) error { f.rec("key:" + h); return nil }
-func (f *fakeStore) FlagByKey(_ context.Context, p, k string) (repository.FeatureFlag, error) {
-	return repository.FeatureFlag{ID: "id-" + p + "-" + k}, nil
+func (f *fakeStore) FlagByKey(_ context.Context, p, k string) (domain.FeatureFlag, error) {
+	return domain.FeatureFlag{ID: "id-" + p + "-" + k}, nil
 }
 func (f *fakeStore) TouchFlagEvaluated(_ context.Context, id string) error {
 	f.rec("touch:" + id)
 	return nil
 }
-func (f *fakeStore) EnsureAutoFlag(_ context.Context, fl repository.FeatureFlag) (repository.FeatureFlag, error) {
+func (f *fakeStore) EnsureAutoFlag(_ context.Context, fl domain.FeatureFlag) (domain.FeatureFlag, error) {
 	f.rec("auto:" + fl.FlagKey)
 	f.mu.Lock()
 	f.autoFlags++
@@ -184,8 +184,8 @@ func (f *fakeStore) CountAutoFlags(_ context.Context, _ string) (int, error) {
 // EnsureAutoFlag skipped at the cap.
 type missingFlagStore struct{ fakeStore }
 
-func (*missingFlagStore) FlagByKey(context.Context, string, string) (repository.FeatureFlag, error) {
-	return repository.FeatureFlag{}, sql.ErrNoRows
+func (*missingFlagStore) FlagByKey(context.Context, string, string) (domain.FeatureFlag, error) {
+	return domain.FeatureFlag{}, sql.ErrNoRows
 }
 
 // The request checks the cap on the read pool, so several queued EnsureAutoFlag
@@ -194,7 +194,7 @@ func TestEnsureAutoFlagRechecksCap(t *testing.T) {
 	st := &fakeStore{}
 	ctx := context.Background()
 	for _, k := range []string{"a", "b", "c"} {
-		require.NoError(t, command.EnsureAutoFlag{Flag: repository.FeatureFlag{FlagKey: k}, Max: 2}.Apply(ctx, command.Deps{Store: st}))
+		require.NoError(t, command.EnsureAutoFlag{Flag: domain.FeatureFlag{FlagKey: k}, Max: 2}.Apply(ctx, command.Deps{Store: st}))
 	}
 	require.Equal(t, []string{"auto:a", "auto:b"}, st.calls)
 }
@@ -209,11 +209,11 @@ func TestTypedCommands(t *testing.T) {
 	st := &fakeStore{}
 	ctx := context.Background()
 	cmds := []command.Command{
-		command.RecordEvaluation{Eval: repository.FlagEvaluation{ID: "e1"}},
+		command.RecordEvaluation{Eval: domain.FlagEvaluation{ID: "e1"}},
 		command.TouchAPIKey{KeyHash: "h"},
 		command.TouchFlagEvaluated{ProjectID: "p", FlagKey: "k"},
 		command.MarkFlagsEvaluated{ProjectID: "p"},
-		command.EnsureAutoFlag{Flag: repository.FeatureFlag{FlagKey: "new"}},
+		command.EnsureAutoFlag{Flag: domain.FeatureFlag{FlagKey: "new"}},
 	}
 	deps := command.Deps{Store: st, MarkFlagsEvaluated: func(_ context.Context, p string) error { st.rec("mark:" + p); return nil }}
 	for _, c := range cmds {

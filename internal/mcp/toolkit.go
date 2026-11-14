@@ -11,7 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -60,7 +60,7 @@ type Call struct {
 
 // Project resolves the project a tool works on: the explicit argument when
 // set, else the x-funnelbarn-project header. See ResolveProject.
-func (c *Call) Project(ctx context.Context, arg string) (repository.Project, error) {
+func (c *Call) Project(ctx context.Context, arg string) (domain.Project, error) {
 	p, err := ResolveProject(ctx, c.Deps.Projects, arg, c.Header.Get(ProjectHeader))
 	if err == nil && c.span != nil {
 		c.span.SetAttributes(attribute.String("funnelbarn.project_id", p.ID))

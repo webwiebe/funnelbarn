@@ -8,19 +8,20 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
 func breakdownEvent(t *testing.T, s *repository.Store, projectID, session, user, env, name, props string, at time.Time) {
 	t.Helper()
-	require.NoError(t, s.InsertEvent(context.Background(), repository.Event{
+	require.NoError(t, s.InsertEvent(context.Background(), domain.Event{
 		ID: randomHex(t), ProjectID: projectID, SessionID: session, UserIDHash: user,
 		Name: name, Environment: env, Properties: props,
 		IngestID: "ingest-" + randomHex(t), OccurredAt: at,
 	}))
 }
 
-func groupCounts(groups []repository.FunnelBreakdownGroup) map[string][]int64 {
+func groupCounts(groups []domain.FunnelBreakdownGroup) map[string][]int64 {
 	out := map[string][]int64{}
 	for _, g := range groups {
 		out[g.Label] = stepCounts(g.Results)
@@ -55,9 +56,9 @@ func TestAnalyzeFunnelBreakdown(t *testing.T) {
 	visit("s5", "u5", "production", "", false)
 	visit("s6", "u6", "staging", "wordpress", true)
 
-	steps := []repository.FunnelStep{{EventName: "visit"}, {EventName: "signup"}}
-	for _, scope := range []string{repository.FunnelScopeSession, repository.FunnelScopeUser} {
-		f, err := s.CreateFunnel(ctx, repository.Funnel{ProjectID: p.ID, Name: "F " + scope, Scope: scope, Steps: steps})
+	steps := []domain.FunnelStep{{EventName: "visit"}, {EventName: "signup"}}
+	for _, scope := range []string{domain.FunnelScopeSession, domain.FunnelScopeUser} {
+		f, err := s.CreateFunnel(ctx, domain.Funnel{ProjectID: p.ID, Name: "F " + scope, Scope: scope, Steps: steps})
 		require.NoError(t, err)
 
 		groups, err := s.AnalyzeFunnelBreakdown(ctx, f, from, to, nil, "surface")
@@ -81,7 +82,7 @@ func TestAnalyzeFunnelBreakdown(t *testing.T) {
 		require.Equal(t, stepCounts(whole), sum[:], scope)
 
 		// Environment narrows the groups.
-		prod, err := s.AnalyzeFunnelBreakdown(ctx, f, from, to, nil, "surface", repository.EnvironmentRule("production")...)
+		prod, err := s.AnalyzeFunnelBreakdown(ctx, f, from, to, nil, "surface", domain.EnvironmentRule("production")...)
 		require.NoError(t, err)
 		require.Equal(t, map[string][]int64{
 			"wordpress": {3, 2}, "lightroom": {1, 1}, "(none)": {1, 0},
@@ -95,17 +96,17 @@ func TestAnalyzeFunnelBreakdown_CapsGroups(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Cap", "cap")
 	require.NoError(t, err)
 	at := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	total := repository.MaxBreakdownGroups + 5
+	total := domain.MaxBreakdownGroups + 5
 	for i := 0; i < total; i++ {
 		id := fmt.Sprintf("s%02d", i)
 		breakdownEvent(t, s, p.ID, id, "u"+id, "production", "visit", fmt.Sprintf(`{"surface":"v%02d"}`, i), at)
 	}
-	f, err := s.CreateFunnel(ctx, repository.Funnel{ProjectID: p.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "visit"}}})
+	f, err := s.CreateFunnel(ctx, domain.Funnel{ProjectID: p.ID, Name: "F", Steps: []domain.FunnelStep{{EventName: "visit"}}})
 	require.NoError(t, err)
 
 	groups, err := s.AnalyzeFunnelBreakdown(ctx, f, at.Add(-time.Hour), at.Add(time.Hour), nil, "surface")
 	require.NoError(t, err)
-	require.Len(t, groups, repository.MaxBreakdownGroups+1)
+	require.Len(t, groups, domain.MaxBreakdownGroups+1)
 	last := groups[len(groups)-1]
 	require.True(t, last.Other)
 	require.Equal(t, "(other)", last.Label)
@@ -117,7 +118,7 @@ func TestAnalyzeFunnelBreakdown_RejectsBadProperty(t *testing.T) {
 	s := newTestStore(t)
 	p, err := s.CreateProject(ctx, "Bad", "bad")
 	require.NoError(t, err)
-	f, err := s.CreateFunnel(ctx, repository.Funnel{ProjectID: p.ID, Name: "F", Steps: []repository.FunnelStep{{EventName: "visit"}}})
+	f, err := s.CreateFunnel(ctx, domain.Funnel{ProjectID: p.ID, Name: "F", Steps: []domain.FunnelStep{{EventName: "visit"}}})
 	require.NoError(t, err)
 	_, err = s.AnalyzeFunnelBreakdown(ctx, f, time.Now().Add(-time.Hour), time.Now(), nil, "a') OR 1=1 --")
 	require.Error(t, err)
@@ -125,7 +126,7 @@ func TestAnalyzeFunnelBreakdown_RejectsBadProperty(t *testing.T) {
 
 // requireGroupsAddUp checks that the groups sum to the unbroken funnel run with
 // the same filters, so every entry landed in exactly one group.
-func requireGroupsAddUp(t *testing.T, s *repository.Store, f repository.Funnel, from, to time.Time, seg *repository.SegmentFilter, groups []repository.FunnelBreakdownGroup, rules ...repository.SegmentRule) {
+func requireGroupsAddUp(t *testing.T, s *repository.Store, f domain.Funnel, from, to time.Time, seg *domain.SegmentFilter, groups []domain.FunnelBreakdownGroup, rules ...domain.SegmentRule) {
 	t.Helper()
 	whole, err := s.AnalyzeFunnel(context.Background(), f, from, to, seg, rules...)
 	require.NoError(t, err)
@@ -150,7 +151,7 @@ func TestAnalyzeFunnelBreakdown_PageViewScope(t *testing.T) {
 	// by the surface on its visit. The visit without a page view id is outside
 	// a page view funnel.
 	insert := func(pageView, name, props string) {
-		require.NoError(t, s.InsertEvent(ctx, repository.Event{
+		require.NoError(t, s.InsertEvent(ctx, domain.Event{
 			ID: randomHex(t), ProjectID: p.ID, SessionID: "s1", PageViewID: pageView,
 			Name: name, Environment: "production", Properties: props,
 			IngestID: "ingest-" + randomHex(t), OccurredAt: at,
@@ -164,9 +165,9 @@ func TestAnalyzeFunnelBreakdown_PageViewScope(t *testing.T) {
 	insert("pv4", "visit", "{}")
 	insert("", "visit", `{"surface":"wordpress"}`)
 
-	f, err := s.CreateFunnel(ctx, repository.Funnel{
-		ProjectID: p.ID, Name: "F", Scope: repository.FunnelScopePageView,
-		Steps: []repository.FunnelStep{{EventName: "visit"}, {EventName: "signup"}},
+	f, err := s.CreateFunnel(ctx, domain.Funnel{
+		ProjectID: p.ID, Name: "F", Scope: domain.FunnelScopePageView,
+		Steps: []domain.FunnelStep{{EventName: "visit"}, {EventName: "signup"}},
 	})
 	require.NoError(t, err)
 
@@ -188,7 +189,7 @@ func TestAnalyzeFunnelBreakdown_WithSegments(t *testing.T) {
 
 	visit := func(session, env, device, surface string, signup bool) {
 		insert := func(name, props string, when time.Time) {
-			require.NoError(t, s.InsertEvent(ctx, repository.Event{
+			require.NoError(t, s.InsertEvent(ctx, domain.Event{
 				ID: randomHex(t), ProjectID: p.ID, SessionID: session, UserIDHash: "u-" + session,
 				Name: name, Environment: env, DeviceType: device, Properties: props,
 				IngestID: "ingest-" + randomHex(t), OccurredAt: when,
@@ -205,24 +206,24 @@ func TestAnalyzeFunnelBreakdown_WithSegments(t *testing.T) {
 	visit("s4", "staging", "mobile", "wordpress", true)
 	visit("s5", "production", "mobile", "wordpress", false)
 
-	mobile := &repository.SegmentFilter{Field: "device_type", Op: "eq", Value: "mobile"}
-	desktopRule := repository.SegmentRule{Field: "device_type", Operator: "eq", Value: "desktop"}
-	production := repository.EnvironmentRule("production")
+	mobile := &domain.SegmentFilter{Field: "device_type", Op: "eq", Value: "mobile"}
+	desktopRule := domain.SegmentRule{Field: "device_type", Operator: "eq", Value: "desktop"}
+	production := domain.EnvironmentRule("production")
 
 	cases := []struct {
 		name  string
-		seg   *repository.SegmentFilter
-		rules []repository.SegmentRule
+		seg   *domain.SegmentFilter
+		rules []domain.SegmentRule
 		want  map[string][]int64
 	}{
 		{"preset segment", mobile, nil, map[string][]int64{"wordpress": {3, 2}, "lightroom": {1, 0}}},
 		{"preset segment and environment", mobile, production, map[string][]int64{"wordpress": {2, 1}, "lightroom": {1, 0}}},
-		{"stored segment and environment", nil, append([]repository.SegmentRule{desktopRule}, production...), map[string][]int64{"wordpress": {1, 1}}},
+		{"stored segment and environment", nil, append([]domain.SegmentRule{desktopRule}, production...), map[string][]int64{"wordpress": {1, 1}}},
 	}
-	for _, scope := range []string{repository.FunnelScopeSession, repository.FunnelScopeUser} {
-		f, err := s.CreateFunnel(ctx, repository.Funnel{
+	for _, scope := range []string{domain.FunnelScopeSession, domain.FunnelScopeUser} {
+		f, err := s.CreateFunnel(ctx, domain.Funnel{
 			ProjectID: p.ID, Name: "F " + scope, Scope: scope,
-			Steps: []repository.FunnelStep{{EventName: "visit"}, {EventName: "signup"}},
+			Steps: []domain.FunnelStep{{EventName: "visit"}, {EventName: "signup"}},
 		})
 		require.NoError(t, err)
 		for _, tc := range cases {
