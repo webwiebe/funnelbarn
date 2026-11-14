@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 )
@@ -23,11 +24,11 @@ type Command interface {
 // Store is the write-side storage a consumer applies commands to.
 // *repository.Store implements it.
 type Store interface {
-	RecordEvaluation(ctx context.Context, eval repository.FlagEvaluation) error
+	RecordEvaluation(ctx context.Context, eval domain.FlagEvaluation) error
 	TouchAPIKey(ctx context.Context, keySHA256 string) error
-	FlagByKey(ctx context.Context, projectID, flagKey string) (repository.FeatureFlag, error)
+	FlagByKey(ctx context.Context, projectID, flagKey string) (domain.FeatureFlag, error)
 	TouchFlagEvaluated(ctx context.Context, flagID string) error
-	EnsureAutoFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error)
+	EnsureAutoFlag(ctx context.Context, f domain.FeatureFlag) (domain.FeatureFlag, error)
 	CountAutoFlags(ctx context.Context, projectID string) (int, error)
 }
 

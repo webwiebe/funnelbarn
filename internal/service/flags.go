@@ -17,7 +17,6 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -85,8 +84,8 @@ func (svc *FlagService) WithConfigCacheTTL(ttl time.Duration) *FlagService {
 }
 
 // cacheHintSeconds is the max-age advertised for a resolved flag.
-func (svc *FlagService) cacheHintSeconds(flag repository.FeatureFlag) int {
-	if flag.Kind != repository.FlagKindConfig {
+func (svc *FlagService) cacheHintSeconds(flag domain.FeatureFlag) int {
+	if flag.Kind != domain.FlagKindConfig {
 		return 0
 	}
 	ttl := svc.configCacheTTL
@@ -102,11 +101,11 @@ func (svc *FlagService) cacheHintSeconds(flag repository.FeatureFlag) int {
 func NormalizeFlagKind(kind string) (string, error) {
 	switch kind {
 	case "":
-		return repository.FlagKindExperiment, nil
-	case repository.FlagKindExperiment, repository.FlagKindConfig:
+		return domain.FlagKindExperiment, nil
+	case domain.FlagKindExperiment, domain.FlagKindConfig:
 		return kind, nil
 	default:
-		return "", fmt.Errorf("flag_kind must be %q or %q", repository.FlagKindExperiment, repository.FlagKindConfig)
+		return "", fmt.Errorf("flag_kind must be %q or %q", domain.FlagKindExperiment, domain.FlagKindConfig)
 	}
 }
 
@@ -116,12 +115,12 @@ func NormalizeFlagKind(kind string) (string, error) {
 // "manual": this is the dashboard, API and MCP creation path. Auto-registered flags
 // go through EnsureAutoFlag (via EvaluateOrRegisterFlag) instead and never
 // reach here, so they keep working unchanged.
-func (svc *FlagService) CreateFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error) {
+func (svc *FlagService) CreateFlag(ctx context.Context, f domain.FeatureFlag) (domain.FeatureFlag, error) {
 	if f.FlagKey == "" {
-		return repository.FeatureFlag{}, &domain.ValidationError{Field: "flag_key", Message: "is required"}
+		return domain.FeatureFlag{}, &domain.ValidationError{Field: "flag_key", Message: "is required"}
 	}
 	if f.Name == "" {
-		return repository.FeatureFlag{}, &domain.ValidationError{Field: "name", Message: "is required"}
+		return domain.FeatureFlag{}, &domain.ValidationError{Field: "name", Message: "is required"}
 	}
 	if f.FlagType == "" {
 		f.FlagType = "boolean"
@@ -130,11 +129,11 @@ func (svc *FlagService) CreateFlag(ctx context.Context, f repository.FeatureFlag
 		f.TargetingRules = "[]"
 	}
 	if err := validateFlagRules(f.TargetingRules, f.Variants); err != nil {
-		return repository.FeatureFlag{}, &domain.ValidationError{Message: err.Error()}
+		return domain.FeatureFlag{}, &domain.ValidationError{Message: err.Error()}
 	}
 	kind, err := NormalizeFlagKind(f.Kind)
 	if err != nil {
-		return repository.FeatureFlag{}, &domain.ValidationError{Field: "flag_kind", Message: err.Error()}
+		return domain.FeatureFlag{}, &domain.ValidationError{Field: "flag_kind", Message: err.Error()}
 	}
 	f.Kind = kind
 	if f.Status == "" {
@@ -144,29 +143,29 @@ func (svc *FlagService) CreateFlag(ctx context.Context, f repository.FeatureFlag
 	return svc.store.CreateFlag(ctx, f)
 }
 
-func (svc *FlagService) GetFlag(ctx context.Context, id string) (repository.FeatureFlag, error) {
+func (svc *FlagService) GetFlag(ctx context.Context, id string) (domain.FeatureFlag, error) {
 	f, err := svc.store.FlagByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return repository.FeatureFlag{}, fmt.Errorf("%w: flag %s", domain.ErrNotFound, id)
+			return domain.FeatureFlag{}, fmt.Errorf("%w: flag %s", domain.ErrNotFound, id)
 		}
-		return repository.FeatureFlag{}, err
+		return domain.FeatureFlag{}, err
 	}
 	return f, nil
 }
 
-func (svc *FlagService) GetFlagByKey(ctx context.Context, projectID, flagKey string) (repository.FeatureFlag, error) {
+func (svc *FlagService) GetFlagByKey(ctx context.Context, projectID, flagKey string) (domain.FeatureFlag, error) {
 	f, err := svc.store.FlagByKey(ctx, projectID, flagKey)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return repository.FeatureFlag{}, fmt.Errorf("%w: flag %s", domain.ErrNotFound, flagKey)
+			return domain.FeatureFlag{}, fmt.Errorf("%w: flag %s", domain.ErrNotFound, flagKey)
 		}
-		return repository.FeatureFlag{}, err
+		return domain.FeatureFlag{}, err
 	}
 	return f, nil
 }
 
-func (svc *FlagService) ListFlags(ctx context.Context, projectID string) ([]repository.FeatureFlag, error) {
+func (svc *FlagService) ListFlags(ctx context.Context, projectID string) ([]domain.FeatureFlag, error) {
 	return svc.store.ListFlags(ctx, projectID)
 }
 
@@ -175,19 +174,19 @@ func (svc *FlagService) ListFlags(ctx context.Context, projectID string) ([]repo
 // NormalizeFlagKind). The caller merges a partial update (see internal/api's
 // handleUpdateFlag), because only the caller knows which fields the request
 // actually included.
-func (svc *FlagService) UpdateFlag(ctx context.Context, f repository.FeatureFlag) (repository.FeatureFlag, error) {
+func (svc *FlagService) UpdateFlag(ctx context.Context, f domain.FeatureFlag) (domain.FeatureFlag, error) {
 	if f.Name == "" {
-		return repository.FeatureFlag{}, &domain.ValidationError{Field: "name", Message: "is required"}
+		return domain.FeatureFlag{}, &domain.ValidationError{Field: "name", Message: "is required"}
 	}
 	if f.TargetingRules == "" {
 		f.TargetingRules = "[]"
 	}
 	if err := svc.validateUpdatedRules(ctx, f); err != nil {
-		return repository.FeatureFlag{}, &domain.ValidationError{Message: err.Error()}
+		return domain.FeatureFlag{}, &domain.ValidationError{Message: err.Error()}
 	}
 	kind, err := NormalizeFlagKind(f.Kind)
 	if err != nil {
-		return repository.FeatureFlag{}, &domain.ValidationError{Field: "flag_kind", Message: err.Error()}
+		return domain.FeatureFlag{}, &domain.ValidationError{Field: "flag_kind", Message: err.Error()}
 	}
 	f.Kind = kind
 	return svc.store.UpdateFlag(ctx, f)
@@ -246,7 +245,7 @@ func (svc *FlagService) evaluateFlag(ctx context.Context, projectID, flagKey str
 	// no conversion. Recording a row per read would write thousands a day for a
 	// value that changes twice, and would drown the flag's own analytics in
 	// machine reads.
-	static := flag.Kind == repository.FlagKindConfig
+	static := flag.Kind == domain.FlagKindConfig
 	records := record && !static
 	span.SetAttributes(attribute.String("flag.kind", flag.Kind), attribute.Bool("flag.preview", !record))
 
@@ -326,8 +325,8 @@ func (svc *FlagService) evaluateFlag(ctx context.Context, projectID, flagKey str
 // best-effort: the evaluation already happened and only the row is lost, so a
 // storage failure is logged at Warn and the caller still gets its value. With a
 // dispatcher the row is queued and the request does not touch the write pool.
-func (svc *FlagService) recordEvaluation(ctx context.Context, flag repository.FeatureFlag, variant, targetingKey, sessionID string, ctxKeys []string, path string) {
-	eval := repository.FlagEvaluation{
+func (svc *FlagService) recordEvaluation(ctx context.Context, flag domain.FeatureFlag, variant, targetingKey, sessionID string, ctxKeys []string, path string) {
+	eval := domain.FlagEvaluation{
 		FlagID:      flag.ID,
 		ProjectID:   flag.ProjectID,
 		Variant:     variant,
@@ -355,16 +354,16 @@ func validFlagKey(key string) bool { return flagKeyRe.MatchString(key) }
 // buildAutoFlag describes an inert, auto-created flag: a single "default" variant
 // holding the caller's default value, status "inactive" so evaluation returns that
 // default (reason DISABLED) until a human configures it.
-func buildAutoFlag(projectID, flagKey string, defaultValue any, kind string) repository.FeatureFlag {
-	if kind != repository.FlagKindConfig {
-		kind = repository.FlagKindExperiment
+func buildAutoFlag(projectID, flagKey string, defaultValue any, kind string) domain.FeatureFlag {
+	if kind != domain.FlagKindConfig {
+		kind = domain.FlagKindExperiment
 	}
 	variants := map[string]any{"default": defaultValue}
 	vb, err := json.Marshal(variants)
 	if err != nil {
 		vb = []byte(`{"default":null}`)
 	}
-	return repository.FeatureFlag{
+	return domain.FeatureFlag{
 		ProjectID:      projectID,
 		FlagKey:        flagKey,
 		Name:           flagKey,
@@ -443,7 +442,7 @@ func (svc *FlagService) EvaluateOrRegisterFlag(ctx context.Context, projectID, f
 	return res, err
 }
 
-func (svc *FlagService) AnalyzeFlag(ctx context.Context, flag repository.FeatureFlag, from, to time.Time) ([]repository.FlagAnalysisResult, error) {
+func (svc *FlagService) AnalyzeFlag(ctx context.Context, flag domain.FeatureFlag, from, to time.Time) ([]domain.FlagAnalysisResult, error) {
 	ctx, span := tracing.StartSpan(ctx, "flags.analyze",
 		attribute.String("flag.id", flag.ID),
 		attribute.String("flag.key", flag.FlagKey),
@@ -465,14 +464,14 @@ func (svc *FlagService) AnalyzeFlag(ctx context.Context, flag repository.Feature
 		}
 	}
 
-	var results []repository.FlagAnalysisResult
+	var results []domain.FlagAnalysisResult
 	for variant, sample := range evals {
 		conv := conversions[variant]
 		rate := 0.0
 		if sample > 0 {
 			rate = float64(conv) / float64(sample)
 		}
-		results = append(results, repository.FlagAnalysisResult{
+		results = append(results, domain.FlagAnalysisResult{
 			Variant:     variant,
 			Sample:      sample,
 			Conversions: conv,
@@ -483,6 +482,6 @@ func (svc *FlagService) AnalyzeFlag(ctx context.Context, flag repository.Feature
 	return results, nil
 }
 
-func (svc *FlagService) ContextKeySuggestions(ctx context.Context, projectID string) ([]repository.ContextKeySuggestion, error) {
+func (svc *FlagService) ContextKeySuggestions(ctx context.Context, projectID string) ([]domain.ContextKeySuggestion, error) {
 	return svc.store.FlagContextKeySuggestions(ctx, projectID)
 }

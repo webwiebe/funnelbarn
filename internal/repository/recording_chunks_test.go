@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 )
 
@@ -29,7 +30,7 @@ func TestApplyChunk_ReplayIsANoOp(t *testing.T) {
 	start := time.Now().UTC().Truncate(time.Second)
 	rec := makeRecording(p.ID, "sess-ch", start)
 	rec.ID = "rec-ch"
-	links := []repository.TraceLink{{TraceID: "t1", OccurredAt: start.Add(time.Second)}}
+	links := []domain.TraceLink{{TraceID: "t1", OccurredAt: start.Add(time.Second)}}
 
 	applied, err := s.ApplyChunk(ctx, rec, 0, links)
 	require.NoError(t, err)
@@ -82,7 +83,7 @@ func TestApplyChunk_FailureStoresNothing(t *testing.T) {
 	start := time.Now().UTC().Truncate(time.Second)
 	rec := makeRecording(p.ID, "sess-ch", start)
 	rec.ID = "rec-ch"
-	links := []repository.TraceLink{{TraceID: "t1", OccurredAt: start}}
+	links := []domain.TraceLink{{TraceID: "t1", OccurredAt: start}}
 
 	_, err = s.ApplyChunk(ctx, rec, 0, links)
 	require.Error(t, err)

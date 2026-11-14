@@ -162,7 +162,7 @@ func layerRules() []*Rule {
 		not    []string
 	}{
 		{"internal/domain", "domain holds the types every layer shares; it imports no other internal package",
-			[]string{"internal/api", "internal/service", "internal/ports", "internal/command", "internal/mcp", "internal/auth", "internal/spool", "internal/storage", "internal/worker"}},
+			[]string{"internal/api", "internal/service", "internal/ports", "internal/command", "internal/mcp", "internal/auth", "internal/spool", "internal/blobstore", "internal/ingest/pipeline"}},
 		{"internal/enrich", "enrich holds pure functions over event data; it imports no application layer",
 			[]string{"internal/api", "internal/service", "internal/repository", "internal/ports", "internal/command"}},
 		{"internal/auth", "auth is below the HTTP, service and storage layers",
@@ -202,6 +202,26 @@ func baseRules() []*Rule {
 			From:          "internal/domain",
 			MustNotImport: "internal/repository",
 			Reason:        "domain types must not depend on storage implementation",
+		},
+		{
+			From:          "internal/ports",
+			MustNotImport: "internal/repository",
+			Reason:        "ports are interfaces over the domain types; the repository implements them and the ports must not point back at it",
+		},
+		{
+			From:          "internal/api",
+			MustNotImport: "internal/repository",
+			Reason:        "HTTP handlers use domain types and ports; the repository is wired in cmd/funnelbarn",
+		},
+		{
+			From:          "internal/mcp",
+			MustNotImport: "internal/repository",
+			Reason:        "the MCP server uses domain types and ports; the repository is wired in cmd/funnelbarn",
+		},
+		{
+			From:          "internal/service",
+			MustNotImport: "internal/repository",
+			Reason:        "services use domain types and ports; the repository is wired in cmd/funnelbarn",
 		},
 		{
 			From:          "internal/ports",

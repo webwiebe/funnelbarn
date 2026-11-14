@@ -27,7 +27,7 @@ SDK / Browser  →  POST /api/v1/events
 Key components:
 - **ingest** (`internal/ingest/`) — HTTP handler; enqueues events; never touches SQLite directly
 - **spool** (`internal/spool/`) — flushes in-memory queue to NDJSON file every 5 ms
-- **worker** (`internal/worker/`) — reads spool, enriches (geo/UA), writes to SQLite
+- **worker** (`internal/ingest/pipeline/`) — reads spool, enriches (geo/UA), writes to SQLite
 - **api** (`internal/api/`) — REST API for the dashboard SPA; session-cookie auth
 - **web** (`web/`) — React + Vite SPA (dashboard)
 - **site** (`site/`) — Astro marketing site

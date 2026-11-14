@@ -8,7 +8,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/bblog"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -73,7 +73,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 // Unlike handleSetup, it does not create the project. An MCP tool call
 // resolves an existing project (see mcp.Call.Project). Reading a setup guide
 // should not conjure a pending project into existence.
-func (s *Server) SetupDoc(ctx context.Context, project repository.Project) (string, error) {
+func (s *Server) SetupDoc(ctx context.Context, project domain.Project) (string, error) {
 	return s.renderSetupDoc(ctx, project, s.defaultPublicURL())
 }
 
@@ -89,7 +89,7 @@ func (s *Server) SetupDoc(ctx context.Context, project repository.Project) (stri
 // calling home, flips the health flag. That's accepted: a false "setup
 // called" only silences a health nag, while a false negative would leave a
 // real integration looking unconfigured.
-func (s *Server) renderSetupDoc(_ context.Context, project repository.Project, publicURL string) (string, error) {
+func (s *Server) renderSetupDoc(_ context.Context, project domain.Project, publicURL string) (string, error) {
 	if s.projectHealth != nil {
 		pid := project.ID
 		bblog.Go("setup-health", func() {

@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // recordingHandler keeps every slog record so a test can look for the slow-evaluate ones.
@@ -107,7 +107,7 @@ func TestEvaluate_SlowAPIKeyLookupLogsAtWarn(t *testing.T) {
 	srv.slow = slowEvaluate{total: 20 * time.Millisecond, submitWait: time.Hour}
 	p, _ := store.CreateProject(context.Background(), "P", "p")
 	seedFlag(t, store, p.ID, "gate")
-	key := scopedKey(t, store, p.ID, "sdk-key", repository.APIKeyScopeFlagsRead)
+	key := scopedKey(t, store, p.ID, "sdk-key", domain.APIKeyScopeFlagsRead)
 
 	w := withKey(t, srv, http.MethodPost, "/api/v1/evaluate", key, map[string]any{"flag_key": "gate"})
 	if w.Code != http.StatusOK {

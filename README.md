@@ -252,7 +252,7 @@ Key packages:
 - `internal/service/` — business logic, input validation, domain error wrapping
 - `internal/repository/` — data access; uses sqlc-generated type-safe query methods
 - `internal/domain/` — domain errors (`ErrNotFound`, `ErrConflict`, `ErrValidation`)
-- `internal/worker/` — background spool processor
+- `internal/ingest/pipeline/` — background spool processor and ingest queue
 - `internal/spool/` — durable NDJSON event queue
 - `internal/ingest/` — event ingestion handler
 

@@ -6,15 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
-
-// FlagKindExperiment is the A/B-test shape: bucketed per targeting key, every
-// evaluation recorded, reported on by variant and conversion.
-const FlagKindExperiment = "experiment"
-
-// FlagKindConfig is a singleton value read by a server: no bucketing, no
-// evaluation rows, and no variant/conversion report.
-const FlagKindConfig = "config"
 
 // flagColumns is the shared SELECT column list for feature_flags, kept in one
 // place so every read path scans an identical row shape via scanFlag.
@@ -25,15 +19,15 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanFlag(sc rowScanner) (FeatureFlag, error) {
-	var f FeatureFlag
+func scanFlag(sc rowScanner) (domain.FeatureFlag, error) {
+	var f domain.FeatureFlag
 	var lastEval sql.NullTime
 	if err := sc.Scan(
 		&f.ID, &f.ProjectID, &f.FlagKey, &f.Name, &f.FlagType,
 		&f.Variants, &f.DefaultVariant, &f.Split, &f.ConversionEvent,
 		&f.TargetingRules, &f.Status, &f.CreatedAt, &f.Origin, &lastEval, &f.Kind,
 	); err != nil {
-		return FeatureFlag{}, err
+		return domain.FeatureFlag{}, err
 	}
 	if lastEval.Valid {
 		f.LastEvaluatedAt = &lastEval.Time
@@ -41,63 +35,11 @@ func scanFlag(sc rowScanner) (FeatureFlag, error) {
 	return f, nil
 }
 
-// FeatureFlag represents an OpenFeature-compatible feature flag.
-type FeatureFlag struct {
-	ID              string    `json:"id"`
-	ProjectID       string    `json:"project_id"`
-	FlagKey         string    `json:"flag_key"`
-	Name            string    `json:"name"`
-	FlagType        string    `json:"flag_type"`
-	Variants        string    `json:"variants"`
-	DefaultVariant  string    `json:"default_variant"`
-	Split           string    `json:"split"`
-	ConversionEvent string    `json:"conversion_event"`
-	TargetingRules  string    `json:"targeting_rules"`
-	Status          string    `json:"status"`
-	CreatedAt       time.Time `json:"created_at"`
-	// Origin is "manual" for human-created flags and "auto" for flags created on
-	// first evaluation. LastEvaluatedAt tracks the most recent evaluation of an
-	// auto flag so stale, never-configured ones can be pruned.
-	Origin          string     `json:"origin"`
-	LastEvaluatedAt *time.Time `json:"last_evaluated_at,omitempty"`
-	// Kind is "experiment" (bucketed per user, every read is an analytics data
-	// point) or "config" (a singleton value a server reads on a loop — no
-	// bucketing, no evaluation rows, no variant/conversion report).
-	Kind string `json:"flag_kind"`
-}
-
-// FlagEvaluation records a single flag evaluation.
-type FlagEvaluation struct {
-	ID          string    `json:"id"`
-	FlagID      string    `json:"flag_id"`
-	ProjectID   string    `json:"project_id"`
-	Variant     string    `json:"variant"`
-	ContextHash string    `json:"context_hash"`
-	SessionID   string    `json:"session_id"`
-	ContextKeys []string  `json:"context_keys"` // key names present in the eval context
-	CreatedAt   time.Time `json:"created_at"`
-}
-
-// ContextKeySuggestion is a context key seen in recent evaluations with its frequency.
-type ContextKeySuggestion struct {
-	ContextKey string `json:"context_key"`
-	SeenCount  int64  `json:"seen_count"`
-	Pct        int    `json:"pct"` // percentage of evaluations in the last 30 days that included this key
-}
-
-// FlagAnalysisResult holds per-variant analysis.
-type FlagAnalysisResult struct {
-	Variant     string  `json:"variant"`
-	Sample      int64   `json:"sample"`
-	Conversions int64   `json:"conversions"`
-	Rate        float64 `json:"rate"`
-}
-
-func (s *Store) CreateFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, error) {
+func (s *Store) CreateFlag(ctx context.Context, f domain.FeatureFlag) (domain.FeatureFlag, error) {
 	var err error
 	f.ID, err = generateUUID()
 	if err != nil {
-		return FeatureFlag{}, fmt.Errorf("generate uuid: %w", err)
+		return domain.FeatureFlag{}, fmt.Errorf("generate uuid: %w", err)
 	}
 	if f.TargetingRules == "" {
 		f.TargetingRules = "[]"
@@ -106,14 +48,14 @@ func (s *Store) CreateFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, err
 		f.Origin = "manual"
 	}
 	if f.Kind == "" {
-		f.Kind = FlagKindExperiment
+		f.Kind = domain.FlagKindExperiment
 	}
 	const q = `INSERT INTO feature_flags (id, project_id, flag_key, name, flag_type, variants, default_variant, split, conversion_event, targeting_rules, status, origin, flag_kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	if _, err := s.db.ExecContext(ctx, q,
 		f.ID, f.ProjectID, f.FlagKey, f.Name, f.FlagType,
 		f.Variants, f.DefaultVariant, f.Split, f.ConversionEvent, f.TargetingRules, f.Status, f.Origin, f.Kind,
 	); err != nil {
-		return FeatureFlag{}, fmt.Errorf("create flag: %w", err)
+		return domain.FeatureFlag{}, fmt.Errorf("create flag: %w", err)
 	}
 	return s.flagByID(ctx, s.db, f.ID)
 }
@@ -122,10 +64,10 @@ func (s *Store) CreateFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, err
 // (project_id, flag_key) exists yet, then returns the current row. It is
 // idempotent and race-safe: concurrent first-evaluations of the same key
 // converge on a single row via the UNIQUE(project_id, flag_key) constraint.
-func (s *Store) EnsureAutoFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, error) {
+func (s *Store) EnsureAutoFlag(ctx context.Context, f domain.FeatureFlag) (domain.FeatureFlag, error) {
 	id, err := generateUUID()
 	if err != nil {
-		return FeatureFlag{}, fmt.Errorf("generate uuid: %w", err)
+		return domain.FeatureFlag{}, fmt.Errorf("generate uuid: %w", err)
 	}
 	if f.TargetingRules == "" {
 		f.TargetingRules = "[]"
@@ -134,7 +76,7 @@ func (s *Store) EnsureAutoFlag(ctx context.Context, f FeatureFlag) (FeatureFlag,
 		f.Origin = "auto"
 	}
 	if f.Kind == "" {
-		f.Kind = FlagKindExperiment
+		f.Kind = domain.FlagKindExperiment
 	}
 	const q = `INSERT INTO feature_flags (id, project_id, flag_key, name, flag_type, variants, default_variant, split, conversion_event, targeting_rules, status, origin, flag_kind)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -143,7 +85,7 @@ func (s *Store) EnsureAutoFlag(ctx context.Context, f FeatureFlag) (FeatureFlag,
 		id, f.ProjectID, f.FlagKey, f.Name, f.FlagType,
 		f.Variants, f.DefaultVariant, f.Split, f.ConversionEvent, f.TargetingRules, f.Status, f.Origin, f.Kind,
 	); err != nil {
-		return FeatureFlag{}, fmt.Errorf("ensure auto flag: %w", err)
+		return domain.FeatureFlag{}, fmt.Errorf("ensure auto flag: %w", err)
 	}
 	return s.FlagByKey(ctx, f.ProjectID, f.FlagKey)
 }
@@ -184,40 +126,40 @@ func (s *Store) PurgeStaleAutoFlags(ctx context.Context, cutoff time.Time) (int6
 	return result.RowsAffected()
 }
 
-func (r *ReadStore) FlagByID(ctx context.Context, id string) (FeatureFlag, error) {
+func (r *ReadStore) FlagByID(ctx context.Context, id string) (domain.FeatureFlag, error) {
 	return r.flagByID(ctx, r.rdb, id)
 }
 
 // flagByID reads through db, so write paths can read back on the write pool.
-func (r *ReadStore) flagByID(ctx context.Context, db querier, id string) (FeatureFlag, error) {
+func (r *ReadStore) flagByID(ctx context.Context, db querier, id string) (domain.FeatureFlag, error) {
 	q := `SELECT ` + flagColumns + ` FROM feature_flags WHERE id = ?`
 	return scanFlag(db.QueryRowContext(ctx, q, id))
 }
 
-func (r *ReadStore) FlagByKey(ctx context.Context, projectID, flagKey string) (FeatureFlag, error) {
+func (r *ReadStore) FlagByKey(ctx context.Context, projectID, flagKey string) (domain.FeatureFlag, error) {
 	q := `SELECT ` + flagColumns + ` FROM feature_flags WHERE project_id = ? AND flag_key = ?`
 	return scanFlag(r.rdb.QueryRowContext(ctx, q, projectID, flagKey))
 }
 
-func (r *ReadStore) ListFlags(ctx context.Context, projectID string) ([]FeatureFlag, error) {
+func (r *ReadStore) ListFlags(ctx context.Context, projectID string) ([]domain.FeatureFlag, error) {
 	q := `SELECT ` + flagColumns + ` FROM feature_flags WHERE project_id = ? ORDER BY created_at DESC`
 	return r.queryFlags(ctx, q, projectID)
 }
 
 // ListAllFlags returns every project's flags. The in-memory flag snapshot
 // loads it every few seconds; production holds a few dozen rows.
-func (r *ReadStore) ListAllFlags(ctx context.Context) ([]FeatureFlag, error) {
+func (r *ReadStore) ListAllFlags(ctx context.Context) ([]domain.FeatureFlag, error) {
 	return r.queryFlags(ctx, `SELECT `+flagColumns+` FROM feature_flags`)
 }
 
-func (r *ReadStore) queryFlags(ctx context.Context, q string, args ...any) ([]FeatureFlag, error) {
+func (r *ReadStore) queryFlags(ctx context.Context, q string, args ...any) ([]domain.FeatureFlag, error) {
 	rows, err := r.rdb.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var flags []FeatureFlag
+	var flags []domain.FeatureFlag
 	for rows.Next() {
 		f, err := scanFlag(rows)
 		if err != nil {
@@ -228,21 +170,21 @@ func (r *ReadStore) queryFlags(ctx context.Context, q string, args ...any) ([]Fe
 	return flags, rows.Err()
 }
 
-func (s *Store) UpdateFlag(ctx context.Context, f FeatureFlag) (FeatureFlag, error) {
+func (s *Store) UpdateFlag(ctx context.Context, f domain.FeatureFlag) (domain.FeatureFlag, error) {
 	if f.TargetingRules == "" {
 		f.TargetingRules = "[]"
 	}
 	// A human editing a flag claims it (origin='manual'): it now appears as a
 	// normal flag and is exempt from the stale-auto-flag sweep.
 	if f.Kind == "" {
-		f.Kind = FlagKindExperiment
+		f.Kind = domain.FlagKindExperiment
 	}
 	const q = `UPDATE feature_flags SET name=?, flag_type=?, variants=?, default_variant=?, split=?, conversion_event=?, targeting_rules=?, status=?, flag_kind=?, origin='manual' WHERE id=?`
 	if _, err := s.db.ExecContext(ctx, q,
 		f.Name, f.FlagType, f.Variants, f.DefaultVariant, f.Split,
 		f.ConversionEvent, f.TargetingRules, f.Status, f.Kind, f.ID,
 	); err != nil {
-		return FeatureFlag{}, fmt.Errorf("update flag: %w", err)
+		return domain.FeatureFlag{}, fmt.Errorf("update flag: %w", err)
 	}
 	return s.flagByID(ctx, s.db, f.ID)
 }
@@ -252,7 +194,7 @@ func (s *Store) DeleteFlag(ctx context.Context, id string) error {
 	return err
 }
 
-func (s *Store) RecordEvaluation(ctx context.Context, eval FlagEvaluation) error {
+func (s *Store) RecordEvaluation(ctx context.Context, eval domain.FlagEvaluation) error {
 	if eval.ID == "" {
 		id, err := generateUUID()
 		if err != nil {
@@ -275,7 +217,7 @@ func (s *Store) RecordEvaluation(ctx context.Context, eval FlagEvaluation) error
 
 // FlagContextKeySuggestions returns context keys seen in recent evaluations for a project,
 // ordered by frequency, with the percentage of evaluations that included each key.
-func (r *ReadStore) FlagContextKeySuggestions(ctx context.Context, projectID string) ([]ContextKeySuggestion, error) {
+func (r *ReadStore) FlagContextKeySuggestions(ctx context.Context, projectID string) ([]domain.ContextKeySuggestion, error) {
 	const q = `
 		WITH total AS (
 			SELECT COUNT(*) AS n
@@ -298,9 +240,9 @@ func (r *ReadStore) FlagContextKeySuggestions(ctx context.Context, projectID str
 		return nil, err
 	}
 	defer rows.Close()
-	var out []ContextKeySuggestion
+	var out []domain.ContextKeySuggestion
 	for rows.Next() {
-		var s ContextKeySuggestion
+		var s domain.ContextKeySuggestion
 		if err := rows.Scan(&s.ContextKey, &s.SeenCount, &s.Pct); err != nil {
 			return nil, err
 		}

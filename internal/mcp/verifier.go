@@ -11,7 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 
 	fbauth "github.com/wiebe-xyz/funnelbarn/internal/auth"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // tokenUseAccess is the token_use claim value of an IAMBarn access token. An
@@ -28,8 +28,8 @@ type AccessTokenVerifier interface {
 // UserResolver maps an IAMBarn subject to its FunnelBarn user, creating the
 // user on first sight. *repository.Store satisfies it.
 type UserResolver interface {
-	FindUserByIAMBarnSub(ctx context.Context, sub string) (repository.User, error)
-	CreateIAMBarnUser(ctx context.Context, sub, username string) (repository.User, error)
+	FindUserByIAMBarnSub(ctx context.Context, sub string) (domain.User, error)
+	CreateIAMBarnUser(ctx context.Context, sub, username string) (domain.User, error)
 }
 
 // NewTokenVerifier returns the bearer-token verifier for the MCP endpoint. It

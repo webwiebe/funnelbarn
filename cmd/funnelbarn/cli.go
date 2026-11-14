@@ -17,10 +17,11 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/spool"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
-	"github.com/wiebe-xyz/funnelbarn/internal/worker"
 )
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
@@ -49,7 +50,7 @@ func runWorkerOnce(cfg config.Config) error {
 
 	processed := 0
 	for _, record := range records {
-		event, err := worker.SafeProcess(record)
+		event, err := pipeline.SafeProcess(record)
 		if err != nil {
 			tracing.RecordError(span, err)
 			slog.Error("worker-once: process record", "ingest_id", record.IngestID, "err", err)
@@ -61,7 +62,7 @@ func runWorkerOnce(cfg config.Config) error {
 				event.ProjectID = proj.ID
 			}
 		}
-		if err := worker.PersistEvent(ctx, store, event, nil); err != nil {
+		if err := pipeline.PersistEvent(ctx, store, event, nil); err != nil {
 			tracing.RecordError(span, err)
 			slog.Error("worker-once: persist event", "ingest_id", record.IngestID, "err", err)
 			continue
@@ -140,7 +141,7 @@ func replayRecord(ctx context.Context, store *repository.Store, record spool.Rec
 		return false
 	}
 
-	event, err := worker.SafeProcess(record)
+	event, err := pipeline.SafeProcess(record)
 	if err != nil {
 		slog.Error("replay: process record", "ingest_id", record.IngestID, "err", err)
 		return false
@@ -161,7 +162,7 @@ func replayRecord(ctx context.Context, store *repository.Store, record spool.Rec
 	}
 	event.ProjectID = proj.ID
 
-	if err := worker.PersistEvent(ctx, store, event, nil); err != nil {
+	if err := pipeline.PersistEvent(ctx, store, event, nil); err != nil {
 		slog.Error("replay: persist event", "ingest_id", record.IngestID, "err", err)
 		return false
 	}
@@ -257,7 +258,7 @@ func runAPIKeyCmd(cfg config.Config, args []string) error {
 		fs := flag.NewFlagSet("apikey create", flag.ContinueOnError)
 		projectSlug := fs.String("project", "default", "project slug")
 		name := fs.String("name", "", "key name/label")
-		scope := fs.String("scope", repository.APIKeyScopeFull, "key scope: full or ingest")
+		scope := fs.String("scope", domain.APIKeyScopeFull, "key scope: full or ingest")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -265,8 +266,8 @@ func runAPIKeyCmd(cfg config.Config, args []string) error {
 		if *name == "" {
 			return fmt.Errorf("--name is required")
 		}
-		if *scope != repository.APIKeyScopeFull && *scope != repository.APIKeyScopeIngest {
-			return fmt.Errorf("--scope must be %q or %q", repository.APIKeyScopeFull, repository.APIKeyScopeIngest)
+		if *scope != domain.APIKeyScopeFull && *scope != domain.APIKeyScopeIngest {
+			return fmt.Errorf("--scope must be %q or %q", domain.APIKeyScopeFull, domain.APIKeyScopeIngest)
 		}
 		store, err := repository.Open(cfg.DBPath)
 		if err != nil {

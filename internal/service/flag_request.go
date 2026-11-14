@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // FlagRequest is the body of a flag create or update. Every field is a
@@ -28,7 +28,7 @@ type FlagRequest struct {
 
 // applyTo returns existing with the request's fields laid over it. FlagKey is
 // not part of the merge: a flag's key is fixed at creation.
-func (r FlagRequest) applyTo(existing repository.FeatureFlag) repository.FeatureFlag {
+func (r FlagRequest) applyTo(existing domain.FeatureFlag) domain.FeatureFlag {
 	merged := existing
 	for _, f := range []struct {
 		dst *string
@@ -55,8 +55,8 @@ func (r FlagRequest) applyTo(existing repository.FeatureFlag) repository.Feature
 
 // CreateFromRequest creates a flag in the project from a request body. The
 // same validation as CreateFlag applies.
-func (svc *FlagService) CreateFromRequest(ctx context.Context, projectID string, req FlagRequest) (repository.FeatureFlag, error) {
-	f := req.applyTo(repository.FeatureFlag{ProjectID: projectID})
+func (svc *FlagService) CreateFromRequest(ctx context.Context, projectID string, req FlagRequest) (domain.FeatureFlag, error) {
+	f := req.applyTo(domain.FeatureFlag{ProjectID: projectID})
 	if req.FlagKey != nil {
 		f.FlagKey = *req.FlagKey
 	}
@@ -65,6 +65,6 @@ func (svc *FlagService) CreateFromRequest(ctx context.Context, projectID string,
 
 // PatchFlag lays a partial request over the stored flag and saves it with the
 // validation of UpdateFlag.
-func (svc *FlagService) PatchFlag(ctx context.Context, existing repository.FeatureFlag, req FlagRequest) (repository.FeatureFlag, error) {
+func (svc *FlagService) PatchFlag(ctx context.Context, existing domain.FeatureFlag, req FlagRequest) (domain.FeatureFlag, error) {
 	return svc.UpdateFlag(ctx, req.applyTo(existing))
 }

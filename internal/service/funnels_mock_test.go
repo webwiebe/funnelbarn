@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/mock"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
@@ -23,10 +22,10 @@ func TestFunnelService_Mock_CreateFunnel(t *testing.T) {
 	p, err := projSvc.CreateProject(ctx, "Mock Project", "mock-project")
 	require.NoError(t, err)
 
-	f, err := funnelSvc.CreateFunnel(ctx, repository.Funnel{
+	f, err := funnelSvc.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Checkout Funnel",
-		Steps: []repository.FunnelStep{
+		Steps: []domain.FunnelStep{
 			{EventName: "cart-viewed"},
 			{EventName: "checkout-started"},
 		},
@@ -41,20 +40,20 @@ func TestFunnelService_Mock_CreateFunnel(t *testing.T) {
 
 func TestFunnelService_Mock_EmptyName(t *testing.T) {
 	svc := service.NewFunnelService(mock.New())
-	_, err := svc.CreateFunnel(context.Background(), repository.Funnel{
+	_, err := svc.CreateFunnel(context.Background(), domain.Funnel{
 		ProjectID: "proj-1",
 		Name:      "",
-		Steps:     []repository.FunnelStep{{EventName: "page-view"}},
+		Steps:     []domain.FunnelStep{{EventName: "page-view"}},
 	})
 	require.True(t, domain.IsValidation(err), "expected ErrValidation, got %v", err)
 }
 
 func TestFunnelService_Mock_NoStepsRequired(t *testing.T) {
 	svc := service.NewFunnelService(mock.New())
-	_, err := svc.CreateFunnel(context.Background(), repository.Funnel{
+	_, err := svc.CreateFunnel(context.Background(), domain.Funnel{
 		ProjectID: "proj-1",
 		Name:      "Empty Funnel",
-		Steps:     []repository.FunnelStep{},
+		Steps:     []domain.FunnelStep{},
 	})
 	require.True(t, domain.IsValidation(err), "expected ErrValidation for empty steps, got %v", err)
 }
@@ -74,17 +73,17 @@ func TestFunnelService_Mock_ListFunnels(t *testing.T) {
 	p, err := projSvc.CreateProject(ctx, "List Project", "list-project")
 	require.NoError(t, err)
 
-	_, err = funnelSvc.CreateFunnel(ctx, repository.Funnel{
+	_, err = funnelSvc.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Funnel One",
-		Steps:     []repository.FunnelStep{{EventName: "step-1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step-1"}},
 	})
 	require.NoError(t, err)
 
-	_, err = funnelSvc.CreateFunnel(ctx, repository.Funnel{
+	_, err = funnelSvc.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Funnel Two",
-		Steps:     []repository.FunnelStep{{EventName: "step-a"}, {EventName: "step-b"}},
+		Steps:     []domain.FunnelStep{{EventName: "step-a"}, {EventName: "step-b"}},
 	})
 	require.NoError(t, err)
 

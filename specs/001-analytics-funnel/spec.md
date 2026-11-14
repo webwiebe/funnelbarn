@@ -72,15 +72,15 @@ Each story lists the requirements that implement it. Stories whose behaviour the
 
 - **FR-001**: The system MUST accept events at `POST /api/v1/events`, authenticated by an API key, and answer `202 Accepted` after the event is enqueued. Issues: none. Tests: `internal/ingest/handler_test.go::TestServeHTTP_Accepted`, `internal/ingest/handler_test.go::TestServeHTTP_Unauthorized`, `internal/ingest/handler_test.go::TestServeHTTP_BodyTooLarge`.
 - **FR-002**: The ingest handler MUST NOT write to the database in the request path; it appends to the on-disk spool (or the Valkey ingest queue in reader mode). Issues: none. Tests: `internal/spool/spool_test.go::TestAppend_ReadRecords`, `cmd/funnelbarn/mode_test.go::TestReaderPublishesAndTheWriterApplies`.
-- **FR-003**: A background worker MUST read spool records from a persisted cursor and write them to SQLite, and a malformed record MUST advance the cursor. Issues: none. Tests: `internal/spool/spool_test.go::TestCursor_RoundTrip`, `cmd/funnelbarn/worker_spool_test.go::TestSkipMalformedAdvancesCursor`.
-- **FR-004**: An event without a valid client session ID MUST receive a session ID that is the first 32 hex characters of SHA-256 over the client IP truncated to /24 (IPv4) or /48 (IPv6), the user agent, the project slug, the environment and a 30-minute time window. Issues: [#226](https://github.com/webwiebe/funnelbarn/issues/226). Tests: `internal/session/fingerprint_test.go::TestFingerprint_IPv4AnonymizationSlash24`, `internal/session/fingerprint_test.go::TestFingerprint_IPv6AnonymizationSlash48`, `internal/session/fingerprint_test.go::TestFingerprint_RotatesAcrossWindows`, `internal/worker/worker_test.go::TestProcessRecord_SessionFingerprintFallback`.
-- **FR-005**: A client-supplied user ID MUST be SHA-256 hashed before storage. Issues: none. Tests: `internal/enrich/enrich_test.go::TestHashUserID`, `internal/worker/worker_test.go::TestProcessRecord_UserIDHashed`.
-- **FR-006**: The worker MUST extract UTM parameters from the event URL, and UTM values in the payload MUST override those from the URL. Issues: none. Tests: `internal/worker/worker_test.go::TestProcessRecord_UTMFromURL`, `internal/worker/worker_test.go::TestProcessRecord_UTMPayloadOverridesURL`, `internal/enrich/enrich_test.go::TestExtractUTM`.
+- **FR-003**: A background worker MUST read spool records from a persisted cursor and write them to SQLite, and a malformed record MUST advance the cursor. Issues: none. Tests: `internal/spool/spool_test.go::TestCursor_RoundTrip`, `internal/ingest/pipeline/spool_test.go::TestSkipMalformedAdvancesCursor`.
+- **FR-004**: An event without a valid client session ID MUST receive a session ID that is the first 32 hex characters of SHA-256 over the client IP truncated to /24 (IPv4) or /48 (IPv6), the user agent, the project slug, the environment and a 30-minute time window. Issues: [#226](https://github.com/webwiebe/funnelbarn/issues/226). Tests: `internal/session/fingerprint_test.go::TestFingerprint_IPv4AnonymizationSlash24`, `internal/session/fingerprint_test.go::TestFingerprint_IPv6AnonymizationSlash48`, `internal/session/fingerprint_test.go::TestFingerprint_RotatesAcrossWindows`, `internal/ingest/pipeline/process_test.go::TestProcessRecord_SessionFingerprintFallback`.
+- **FR-005**: A client-supplied user ID MUST be SHA-256 hashed before storage. Issues: none. Tests: `internal/enrich/enrich_test.go::TestHashUserID`, `internal/ingest/pipeline/process_test.go::TestProcessRecord_UserIDHashed`.
+- **FR-006**: The worker MUST extract UTM parameters from the event URL, and UTM values in the payload MUST override those from the URL. Issues: none. Tests: `internal/ingest/pipeline/process_test.go::TestProcessRecord_UTMFromURL`, `internal/ingest/pipeline/process_test.go::TestProcessRecord_UTMPayloadOverridesURL`, `internal/enrich/enrich_test.go::TestExtractUTM`.
 - **FR-007**: The worker MUST parse the user agent into browser, operating system and device type. Issues: none. Tests: `internal/enrich/enrich_test.go::TestParseUA_Browsers`, `internal/enrich/enrich_test.go::TestParseUA_OS`, `internal/enrich/enrich_test.go::TestParseUA_DeviceTypes`.
 - **FR-008**: The worker MUST reduce a referrer URL to its domain. Issues: none. Tests: `internal/enrich/enrich_test.go::TestExtractReferrerDomain`.
 - **FR-014**: The ingest handler MUST answer `429` when its in-memory queue (32768 records) is full. Issues: none. [inferred]
 - **FR-015**: Events older than the retention window (default 90 days, `FUNNELBARN_EVENT_RETENTION_DAYS`) MUST be deleted by the maintenance pass. Issues: none. Tests: `internal/repository/store_test.go::TestStore_PurgeOldEvents` (details in spec 005).
-- **FR-019**: A replayed event with an already stored ingest ID MUST NOT be stored twice. Issues: none. Tests: `cmd/funnelbarn/ingest_apply_test.go::TestIngestApply_StoresOnceOnRedelivery`.
+- **FR-019**: A replayed event with an already stored ingest ID MUST NOT be stored twice. Issues: none. Tests: `internal/ingest/pipeline/apply_test.go::TestIngestApply_StoresOnceOnRedelivery`.
 - **FR-061**: A failed spool rotation MUST leave the spool writable: after a failed close, rename or reopen the active segment is reopened, or the next write opens it. Writes after `Close` return `spool.ErrClosed`. Issues: [#426](https://github.com/webwiebe/funnelbarn/issues/426). Tests: `internal/spool/rotate_failure_test.go::TestRotate_FailedRenameKeepsSpoolWritable`, `internal/spool/rotate_failure_test.go::TestRotate_FailedReopenRecoversOnNextAppend`, `internal/spool/rotate_failure_test.go::TestRotate_FailedRenameAndReopen`, `internal/spool/close_test.go::TestAppend_AfterCloseFails`.
 
 ### Dashboard and funnels
@@ -148,13 +148,13 @@ The performance, memory and availability targets of the first draft (ingest p99 
 
 - [ ] A pageview posted to a running server returns `202` and appears in the dashboard counts after the worker runs.
 - [ ] Two events from the same IP prefix, user agent, project and environment inside one 30-minute window share a session ID (`internal/session/fingerprint_test.go::TestFingerprint_StableWithinWindow`).
-- [ ] A user ID sent by a client never appears in plaintext in the `events` table (`internal/worker/worker_test.go::TestProcessRecord_UserIDHashed`).
+- [ ] A user ID sent by a client never appears in plaintext in the `events` table (`internal/ingest/pipeline/process_test.go::TestProcessRecord_UserIDHashed`).
 - [ ] A funnel with three steps returns non-increasing step counts for a seeded dataset.
 - [ ] `GET /api/v1/health` answers `200` without credentials (`internal/api/api_test.go::TestHandleHealth`).
 
 ## Sources
 
-- `internal/ingest/handler.go`, `internal/worker/worker.go`, `internal/session/fingerprint.go`, `internal/enrich/enrich.go`
+- `internal/ingest/handler.go`, `internal/ingest/pipeline/process.go`, `internal/session/fingerprint.go`, `internal/enrich/enrich.go`
 - `internal/api/server.go`, `internal/api/funnels.go`, `internal/api/dashboard.go`, `internal/api/anonymize.go`
 - `internal/repository/migrations/00010_session_geo.sql`, `internal/config/config.go`
 - `sdks/js/src/index.ts`, `deploy/`

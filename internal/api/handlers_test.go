@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 func now() time.Time { return time.Now().UTC().Truncate(time.Second) }
@@ -52,7 +52,7 @@ func TestHandleCreateABTest_Success(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d (body: %s)", w.Code, w.Body.String())
 	}
-	var test repository.ABTest
+	var test domain.ABTest
 	_ = json.Unmarshal(w.Body.Bytes(), &test)
 	if test.ID == "" {
 		t.Error("expected non-empty ID in response")
@@ -103,7 +103,7 @@ func TestHandleABTestAnalysis_Success(t *testing.T) {
 	srv, store := newTestServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "ABAnalyOK", "abanalyok")
-	test, _ := store.CreateABTest(ctx, repository.ABTest{
+	test, _ := store.CreateABTest(ctx, domain.ABTest{
 		ProjectID:       p.ID,
 		Name:            "CTA colour",
 		Status:          "running",
@@ -129,10 +129,10 @@ func TestHandleFunnelAnalysis_Success(t *testing.T) {
 	srv, store := newTestServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "FAnaly", "fanaly")
-	f, _ := store.CreateFunnel(ctx, repository.Funnel{
+	f, _ := store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Checkout",
-		Steps: []repository.FunnelStep{
+		Steps: []domain.FunnelStep{
 			{EventName: "cart_view"},
 			{EventName: "checkout"},
 		},
@@ -156,10 +156,10 @@ func TestHandleFunnelAnalysis_WithSegment(t *testing.T) {
 	srv, store := newTestServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "FAnalySeg", "fanalyseg")
-	f, _ := store.CreateFunnel(ctx, repository.Funnel{
+	f, _ := store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Mobile Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "visit"}},
+		Steps:     []domain.FunnelStep{{EventName: "visit"}},
 	})
 
 	w := getJSON(t, srv, "/api/v1/projects/"+p.ID+"/funnels/"+f.ID+"/analysis?segment=mobile", nil)
@@ -172,10 +172,10 @@ func TestHandleFunnelAnalysis_TimeRange(t *testing.T) {
 	srv, store := newTestServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "FAnalyRange", "fanalyrange")
-	f, _ := store.CreateFunnel(ctx, repository.Funnel{
+	f, _ := store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Range Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "ev"}},
+		Steps:     []domain.FunnelStep{{EventName: "ev"}},
 	})
 
 	w := getJSON(t, srv, "/api/v1/projects/"+p.ID+"/funnels/"+f.ID+"/analysis?range=7d", nil)
@@ -188,10 +188,10 @@ func TestHandleFunnelSegments_Success(t *testing.T) {
 	srv, store := newTestServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "FSeg", "fseg")
-	f, _ := store.CreateFunnel(ctx, repository.Funnel{
+	f, _ := store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Seg Funnel",
-		Steps:     []repository.FunnelStep{{EventName: "ev"}},
+		Steps:     []domain.FunnelStep{{EventName: "ev"}},
 	})
 
 	w := getJSON(t, srv, "/api/v1/projects/"+p.ID+"/funnels/"+f.ID+"/segments", nil)
@@ -204,10 +204,10 @@ func TestHandleUpdateFunnel_Success(t *testing.T) {
 	srv, store := newTestServer(t)
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "FUpd", "fupd")
-	f, _ := store.CreateFunnel(ctx, repository.Funnel{
+	f, _ := store.CreateFunnel(ctx, domain.Funnel{
 		ProjectID: p.ID,
 		Name:      "Old Name",
-		Steps:     []repository.FunnelStep{{EventName: "step1"}},
+		Steps:     []domain.FunnelStep{{EventName: "step1"}},
 	})
 
 	body, _ := json.Marshal(map[string]any{
@@ -226,7 +226,7 @@ func TestHandleUpdateFunnel_Success(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d (body: %s)", w.Code, w.Body.String())
 	}
-	var updated repository.Funnel
+	var updated domain.Funnel
 	_ = json.Unmarshal(w.Body.Bytes(), &updated)
 	if updated.Name != "New Name" {
 		t.Errorf("Name: want New Name, got %q", updated.Name)
@@ -350,7 +350,7 @@ func TestHandleListEvents_Filters(t *testing.T) {
 	base := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 	add := func(id, name, env string, at time.Time) {
 		t.Helper()
-		if err := store.InsertEvent(ctx, repository.Event{
+		if err := store.InsertEvent(ctx, domain.Event{
 			ID: id, ProjectID: p.ID, SessionID: "s-" + id, Name: name, Environment: env,
 			IngestID: "ing-" + id, OccurredAt: at, CreatedAt: at,
 		}); err != nil {
@@ -408,7 +408,7 @@ func TestHandleEventProperties_Success(t *testing.T) {
 	ctx := context.Background()
 	p, _ := store.CreateProject(ctx, "PropsSite", "propssite")
 
-	_ = store.InsertEvent(ctx, repository.Event{
+	_ = store.InsertEvent(ctx, domain.Event{
 		ID: "ep1", ProjectID: p.ID, SessionID: "s1", Name: "signup",
 		Properties: `{"plan":"pro","source":"ads"}`,
 		URL:        "https://example.com",
@@ -448,7 +448,7 @@ func TestHandleEventPropertyValues_Success(t *testing.T) {
 	p, _ := store.CreateProject(ctx, "ValsSite", "valssite")
 
 	for _, plan := range []string{"pro", "free", "pro"} {
-		_ = store.InsertEvent(ctx, repository.Event{
+		_ = store.InsertEvent(ctx, domain.Event{
 			ID: randomID(), ProjectID: p.ID, SessionID: "s1", Name: "signup",
 			Properties: `{"plan":"` + plan + `"}`,
 			IngestID:   randomID(), OccurredAt: now(),
