@@ -468,10 +468,65 @@ jobs:
               \"notes\": \"Deployed by GitHub Actions run #${GITHUB_RUN_NUMBER}\"
             }" || echo "BugBarn release marker skipped"
 
+  e2e-staging:
+    # The same Playwright suite as testing, against the freshly rolled out
+    # staging. Its login is the staging local admin and the E2E_PASSWORD kept
+    # beside the bcrypt hash in deploy/k8s/staging/secret.yaml (#364). A red run
+    # stops smoke-staging and so promote.
+    needs: [build, deploy-staging]
+    runs-on: [self-hosted, build]
+    timeout-minutes: 10
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c"
+            rm -rf "$c"
+          fi
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+
+      - name: Install Node deps
+        run: pnpm install --frozen-lockfile --filter funnelbarn
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install chromium
+
+      - name: Run E2E tests against staging
+        env:
+          E2E_BASE_URL: https://funnelbarn.staging.wiebe.xyz
+          # k3s cluster private IP, reachable from the Mac Mini runner
+          E2E_CLUSTER_IP: 192.168.4.108
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY_STAGING }}
+        run: |
+          set -euo pipefail
+          E2E_USERNAME="$(sops -d --extract '["stringData"]["FUNNELBARN_ADMIN_USERNAME"]' deploy/k8s/staging/secret.yaml)"
+          E2E_PASSWORD="$(sops -d --extract '["stringData"]["E2E_PASSWORD"]' deploy/k8s/staging/secret.yaml)"
+          echo "::add-mask::${E2E_USERNAME}"
+          echo "::add-mask::${E2E_PASSWORD}"
+          export E2E_USERNAME E2E_PASSWORD
+          unset SOPS_AGE_KEY
+          pnpm exec playwright test --reporter=list,html
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-staging
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
   smoke-staging:
     # The gate between staging and production: staging must report ready on the
     # exact version just rolled out. See scripts/smoke.sh and scripts/test_smoke.py.
-    needs: [build, deploy-staging]
+    needs: [build, deploy-staging, e2e-staging]
     runs-on: [self-hosted, build]
     timeout-minutes: 5
     env:
@@ -501,7 +556,7 @@ jobs:
     # workflow runs preflight (images in GHCR, and the release tag on this SHA),
     # deploys by SHA tag, reports the release tag as the version, smoke checks
     # production and rolls back on failure.
-    needs: [build, deploy-staging, smoke-staging]
+    needs: [build, deploy-staging, e2e-staging, smoke-staging]
     uses: ./.github/workflows/deploy-production.yml
     with:
       production_version: ${{ needs.build.outputs.sha }}
