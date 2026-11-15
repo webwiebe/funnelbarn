@@ -568,8 +568,8 @@ func (s *ReadStore) DistinctPropertyValues(ctx context.Context, projectID, event
 // project and event name. Reading a sample keeps the call cheap on a project
 // with millions of events, and the newest events show what the SDK sends now.
 func (s *ReadStore) PopulatedMetadataColumns(ctx context.Context, projectID, eventName string) ([]string, error) {
-	q := `SELECT `
-	for i, col := range metadataColumns {
+	cols, q := domain.MetadataColumns(), `SELECT `
+	for i, col := range cols {
 		if i > 0 {
 			q += `, `
 		}
@@ -578,8 +578,8 @@ func (s *ReadStore) PopulatedMetadataColumns(ctx context.Context, projectID, eve
 	}
 	q += ` FROM (SELECT * FROM events WHERE project_id = ? AND name = ? ORDER BY occurred_at DESC LIMIT 1000)`
 
-	flags := make([]int, len(metadataColumns))
-	ptrs := make([]any, len(metadataColumns))
+	flags := make([]int, len(cols))
+	ptrs := make([]any, len(cols))
 	for i := range flags {
 		ptrs[i] = &flags[i]
 	}
@@ -590,7 +590,7 @@ func (s *ReadStore) PopulatedMetadataColumns(ctx context.Context, projectID, eve
 	var populated []string
 	for i, f := range flags {
 		if f == 1 {
-			populated = append(populated, metadataColumns[i])
+			populated = append(populated, cols[i])
 		}
 	}
 	return populated, nil

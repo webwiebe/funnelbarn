@@ -1,4 +1,4 @@
-package repository_test
+package widgets_test
 
 import (
 	"context"
@@ -10,23 +10,19 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/repository"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
+	"github.com/wiebe-xyz/funnelbarn/internal/idgen"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 )
-
-func TestIsMetadataColumn(t *testing.T) {
-	assert.True(t, repository.IsMetadataColumn("url"))
-	assert.True(t, repository.IsMetadataColumn("browser"))
-	assert.False(t, repository.IsMetadataColumn("plan"))
-	assert.NotEmpty(t, repository.MetadataColumns())
-}
 
 func TestWidget_CRUD(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t)
+	s := repotest.Open(t)
+	ws := widgets.NewStore(s.DB(), s.ReadDB())
 	p, _ := s.CreateProject(ctx, "Widgets", "widgets-crud")
 
 	// Create — size out of range gets clamped to 1.
-	w, err := s.CreateWidget(ctx, domain.DashboardWidget{
+	w, err := ws.CreateWidget(ctx, widgets.Widget{
 		ProjectID: p.ID,
 		EventName: "page_view",
 		Property:  "browser",
@@ -41,13 +37,13 @@ func TestWidget_CRUD(t *testing.T) {
 	assert.False(t, w.CreatedAt.IsZero())
 
 	// Read by ID.
-	got, err := s.WidgetByID(ctx, w.ID)
+	got, err := ws.WidgetByID(ctx, w.ID)
 	require.NoError(t, err)
 	assert.Equal(t, w.ID, got.ID)
 	assert.Equal(t, "browser", got.Property)
 
 	// List.
-	list, err := s.ListWidgets(ctx, p.ID)
+	list, err := ws.ListWidgets(ctx, p.ID)
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	assert.Equal(t, w.ID, list[0].ID)
@@ -56,25 +52,26 @@ func TestWidget_CRUD(t *testing.T) {
 	w.Title = "Updated"
 	w.Property = "os"
 	w.Size = 2
-	updated, err := s.UpdateWidget(ctx, w)
+	updated, err := ws.UpdateWidget(ctx, w)
 	require.NoError(t, err)
 	assert.Equal(t, "Updated", updated.Title)
 	assert.Equal(t, "os", updated.Property)
 	assert.Equal(t, 2, updated.Size)
 
 	// Delete.
-	require.NoError(t, s.DeleteWidget(ctx, w.ID))
-	_, err = s.WidgetByID(ctx, w.ID)
+	require.NoError(t, ws.DeleteWidget(ctx, w.ID))
+	_, err = ws.WidgetByID(ctx, w.ID)
 	assert.ErrorIs(t, err, sql.ErrNoRows)
 
-	empty, err := s.ListWidgets(ctx, p.ID)
+	empty, err := ws.ListWidgets(ctx, p.ID)
 	require.NoError(t, err)
 	assert.Empty(t, empty)
 }
 
 func TestWidgetBreakdown_TotalCount(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t)
+	s := repotest.Open(t)
+	ws := widgets.NewStore(s.DB(), s.ReadDB())
 	p, _ := s.CreateProject(ctx, "WB", "wb-total")
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -91,7 +88,7 @@ func TestWidgetBreakdown_TotalCount(t *testing.T) {
 	}
 
 	// Empty property → total count only.
-	res, err := s.WidgetBreakdown(ctx, p.ID, "signup", "", 100, 10)
+	res, err := ws.WidgetBreakdown(ctx, p.ID, "signup", "", 100, 10)
 	require.NoError(t, err)
 	require.Len(t, res, 1)
 	assert.Equal(t, "_total", res[0].Value)
@@ -100,7 +97,8 @@ func TestWidgetBreakdown_TotalCount(t *testing.T) {
 
 func TestWidgetBreakdown_MetadataColumn(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t)
+	s := repotest.Open(t)
+	ws := widgets.NewStore(s.DB(), s.ReadDB())
 	p, _ := s.CreateProject(ctx, "WB", "wb-meta")
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -117,7 +115,7 @@ func TestWidgetBreakdown_MetadataColumn(t *testing.T) {
 		require.NoError(t, s.InsertEvent(ctx, e))
 	}
 
-	res, err := s.WidgetBreakdown(ctx, p.ID, "page_view", "browser", 100, 10)
+	res, err := ws.WidgetBreakdown(ctx, p.ID, "page_view", "browser", 100, 10)
 	require.NoError(t, err)
 	require.NotEmpty(t, res)
 	// Chrome (2) should rank first.
@@ -127,7 +125,8 @@ func TestWidgetBreakdown_MetadataColumn(t *testing.T) {
 
 func TestWidgetBreakdown_JSONProperty(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t)
+	s := repotest.Open(t)
+	ws := widgets.NewStore(s.DB(), s.ReadDB())
 	p, _ := s.CreateProject(ctx, "WB", "wb-json")
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -144,7 +143,7 @@ func TestWidgetBreakdown_JSONProperty(t *testing.T) {
 		require.NoError(t, s.InsertEvent(ctx, e))
 	}
 
-	res, err := s.WidgetBreakdown(ctx, p.ID, "signup", "plan", 100, 10)
+	res, err := ws.WidgetBreakdown(ctx, p.ID, "signup", "plan", 100, 10)
 	require.NoError(t, err)
 	require.NotEmpty(t, res)
 	assert.Equal(t, "pro", res[0].Value)
@@ -153,10 +152,19 @@ func TestWidgetBreakdown_JSONProperty(t *testing.T) {
 
 func TestWidgetBreakdown_InvalidPropertyName(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t)
+	s := repotest.Open(t)
+	ws := widgets.NewStore(s.DB(), s.ReadDB())
 	p, _ := s.CreateProject(ctx, "WB", "wb-invalid")
 
-	_, err := s.WidgetBreakdown(ctx, p.ID, "signup", "bad name!", 100, 10)
+	_, err := ws.WidgetBreakdown(ctx, p.ID, "signup", "bad name!", 100, 10)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid property name")
+}
+
+// randomHex returns a short random hex string for unique test ids.
+func randomHex(t *testing.T) string {
+	t.Helper()
+	id, err := idgen.UUID()
+	require.NoError(t, err)
+	return id[:8]
 }

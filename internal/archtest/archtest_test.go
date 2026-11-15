@@ -24,10 +24,11 @@ func TestArchitecture(t *testing.T) {
 		t.Fatalf("Check: %v", err)
 	}
 
-	if len(g.Violations) > 0 {
+	violations := append(g.Violations, g.SliceViolations()...)
+	if len(violations) > 0 {
 		var buf strings.Builder
 		buf.WriteString("architecture violations detected:\n")
-		for _, v := range g.Violations {
+		for _, v := range violations {
 			buf.WriteString("\n")
 			buf.WriteString(v.Package + " imports " + v.Import + "\n")
 			buf.WriteString("  VIOLATES: " + v.Rule.From + " must not import " + v.Rule.MustNotImport + "\n")
@@ -161,5 +162,32 @@ func TestRuleEngine_UnmatchedFromFails(t *testing.T) {
 	err := g.Check([]*archtest.Rule{{From: "internal/repository", MustNotImport: "internal/service"}})
 	if err == nil || !strings.Contains(err.Error(), "internal/repository") {
 		t.Fatalf("expected unmatched From error naming the pattern, got %v", err)
+	}
+}
+
+// A slice may import its own subpackages and shared packages; an import of
+// another slice is a violation.
+func TestSliceViolations(t *testing.T) {
+	g := pkgs(map[string][]string{
+		"m/internal/features/flags":         {"m/internal/features/flags/eval", "m/internal/domain"},
+		"m/internal/features/flags/eval":    {"m/internal/features/projects"},
+		"m/internal/features/widgets":       {"m/internal/httpx"},
+		"m/internal/api":                    {"m/internal/features/flags", "m/internal/features/widgets"},
+		"m/internal/features/projects":      nil,
+		"m/internal/features/widgetsextras": {"m/internal/features/widgets"},
+	})
+	got := g.SliceViolations()
+	if len(got) != 2 {
+		t.Fatalf("want 2 violations, got %d: %+v", len(got), got)
+	}
+	seen := map[string]string{}
+	for _, v := range got {
+		seen[v.Package] = v.Import
+	}
+	if seen["m/internal/features/flags/eval"] != "m/internal/features/projects" {
+		t.Errorf("missing flags/eval -> projects violation: %+v", seen)
+	}
+	if seen["m/internal/features/widgetsextras"] != "m/internal/features/widgets" {
+		t.Errorf("missing widgetsextras -> widgets violation: %+v", seen)
 	}
 }

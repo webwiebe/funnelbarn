@@ -13,6 +13,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
@@ -69,7 +70,7 @@ func newTestServer(t *testing.T) (*Server, *repository.Store) {
 		Overview:            service.NewOverviewService(store),
 		Sessions:            service.NewSessionService(store),
 		APIKeys:             service.NewAPIKeyService(store),
-		Widgets:             service.NewWidgetService(store),
+		Widgets:             widgets.New(store.DB(), store.ReadDB()),
 		UserAuth:            userAuth,
 		SessionManager:      sm,
 		WebSessions:         service.NewWebSessionService(store),
@@ -105,7 +106,7 @@ func newAuthedServer(t *testing.T) (*Server, *repository.Store) {
 		Overview:            service.NewOverviewService(store),
 		Sessions:            service.NewSessionService(store),
 		APIKeys:             service.NewAPIKeyService(store),
-		Widgets:             service.NewWidgetService(store),
+		Widgets:             widgets.New(store.DB(), store.ReadDB()),
 		UserAuth:            userAuth,
 		SessionManager:      sm,
 		WebSessions:         service.NewWebSessionService(store),
@@ -143,7 +144,7 @@ func TestRequireSession_FailsClosedWithLocalUsers(t *testing.T) {
 		Overview:           service.NewOverviewService(store),
 		Sessions:           service.NewSessionService(store),
 		APIKeys:            service.NewAPIKeyService(store),
-		Widgets:            service.NewWidgetService(store),
+		Widgets:            widgets.New(store.DB(), store.ReadDB()),
 		UserAuth:           userAuth,
 		SessionManager:     sm,
 		WebSessions:        service.NewWebSessionService(store),
@@ -298,7 +299,7 @@ func TestHandleHealth_DBDown(t *testing.T) {
 		Overview:            service.NewOverviewService(store),
 		Sessions:            service.NewSessionService(store),
 		APIKeys:             service.NewAPIKeyService(store),
-		Widgets:             service.NewWidgetService(store),
+		Widgets:             widgets.New(store.DB(), store.ReadDB()),
 		UserAuth:            userAuth,
 		SessionManager:      sm,
 		PublicURL:           "http://localhost",

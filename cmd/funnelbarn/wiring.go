@@ -18,6 +18,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest/pipeline"
@@ -251,7 +252,7 @@ func newServerConfig(ctx context.Context, cfg config.Config, version string, d d
 		Overview:              service.NewOverviewService(store),
 		Sessions:              service.NewSessionService(store),
 		APIKeys:               service.NewAPIKeyService(store),
-		Widgets:               service.NewWidgetService(store),
+		Widgets:               widgets.New(store.DB(), store.ReadDB()),
 		AllowedOrigins:        cfg.AllowedOrigins,
 		PublicURL:             cfg.PublicURL,
 		LoginRatePerMinute:    cfg.LoginRatePerMinute,

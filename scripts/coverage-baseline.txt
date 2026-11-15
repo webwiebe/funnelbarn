@@ -13,8 +13,11 @@ internal/config	77
 internal/domain	100
 internal/enrich	91
 internal/environment	100
+internal/features/widgets	78
 internal/geoip	50
 internal/ghwebhook	93
+internal/httpx	90
+internal/idgen	100
 internal/ingest	72
 internal/ingest/pipeline	70
 internal/maintenance	87

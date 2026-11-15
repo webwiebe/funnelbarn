@@ -29,7 +29,6 @@ type Store struct {
 	abtests  map[string]domain.ABTest
 	sessions map[string]domain.Session
 	events   []domain.Event
-	widgets  map[string]domain.DashboardWidget
 	flags    map[string]domain.FeatureFlag
 	// evaluations records what RecordEvaluation was asked to write, so tests can
 	// assert that config flags write nothing.
@@ -820,72 +819,6 @@ func (s *Store) CountConversionsByVariant(_ context.Context, _, _, _ string, _, 
 
 func (s *Store) PurgeOldEvaluations(_ context.Context, cutoff time.Time) (int64, error) {
 	return 0, nil
-}
-
-// ── Widgets ──────────────────────────────────────────────────────────────────
-
-func (s *Store) CreateWidget(_ context.Context, w domain.DashboardWidget) (domain.DashboardWidget, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	w.ID = newMockID("widget")
-	w.CreatedAt = time.Now()
-	if s.widgets == nil {
-		s.widgets = make(map[string]domain.DashboardWidget)
-	}
-	s.widgets[w.ID] = w
-	return w, nil
-}
-
-func (s *Store) WidgetByID(_ context.Context, id string) (domain.DashboardWidget, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	w, ok := s.widgets[id]
-	if !ok {
-		return domain.DashboardWidget{}, sql.ErrNoRows
-	}
-	return w, nil
-}
-
-func (s *Store) ListWidgets(_ context.Context, projectID string) ([]domain.DashboardWidget, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	var out []domain.DashboardWidget
-	for _, w := range s.widgets {
-		if w.ProjectID == projectID {
-			out = append(out, w)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Position != out[j].Position {
-			return out[i].Position < out[j].Position
-		}
-		return out[i].CreatedAt.Before(out[j].CreatedAt)
-	})
-	return out, nil
-}
-
-func (s *Store) UpdateWidget(_ context.Context, w domain.DashboardWidget) (domain.DashboardWidget, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	existing, ok := s.widgets[w.ID]
-	if !ok {
-		return domain.DashboardWidget{}, sql.ErrNoRows
-	}
-	w.ProjectID = existing.ProjectID
-	w.CreatedAt = existing.CreatedAt
-	s.widgets[w.ID] = w
-	return w, nil
-}
-
-func (s *Store) DeleteWidget(_ context.Context, id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.widgets, id)
-	return nil
-}
-
-func (s *Store) WidgetBreakdown(_ context.Context, _, _, _ string, _, _ int) ([]domain.PropertyBreakdown, error) {
-	return []domain.PropertyBreakdown{}, nil
 }
 
 func (s *Store) Ping(_ context.Context) error { return nil }

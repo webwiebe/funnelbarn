@@ -19,6 +19,14 @@ query and command interfaces in `internal/ports`. The generated SQL in
 repository MUST NOT import services, handlers or ports. A query port MUST be
 satisfied by `*repository.ReadStore`, which holds no write handle.
 
+A feature slice under `internal/features/<name>` owns its handlers, service,
+store and types, and its service reaches the store through the `Queries` and
+`Commands` interfaces the slice declares. The slice's query side MUST be
+satisfied by its own `*ReadStore`, which holds only the read pool. A slice
+MUST NOT import another slice, the transports (`internal/api`,
+`internal/mcp`), `internal/service`, `internal/ports` or
+`internal/repository`; `cmd/funnelbarn` wires it to the database pools.
+
 Sources:
 - `internal/archtest/archtest_test.go::TestArchitecture` (rules in `internal/archtest/archtest.go`), run by `make regress` in the `go-quality` job of `.github/workflows/ci.yml`
 - `internal/ports/assert_test.go` (compile-time assertions that `*repository.ReadStore` implements every query port)

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
@@ -111,12 +112,13 @@ func seedGoldenEntities(t *testing.T, store *repository.Store, storage *memStora
 	must(err, "abtest")
 	s.ABTestA = fix(ab.ID, kindABTest, 1)
 
-	for i, w := range []domain.DashboardWidget{
+	widgetStore := widgets.NewStore(store.DB(), store.ReadDB())
+	for i, w := range []widgets.Widget{
 		{ProjectID: s.ProjectA, EventName: "purchase", Property: "plan", Title: "Purchases by plan", Position: 0, Size: 2},
 		{ProjectID: s.ProjectA, EventName: "signup", Property: "plan", Title: "Signups by plan", Position: 1, Size: 1},
 		{ProjectID: s.ProjectB, EventName: "page_view", Property: "plan", Title: "Views by plan", Position: 0, Size: 1},
 	} {
-		got, err := store.CreateWidget(ctx, w)
+		got, err := widgetStore.CreateWidget(ctx, w)
 		must(err, "widget")
 		fixed := fix(got.ID, kindWidget, i+1)
 		switch i {

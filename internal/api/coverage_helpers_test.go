@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -56,7 +57,7 @@ func fullServer(t *testing.T, mutate func(cfg *ServerConfig)) (*Server, *reposit
 		Overview:            service.NewOverviewService(store),
 		Sessions:            service.NewSessionService(store),
 		APIKeys:             service.NewAPIKeyService(store),
-		Widgets:             service.NewWidgetService(store),
+		Widgets:             widgets.New(store.DB(), store.ReadDB()),
 		Segments:            service.NewSegmentService(store),
 		UserAuth:            userAuth,
 		SessionManager:      sm,

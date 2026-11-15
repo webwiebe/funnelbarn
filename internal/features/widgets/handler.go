@@ -1,19 +1,44 @@
-package api
+package widgets
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/httpx"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
-func (s *Server) handleListWidgets(w http.ResponseWriter, r *http.Request) {
+// API is what the widget handlers need from the service.
+type API interface {
+	CreateWidget(ctx context.Context, w Widget) (Widget, error)
+	GetWidget(ctx context.Context, id string) (Widget, error)
+	ListWidgets(ctx context.Context, projectID string) ([]Widget, error)
+	UpdateWidget(ctx context.Context, w Widget) (Widget, error)
+	DeleteWidget(ctx context.Context, id string) error
+	WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]domain.PropertyBreakdown, error)
+}
+
+var _ API = (*Service)(nil)
+
+// Handler serves the widget routes. The API server registers them behind its
+// session middleware.
+type Handler struct {
+	svc API
+}
+
+// NewHandler returns the widget handlers over svc.
+func NewHandler(svc API) *Handler {
+	return &Handler{svc: svc}
+}
+
+func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		jsonError(w, "project id required", http.StatusBadRequest)
+		httpx.JSONError(w, "project id required", http.StatusBadRequest)
 		return
 	}
 
@@ -22,23 +47,23 @@ func (s *Server) handleListWidgets(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
-	widgets, err := s.widgets.ListWidgets(ctx, projectID)
+	widgets, err := h.svc.ListWidgets(ctx, projectID)
 	if err != nil {
 		tracing.RecordError(span, err)
-		mapServiceError(w, err, "handleListWidgets")
+		httpx.MapServiceError(w, err, "handleListWidgets")
 		return
 	}
 	if widgets == nil {
-		widgets = []domain.DashboardWidget{}
+		widgets = []Widget{}
 	}
 	span.SetAttributes(attribute.Int("widgets.count", len(widgets)))
-	writeJSON(w, http.StatusOK, map[string]any{"widgets": widgets})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"widgets": widgets})
 }
 
-func (s *Server) handleCreateWidget(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		jsonError(w, "project id required", http.StatusBadRequest)
+		httpx.JSONError(w, "project id required", http.StatusBadRequest)
 		return
 	}
 
@@ -49,12 +74,12 @@ func (s *Server) handleCreateWidget(w http.ResponseWriter, r *http.Request) {
 		Position  int    `json:"position"`
 		Size      int    `json:"size"`
 	}
-	if err := readJSON(r, &body); err != nil {
-		jsonError(w, "invalid json", http.StatusBadRequest)
+	if err := httpx.ReadJSON(r, &body); err != nil {
+		httpx.JSONError(w, "invalid json", http.StatusBadRequest)
 		return
 	}
 	if body.EventName == "" {
-		jsonError(w, "event_name is required", http.StatusUnprocessableEntity)
+		httpx.JSONError(w, "event_name is required", http.StatusUnprocessableEntity)
 		return
 	}
 
@@ -65,7 +90,7 @@ func (s *Server) handleCreateWidget(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
-	widget, err := s.widgets.CreateWidget(ctx, domain.DashboardWidget{
+	widget, err := h.svc.CreateWidget(ctx, Widget{
 		ProjectID: projectID,
 		EventName: body.EventName,
 		Property:  body.Property,
@@ -75,17 +100,17 @@ func (s *Server) handleCreateWidget(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		tracing.RecordError(span, err)
-		mapServiceError(w, err, "handleCreateWidget")
+		httpx.MapServiceError(w, err, "handleCreateWidget")
 		return
 	}
 	span.SetAttributes(attribute.String("widget.id", widget.ID))
-	writeJSON(w, http.StatusCreated, widget)
+	httpx.WriteJSON(w, http.StatusCreated, widget)
 }
 
-func (s *Server) handleUpdateWidget(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	widgetID := r.PathValue("wid")
 	if widgetID == "" {
-		jsonError(w, "widget id required", http.StatusBadRequest)
+		httpx.JSONError(w, "widget id required", http.StatusBadRequest)
 		return
 	}
 
@@ -96,8 +121,8 @@ func (s *Server) handleUpdateWidget(w http.ResponseWriter, r *http.Request) {
 		Position  int    `json:"position"`
 		Size      int    `json:"size"`
 	}
-	if err := readJSON(r, &body); err != nil {
-		jsonError(w, "invalid json", http.StatusBadRequest)
+	if err := httpx.ReadJSON(r, &body); err != nil {
+		httpx.JSONError(w, "invalid json", http.StatusBadRequest)
 		return
 	}
 
@@ -108,7 +133,7 @@ func (s *Server) handleUpdateWidget(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
-	widget, err := s.widgets.UpdateWidget(ctx, domain.DashboardWidget{
+	widget, err := h.svc.UpdateWidget(ctx, Widget{
 		ID:        widgetID,
 		EventName: body.EventName,
 		Property:  body.Property,
@@ -118,16 +143,16 @@ func (s *Server) handleUpdateWidget(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		tracing.RecordError(span, err)
-		mapServiceError(w, err, "handleUpdateWidget")
+		httpx.MapServiceError(w, err, "handleUpdateWidget")
 		return
 	}
-	writeJSON(w, http.StatusOK, widget)
+	httpx.WriteJSON(w, http.StatusOK, widget)
 }
 
-func (s *Server) handleDeleteWidget(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	widgetID := r.PathValue("wid")
 	if widgetID == "" {
-		jsonError(w, "widget id required", http.StatusBadRequest)
+		httpx.JSONError(w, "widget id required", http.StatusBadRequest)
 		return
 	}
 
@@ -136,18 +161,18 @@ func (s *Server) handleDeleteWidget(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
-	if err := s.widgets.DeleteWidget(ctx, widgetID); err != nil {
+	if err := h.svc.DeleteWidget(ctx, widgetID); err != nil {
 		tracing.RecordError(span, err)
-		mapServiceError(w, err, "handleDeleteWidget")
+		httpx.MapServiceError(w, err, "handleDeleteWidget")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleWidgetBreakdown(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Breakdown(w http.ResponseWriter, r *http.Request) {
 	widgetID := r.PathValue("wid")
 	if widgetID == "" {
-		jsonError(w, "widget id required", http.StatusBadRequest)
+		httpx.JSONError(w, "widget id required", http.StatusBadRequest)
 		return
 	}
 
@@ -156,10 +181,10 @@ func (s *Server) handleWidgetBreakdown(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
-	widget, err := s.widgets.GetWidget(ctx, widgetID)
+	widget, err := h.svc.GetWidget(ctx, widgetID)
 	if err != nil {
 		tracing.RecordError(span, err)
-		mapServiceError(w, err, "handleWidgetBreakdown")
+		httpx.MapServiceError(w, err, "handleWidgetBreakdown")
 		return
 	}
 
@@ -172,17 +197,17 @@ func (s *Server) handleWidgetBreakdown(w http.ResponseWriter, r *http.Request) {
 		attribute.Int("limit", limit),
 	)
 
-	breakdown, err := s.widgets.WidgetBreakdown(ctx, widget.ProjectID, widget.EventName, widget.Property, window, limit)
+	breakdown, err := h.svc.WidgetBreakdown(ctx, widget.ProjectID, widget.EventName, widget.Property, window, limit)
 	if err != nil {
 		tracing.RecordError(span, err)
-		mapServiceError(w, err, "handleWidgetBreakdown")
+		httpx.MapServiceError(w, err, "handleWidgetBreakdown")
 		return
 	}
 	if breakdown == nil {
 		breakdown = []domain.PropertyBreakdown{}
 	}
 	span.SetAttributes(attribute.Int("breakdown.count", len(breakdown)))
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"widget":    widget,
 		"breakdown": breakdown,
 		"window":    window,
@@ -199,10 +224,10 @@ func positiveQueryInt(r *http.Request, name string, def, most int) int {
 	return n
 }
 
-func (s *Server) handleBatchBreakdowns(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) BatchBreakdowns(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		jsonError(w, "project id required", http.StatusBadRequest)
+		httpx.JSONError(w, "project id required", http.StatusBadRequest)
 		return
 	}
 
@@ -211,23 +236,23 @@ func (s *Server) handleBatchBreakdowns(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
-	widgets, err := s.widgets.ListWidgets(ctx, projectID)
+	widgets, err := h.svc.ListWidgets(ctx, projectID)
 	if err != nil {
 		tracing.RecordError(span, err)
-		mapServiceError(w, err, "handleBatchBreakdowns")
+		httpx.MapServiceError(w, err, "handleBatchBreakdowns")
 		return
 	}
 
 	span.SetAttributes(attribute.Int("widgets.count", len(widgets)))
 
 	type widgetResult struct {
-		Widget    domain.DashboardWidget     `json:"widget"`
+		Widget    Widget                     `json:"widget"`
 		Breakdown []domain.PropertyBreakdown `json:"breakdown"`
 	}
 
 	results := make([]widgetResult, 0, len(widgets))
 	for _, widget := range widgets {
-		bd, err := s.widgets.WidgetBreakdown(ctx, widget.ProjectID, widget.EventName, widget.Property, 100, 10)
+		bd, err := h.svc.WidgetBreakdown(ctx, widget.ProjectID, widget.EventName, widget.Property, 100, 10)
 		if err != nil {
 			bd = []domain.PropertyBreakdown{}
 		}
@@ -237,5 +262,5 @@ func (s *Server) handleBatchBreakdowns(w http.ResponseWriter, r *http.Request) {
 		results = append(results, widgetResult{Widget: widget, Breakdown: bd})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"results": results})
 }
