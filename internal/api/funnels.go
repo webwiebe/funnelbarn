@@ -221,10 +221,10 @@ func overrideWindow(r *http.Request, from, to time.Time) (time.Time, time.Time) 
 // the segment filter, and the warning makes a stale UI dropdown visible.
 func (s *Server) storedSegmentRules(r *http.Request, projectID string) []domain.SegmentRule {
 	segID := r.URL.Query().Get("segment_id")
-	if segID == "" || s.segments == nil {
+	if segID == "" || s.segments.API() == nil {
 		return nil
 	}
-	stored, err := s.segments.GetSegment(r.Context(), segID)
+	stored, err := s.segments.API().GetSegment(r.Context(), segID)
 	if err != nil {
 		slog.WarnContext(r.Context(), "funnel: segment lookup failed",
 			"err", err, "handled", true,

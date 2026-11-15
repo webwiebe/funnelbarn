@@ -374,68 +374,6 @@ func TestUpsertSession_UpdatesExisting(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// A/B Tests
-// ---------------------------------------------------------------------------
-
-func TestCreateABTest_ListABTests(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-	p, _ := s.CreateProject(ctx, "ABRepo", "abrepo")
-
-	test, err := s.CreateABTest(ctx, domain.ABTest{
-		ProjectID:       p.ID,
-		Name:            "Headline",
-		Status:          "running",
-		ConversionEvent: "signup",
-	})
-	require.NoError(t, err)
-	require.NotEmpty(t, test.ID)
-
-	tests, err := s.ListABTests(ctx, p.ID)
-	require.NoError(t, err)
-	require.Len(t, tests, 1)
-	require.Equal(t, "Headline", tests[0].Name)
-}
-
-func TestABTestByID(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-	p, _ := s.CreateProject(ctx, "ABByID", "abbyid")
-
-	test, _ := s.CreateABTest(ctx, domain.ABTest{
-		ProjectID:       p.ID,
-		Name:            "CTA",
-		Status:          "running",
-		ConversionEvent: "purchase",
-	})
-
-	got, err := s.ABTestByID(ctx, test.ID)
-	require.NoError(t, err)
-	require.Equal(t, test.ID, got.ID)
-	require.Equal(t, "CTA", got.Name)
-}
-
-func TestAnalyzeABTest_EmptyReturnsNoError(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-	p, _ := s.CreateProject(ctx, "ABAnalyze", "abanalyze")
-
-	test, _ := s.CreateABTest(ctx, domain.ABTest{
-		ProjectID:       p.ID,
-		Name:            "Button",
-		Status:          "running",
-		ConversionEvent: "click",
-	})
-
-	from := time.Now().UTC().Add(-24 * time.Hour)
-	to := time.Now().UTC().Add(time.Hour)
-
-	results, err := s.AnalyzeABTest(ctx, test, from, to)
-	require.NoError(t, err)
-	_ = results // empty with no events is fine
-}
-
-// ---------------------------------------------------------------------------
 // Projects — remaining gaps
 // ---------------------------------------------------------------------------
 

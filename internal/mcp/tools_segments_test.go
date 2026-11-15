@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 )
 
 func TestListSegmentsTool(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	seg, err := env.Store.CreateSegment(ctx, domain.Segment{
+	seg, err := env.Segments.CreateSegment(ctx, segments.Segment{
 		ProjectID: a.ID, Name: "Dutch",
 		Rules: []domain.SegmentRule{{Field: "country_code", Operator: "eq", Value: "NL"}},
 	})
@@ -41,7 +42,7 @@ func TestListSegmentsTool_EmptyForOtherProject(t *testing.T) {
 	a := env.createProject(t, "Alpha", "alpha")
 	b := env.createProject(t, "Beta", "beta")
 	ctx := context.Background()
-	if _, err := env.Store.CreateSegment(ctx, domain.Segment{ProjectID: a.ID, Name: "A Segment"}); err != nil {
+	if _, err := env.Segments.CreateSegment(ctx, segments.Segment{ProjectID: a.ID, Name: "A Segment"}); err != nil {
 		t.Fatalf("CreateSegment: %v", err)
 	}
 
@@ -78,7 +79,7 @@ func TestCreateSegmentTool(t *testing.T) {
 		t.Fatalf("got %d rules, want 2: %+v", len(out.Segment.Rules), out.Segment.Rules)
 	}
 
-	stored, err := env.Store.SegmentByID(context.Background(), out.Segment.ID)
+	stored, err := env.Segments.SegmentByID(context.Background(), out.Segment.ID)
 	if err != nil {
 		t.Fatalf("SegmentByID: %v", err)
 	}
@@ -141,7 +142,7 @@ func TestUpdateSegmentTool(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	seg, err := env.Store.CreateSegment(ctx, domain.Segment{ProjectID: a.ID, Name: "Old"})
+	seg, err := env.Segments.CreateSegment(ctx, segments.Segment{ProjectID: a.ID, Name: "Old"})
 	if err != nil {
 		t.Fatalf("CreateSegment: %v", err)
 	}
@@ -166,7 +167,7 @@ func TestUpdateSegmentTool_ValidationError(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	seg, err := env.Store.CreateSegment(ctx, domain.Segment{ProjectID: a.ID, Name: "Old"})
+	seg, err := env.Segments.CreateSegment(ctx, segments.Segment{ProjectID: a.ID, Name: "Old"})
 	if err != nil {
 		t.Fatalf("CreateSegment: %v", err)
 	}
@@ -183,7 +184,7 @@ func TestUpdateSegmentTool_CrossProjectNotFound(t *testing.T) {
 	a := env.createProject(t, "Alpha", "alpha")
 	b := env.createProject(t, "Beta", "beta")
 	ctx := context.Background()
-	seg, err := env.Store.CreateSegment(ctx, domain.Segment{ProjectID: a.ID, Name: "Old"})
+	seg, err := env.Segments.CreateSegment(ctx, segments.Segment{ProjectID: a.ID, Name: "Old"})
 	if err != nil {
 		t.Fatalf("CreateSegment: %v", err)
 	}
@@ -194,7 +195,7 @@ func TestUpdateSegmentTool_CrossProjectNotFound(t *testing.T) {
 		t.Errorf("error = %q, want a not-found error", msg)
 	}
 
-	stillOld, err := env.Store.SegmentByID(ctx, seg.ID)
+	stillOld, err := env.Segments.SegmentByID(ctx, seg.ID)
 	if err != nil {
 		t.Fatalf("SegmentByID: %v", err)
 	}
@@ -207,7 +208,7 @@ func TestUpdateSegmentTool_ReadTokenScopeError(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	seg, err := env.Store.CreateSegment(ctx, domain.Segment{ProjectID: a.ID, Name: "Old"})
+	seg, err := env.Segments.CreateSegment(ctx, segments.Segment{ProjectID: a.ID, Name: "Old"})
 	if err != nil {
 		t.Fatalf("CreateSegment: %v", err)
 	}
@@ -223,7 +224,7 @@ func TestDeleteSegmentTool(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	seg, err := env.Store.CreateSegment(ctx, domain.Segment{ProjectID: a.ID, Name: "Old"})
+	seg, err := env.Segments.CreateSegment(ctx, segments.Segment{ProjectID: a.ID, Name: "Old"})
 	if err != nil {
 		t.Fatalf("CreateSegment: %v", err)
 	}
@@ -235,7 +236,7 @@ func TestDeleteSegmentTool(t *testing.T) {
 		t.Error("deleted = false, want true")
 	}
 
-	if _, err := env.Store.SegmentByID(ctx, seg.ID); err == nil {
+	if _, err := env.Segments.SegmentByID(ctx, seg.ID); err == nil {
 		t.Error("segment still exists after delete")
 	}
 }
@@ -245,7 +246,7 @@ func TestDeleteSegmentTool_CrossProjectNotFound(t *testing.T) {
 	a := env.createProject(t, "Alpha", "alpha")
 	b := env.createProject(t, "Beta", "beta")
 	ctx := context.Background()
-	seg, err := env.Store.CreateSegment(ctx, domain.Segment{ProjectID: a.ID, Name: "Old"})
+	seg, err := env.Segments.CreateSegment(ctx, segments.Segment{ProjectID: a.ID, Name: "Old"})
 	if err != nil {
 		t.Fatalf("CreateSegment: %v", err)
 	}
@@ -256,7 +257,7 @@ func TestDeleteSegmentTool_CrossProjectNotFound(t *testing.T) {
 		t.Errorf("error = %q, want a not-found error", msg)
 	}
 
-	if _, err := env.Store.SegmentByID(ctx, seg.ID); err != nil {
+	if _, err := env.Segments.SegmentByID(ctx, seg.ID); err != nil {
 		t.Errorf("segment deleted via the wrong project: %v", err)
 	}
 }
@@ -265,7 +266,7 @@ func TestDeleteSegmentTool_ReadTokenScopeError(t *testing.T) {
 	env := newTestEnv(t, nil)
 	a := env.createProject(t, "Alpha", "alpha")
 	ctx := context.Background()
-	seg, err := env.Store.CreateSegment(ctx, domain.Segment{ProjectID: a.ID, Name: "Old"})
+	seg, err := env.Segments.CreateSegment(ctx, segments.Segment{ProjectID: a.ID, Name: "Old"})
 	if err != nil {
 		t.Fatalf("CreateSegment: %v", err)
 	}

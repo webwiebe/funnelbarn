@@ -1,4 +1,4 @@
-package service
+package agents
 
 import (
 	"regexp"
@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
 
 // The agents project (#331) holds two event sources under the same names:
@@ -81,7 +79,7 @@ type agentModel struct {
 	deployStarts []agentHook
 }
 
-func buildAgentModel(events []domain.AgentEvent) *agentModel {
+func buildAgentModel(events []AgentEvent) *agentModel {
 	m := &agentModel{
 		issues:  map[string]*agentIssue{},
 		prs:     map[string]*agentPR{},
@@ -99,7 +97,7 @@ func buildAgentModel(events []domain.AgentEvent) *agentModel {
 	return m
 }
 
-func (m *agentModel) addGitHub(e domain.AgentEvent) {
+func (m *agentModel) addGitHub(e AgentEvent) {
 	p := e.Properties
 	switch e.Name {
 	case "issue_opened", "issue_refined", "needs_you_raised", "needs_you_answered":
@@ -131,7 +129,7 @@ func (m *agentModel) issue(ref, repo, hash string) *agentIssue {
 	return iss
 }
 
-func (m *agentModel) addIssueEvent(e domain.AgentEvent) {
+func (m *agentModel) addIssueEvent(e AgentEvent) {
 	ref := propStr(e.Properties, "issue_ref")
 	if ref == "" {
 		return
@@ -153,7 +151,7 @@ func (m *agentModel) addIssueEvent(e domain.AgentEvent) {
 	}
 }
 
-func (m *agentModel) addPR(e domain.AgentEvent) {
+func (m *agentModel) addPR(e AgentEvent) {
 	p := e.Properties
 	repo, n := propStr(p, "repo"), propInt(p, "pr")
 	key := prKey(repo, n)
@@ -177,7 +175,7 @@ func (m *agentModel) addPR(e domain.AgentEvent) {
 	}
 }
 
-func (m *agentModel) addDeploymentStatus(e domain.AgentEvent) {
+func (m *agentModel) addDeploymentStatus(e AgentEvent) {
 	p := e.Properties
 	if !prodEnvironment.MatchString(propStr(p, "environment")) {
 		return
@@ -194,7 +192,7 @@ func (m *agentModel) addDeploymentStatus(e domain.AgentEvent) {
 	m.deploys = append(m.deploys, d)
 }
 
-func (m *agentModel) addWorkflow(e domain.AgentEvent) {
+func (m *agentModel) addWorkflow(e AgentEvent) {
 	p := e.Properties
 	name, conclusion := propStr(p, "workflow"), propStr(p, "conclusion")
 	if conclusion != "success" && conclusion != "failure" {
@@ -210,7 +208,7 @@ func (m *agentModel) addWorkflow(e domain.AgentEvent) {
 	}
 }
 
-func (m *agentModel) addHook(e domain.AgentEvent) {
+func (m *agentModel) addHook(e AgentEvent) {
 	p := e.Properties
 	h := agentHook{at: e.OccurredAt, name: e.Name, session: e.SessionID, hash: e.UserIDHash,
 		repo: propStr(p, "repo"), branch: propStr(p, "branch"), issueRef: propStr(p, "issue")}

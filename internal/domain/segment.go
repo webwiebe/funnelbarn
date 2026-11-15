@@ -2,19 +2,9 @@ package domain
 
 import (
 	"strings"
-	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 )
-
-// Segment is a named, reusable filter applied to funnel analysis.
-type Segment struct {
-	ID        string        `json:"id"`
-	ProjectID string        `json:"project_id"`
-	Name      string        `json:"name"`
-	Rules     []SegmentRule `json:"rules"`
-	CreatedAt time.Time     `json:"created_at"`
-}
 
 // SegmentRule is one condition within a segment.
 type SegmentRule struct {

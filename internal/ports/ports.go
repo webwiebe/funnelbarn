@@ -62,24 +62,6 @@ type FunnelRepo interface {
 	FunnelCommands
 }
 
-// ABTestQueries is the read side of the A/B test port.
-type ABTestQueries interface {
-	ABTestByID(ctx context.Context, id string) (domain.ABTest, error)
-	ListABTests(ctx context.Context, projectID string) ([]domain.ABTest, error)
-	AnalyzeABTest(ctx context.Context, t domain.ABTest, from, to time.Time) ([]domain.ABTestResult, error)
-}
-
-// ABTestCommands is the write side of the A/B test port.
-type ABTestCommands interface {
-	CreateABTest(ctx context.Context, t domain.ABTest) (domain.ABTest, error)
-}
-
-// ABTestRepo is the persistence port for A/B tests.
-type ABTestRepo interface {
-	ABTestQueries
-	ABTestCommands
-}
-
 // FlagQueries is the read side of the feature flag port.
 type FlagQueries interface {
 	CountAutoFlags(ctx context.Context, projectID string) (int, error)
@@ -236,31 +218,6 @@ type APIKeyCommands interface {
 type APIKeyRepo interface {
 	APIKeyQueries
 	APIKeyCommands
-}
-
-// AgentQueries is the read side of the agents delivery scoring (#331). It
-// has no command side: the events arrive through ingest.
-type AgentQueries interface {
-	AgentEvents(ctx context.Context, projectID string, names []string, from, to time.Time) ([]domain.AgentEvent, error)
-}
-
-// SegmentQueries is the read side of the segment port.
-type SegmentQueries interface {
-	SegmentByID(ctx context.Context, id string) (domain.Segment, error)
-	ListSegments(ctx context.Context, projectID string) ([]domain.Segment, error)
-}
-
-// SegmentCommands is the write side of the segment port.
-type SegmentCommands interface {
-	CreateSegment(ctx context.Context, seg domain.Segment) (domain.Segment, error)
-	UpdateSegment(ctx context.Context, seg domain.Segment) (domain.Segment, error)
-	DeleteSegment(ctx context.Context, id string) error
-}
-
-// SegmentRepo is the persistence port for user-defined segments.
-type SegmentRepo interface {
-	SegmentQueries
-	SegmentCommands
 }
 
 // RecordingQueries is the read side of the recording port.

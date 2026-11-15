@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/abtests"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -18,16 +20,6 @@ import (
 func putRaw(t *testing.T, srv *Server, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	srv.ServeHTTP(w, req)
-	return w
-}
-
-// postRaw issues a POST with a raw string body (used to send malformed JSON).
-func postRaw(t *testing.T, srv *Server, path, body string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -51,14 +43,14 @@ func fullServer(t *testing.T, mutate func(cfg *ServerConfig)) (*Server, *reposit
 		Ingest:              ingestHandler,
 		Projects:            service.NewProjectService(store),
 		Funnels:             service.NewFunnelService(store),
-		ABTests:             service.NewABTestService(store),
+		ABTests:             abtests.New(store.DB(), store.ReadDB()),
 		Flags:               service.NewFlagService(store),
 		Events:              service.NewEventService(store),
 		Overview:            service.NewOverviewService(store),
 		Sessions:            service.NewSessionService(store),
 		APIKeys:             service.NewAPIKeyService(store),
 		Widgets:             widgets.New(store.DB(), store.ReadDB()),
-		Segments:            service.NewSegmentService(store),
+		Segments:            segments.New(store.DB(), store.ReadDB()),
 		UserAuth:            userAuth,
 		SessionManager:      sm,
 		WebSessions:         service.NewWebSessionService(store),

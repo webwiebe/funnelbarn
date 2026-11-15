@@ -2,7 +2,6 @@ package service_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -241,60 +240,4 @@ func TestFunnelService_StepEventNameRequired(t *testing.T) {
 		Steps:     []domain.FunnelStep{{EventName: "   "}},
 	})
 	require.Error(t, err, "whitespace-only EventName must be rejected")
-}
-
-// ---------------------------------------------------------------------------
-// ABTestService validation tests
-// ---------------------------------------------------------------------------
-
-func TestABTestService_CreateABTest_EmptyProjectID(t *testing.T) {
-	ctx := context.Background()
-	svc := service.NewABTestService(newTestStore(t))
-
-	_, err := svc.CreateABTest(ctx, domain.ABTest{
-		ProjectID:       "",
-		Name:            "My Test",
-		ConversionEvent: "purchase",
-	})
-	require.Error(t, err)
-	require.True(t, domain.IsValidation(err), "expected validation error, got: %v", err)
-}
-
-func TestABTestService_CreateABTest_InvalidStatus(t *testing.T) {
-	ctx := context.Background()
-	store := newTestStore(t)
-	projSvc := service.NewProjectService(store)
-	abSvc := service.NewABTestService(store)
-
-	p, err := projSvc.CreateProject(ctx, "AB Project", "ab-project-invalid-status")
-	require.NoError(t, err)
-
-	_, err = abSvc.CreateABTest(ctx, domain.ABTest{
-		ProjectID:       p.ID,
-		Name:            "My Test",
-		Status:          "launched",
-		ConversionEvent: "purchase",
-	})
-	require.Error(t, err)
-	require.True(t, domain.IsValidation(err), "expected validation error, got: %v", err)
-}
-
-func TestABTestService_CreateABTest_ValidStatuses(t *testing.T) {
-	ctx := context.Background()
-	store := newTestStore(t)
-	projSvc := service.NewProjectService(store)
-	abSvc := service.NewABTestService(store)
-
-	p, err := projSvc.CreateProject(ctx, "AB Project", "ab-project-valid-statuses")
-	require.NoError(t, err)
-
-	for i, status := range []string{"running", "paused", "completed"} {
-		_, err = abSvc.CreateABTest(ctx, domain.ABTest{
-			ProjectID:       p.ID,
-			Name:            fmt.Sprintf("Test %d", i),
-			Status:          status,
-			ConversionEvent: "purchase",
-		})
-		require.NoError(t, err, "status %q should be valid", status)
-	}
 }

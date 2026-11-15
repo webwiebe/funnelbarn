@@ -24,8 +24,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/features/agents"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/abtests"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
@@ -117,7 +121,7 @@ func newGoldenServer(t *testing.T, store *repository.Store, health ports.Project
 		Ingest:              ingestHandler,
 		Projects:            service.NewProjectService(store),
 		Funnels:             service.NewFunnelService(store),
-		ABTests:             service.NewABTestService(store),
+		ABTests:             abtests.New(store.DB(), store.ReadDB()),
 		Flags:               service.NewFlagService(store).WithCommands(commands),
 		Commands:            commands,
 		ReadPoolWait:        func() time.Duration { return store.ReadDB().Stats().WaitDuration },
@@ -126,10 +130,10 @@ func newGoldenServer(t *testing.T, store *repository.Store, health ports.Project
 		Sessions:            service.NewSessionService(store),
 		APIKeys:             service.NewAPIKeyService(store),
 		Widgets:             widgets.New(store.DB(), store.ReadDB()),
-		Segments:            service.NewSegmentService(store),
+		Segments:            segments.New(store.DB(), store.ReadDB()),
 		Recordings:          recordingsSvc,
 		ProjectHealth:       healthSvc,
-		Agents:              service.NewAgentService(store),
+		Agents:              agents.New(store.DB(), store.ReadDB()),
 		InstanceSettings:    service.NewInstanceSettingsService(store),
 		Privacy:             service.NewPrivacyService(store),
 		RecordingSettings:   service.NewRecordingSettingsService(store),

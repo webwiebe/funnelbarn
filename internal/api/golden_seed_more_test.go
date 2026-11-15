@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/abtests"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -107,7 +109,7 @@ func seedGoldenEntities(t *testing.T, store *repository.Store, storage *memStora
 		TargetingRules: `[{"name":"testers","match":"all","conditions":[{"context_key":"plan","operator":"eq","value":"staff"}],"variant":"on"}]`})
 	must(err, "flag stale_rule")
 
-	ab, err := store.CreateABTest(ctx, domain.ABTest{ProjectID: s.ProjectA, Name: "Variant a vs b", Status: "running",
+	ab, err := abtests.NewStore(store.DB(), store.ReadDB()).CreateABTest(ctx, abtests.ABTest{ProjectID: s.ProjectA, Name: "Variant a vs b", Status: "running",
 		ControlFilter: `{"property":"variant","value":"a"}`, VariantFilter: `{"property":"variant","value":"b"}`, ConversionEvent: "purchase"})
 	must(err, "abtest")
 	s.ABTestA = fix(ab.ID, kindABTest, 1)
@@ -131,14 +133,14 @@ func seedGoldenEntities(t *testing.T, store *repository.Store, storage *memStora
 		}
 	}
 
-	seg, err := store.CreateSegment(ctx, domain.Segment{ProjectID: s.ProjectA, Name: "Mobile visitors",
+	seg, err := segments.NewStore(store.DB(), store.ReadDB()).CreateSegment(ctx, segments.Segment{ProjectID: s.ProjectA, Name: "Mobile visitors",
 		Rules: []domain.SegmentRule{{Field: "device_type", Operator: "eq", Value: "mobile"}}})
 	must(err, "segment")
 	s.SegmentMobile = fix(seg.ID, kindSegment, 1)
-	_, err = store.CreateSegment(ctx, domain.Segment{ProjectID: s.ProjectA, Name: "Dutch visitors",
+	_, err = segments.NewStore(store.DB(), store.ReadDB()).CreateSegment(ctx, segments.Segment{ProjectID: s.ProjectA, Name: "Dutch visitors",
 		Rules: []domain.SegmentRule{{Field: "country_code", Operator: "eq", Value: "NL"}}})
 	must(err, "segment 2")
-	if segs, err := store.ListSegments(ctx, s.ProjectA); err == nil {
+	if segs, err := segments.NewStore(store.DB(), store.ReadDB()).ListSegments(ctx, s.ProjectA); err == nil {
 		for i, sg := range segs {
 			if sg.ID != s.SegmentMobile {
 				fix(sg.ID, kindSegment, 100+i)

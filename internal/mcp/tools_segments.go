@@ -9,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 )
 
 // segmentRuleOperators are the operators domain.SegmentRule accepts (see
@@ -79,13 +80,13 @@ func registerSegmentTools(s *mcp.Server, d *Deps) {
 // loadSegment fetches a segment and checks it belongs to projectID. Skipping
 // this check would let a call scoped to one project read, change or delete
 // another project's segment by ID.
-func loadSegment(ctx context.Context, c *Call, projectID, segmentID string) (domain.Segment, error) {
+func loadSegment(ctx context.Context, c *Call, projectID, segmentID string) (segments.Segment, error) {
 	seg, err := c.Deps.Segments.GetSegment(ctx, segmentID)
 	if err != nil {
-		return domain.Segment{}, err
+		return segments.Segment{}, err
 	}
 	if seg.ProjectID != projectID {
-		return domain.Segment{}, fmt.Errorf("%w: segment %s", domain.ErrNotFound, segmentID)
+		return segments.Segment{}, fmt.Errorf("%w: segment %s", domain.ErrNotFound, segmentID)
 	}
 	return seg, nil
 }
@@ -97,8 +98,8 @@ type listSegmentsIn struct {
 }
 
 type listSegmentsOut struct {
-	Project  string           `json:"project" jsonschema:"Slug of the project these segments are from."`
-	Segments []domain.Segment `json:"segments" jsonschema:"Every saved segment for the project."`
+	Project  string             `json:"project" jsonschema:"Slug of the project these segments are from."`
+	Segments []segments.Segment `json:"segments" jsonschema:"Every saved segment for the project."`
 }
 
 func listSegments(ctx context.Context, c *Call, in listSegmentsIn) (listSegmentsOut, error) {
@@ -122,7 +123,7 @@ type createSegmentIn struct {
 }
 
 type createSegmentOut struct {
-	Segment domain.Segment `json:"segment" jsonschema:"The created segment."`
+	Segment segments.Segment `json:"segment" jsonschema:"The created segment."`
 }
 
 func createSegment(ctx context.Context, c *Call, in createSegmentIn) (createSegmentOut, error) {
@@ -147,7 +148,7 @@ type updateSegmentIn struct {
 }
 
 type updateSegmentOut struct {
-	Segment domain.Segment `json:"segment" jsonschema:"The updated segment."`
+	Segment segments.Segment `json:"segment" jsonschema:"The updated segment."`
 }
 
 func updateSegment(ctx context.Context, c *Call, in updateSegmentIn) (updateSegmentOut, error) {

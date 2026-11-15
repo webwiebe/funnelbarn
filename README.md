@@ -248,7 +248,7 @@ HTTP handler → service (business logic, validation) → repository (SQL via sq
 
 Key packages:
 
-- `internal/features/<name>/`: one feature slice with its handlers, service, store and types (`widgets` so far; the other features are moving here)
+- `internal/features/<name>/`: one feature slice with its handlers, service, store and types (`widgets`, `segments`, `agents` and `abtests` so far; the other features are moving here)
 - `internal/httpx/`: the JSON response and error-mapping helpers every handler shares
 - `internal/api/` — HTTP handlers only; maps service errors to HTTP status codes
 - `internal/service/` — business logic, input validation, domain error wrapping

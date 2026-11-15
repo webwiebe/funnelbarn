@@ -70,14 +70,6 @@ type Flags interface {
 	Usage(ctx context.Context, projectID string) (FlagUsageReport, error)
 }
 
-// ABTests is the interface for A/B test-related operations.
-type ABTests interface {
-	CreateABTest(ctx context.Context, t domain.ABTest) (domain.ABTest, error)
-	ListABTests(ctx context.Context, projectID string) ([]domain.ABTest, error)
-	GetABTest(ctx context.Context, id string) (domain.ABTest, error)
-	AnalyzeABTest(ctx context.Context, t domain.ABTest, from, to time.Time) ([]domain.ABTestResult, error)
-}
-
 // Events is the interface for event-related operations.
 type Events interface {
 	InsertEvent(ctx context.Context, e domain.Event) error
@@ -184,15 +176,6 @@ type IAMBarnUsers interface {
 	CreateIAMBarnUser(ctx context.Context, sub, username string) (domain.User, error)
 }
 
-// Segments is the interface for user-defined segment operations.
-type Segments interface {
-	CreateSegment(ctx context.Context, projectID, name string, rules []domain.SegmentRule) (domain.Segment, error)
-	ListSegments(ctx context.Context, projectID string) ([]domain.Segment, error)
-	GetSegment(ctx context.Context, id string) (domain.Segment, error)
-	UpdateSegment(ctx context.Context, id, name string, rules []domain.SegmentRule) (domain.Segment, error)
-	DeleteSegment(ctx context.Context, id string) error
-}
-
 // Recordings is the interface for session recording operations.
 type Recordings interface {
 	IngestChunk(ctx context.Context, chunk RecordingChunk) error
@@ -219,11 +202,4 @@ type APIKeys interface {
 	DeleteAPIKey(ctx context.Context, id string) error
 	ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (projectID string, scope string, found bool, err error)
 	TouchAPIKey(ctx context.Context, keySHA256 string) error
-}
-
-// Agents reports the agent fleet's delivery lead times and scoreboard from
-// the agents project (#331).
-type Agents interface {
-	LeadTimes(ctx context.Context, projectID string, from, to time.Time, repo string) (AgentLeadTimes, error)
-	Scoreboard(ctx context.Context, projectID string, from, to time.Time, session string) (AgentScoreboard, error)
 }

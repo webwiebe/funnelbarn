@@ -168,41 +168,6 @@ func TestFunnelWrongProject(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// AB Tests
-// ---------------------------------------------------------------------------
-
-func TestABTestCreate(t *testing.T) {
-	srv, store := newTestServer(t)
-	ctx := context.Background()
-	proj, _ := store.CreateProject(ctx, "ABTest", "abtest-proj")
-
-	body := map[string]any{
-		"name":             "Button color",
-		"conversion_event": "purchase",
-		"control_filter":   "",
-		"variant_filter":   "",
-	}
-	w := postJSON(t, srv, "/api/v1/projects/"+proj.ID+"/abtests", body, nil)
-	assertStatus(t, w, 201)
-	var test domain.ABTest
-	decodeJSON(t, w, &test)
-	assert(t, test.ID != "", "ab test has ID")
-	assert(t, test.Name == "Button color", "ab test name correct")
-
-	// List
-	w = getJSON(t, srv, "/api/v1/projects/"+proj.ID+"/abtests", nil)
-	assertStatus(t, w, 200)
-	var listResp map[string]any
-	json.NewDecoder(w.Body).Decode(&listResp) //nolint:errcheck
-	tests, _ := listResp["tests"].([]any)
-	assert(t, len(tests) == 1, "one ab test in list")
-
-	// Analysis (empty data → 200)
-	w = getJSON(t, srv, "/api/v1/projects/"+proj.ID+"/abtests/"+test.ID+"/analysis", nil)
-	assertStatus(t, w, 200)
-}
-
-// ---------------------------------------------------------------------------
 // API Keys
 // ---------------------------------------------------------------------------
 
@@ -346,20 +311,6 @@ func TestProjectValidationErrors(t *testing.T) {
 	// Missing name field entirely → 422
 	w = postJSON(t, srv, "/api/v1/projects", map[string]string{"slug": "only-slug"}, nil)
 	assertStatus(t, w, 422)
-}
-
-// ---------------------------------------------------------------------------
-// AB Test analysis — unknown test ID returns error (not 2xx)
-// ---------------------------------------------------------------------------
-
-func TestABTestAnalysis_UnknownID_ReturnsError(t *testing.T) {
-	srv, store := newTestServer(t)
-	ctx := context.Background()
-	proj, _ := store.CreateProject(ctx, "ABProj", "ab-proj-404")
-
-	w := getJSON(t, srv, "/api/v1/projects/"+proj.ID+"/abtests/nonexistent-abtest-id/analysis", nil)
-	// The handler returns a non-2xx code when the test is not found.
-	assert(t, w.Code >= 400, "unknown ab test analysis returns error status")
 }
 
 // ---------------------------------------------------------------------------

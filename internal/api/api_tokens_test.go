@@ -13,6 +13,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/abtests"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -70,7 +71,7 @@ func newFlagTokenServerOpts(t *testing.T, o flagTokenOpts) (*Server, *repository
 		Ingest:              ingest.NewHandler(authz, sp, 0),
 		Projects:            service.NewProjectService(store),
 		Funnels:             service.NewFunnelService(store),
-		ABTests:             service.NewABTestService(store),
+		ABTests:             abtests.New(store.DB(), store.ReadDB()),
 		Flags:               flags,
 		Events:              service.NewEventService(store),
 		Overview:            service.NewOverviewService(store),

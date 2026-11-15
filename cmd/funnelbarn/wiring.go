@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/features/agents"
+
 	selfsdk "github.com/webwiebe/funnelbarn/sdks/go"
 	bb "github.com/wiebe-xyz/bugbarn-go"
 
@@ -18,6 +20,8 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/abtests"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
@@ -243,10 +247,10 @@ func newServerConfig(ctx context.Context, cfg config.Config, version string, d d
 	return api.ServerConfig{
 		InstanceSettings:      service.NewInstanceSettingsService(store),
 		Privacy:               service.NewPrivacyService(store),
-		Segments:              service.NewSegmentService(store),
+		Segments:              segments.New(store.DB(), store.ReadDB()),
 		Projects:              service.NewProjectService(store),
 		Funnels:               service.NewFunnelService(store),
-		ABTests:               service.NewABTestService(store),
+		ABTests:               abtests.New(store.DB(), store.ReadDB()),
 		Flags:                 flagsSvc,
 		Events:                service.NewEventService(store),
 		Overview:              service.NewOverviewService(store),
@@ -280,7 +284,7 @@ func newServerConfig(ctx context.Context, cfg config.Config, version string, d d
 		OIDCRefreshGrace:      time.Duration(cfg.OIDCRefreshGraceSeconds) * time.Second,
 		RecordingSettings:     service.NewRecordingSettingsService(store),
 		ProjectHealth:         d.health,
-		Agents:                service.NewAgentService(store),
+		Agents:                agents.New(store.DB(), store.ReadDB()),
 		FlagAutoRegisterMax:   cfg.AutoRegisterMaxFlags,
 		Commands:              d.commands,
 		ReadPoolWait:          func() time.Duration { return store.ReadDB().Stats().WaitDuration },

@@ -1,20 +1,54 @@
-package repository
+package abtests
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/idgen"
 )
 
+// querier is the read surface shared by *sql.DB handles. Write paths read back
+// on the write pool; plain reads take the read pool.
+type querier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// ReadStore is the query side of the A/B test store. It holds only the read
+// pool, so a method with a *ReadStore receiver has no write handle to misuse.
+type ReadStore struct {
+	rdb *sql.DB
+}
+
+// Store embeds the ReadStore and adds the write pool for the command methods.
+type Store struct {
+	*ReadStore
+	db    *sql.DB
+	newID func() (string, error)
+}
+
+// NewStore returns an A/B test store over the write pool db and the read pool
+// rdb. For an in-memory database both are the same pool.
+func NewStore(db, rdb *sql.DB) *Store {
+	return &Store{ReadStore: &ReadStore{rdb: rdb}, db: db, newID: idgen.UUID}
+}
+
+// nullStr stores an empty string as NULL.
+func nullStr(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 // CreateABTest inserts a new A/B test.
-func (s *Store) CreateABTest(ctx context.Context, t domain.ABTest) (domain.ABTest, error) {
+func (s *Store) CreateABTest(ctx context.Context, t ABTest) (ABTest, error) {
 	var err error
-	t.ID, err = generateUUID()
+	t.ID, err = s.newID()
 	if err != nil {
-		return domain.ABTest{}, fmt.Errorf("generate uuid: %w", err)
+		return ABTest{}, fmt.Errorf("generate uuid: %w", err)
 	}
 	const q = `
 		INSERT INTO ab_tests (id, project_id, name, status, control_filter, variant_filter, conversion_event)
@@ -23,37 +57,37 @@ func (s *Store) CreateABTest(ctx context.Context, t domain.ABTest) (domain.ABTes
 		t.ID, t.ProjectID, t.Name, t.Status,
 		nullStr(t.ControlFilter), nullStr(t.VariantFilter), t.ConversionEvent,
 	); err != nil {
-		return domain.ABTest{}, fmt.Errorf("create ab_test: %w", err)
+		return ABTest{}, fmt.Errorf("create ab_test: %w", err)
 	}
 	return s.abTestByID(ctx, s.db, t.ID)
 }
 
 // ABTestByID fetches a single A/B test.
-func (s *ReadStore) ABTestByID(ctx context.Context, id string) (domain.ABTest, error) {
+func (s *ReadStore) ABTestByID(ctx context.Context, id string) (ABTest, error) {
 	return s.abTestByID(ctx, s.rdb, id)
 }
 
 // abTestByID reads through db, so write paths can read back on the write pool.
-func (s *ReadStore) abTestByID(ctx context.Context, db querier, id string) (domain.ABTest, error) {
+func (s *ReadStore) abTestByID(ctx context.Context, db querier, id string) (ABTest, error) {
 	const q = `
 		SELECT id, project_id, name, status,
 		       COALESCE(control_filter,''), COALESCE(variant_filter,''),
 		       conversion_event, created_at
 		FROM ab_tests WHERE id = ?`
-	var t domain.ABTest
+	var t ABTest
 	err := db.QueryRowContext(ctx, q, id).Scan(
 		&t.ID, &t.ProjectID, &t.Name, &t.Status,
 		&t.ControlFilter, &t.VariantFilter,
 		&t.ConversionEvent, &t.CreatedAt,
 	)
 	if err != nil {
-		return domain.ABTest{}, err // sql.ErrNoRows propagated to caller; service wraps as domain.ErrNotFound
+		return ABTest{}, err // sql.ErrNoRows propagated to caller; service wraps as domain.ErrNotFound
 	}
 	return t, nil
 }
 
 // ListABTests returns all A/B tests for a project.
-func (s *ReadStore) ListABTests(ctx context.Context, projectID string) ([]domain.ABTest, error) {
+func (s *ReadStore) ListABTests(ctx context.Context, projectID string) ([]ABTest, error) {
 	const q = `
 		SELECT id, project_id, name, status,
 		       COALESCE(control_filter,''), COALESCE(variant_filter,''),
@@ -65,9 +99,9 @@ func (s *ReadStore) ListABTests(ctx context.Context, projectID string) ([]domain
 	}
 	defer rows.Close()
 
-	var tests []domain.ABTest
+	var tests []ABTest
 	for rows.Next() {
-		var t domain.ABTest
+		var t ABTest
 		if err := rows.Scan(
 			&t.ID, &t.ProjectID, &t.Name, &t.Status,
 			&t.ControlFilter, &t.VariantFilter,
@@ -81,7 +115,7 @@ func (s *ReadStore) ListABTests(ctx context.Context, projectID string) ([]domain
 }
 
 // AnalyzeABTest counts control vs variant totals and conversions over a time window.
-func (s *ReadStore) AnalyzeABTest(ctx context.Context, t domain.ABTest, from, to time.Time) ([]domain.ABTestResult, error) {
+func (s *ReadStore) AnalyzeABTest(ctx context.Context, t ABTest, from, to time.Time) ([]ABTestResult, error) {
 	type arm struct {
 		name   string
 		filter string
@@ -91,9 +125,9 @@ func (s *ReadStore) AnalyzeABTest(ctx context.Context, t domain.ABTest, from, to
 		{name: "variant", filter: t.VariantFilter},
 	}
 
-	var results []domain.ABTestResult
+	var results []ABTestResult
 	for _, a := range arms {
-		var f domain.ABTestFilter
+		var f ABTestFilter
 		if a.filter != "" {
 			if err := json.Unmarshal([]byte(a.filter), &f); err != nil {
 				return nil, fmt.Errorf("parse filter for %s: %w", a.name, err)
@@ -115,7 +149,7 @@ func (s *ReadStore) AnalyzeABTest(ctx context.Context, t domain.ABTest, from, to
 			rate = float64(conversions) / float64(total)
 		}
 
-		results = append(results, domain.ABTestResult{
+		results = append(results, ABTestResult{
 			Variant:     a.name,
 			Total:       total,
 			Conversions: conversions,
@@ -126,7 +160,7 @@ func (s *ReadStore) AnalyzeABTest(ctx context.Context, t domain.ABTest, from, to
 }
 
 // countSessionsWithFilter counts distinct sessions where any event matches the filter.
-func (s *ReadStore) countSessionsWithFilter(ctx context.Context, projectID string, f domain.ABTestFilter, from, to time.Time) (int64, error) {
+func (s *ReadStore) countSessionsWithFilter(ctx context.Context, projectID string, f ABTestFilter, from, to time.Time) (int64, error) {
 	if f.Property == "" {
 		const q = `SELECT COUNT(DISTINCT session_id) FROM events WHERE project_id = ? AND occurred_at >= ? AND occurred_at <= ?`
 		var n int64
@@ -141,7 +175,7 @@ func (s *ReadStore) countSessionsWithFilter(ctx context.Context, projectID strin
 }
 
 // countConversionsWithFilter counts sessions matching the filter that also fired the conversion event.
-func (s *ReadStore) countConversionsWithFilter(ctx context.Context, projectID string, f domain.ABTestFilter, conversionEvent string, from, to time.Time) (int64, error) {
+func (s *ReadStore) countConversionsWithFilter(ctx context.Context, projectID string, f ABTestFilter, conversionEvent string, from, to time.Time) (int64, error) {
 	if f.Property == "" {
 		const q = `
 			SELECT COUNT(DISTINCT session_id) FROM events

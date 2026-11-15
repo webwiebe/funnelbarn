@@ -21,19 +21,6 @@ func (s *Store) SessionDistributions(_ context.Context, _ string) (map[string][]
 	return map[string][]domain.DistributionEntry{}, nil
 }
 
-func (s *Store) CreateSegment(_ context.Context, seg domain.Segment) (domain.Segment, error) {
-	return seg, nil
-}
-func (s *Store) SegmentByID(_ context.Context, _ string) (domain.Segment, error) {
-	return domain.Segment{}, nil
-}
-func (s *Store) ListSegments(_ context.Context, _ string) ([]domain.Segment, error) {
-	return nil, nil
-}
-func (s *Store) UpdateSegment(_ context.Context, seg domain.Segment) (domain.Segment, error) {
-	return seg, nil
-}
-func (s *Store) DeleteSegment(_ context.Context, _ string) error { return nil }
 func (s *Store) UpsertSessionSignals(_ context.Context, _, _ string, _ domain.SessionSignals) error {
 	return nil
 }

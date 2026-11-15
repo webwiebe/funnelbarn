@@ -1,4 +1,4 @@
-package service_test
+package agents_test
 
 import (
 	"context"
@@ -11,20 +11,20 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/enrich"
-	"github.com/wiebe-xyz/funnelbarn/internal/service"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/agents"
 )
 
 type fakeAgentQueries struct {
-	events []domain.AgentEvent
+	events []agents.AgentEvent
 	err    error
 }
 
-func (f fakeAgentQueries) AgentEvents(_ context.Context, _ string, names []string, from, to time.Time) ([]domain.AgentEvent, error) {
+func (f fakeAgentQueries) AgentEvents(_ context.Context, _ string, names []string, from, to time.Time) ([]agents.AgentEvent, error) {
 	want := map[string]bool{}
 	for _, n := range names {
 		want[n] = true
 	}
-	var out []domain.AgentEvent
+	var out []agents.AgentEvent
 	for _, e := range f.events {
 		if want[e.Name] && !e.OccurredAt.Before(from) && !e.OccurredAt.After(to) {
 			out = append(out, e)
@@ -41,7 +41,7 @@ const (
 
 // agentScript builds the agents project's events for ISO week 2026-W41
 // (Monday 5 October to Sunday 11 October).
-type agentScript struct{ events []domain.AgentEvent }
+type agentScript struct{ events []agents.AgentEvent }
 
 func oct(day, hour, minute int) time.Time {
 	return time.Date(2026, time.October, day, hour, minute, 0, 0, time.UTC)
@@ -59,7 +59,7 @@ func (s *agentScript) gh(name string, at time.Time, issue string, props map[stri
 		p["issue_ref"] = issueRef(issue)
 		hash = enrich.HashUserID(issueRef(issue))
 	}
-	s.events = append(s.events, domain.AgentEvent{Name: name, OccurredAt: at, SessionID: "0123456789abcdef0123456789abcdef", UserIDHash: hash, Properties: p})
+	s.events = append(s.events, agents.AgentEvent{Name: name, OccurredAt: at, SessionID: "0123456789abcdef0123456789abcdef", UserIDHash: hash, Properties: p})
 }
 
 func (s *agentScript) hook(name string, at time.Time, session, issue string) {
@@ -68,7 +68,7 @@ func (s *agentScript) hook(name string, at time.Time, session, issue string) {
 	if issue != "" {
 		hash = enrich.HashUserID(issueRef(issue))
 	}
-	s.events = append(s.events, domain.AgentEvent{Name: name, OccurredAt: at, SessionID: session, UserIDHash: hash, Properties: p})
+	s.events = append(s.events, agents.AgentEvent{Name: name, OccurredAt: at, SessionID: session, UserIDHash: hash, Properties: p})
 }
 
 func (s *agentScript) pr(name string, at time.Time, issue string, n float64, branch, head string, extra map[string]any) {
@@ -87,7 +87,7 @@ func (s *agentScript) workflow(at time.Time, name, conclusion, head string) {
 	s.gh("workflow_completed", at, "", map[string]any{"workflow": name, "conclusion": conclusion, "head_sha": head, "run_attempt": float64(1)})
 }
 
-func weekScript() []domain.AgentEvent {
+func weekScript() []agents.AgentEvent {
 	var s agentScript
 	// Issue 1 (session A): refined without a question, first-pass green,
 	// shipped by a deploy that stays healthy.
@@ -136,19 +136,19 @@ func weekScript() []domain.AgentEvent {
 	// already reports); another repo's production deployment counts, with
 	// no session to credit.
 	s.gh("deployment_status", oct(5, 11, 46), "", map[string]any{"environment": "production", "state": "success", "sha": "m10"})
-	s.events = append(s.events, domain.AgentEvent{Name: "deployment_status", OccurredAt: oct(9, 12, 0),
+	s.events = append(s.events, agents.AgentEvent{Name: "deployment_status", OccurredAt: oct(9, 12, 0),
 		Properties: map[string]any{"source": "github", "repo": "other/repo", "environment": "Production", "state": "success", "sha": "o1"}})
 	return s.events
 }
 
-func newAgentService(events []domain.AgentEvent) *service.AgentService {
-	return service.NewAgentService(fakeAgentQueries{events: events}).
+func newAgentService(events []agents.AgentEvent) *agents.Service {
+	return agents.NewService(fakeAgentQueries{events: events}).
 		WithClock(func() time.Time { return oct(12, 10, 0) })
 }
 
 func week41(t *testing.T) (time.Time, time.Time) {
 	t.Helper()
-	from, to, err := service.ParseISOWeek("2026-W41")
+	from, to, err := agents.ParseISOWeek("2026-W41")
 	require.NoError(t, err)
 	return from, to
 }
@@ -167,15 +167,15 @@ func TestAgentScoreboard_ScoresEveryRule(t *testing.T) {
 		got = append(got, row{e.SessionID, e.Rule, e.Ref, e.Points})
 	}
 	assert.Equal(t, []row{
-		{sessionA, service.RuleRefinedWithoutOwner, issueRef("1"), 2},
-		{sessionA, service.RuleFirstPassGreen, agentRepo + "#10", 5},
-		{sessionA, service.RuleDeployHealthy, agentRepo + "@m10", 10},
-		{sessionB, service.RuleStagingCaught, agentRepo + "@m11", 2},
-		{sessionB, service.RuleDeployBroken, agentRepo + "@m11", -20},
-		{sessionB, service.RuleFirstPassGreen, agentRepo + "#12", 5},
-		{sessionB, service.RuleDeployBroken, agentRepo + "@m12", -20},
-		{sessionA, service.RuleRedBuildMerged, agentRepo + "#14", -10},
-		{"", service.RuleDeployHealthy, "other/repo@o1", 10},
+		{sessionA, agents.RuleRefinedWithoutOwner, issueRef("1"), 2},
+		{sessionA, agents.RuleFirstPassGreen, agentRepo + "#10", 5},
+		{sessionA, agents.RuleDeployHealthy, agentRepo + "@m10", 10},
+		{sessionB, agents.RuleStagingCaught, agentRepo + "@m11", 2},
+		{sessionB, agents.RuleDeployBroken, agentRepo + "@m11", -20},
+		{sessionB, agents.RuleFirstPassGreen, agentRepo + "#12", 5},
+		{sessionB, agents.RuleDeployBroken, agentRepo + "@m12", -20},
+		{sessionA, agents.RuleRedBuildMerged, agentRepo + "#14", -10},
+		{"", agents.RuleDeployHealthy, "other/repo@o1", 10},
 	}, got)
 
 	require.Len(t, sb.Sessions, 2)
@@ -187,14 +187,14 @@ func TestAgentScoreboard_ScoresEveryRule(t *testing.T) {
 	assert.Equal(t, sessionB, b.SessionID)
 	assert.Equal(t, -33, b.Points)
 	assert.Equal(t, 1, b.FirstPassStreak)
-	assert.Equal(t, map[string]int{service.RuleStagingCaught: 2, service.RuleDeployBroken: -40, service.RuleFirstPassGreen: 5}, b.ByRule)
+	assert.Equal(t, map[string]int{agents.RuleStagingCaught: 2, agents.RuleDeployBroken: -40, agents.RuleFirstPassGreen: 5}, b.ByRule)
 	assert.Equal(t, 10, sb.UnattributedPoints)
 
 	require.Len(t, sb.Pending, 1, "the Sunday deploy is inside its 24h window")
 	assert.Equal(t, sessionA, sb.Pending[0].SessionID)
 	assert.Equal(t, agentRepo+"@m14", sb.Pending[0].Ref)
 	require.Len(t, sb.Unscored, 1)
-	assert.Equal(t, service.RuleBugBarnIssue, sb.Unscored[0].Rule)
+	assert.Equal(t, agents.RuleBugBarnIssue, sb.Unscored[0].Rule)
 }
 
 func TestAgentScoreboard_FiltersOnSession(t *testing.T) {
@@ -210,7 +210,7 @@ func TestAgentScoreboard_FiltersOnSession(t *testing.T) {
 
 func TestAgentScoreboard_DeployScoresOnceTheWindowCloses(t *testing.T) {
 	from, to := week41(t)
-	svc := service.NewAgentService(fakeAgentQueries{events: weekScript()}).
+	svc := agents.NewService(fakeAgentQueries{events: weekScript()}).
 		WithClock(func() time.Time { return oct(13, 0, 0) })
 	sb, err := svc.Scoreboard(context.Background(), "p", from, to, sessionA)
 	require.NoError(t, err)
@@ -226,19 +226,19 @@ func TestAgentLeadTimes(t *testing.T) {
 	issue1 := int64((4*24*time.Hour + 105*time.Minute) / time.Second)
 	issue2 := int64(11 * time.Hour / time.Second)
 	issue3 := int64((3*24*time.Hour + 11*time.Hour) / time.Second)
-	assert.Equal(t, service.DurationStats{Count: 3, MedianSeconds: issue3, P90Seconds: issue1}, lt.IssueToProd)
+	assert.Equal(t, agents.DurationStats{Count: 3, MedianSeconds: issue3, P90Seconds: issue1}, lt.IssueToProd)
 	require.Len(t, lt.Issues, 3)
 	assert.Equal(t, issueRef("1"), lt.Issues[0].IssueRef)
 	assert.Equal(t, issue1, *lt.Issues[0].LeadSeconds)
 	assert.Equal(t, oct(6, 20, 0), lt.Issues[1].ShippedAt, "the failed deploy does not ship issue 2")
 	assert.Equal(t, issue2, *lt.Issues[1].LeadSeconds)
-	assert.Equal(t, []service.AgentWeekStats{{Week: "2026-W41", DurationStats: lt.IssueToProd}}, lt.Weekly)
-	assert.Equal(t, []service.AgentDayCount{{Date: "2026-10-05", Count: 1}, {Date: "2026-10-06", Count: 1}, {Date: "2026-10-11", Count: 1}}, lt.ShippedPerDay)
+	assert.Equal(t, []agents.AgentWeekStats{{Week: "2026-W41", DurationStats: lt.IssueToProd}}, lt.Weekly)
+	assert.Equal(t, []agents.AgentDayCount{{Date: "2026-10-05", Count: 1}, {Date: "2026-10-06", Count: 1}, {Date: "2026-10-11", Count: 1}}, lt.ShippedPerDay)
 
-	assert.Equal(t, service.DurationStats{Count: 4, MedianSeconds: 1800, P90Seconds: 5400}, lt.PRToMerge)
-	assert.Equal(t, []service.AgentRepoCI{{Repo: agentRepo, PRs: 4, FirstPassGreen: 2, Rate: 0.5}}, lt.FirstPassCI)
+	assert.Equal(t, agents.DurationStats{Count: 4, MedianSeconds: 1800, P90Seconds: 5400}, lt.PRToMerge)
+	assert.Equal(t, []agents.AgentRepoCI{{Repo: agentRepo, PRs: 4, FirstPassGreen: 2, Rate: 0.5}}, lt.FirstPassCI)
 
-	assert.Equal(t, service.DurationStats{Count: 1, MedianSeconds: 14400, P90Seconds: 14400}, lt.OwnerWait)
+	assert.Equal(t, agents.DurationStats{Count: 1, MedianSeconds: 14400, P90Seconds: 14400}, lt.OwnerWait)
 	require.Len(t, lt.OpenWaits, 1)
 	assert.Equal(t, issueRef("3"), lt.OpenWaits[0].IssueRef)
 	assert.Equal(t, int64(36*3600-1), lt.OpenWaits[0].WaitingSeconds, "measured to the end of the range")
@@ -264,24 +264,24 @@ func TestAgentService_RejectsBadRanges(t *testing.T) {
 
 func TestAgentService_PassesStoreErrorsThrough(t *testing.T) {
 	boom := errors.New("boom")
-	svc := service.NewAgentService(fakeAgentQueries{err: boom})
+	svc := agents.NewService(fakeAgentQueries{err: boom})
 	_, err := svc.Scoreboard(context.Background(), "p", oct(1, 0, 0), oct(2, 0, 0), "")
 	assert.ErrorIs(t, err, boom)
 }
 
 func TestParseISOWeek(t *testing.T) {
-	from, to, err := service.ParseISOWeek("2026-w41")
+	from, to, err := agents.ParseISOWeek("2026-w41")
 	require.NoError(t, err)
 	assert.Equal(t, oct(5, 0, 0), from)
 	assert.Equal(t, oct(12, 0, 0).Add(-time.Nanosecond), to)
 
-	from, _, err = service.ParseISOWeek("2026-W01")
+	from, _, err = agents.ParseISOWeek("2026-W01")
 	require.NoError(t, err)
 	assert.Equal(t, time.Date(2025, time.December, 29, 0, 0, 0, 0, time.UTC), from)
 
 	for _, bad := range []string{"", "2026", "2026-41", "2026-W00", "2025-W53", "W41-2026"} {
-		_, _, err := service.ParseISOWeek(bad)
+		_, _, err := agents.ParseISOWeek(bad)
 		assert.ErrorIs(t, err, domain.ErrValidation, bad)
 	}
-	assert.Equal(t, "2026-W41", service.CurrentISOWeek(oct(11, 23, 0)))
+	assert.Equal(t, "2026-W41", agents.CurrentISOWeek(oct(11, 23, 0)))
 }

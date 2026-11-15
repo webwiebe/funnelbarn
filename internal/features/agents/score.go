@@ -1,4 +1,4 @@
-package service
+package agents
 
 import (
 	"context"
@@ -73,7 +73,7 @@ type AgentScoreboard struct {
 
 // Scoreboard scores the agent sessions over [from, to]. session, when set,
 // limits the result to that session's entries.
-func (s *AgentService) Scoreboard(ctx context.Context, projectID string, from, to time.Time, session string) (AgentScoreboard, error) {
+func (s *Service) Scoreboard(ctx context.Context, projectID string, from, to time.Time, session string) (AgentScoreboard, error) {
 	m, err := s.load(ctx, projectID, from, to)
 	if err != nil {
 		return AgentScoreboard{}, err

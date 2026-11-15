@@ -1,4 +1,5 @@
-package service
+// Package stats holds the statistics the analysis features share.
+package stats
 
 import "math"
 

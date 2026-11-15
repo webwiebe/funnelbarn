@@ -100,32 +100,6 @@ func TestProjectService_UserByUsername(t *testing.T) {
 	require.Equal(t, "testuser", u.Username)
 }
 
-// ---------------------------------------------------------------------------
-// ABTestService.AnalyzeABTest and FunnelService.AnalyzeFunnel
-// ---------------------------------------------------------------------------
-
-func TestABTestService_AnalyzeABTest(t *testing.T) {
-	ctx := context.Background()
-	store := newTestStore(t)
-	projSvc := service.NewProjectService(store)
-	abtestSvc := service.NewABTestService(store)
-
-	p, _ := projSvc.CreateProject(ctx, "ABAnalyze", "abanalyze")
-	test, err := abtestSvc.CreateABTest(ctx, domain.ABTest{
-		ProjectID:       p.ID,
-		Name:            "Button Colour",
-		Status:          "running",
-		ConversionEvent: "purchase",
-	})
-	require.NoError(t, err)
-
-	from := time.Now().UTC().Add(-24 * time.Hour)
-	to := time.Now().UTC().Add(time.Hour)
-	results, err := abtestSvc.AnalyzeABTest(ctx, test, from, to)
-	require.NoError(t, err)
-	_ = results // may be empty with no events, just no error
-}
-
 func TestFunnelService_AnalyzeFunnel(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

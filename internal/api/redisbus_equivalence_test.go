@@ -16,11 +16,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/features/agents"
+
 	"github.com/alicebob/miniredis/v2"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/abtests"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/queue"
@@ -127,7 +131,7 @@ func redisGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 		Ingest:              ingestHandler,
 		Projects:            service.NewProjectService(store),
 		Funnels:             service.NewFunnelService(store),
-		ABTests:             service.NewABTestService(store),
+		ABTests:             abtests.New(store.DB(), store.ReadDB()),
 		Flags:               service.NewFlagService(store).WithCommands(commands),
 		Commands:            commands,
 		ReadPoolWait:        func() time.Duration { return store.ReadDB().Stats().WaitDuration },
@@ -136,8 +140,8 @@ func redisGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 		Sessions:            service.NewSessionService(store),
 		APIKeys:             service.NewAPIKeyService(store),
 		Widgets:             widgets.New(store.DB(), store.ReadDB()),
-		Agents:              service.NewAgentService(store),
-		Segments:            service.NewSegmentService(store),
+		Agents:              agents.New(store.DB(), store.ReadDB()),
+		Segments:            segments.New(store.DB(), store.ReadDB()),
 		Recordings:          service.NewRecordingService(store, store, store, deps.Recordings),
 		ProjectHealth:       healthSvc,
 		InstanceSettings:    service.NewInstanceSettingsService(store),
@@ -203,7 +207,7 @@ func newRedisSnapStack(t *testing.T) *snapStack {
 		Ingest:              handler,
 		Projects:            service.NewProjectService(store),
 		Funnels:             service.NewFunnelService(store),
-		ABTests:             service.NewABTestService(store),
+		ABTests:             abtests.New(store.DB(), store.ReadDB()),
 		Flags:               service.NewFlagService(store).WithCommands(commands),
 		Commands:            commands,
 		Events:              service.NewEventService(store),
