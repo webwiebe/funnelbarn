@@ -35,6 +35,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/features/agents"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
@@ -59,7 +61,7 @@ type Deps struct {
 
 	// Agents serves agents_scoreboard and agents_lead_times. Nil makes both
 	// tools return an error.
-	Agents service.Agents
+	Agents agents.API
 
 	// SetupDoc renders a project's setup guide, the document served at
 	// GET /api/v1/setup/{slug}. Nil makes get_setup_guide return an error.

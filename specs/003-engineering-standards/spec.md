@@ -57,7 +57,7 @@ CI enforces the architecture and quality rules of the codebase mechanically. The
 | `goose up` and `goose down` are available as a CLI subcommand | Migration Tooling | `goose.Up` runs in `internal/repository/db.go` at start-up; no `goose` subcommand exists in `cmd/` |
 | Repository tests use `:memory:` SQLite | Unit Tests | Tests open a temp-file database (`repository.Open(filepath.Join(t.TempDir(), "test.db"))`); the write and read pools of an in-memory database alias each other (spec 012) |
 | Every service and repository function has a unit test | Unit Tests | not established |
-| Code is grouped by feature, one folder per feature (estate architecture standard, `File and folder structure`) | Package Layout | Migration in progress: `internal/features/widgets` is the first slice, `internal/features/segments` the second; the other features still live across `internal/api`, `internal/service`, `internal/repository` and `internal/ports` |
+| Code is grouped by feature, one folder per feature (estate architecture standard, `File and folder structure`) | Package Layout | Migration in progress: the slices under `internal/features` are `widgets`, `segments` and `agents`; the other features still live across `internal/api`, `internal/service`, `internal/repository` and `internal/ports` |
 | Files stay under about 200 lines | Style | `MAX_FILE_LINES=848` in `scripts/go-quality-gates.sh`; the estate target of 500 is report-only (`scripts/soak-baselines/file-length.txt`) |
 | `pages/ABTests.tsx` exists, `lib/hooks/` holds custom hooks | Frontend layout | Neither exists |
 | `lib/api.ts` is the only file that calls `fetch` | Frontend rules | `fetch(` appears in `App.tsx`, `lib/bugbarn.ts`, `lib/projects.tsx`, `lib/analytics.ts` and `pages/Live.tsx` as well |

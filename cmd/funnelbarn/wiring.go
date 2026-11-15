@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/features/agents"
+
 	selfsdk "github.com/webwiebe/funnelbarn/sdks/go"
 	bb "github.com/wiebe-xyz/bugbarn-go"
 
@@ -281,7 +283,7 @@ func newServerConfig(ctx context.Context, cfg config.Config, version string, d d
 		OIDCRefreshGrace:      time.Duration(cfg.OIDCRefreshGraceSeconds) * time.Second,
 		RecordingSettings:     service.NewRecordingSettingsService(store),
 		ProjectHealth:         d.health,
-		Agents:                service.NewAgentService(store),
+		Agents:                agents.New(store.DB(), store.ReadDB()),
 		FlagAutoRegisterMax:   cfg.AutoRegisterMaxFlags,
 		Commands:              d.commands,
 		ReadPoolWait:          func() time.Duration { return store.ReadDB().Stats().WaitDuration },

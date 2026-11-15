@@ -1,18 +1,30 @@
-package repository
+package agents
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"time"
-
-	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 )
+
+// ReadStore is the query side of the agents store. It holds only the read
+// pool, and the slice has no write side.
+type ReadStore struct {
+	rdb *sql.DB
+}
+
+// NewStore returns the agents store over the read pool rdb. The write pool is
+// unused because the slice only reads; it is accepted so every slice is
+// constructed the same way.
+func NewStore(_, rdb *sql.DB) *ReadStore {
+	return &ReadStore{rdb: rdb}
+}
 
 // AgentEvents returns the project's events named in names that occurred in
 // [from, to], oldest first. An event whose properties do not decode keeps an
 // empty property map.
-func (s *ReadStore) AgentEvents(ctx context.Context, projectID string, names []string, from, to time.Time) ([]domain.AgentEvent, error) {
+func (s *ReadStore) AgentEvents(ctx context.Context, projectID string, names []string, from, to time.Time) ([]AgentEvent, error) {
 	if len(names) == 0 {
 		return nil, nil
 	}
@@ -30,9 +42,9 @@ func (s *ReadStore) AgentEvents(ctx context.Context, projectID string, names []s
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	var out []domain.AgentEvent
+	var out []AgentEvent
 	for rows.Next() {
-		var e domain.AgentEvent
+		var e AgentEvent
 		var props string
 		if err := rows.Scan(&e.Name, &e.OccurredAt, &e.SessionID, &e.UserIDHash, &props); err != nil {
 			return nil, err

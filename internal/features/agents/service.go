@@ -1,7 +1,8 @@
-package service
+package agents
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sort"
 	"strconv"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 )
 
 const (
@@ -28,20 +28,43 @@ const (
 	agentMaxRange = 400 * 24 * time.Hour
 )
 
-// AgentService computes the agent fleet's delivery lead times and the
+// Queries is the read side of the agents delivery scoring (#331). The slice
+// has no command side: the events arrive through ingest.
+type Queries interface {
+	AgentEvents(ctx context.Context, projectID string, names []string, from, to time.Time) ([]AgentEvent, error)
+}
+
+// Repo is everything the service needs from storage.
+type Repo interface {
+	Queries
+}
+
+var (
+	_ Queries = (*ReadStore)(nil)
+	_ Repo    = (*ReadStore)(nil)
+)
+
+// Service computes the agent fleet's delivery lead times and the
 // per-session scoreboard from the agents project's events (#331, #333).
-type AgentService struct {
-	q   ports.AgentQueries
+type Service struct {
+	q   Repo
 	now func() time.Time
 }
 
-// NewAgentService creates an AgentService.
-func NewAgentService(q ports.AgentQueries) *AgentService {
-	return &AgentService{q: q, now: time.Now}
+// NewService creates a Service over store.
+func NewService(store Repo) *Service {
+	return &Service{q: store, now: time.Now}
+}
+
+// New returns a Service over a store on the read pool rdb. The slice only
+// reads, so the write pool db is unused; it is accepted so every slice is
+// constructed the same way.
+func New(db, rdb *sql.DB) *Service {
+	return NewService(NewStore(db, rdb))
 }
 
 // WithClock replaces the service's clock, for tests.
-func (s *AgentService) WithClock(now func() time.Time) *AgentService {
+func (s *Service) WithClock(now func() time.Time) *Service {
 	s.now = now
 	return s
 }
@@ -110,7 +133,7 @@ type AgentLeadTimes struct {
 	Issues        []AgentIssueLead `json:"issues"`
 }
 
-func (s *AgentService) load(ctx context.Context, projectID string, from, to time.Time) (*agentModel, error) {
+func (s *Service) load(ctx context.Context, projectID string, from, to time.Time) (*agentModel, error) {
 	if !to.After(from) {
 		return nil, &domain.ValidationError{Field: "to", Message: "must be after from"}
 	}
@@ -127,7 +150,7 @@ func (s *AgentService) load(ctx context.Context, projectID string, from, to time
 // LeadTimes reports issue-to-production and PR-to-merge lead times, the
 // first-pass CI rate per repo, owner wait times and issues shipped per day.
 // repo, when set, limits the report to one repository (owner/name).
-func (s *AgentService) LeadTimes(ctx context.Context, projectID string, from, to time.Time, repo string) (AgentLeadTimes, error) {
+func (s *Service) LeadTimes(ctx context.Context, projectID string, from, to time.Time, repo string) (AgentLeadTimes, error) {
 	m, err := s.load(ctx, projectID, from, to)
 	if err != nil {
 		return AgentLeadTimes{}, err

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/agents"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/service"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // agentsDefaultRange is the agents_lead_times window when from is omitted.
@@ -41,7 +41,7 @@ func registerAgentTools(s *mcp.Server, d *Deps) {
 	}, scopeRead, agentsLeadTimes)
 }
 
-func agentsService(c *Call) (service.Agents, error) {
+func agentsService(c *Call) (agents.API, error) {
 	if c.Deps.Agents == nil {
 		// A wiring fault: toolError logs it at Error (selflog) and the client
 		// sees "internal error", as get_setup_guide does without SetupDoc.
@@ -59,9 +59,9 @@ type agentsScoreboardIn struct {
 }
 
 type agentsScoreboardOut struct {
-	Project    string                  `json:"project" jsonschema:"Slug of the project this scoreboard is for."`
-	Week       string                  `json:"week" jsonschema:"The scored ISO week."`
-	Scoreboard service.AgentScoreboard `json:"scoreboard" jsonschema:"Sessions ranked by points, every scored entry, pending deploys and the rules that could not be scored."`
+	Project    string                 `json:"project" jsonschema:"Slug of the project this scoreboard is for."`
+	Week       string                 `json:"week" jsonschema:"The scored ISO week."`
+	Scoreboard agents.AgentScoreboard `json:"scoreboard" jsonschema:"Sessions ranked by points, every scored entry, pending deploys and the rules that could not be scored."`
 }
 
 func agentsScoreboard(ctx context.Context, c *Call, in agentsScoreboardIn) (agentsScoreboardOut, error) {
@@ -75,9 +75,9 @@ func agentsScoreboard(ctx context.Context, c *Call, in agentsScoreboardIn) (agen
 	}
 	week := in.Week
 	if week == "" {
-		week = service.CurrentISOWeek(time.Now())
+		week = agents.CurrentISOWeek(time.Now())
 	}
-	from, to, err := service.ParseISOWeek(week)
+	from, to, err := agents.ParseISOWeek(week)
 	if err != nil {
 		return agentsScoreboardOut{}, err
 	}
@@ -98,8 +98,8 @@ type agentsLeadTimesIn struct {
 }
 
 type agentsLeadTimesOut struct {
-	Project   string                 `json:"project" jsonschema:"Slug of the project this report is for."`
-	LeadTimes service.AgentLeadTimes `json:"lead_times" jsonschema:"Median and p90 durations, weekly figures, first-pass CI per repository and per-issue lead times."`
+	Project   string                `json:"project" jsonschema:"Slug of the project this report is for."`
+	LeadTimes agents.AgentLeadTimes `json:"lead_times" jsonschema:"Median and p90 durations, weekly figures, first-pass CI per repository and per-issue lead times."`
 }
 
 func agentsLeadTimes(ctx context.Context, c *Call, in agentsLeadTimesIn) (agentsLeadTimesOut, error) {

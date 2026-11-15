@@ -1,4 +1,4 @@
-package repository_test
+package agents_test
 
 import (
 	"context"
@@ -10,11 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/agents"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 )
 
 func TestAgentEvents_FiltersNamesAndRangeOldestFirst(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t)
+	s := repotest.Open(t)
+	as := agents.NewStore(s.DB(), s.ReadDB())
 	p, err := s.CreateProject(ctx, "Agents", "agents")
 	require.NoError(t, err)
 	other, err := s.CreateProject(ctx, "Other", "other")
@@ -36,7 +39,7 @@ func TestAgentEvents_FiltersNamesAndRangeOldestFirst(t *testing.T) {
 	insert(other.ID, "issue_opened", base.Add(time.Hour), `{}`)    // other project
 	insert(p.ID, "commit_made", base.Add(3*time.Hour), `not json`) // undecodable properties
 
-	got, err := s.AgentEvents(ctx, p.ID, []string{"issue_opened", "pr_merged", "commit_made"}, base.Add(-time.Hour), base.Add(4*time.Hour))
+	got, err := as.AgentEvents(ctx, p.ID, []string{"issue_opened", "pr_merged", "commit_made"}, base.Add(-time.Hour), base.Add(4*time.Hour))
 	require.NoError(t, err)
 	require.Len(t, got, 3)
 	assert.Equal(t, "issue_opened", got[0].Name)
@@ -48,7 +51,7 @@ func TestAgentEvents_FiltersNamesAndRangeOldestFirst(t *testing.T) {
 	assert.Equal(t, "commit_made", got[2].Name)
 	assert.Empty(t, got[2].Properties)
 
-	none, err := s.AgentEvents(ctx, p.ID, nil, base, base.Add(time.Hour))
+	none, err := as.AgentEvents(ctx, p.ID, nil, base, base.Add(time.Hour))
 	require.NoError(t, err)
 	assert.Empty(t, none)
 }

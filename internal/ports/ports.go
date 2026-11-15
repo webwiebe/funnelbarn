@@ -238,12 +238,6 @@ type APIKeyRepo interface {
 	APIKeyCommands
 }
 
-// AgentQueries is the read side of the agents delivery scoring (#331). It
-// has no command side: the events arrive through ingest.
-type AgentQueries interface {
-	AgentEvents(ctx context.Context, projectID string, names []string, from, to time.Time) ([]domain.AgentEvent, error)
-}
-
 // RecordingQueries is the read side of the recording port.
 type RecordingQueries interface {
 	GetRecording(ctx context.Context, id string) (domain.Recording, error)

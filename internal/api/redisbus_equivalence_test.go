@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/features/agents"
+
 	"github.com/alicebob/miniredis/v2"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
@@ -137,7 +139,7 @@ func redisGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 		Sessions:            service.NewSessionService(store),
 		APIKeys:             service.NewAPIKeyService(store),
 		Widgets:             widgets.New(store.DB(), store.ReadDB()),
-		Agents:              service.NewAgentService(store),
+		Agents:              agents.New(store.DB(), store.ReadDB()),
 		Segments:            segments.New(store.DB(), store.ReadDB()),
 		Recordings:          service.NewRecordingService(store, store, store, deps.Recordings),
 		ProjectHealth:       healthSvc,

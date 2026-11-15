@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/features/agents"
+
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -56,7 +58,7 @@ func newTestEnv(t *testing.T, mutate func(*Deps)) *testEnv {
 		Segments:      segments.New(store.DB(), store.ReadDB()),
 		Flags:         service.NewFlagService(store),
 		ProjectHealth: service.NewProjectHealthService(store),
-		Agents:        service.NewAgentService(store),
+		Agents:        agents.New(store.DB(), store.ReadDB()),
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	if mutate != nil {

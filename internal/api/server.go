@@ -99,7 +99,7 @@ type ServerConfig struct {
 	Recordings        service.Recordings
 	RecordingSettings service.RecordingSettings
 	ProjectHealth     service.ProjectHealth
-	Agents            service.Agents
+	Agents            AgentsAPI
 
 	// SpanRelay forwards the dashboard's own browser spans to SpanBarn. Nil when
 	// telemetry export is not configured; the endpoint then accepts and drops.
@@ -185,7 +185,7 @@ type Server struct {
 	recordings          service.Recordings
 	recordingSettings   service.RecordingSettings
 	projectHealth       service.ProjectHealth
-	agents              service.Agents
+	agents              agentsWiring
 	flagAutoRegisterMax int
 	commands            command.Bus
 	readPoolWait        func() time.Duration
@@ -275,7 +275,7 @@ func NewServer(cfg ServerConfig) *Server {
 		recordings:          cfg.Recordings,
 		recordingSettings:   cfg.RecordingSettings,
 		projectHealth:       cfg.ProjectHealth,
-		agents:              cfg.Agents,
+		agents:              newAgentsWiring(cfg.Agents),
 		flagAutoRegisterMax: cfg.FlagAutoRegisterMax,
 		commands:            cfg.Commands,
 		readPoolWait:        cfg.ReadPoolWait,

@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/features/agents"
+
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
@@ -130,7 +132,7 @@ func newGoldenServer(t *testing.T, store *repository.Store, health ports.Project
 		Segments:            segments.New(store.DB(), store.ReadDB()),
 		Recordings:          recordingsSvc,
 		ProjectHealth:       healthSvc,
-		Agents:              service.NewAgentService(store),
+		Agents:              agents.New(store.DB(), store.ReadDB()),
 		InstanceSettings:    service.NewInstanceSettingsService(store),
 		Privacy:             service.NewPrivacyService(store),
 		RecordingSettings:   service.NewRecordingSettingsService(store),

@@ -19,7 +19,6 @@ var _ ports.RecordingQueries = (*repository.ReadStore)(nil)
 var _ ports.ProjectQueries = (*repository.ReadStore)(nil)
 var _ ports.FunnelQueries = (*repository.ReadStore)(nil)
 var _ ports.CanonicalQueries = (*repository.ReadStore)(nil)
-var _ ports.AgentQueries = (*repository.ReadStore)(nil)
 
 // The command ports stay satisfied by *repository.Store.
 var _ ports.FlagCommands = (*repository.Store)(nil)

@@ -1,4 +1,7 @@
-package domain
+// Package agents is the agent analytics slice: delivery lead times and the
+// per-session scoreboard of the agent fleet (#331, #333), from their HTTP
+// handlers down to their SQL.
+package agents
 
 import "time"
 

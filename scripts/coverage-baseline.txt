@@ -13,6 +13,7 @@ internal/config	77
 internal/domain	100
 internal/enrich	91
 internal/environment	100
+internal/features/agents	91
 internal/features/segments	81
 internal/features/widgets	78
 internal/geoip	50
