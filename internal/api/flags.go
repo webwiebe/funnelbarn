@@ -11,6 +11,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
+	"github.com/wiebe-xyz/funnelbarn/internal/stats"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
 
@@ -184,7 +185,7 @@ func (s *Server) handleFlagAnalysis(w http.ResponseWriter, r *http.Request) {
 	var zScore float64
 	var significant bool
 	if len(results) == 2 {
-		zScore, significant = service.ZTestTwoProportions(
+		zScore, significant = stats.ZTestTwoProportions(
 			results[0].Sample, results[0].Conversions,
 			results[1].Sample, results[1].Conversions,
 		)

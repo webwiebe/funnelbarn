@@ -752,68 +752,6 @@ func TestUpsertUser(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// A/B Tests
-// --------------------------------------------------------------------------
-
-func TestStore_CreateABTest(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-
-	p, err := s.CreateProject(ctx, "Proj", "proj-abtest")
-	require.NoError(t, err)
-
-	test, err := s.CreateABTest(ctx, domain.ABTest{
-		ProjectID:       p.ID,
-		Name:            "Button Color Test",
-		Status:          "running",
-		ConversionEvent: "purchase",
-	})
-	require.NoError(t, err)
-	assert.NotEmpty(t, test.ID)
-	assert.Equal(t, "Button Color Test", test.Name)
-	assert.Equal(t, "running", test.Status)
-	assert.Equal(t, "purchase", test.ConversionEvent)
-	assert.Equal(t, p.ID, test.ProjectID)
-	assert.False(t, test.CreatedAt.IsZero())
-}
-
-func TestStore_ABTestByID_NotFound(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-
-	_, err := s.ABTestByID(ctx, "nonexistent")
-	assert.ErrorIs(t, err, sql.ErrNoRows)
-}
-
-func TestStore_ListABTests(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-
-	p, err := s.CreateProject(ctx, "Proj", "proj-listabtests")
-	require.NoError(t, err)
-
-	_, err = s.CreateABTest(ctx, domain.ABTest{
-		ProjectID:       p.ID,
-		Name:            "Test A",
-		Status:          "running",
-		ConversionEvent: "click",
-	})
-	require.NoError(t, err)
-
-	_, err = s.CreateABTest(ctx, domain.ABTest{
-		ProjectID:       p.ID,
-		Name:            "Test B",
-		Status:          "paused",
-		ConversionEvent: "signup",
-	})
-	require.NoError(t, err)
-
-	tests, err := s.ListABTests(ctx, p.ID)
-	require.NoError(t, err)
-	assert.Len(t, tests, 2)
-}
-
-// --------------------------------------------------------------------------
 // Events
 // --------------------------------------------------------------------------
 
@@ -1281,27 +1219,6 @@ func TestStore_EnsureProject_RejectsInvalidSlug(t *testing.T) {
 	projects, err := s.ListProjects(ctx)
 	require.NoError(t, err)
 	require.Empty(t, projects, "no junk projects should have been created")
-}
-
-func TestStore_AnalyzeABTest(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-
-	p, err := s.CreateProject(ctx, "Proj", "proj-analyzeab")
-	require.NoError(t, err)
-
-	test, err := s.CreateABTest(ctx, domain.ABTest{
-		ProjectID:       p.ID,
-		Name:            "Test",
-		Status:          "running",
-		ConversionEvent: "purchase",
-	})
-	require.NoError(t, err)
-
-	now := time.Now().UTC()
-	results, err := s.AnalyzeABTest(ctx, test, now.Add(-time.Hour), now.Add(time.Hour))
-	require.NoError(t, err)
-	assert.Len(t, results, 2)
 }
 
 func TestStore_TopCountries(t *testing.T) {

@@ -13,6 +13,7 @@ internal/config	77
 internal/domain	100
 internal/enrich	91
 internal/environment	100
+internal/features/abtests	82
 internal/features/agents	91
 internal/features/segments	81
 internal/features/widgets	78
@@ -32,6 +33,7 @@ internal/service	74
 internal/session	100
 internal/snapshot	100
 internal/spool	75
+internal/stats	91
 internal/timerange	100
 internal/tracing	46
 internal/volumedrop	100

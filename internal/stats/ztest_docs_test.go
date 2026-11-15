@@ -1,4 +1,4 @@
-package service_test
+package stats_test
 
 import (
 	"math"
@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/service"
+	"github.com/wiebe-xyz/funnelbarn/internal/stats"
 )
 
 // TestABTestDocsExampleMatchesZTest reads the analysis response example in the
@@ -38,7 +38,7 @@ func TestABTestDocsExampleMatchesZTest(t *testing.T) {
 	variantX := int64(field("variant_conversions"))
 	documented := field("z_score")
 
-	got, significant := service.ZTestTwoProportions(controlN, controlX, variantN, variantX)
+	got, significant := stats.ZTestTwoProportions(controlN, controlX, variantN, variantX)
 	if math.Abs(got-documented) > 0.01 {
 		t.Errorf("docs show z_score %.2f, the z-test gives %.4f for %d/%d vs %d/%d",
 			documented, got, controlX, controlN, variantX, variantN)

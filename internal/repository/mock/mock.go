@@ -26,7 +26,6 @@ type Store struct {
 	apikeys  map[string]domain.APIKey // keyed by ID
 	users    map[string]domain.User   // keyed by username
 	funnels  map[string]domain.Funnel
-	abtests  map[string]domain.ABTest
 	sessions map[string]domain.Session
 	events   []domain.Event
 	flags    map[string]domain.FeatureFlag
@@ -42,7 +41,6 @@ func New() *Store {
 		apikeys:  make(map[string]domain.APIKey),
 		users:    make(map[string]domain.User),
 		funnels:  make(map[string]domain.Funnel),
-		abtests:  make(map[string]domain.ABTest),
 		sessions: make(map[string]domain.Session),
 	}
 }
@@ -370,44 +368,6 @@ func (s *Store) SessionsAtStep(_ context.Context, _ domain.Funnel, _ int, _, _ t
 
 func (s *Store) SessionsForPage(_ context.Context, _, _ string, _, _ time.Time, _ int) ([]string, error) {
 	return nil, nil
-}
-
-// ── A/B Tests ─────────────────────────────────────────────────────────────────
-
-func (s *Store) CreateABTest(ctx context.Context, t domain.ABTest) (domain.ABTest, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	t.ID = newMockID("abtest")
-	t.CreatedAt = time.Now()
-	s.abtests[t.ID] = t
-	return t, nil
-}
-
-func (s *Store) ListABTests(ctx context.Context, projectID string) ([]domain.ABTest, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	var out []domain.ABTest
-	for _, t := range s.abtests {
-		if t.ProjectID == projectID {
-			out = append(out, t)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
-	return out, nil
-}
-
-func (s *Store) ABTestByID(ctx context.Context, id string) (domain.ABTest, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	t, ok := s.abtests[id]
-	if !ok {
-		return domain.ABTest{}, sql.ErrNoRows
-	}
-	return t, nil
-}
-
-func (s *Store) AnalyzeABTest(ctx context.Context, t domain.ABTest, from, to time.Time) ([]domain.ABTestResult, error) {
-	return []domain.ABTestResult{}, nil
 }
 
 // ── Sessions ──────────────────────────────────────────────────────────────────

@@ -20,6 +20,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/config"
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/abtests"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/geoip"
@@ -249,7 +250,7 @@ func newServerConfig(ctx context.Context, cfg config.Config, version string, d d
 		Segments:              segments.New(store.DB(), store.ReadDB()),
 		Projects:              service.NewProjectService(store),
 		Funnels:               service.NewFunnelService(store),
-		ABTests:               service.NewABTestService(store),
+		ABTests:               abtests.New(store.DB(), store.ReadDB()),
 		Flags:                 flagsSvc,
 		Events:                service.NewEventService(store),
 		Overview:              service.NewOverviewService(store),

@@ -11,6 +11,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
+	"github.com/wiebe-xyz/funnelbarn/internal/stats"
 )
 
 // maxFlagsListed caps list_flags so a project that has accumulated hundreds of
@@ -293,7 +294,7 @@ func analyzeFlag(ctx context.Context, c *Call, in analyzeFlagIn) (analyzeFlagOut
 		out.Results[i] = flagAnalysisVariant{Variant: r.Variant, Sample: r.Sample, Conversions: r.Conversions, Rate: r.Rate}
 	}
 	if len(results) == 2 {
-		out.ZScore, out.Significant = service.ZTestTwoProportions(
+		out.ZScore, out.Significant = stats.ZTestTwoProportions(
 			results[0].Sample, results[0].Conversions,
 			results[1].Sample, results[1].Conversions,
 		)

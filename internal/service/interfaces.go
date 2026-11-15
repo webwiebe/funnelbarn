@@ -70,14 +70,6 @@ type Flags interface {
 	Usage(ctx context.Context, projectID string) (FlagUsageReport, error)
 }
 
-// ABTests is the interface for A/B test-related operations.
-type ABTests interface {
-	CreateABTest(ctx context.Context, t domain.ABTest) (domain.ABTest, error)
-	ListABTests(ctx context.Context, projectID string) ([]domain.ABTest, error)
-	GetABTest(ctx context.Context, id string) (domain.ABTest, error)
-	AnalyzeABTest(ctx context.Context, t domain.ABTest, from, to time.Time) ([]domain.ABTestResult, error)
-}
-
 // Events is the interface for event-related operations.
 type Events interface {
 	InsertEvent(ctx context.Context, e domain.Event) error

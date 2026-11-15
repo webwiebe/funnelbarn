@@ -11,6 +11,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/abtests"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
@@ -29,7 +30,7 @@ type ServerConfig struct {
 	Ingest         *ingest.Handler
 	Projects       service.Projects
 	Funnels        service.Funnels
-	ABTests        service.ABTests
+	ABTests        abtests.API
 	Flags          service.Flags
 	Events         service.Events
 	Overview       service.Overview
@@ -149,7 +150,7 @@ type Server struct {
 	db                  Pinger
 	projects            service.Projects
 	funnels             service.Funnels
-	abtests             service.ABTests
+	abtests             *abtests.Handler
 	flags               service.Flags
 	events              service.Events
 	overview            service.Overview
@@ -238,7 +239,7 @@ func NewServer(cfg ServerConfig) *Server {
 		buildTime:           cfg.BuildTime,
 		projects:            cfg.Projects,
 		funnels:             cfg.Funnels,
-		abtests:             cfg.ABTests,
+		abtests:             abtests.NewHandler(cfg.ABTests, RequestIDFromContext),
 		flags:               cfg.Flags,
 		events:              cfg.Events,
 		overview:            cfg.Overview,
@@ -423,10 +424,9 @@ func (s *Server) registerRoutes() {
 	// Flag evaluation (API key required, like ingest)
 	s.mux.Handle("POST /api/v1/evaluate", s.limit(s.eventsLimiter, http.HandlerFunc(s.handleEvaluateFlag)))
 
-	// A/B Tests
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/abtests", s.requireSession(s.handleListABTests))
-	s.mux.HandleFunc("POST /api/v1/projects/{id}/abtests", s.requireSession(s.handleCreateABTest))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/abtests/{abid}/analysis", s.requireSession(s.handleABTestAnalysis))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/abtests", s.requireSession(s.abtests.List))
+	s.mux.HandleFunc("POST /api/v1/projects/{id}/abtests", s.requireSession(s.abtests.Create))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/abtests/{abid}/analysis", s.requireSession(s.abtests.Analysis))
 
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/widgets", s.requireSession(s.widgets.List))
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/widgets", s.requireSession(s.widgets.Create))

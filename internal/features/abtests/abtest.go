@@ -1,4 +1,6 @@
-package domain
+// Package abtests is the A/B test slice: experiment definitions and their
+// conversion analysis, from the HTTP handlers down to the SQL.
+package abtests
 
 import "time"
 

@@ -23,6 +23,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/abtests"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
@@ -130,7 +131,7 @@ func redisGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 		Ingest:              ingestHandler,
 		Projects:            service.NewProjectService(store),
 		Funnels:             service.NewFunnelService(store),
-		ABTests:             service.NewABTestService(store),
+		ABTests:             abtests.New(store.DB(), store.ReadDB()),
 		Flags:               service.NewFlagService(store).WithCommands(commands),
 		Commands:            commands,
 		ReadPoolWait:        func() time.Duration { return store.ReadDB().Stats().WaitDuration },
@@ -206,7 +207,7 @@ func newRedisSnapStack(t *testing.T) *snapStack {
 		Ingest:              handler,
 		Projects:            service.NewProjectService(store),
 		Funnels:             service.NewFunnelService(store),
-		ABTests:             service.NewABTestService(store),
+		ABTests:             abtests.New(store.DB(), store.ReadDB()),
 		Flags:               service.NewFlagService(store).WithCommands(commands),
 		Commands:            commands,
 		Events:              service.NewEventService(store),

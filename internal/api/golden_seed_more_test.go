@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/abtests"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -108,7 +109,7 @@ func seedGoldenEntities(t *testing.T, store *repository.Store, storage *memStora
 		TargetingRules: `[{"name":"testers","match":"all","conditions":[{"context_key":"plan","operator":"eq","value":"staff"}],"variant":"on"}]`})
 	must(err, "flag stale_rule")
 
-	ab, err := store.CreateABTest(ctx, domain.ABTest{ProjectID: s.ProjectA, Name: "Variant a vs b", Status: "running",
+	ab, err := abtests.NewStore(store.DB(), store.ReadDB()).CreateABTest(ctx, abtests.ABTest{ProjectID: s.ProjectA, Name: "Variant a vs b", Status: "running",
 		ControlFilter: `{"property":"variant","value":"a"}`, VariantFilter: `{"property":"variant","value":"b"}`, ConversionEvent: "purchase"})
 	must(err, "abtest")
 	s.ABTestA = fix(ab.ID, kindABTest, 1)

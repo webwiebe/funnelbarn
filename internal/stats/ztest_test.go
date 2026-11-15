@@ -1,9 +1,9 @@
-package service_test
+package stats_test
 
 import (
 	"testing"
 
-	"github.com/wiebe-xyz/funnelbarn/internal/service"
+	"github.com/wiebe-xyz/funnelbarn/internal/stats"
 )
 
 func TestZTestTwoProportions(t *testing.T) {
@@ -31,7 +31,7 @@ func TestZTestTwoProportions(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			z, sig := service.ZTestTwoProportions(c.n1, c.x1, c.n2, c.x2)
+			z, sig := stats.ZTestTwoProportions(c.n1, c.x1, c.n2, c.x2)
 			if c.wantZero && z != 0 {
 				t.Errorf("z: want 0, got %f", z)
 			}

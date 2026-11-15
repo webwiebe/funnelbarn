@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/abtests"
 )
 
 // ---------------------------------------------------------------------------
@@ -64,7 +65,7 @@ func TestCrossProjectIsolation_ABTest(t *testing.T) {
 
 	pa, _ := store.CreateProject(ctx, "PA2", "pa2")
 	pb, _ := store.CreateProject(ctx, "PB2", "pb2")
-	at, _ := store.CreateABTest(ctx, repositoryABTest(pa.ID))
+	at, _ := abtests.NewStore(store.DB(), store.ReadDB()).CreateABTest(ctx, repositoryABTest(pa.ID))
 
 	// Accessing the test via project B → 404
 	w := getJSON(t, srv, "/api/v1/projects/"+pb.ID+"/abtests/"+at.ID+"/analysis", nil)
@@ -194,8 +195,8 @@ func repositoryFunnel(projectID, name string) domain.Funnel {
 	}
 }
 
-func repositoryABTest(projectID string) domain.ABTest {
-	return domain.ABTest{
+func repositoryABTest(projectID string) abtests.ABTest {
+	return abtests.ABTest{
 		ProjectID:       projectID,
 		Name:            "Test A",
 		Status:          "running",

@@ -13,6 +13,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/abtests"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -241,7 +242,7 @@ func TestHandleClientConfig_ExposesBugbarnFields(t *testing.T) {
 		Ingest:              ingestHandler,
 		Projects:            service.NewProjectService(store),
 		Funnels:             service.NewFunnelService(store),
-		ABTests:             service.NewABTestService(store),
+		ABTests:             abtests.New(store.DB(), store.ReadDB()),
 		Flags:               service.NewFlagService(store),
 		Events:              service.NewEventService(store),
 		Overview:            service.NewOverviewService(store),
@@ -317,7 +318,7 @@ func newSDKServer(t *testing.T, maxAuto int) (*Server, *repository.Store, string
 		Ingest:              ingestHandler,
 		Projects:            service.NewProjectService(store),
 		Funnels:             service.NewFunnelService(store),
-		ABTests:             service.NewABTestService(store),
+		ABTests:             abtests.New(store.DB(), store.ReadDB()),
 		Flags:               service.NewFlagService(store),
 		Events:              service.NewEventService(store),
 		Overview:            service.NewOverviewService(store),

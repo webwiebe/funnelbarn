@@ -62,24 +62,6 @@ type FunnelRepo interface {
 	FunnelCommands
 }
 
-// ABTestQueries is the read side of the A/B test port.
-type ABTestQueries interface {
-	ABTestByID(ctx context.Context, id string) (domain.ABTest, error)
-	ListABTests(ctx context.Context, projectID string) ([]domain.ABTest, error)
-	AnalyzeABTest(ctx context.Context, t domain.ABTest, from, to time.Time) ([]domain.ABTestResult, error)
-}
-
-// ABTestCommands is the write side of the A/B test port.
-type ABTestCommands interface {
-	CreateABTest(ctx context.Context, t domain.ABTest) (domain.ABTest, error)
-}
-
-// ABTestRepo is the persistence port for A/B tests.
-type ABTestRepo interface {
-	ABTestQueries
-	ABTestCommands
-}
-
 // FlagQueries is the read side of the feature flag port.
 type FlagQueries interface {
 	CountAutoFlags(ctx context.Context, projectID string) (int, error)

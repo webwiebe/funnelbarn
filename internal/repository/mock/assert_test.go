@@ -11,7 +11,6 @@ import (
 var (
 	_ ports.ProjectRepo          = (*mock.Store)(nil)
 	_ ports.FunnelRepo           = (*mock.Store)(nil)
-	_ ports.ABTestRepo           = (*mock.Store)(nil)
 	_ ports.FlagRepo             = (*mock.Store)(nil)
 	_ ports.EventRepo            = (*mock.Store)(nil)
 	_ ports.SessionRepo          = (*mock.Store)(nil)
