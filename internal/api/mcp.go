@@ -52,7 +52,7 @@ func (s *Server) registerMCPRoutes() {
 		Projects:      s.projects,
 		Events:        s.events,
 		Funnels:       s.funnels,
-		Segments:      s.segments,
+		Segments:      s.segments.API(),
 		Flags:         s.flags,
 		ProjectHealth: s.projectHealth,
 		Agents:        s.agents,

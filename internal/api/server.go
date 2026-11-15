@@ -11,6 +11,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
@@ -94,7 +95,7 @@ type ServerConfig struct {
 
 	InstanceSettings  service.InstanceSettings
 	Privacy           service.Privacy
-	Segments          service.Segments
+	Segments          segments.API
 	Recordings        service.Recordings
 	RecordingSettings service.RecordingSettings
 	ProjectHealth     service.ProjectHealth
@@ -180,7 +181,7 @@ type Server struct {
 	localUsersExist     bool
 	instanceSettings    service.InstanceSettings
 	privacy             service.Privacy
-	segments            service.Segments
+	segments            *segments.Handler
 	recordings          service.Recordings
 	recordingSettings   service.RecordingSettings
 	projectHealth       service.ProjectHealth
@@ -270,7 +271,7 @@ func NewServer(cfg ServerConfig) *Server {
 		localUsersExist:     cfg.LocalUsersExist,
 		instanceSettings:    cfg.InstanceSettings,
 		privacy:             cfg.Privacy,
-		segments:            cfg.Segments,
+		segments:            segments.NewHandler(cfg.Segments),
 		recordings:          cfg.Recordings,
 		recordingSettings:   cfg.RecordingSettings,
 		projectHealth:       cfg.ProjectHealth,
@@ -462,11 +463,10 @@ func (s *Server) registerRoutes() {
 	// Project approval
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/approve", s.requireSession(s.handleApproveProject))
 
-	// Segments
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/segments", s.requireSession(s.handleListSegments))
-	s.mux.HandleFunc("POST /api/v1/projects/{id}/segments", s.requireSession(s.handleCreateSegment))
-	s.mux.HandleFunc("PUT /api/v1/projects/{id}/segments/{sid}", s.requireSession(s.handleUpdateSegment))
-	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/segments/{sid}", s.requireSession(s.handleDeleteSegment))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/segments", s.requireSession(s.segments.List))
+	s.mux.HandleFunc("POST /api/v1/projects/{id}/segments", s.requireSession(s.segments.Create))
+	s.mux.HandleFunc("PUT /api/v1/projects/{id}/segments/{sid}", s.requireSession(s.segments.Update))
+	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/segments/{sid}", s.requireSession(s.segments.Delete))
 
 	// Project integration health
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/health", s.requireSession(s.handleGetProjectHealth))

@@ -21,6 +21,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/queue"
@@ -137,7 +138,7 @@ func redisGoldenServer(t *testing.T, deps goldenDeps) goldenTarget {
 		APIKeys:             service.NewAPIKeyService(store),
 		Widgets:             widgets.New(store.DB(), store.ReadDB()),
 		Agents:              service.NewAgentService(store),
-		Segments:            service.NewSegmentService(store),
+		Segments:            segments.New(store.DB(), store.ReadDB()),
 		Recordings:          service.NewRecordingService(store, store, store, deps.Recordings),
 		ProjectHealth:       healthSvc,
 		InstanceSettings:    service.NewInstanceSettingsService(store),

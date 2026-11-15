@@ -15,6 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -32,9 +33,10 @@ const (
 
 // testEnv is a running MCP server backed by an in-memory store.
 type testEnv struct {
-	Store *repository.Store
-	Deps  Deps
-	URL   string
+	Store    *repository.Store
+	Segments *segments.Store
+	Deps     Deps
+	URL      string
 }
 
 // newTestEnv starts the MCP server over a fresh in-memory store. mutate, when
@@ -51,7 +53,7 @@ func newTestEnv(t *testing.T, mutate func(*Deps)) *testEnv {
 		Projects:      service.NewProjectService(store),
 		Events:        service.NewEventService(store),
 		Funnels:       service.NewFunnelService(store),
-		Segments:      service.NewSegmentService(store),
+		Segments:      segments.New(store.DB(), store.ReadDB()),
 		Flags:         service.NewFlagService(store),
 		ProjectHealth: service.NewProjectHealthService(store),
 		Agents:        service.NewAgentService(store),
@@ -61,7 +63,7 @@ func newTestEnv(t *testing.T, mutate func(*Deps)) *testEnv {
 		mutate(&deps)
 	}
 
-	return &testEnv{Store: store, Deps: deps, URL: serveTestServer(t, NewServer(deps))}
+	return &testEnv{Store: store, Segments: segments.NewStore(store.DB(), store.ReadDB()), Deps: deps, URL: serveTestServer(t, NewServer(deps))}
 }
 
 // serveTestServer serves s over stateless Streamable HTTP behind the fake

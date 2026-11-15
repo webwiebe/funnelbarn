@@ -38,6 +38,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
@@ -52,7 +53,7 @@ type Deps struct {
 	Projects      service.Projects
 	Events        service.Events
 	Funnels       service.Funnels
-	Segments      service.Segments
+	Segments      segments.API
 	Flags         service.Flags
 	ProjectHealth service.ProjectHealth
 

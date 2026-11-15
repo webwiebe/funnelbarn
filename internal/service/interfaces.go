@@ -184,15 +184,6 @@ type IAMBarnUsers interface {
 	CreateIAMBarnUser(ctx context.Context, sub, username string) (domain.User, error)
 }
 
-// Segments is the interface for user-defined segment operations.
-type Segments interface {
-	CreateSegment(ctx context.Context, projectID, name string, rules []domain.SegmentRule) (domain.Segment, error)
-	ListSegments(ctx context.Context, projectID string) ([]domain.Segment, error)
-	GetSegment(ctx context.Context, id string) (domain.Segment, error)
-	UpdateSegment(ctx context.Context, id, name string, rules []domain.SegmentRule) (domain.Segment, error)
-	DeleteSegment(ctx context.Context, id string) error
-}
-
 // Recordings is the interface for session recording operations.
 type Recordings interface {
 	IngestChunk(ctx context.Context, chunk RecordingChunk) error

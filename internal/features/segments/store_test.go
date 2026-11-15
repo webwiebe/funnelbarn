@@ -1,21 +1,22 @@
-package repository_test
+package segments
 
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 )
 
 func TestStore_Segments_CRUD(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t)
+	db := repotest.Open(t)
+	s := NewStore(db.DB(), db.ReadDB())
 
-	p, err := s.CreateProject(ctx, "Seg Project", "seg-project")
+	p, err := db.CreateProject(ctx, "Seg Project", "seg-project")
 	require.NoError(t, err)
 
 	rules := []domain.SegmentRule{
@@ -24,7 +25,7 @@ func TestStore_Segments_CRUD(t *testing.T) {
 	}
 
 	// Create
-	seg, err := s.CreateSegment(ctx, domain.Segment{
+	seg, err := s.CreateSegment(ctx, Segment{
 		ProjectID: p.ID,
 		Name:      "Dutch mobile",
 		Rules:     rules,
@@ -64,52 +65,13 @@ func TestStore_Segments_CRUD(t *testing.T) {
 
 func TestStore_ListSegments_Empty(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t)
+	db := repotest.Open(t)
+	s := NewStore(db.DB(), db.ReadDB())
 
-	p, err := s.CreateProject(ctx, "Empty", "empty-seg")
+	p, err := db.CreateProject(ctx, "Empty", "empty-seg")
 	require.NoError(t, err)
 
 	list, err := s.ListSegments(ctx, p.ID)
 	require.NoError(t, err)
 	assert.Empty(t, list)
-}
-
-func TestStore_UpsertSessionSignals(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-
-	p, err := s.CreateProject(ctx, "Signals", "signals")
-	require.NoError(t, err)
-
-	sess := domain.Session{
-		ID:          "sess-123",
-		ProjectID:   p.ID,
-		FirstSeenAt: time.Now().UTC(),
-		LastSeenAt:  time.Now().UTC(),
-	}
-	require.NoError(t, s.UpsertSession(ctx, sess))
-
-	w, h := 1920, 1080
-	ratio := 2.0
-	touch := false
-	dark := true
-	reduced := false
-	cores := 8
-
-	signals := domain.SessionSignals{
-		ScreenWidth:     &w,
-		ScreenHeight:    &h,
-		PixelRatio:      &ratio,
-		Touch:           &touch,
-		DarkMode:        &dark,
-		ReducedMotion:   &reduced,
-		BrowserTimezone: "Europe/Amsterdam",
-		CPUCores:        &cores,
-	}
-	require.NoError(t, s.UpsertSessionSignals(ctx, p.ID, "sess-123", signals))
-
-	// Second upsert should be a no-op (signals_collected = 1 guard).
-	w2 := 800
-	signals2 := domain.SessionSignals{ScreenWidth: &w2}
-	require.NoError(t, s.UpsertSessionSignals(ctx, p.ID, "sess-123", signals2))
 }

@@ -1,4 +1,4 @@
-package service_test
+package segments
 
 import (
 	"context"
@@ -8,16 +8,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
-	"github.com/wiebe-xyz/funnelbarn/internal/service"
+	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
 )
 
-func TestSegmentService_CRUD(t *testing.T) {
+func TestService_CRUD(t *testing.T) {
 	ctx := context.Background()
-	store := newTestStore(t)
-	projSvc := service.NewProjectService(store)
-	segSvc := service.NewSegmentService(store)
+	db := repotest.Open(t)
+	segSvc := New(db.DB(), db.ReadDB())
 
-	p, err := projSvc.CreateProject(ctx, "Seg Svc Project", "seg-svc-project")
+	p, err := db.CreateProject(ctx, "Seg Svc Project", "seg-svc-project")
 	require.NoError(t, err)
 
 	rules := []domain.SegmentRule{
@@ -52,20 +51,20 @@ func TestSegmentService_CRUD(t *testing.T) {
 	assert.True(t, domain.IsNotFound(err))
 }
 
-func TestSegmentService_GetSegment_NotFound(t *testing.T) {
+func TestService_GetSegment_NotFound(t *testing.T) {
 	ctx := context.Background()
-	store := newTestStore(t)
-	segSvc := service.NewSegmentService(store)
+	db := repotest.Open(t)
+	segSvc := New(db.DB(), db.ReadDB())
 
 	_, err := segSvc.GetSegment(ctx, "does-not-exist")
 	require.Error(t, err)
 	assert.True(t, domain.IsNotFound(err))
 }
 
-func TestSegmentService_CreateSegment_Validation(t *testing.T) {
+func TestService_CreateSegment_Validation(t *testing.T) {
 	ctx := context.Background()
-	store := newTestStore(t)
-	segSvc := service.NewSegmentService(store)
+	db := repotest.Open(t)
+	segSvc := New(db.DB(), db.ReadDB())
 
 	// Empty name.
 	_, err := segSvc.CreateSegment(ctx, "proj-1", "", nil)
@@ -90,10 +89,10 @@ func TestSegmentService_CreateSegment_Validation(t *testing.T) {
 	assert.True(t, domain.IsValidation(err))
 }
 
-func TestSegmentService_UpdateSegment_Validation(t *testing.T) {
+func TestService_UpdateSegment_Validation(t *testing.T) {
 	ctx := context.Background()
-	store := newTestStore(t)
-	segSvc := service.NewSegmentService(store)
+	db := repotest.Open(t)
+	segSvc := New(db.DB(), db.ReadDB())
 
 	_, err := segSvc.UpdateSegment(ctx, "some-id", "", nil)
 	require.Error(t, err)

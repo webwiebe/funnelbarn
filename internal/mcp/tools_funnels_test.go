@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/segments"
 )
 
 func TestListFunnelsTool(t *testing.T) {
@@ -364,7 +365,7 @@ func TestAnalyzeFunnelTool_WithSegment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateFunnel: %v", err)
 	}
-	seg, err := env.Store.CreateSegment(ctx, domain.Segment{
+	seg, err := env.Segments.CreateSegment(ctx, segments.Segment{
 		ProjectID: a.ID, Name: "Dutch",
 		Rules: []domain.SegmentRule{{Field: "country_code", Operator: "eq", Value: "NL"}},
 	})
@@ -471,7 +472,7 @@ func TestAnalyzeFunnelTool_CrossProjectSegmentNotFound(t *testing.T) {
 		t.Fatalf("CreateFunnel: %v", err)
 	}
 	// Segment belongs to project b, funnel and call are scoped to project a.
-	seg, err := env.Store.CreateSegment(ctx, domain.Segment{
+	seg, err := env.Segments.CreateSegment(ctx, segments.Segment{
 		ProjectID: b.ID, Name: "Other Project Segment",
 	})
 	if err != nil {

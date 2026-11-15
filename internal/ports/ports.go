@@ -244,25 +244,6 @@ type AgentQueries interface {
 	AgentEvents(ctx context.Context, projectID string, names []string, from, to time.Time) ([]domain.AgentEvent, error)
 }
 
-// SegmentQueries is the read side of the segment port.
-type SegmentQueries interface {
-	SegmentByID(ctx context.Context, id string) (domain.Segment, error)
-	ListSegments(ctx context.Context, projectID string) ([]domain.Segment, error)
-}
-
-// SegmentCommands is the write side of the segment port.
-type SegmentCommands interface {
-	CreateSegment(ctx context.Context, seg domain.Segment) (domain.Segment, error)
-	UpdateSegment(ctx context.Context, seg domain.Segment) (domain.Segment, error)
-	DeleteSegment(ctx context.Context, id string) error
-}
-
-// SegmentRepo is the persistence port for user-defined segments.
-type SegmentRepo interface {
-	SegmentQueries
-	SegmentCommands
-}
-
 // RecordingQueries is the read side of the recording port.
 type RecordingQueries interface {
 	GetRecording(ctx context.Context, id string) (domain.Recording, error)
