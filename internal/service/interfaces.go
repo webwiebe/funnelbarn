@@ -138,16 +138,6 @@ type Overview interface {
 	AnalyzeCanonicalFunnel(ctx context.Context, f domain.CanonicalFunnel, projectIDs []string, from, to time.Time, seg *domain.SegmentFilter, rules ...domain.SegmentRule) (domain.CanonicalFunnelResult, error)
 }
 
-// Widgets is the interface for dashboard widget operations.
-type Widgets interface {
-	CreateWidget(ctx context.Context, w domain.DashboardWidget) (domain.DashboardWidget, error)
-	GetWidget(ctx context.Context, id string) (domain.DashboardWidget, error)
-	ListWidgets(ctx context.Context, projectID string) ([]domain.DashboardWidget, error)
-	UpdateWidget(ctx context.Context, w domain.DashboardWidget) (domain.DashboardWidget, error)
-	DeleteWidget(ctx context.Context, id string) error
-	WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]domain.PropertyBreakdown, error)
-}
-
 // Sessions is the interface for session-related operations.
 type Sessions interface {
 	UpsertSession(ctx context.Context, sess domain.Session) error

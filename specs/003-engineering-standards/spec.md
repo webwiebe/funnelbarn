@@ -36,6 +36,7 @@ CI enforces the architecture and quality rules of the codebase mechanically. The
 - **FR-011**: CI MUST run `tsc --noEmit`, `eslint` and `vitest` with coverage floors for the web app. Issues: [#196](https://github.com/webwiebe/funnelbarn/issues/196). [inferred]
 - **FR-012**: The gate scripts MUST have tests that run in CI. Issues: none. Tests: `scripts/test_quality_soak.py`, `scripts/test_deploy_graph.py`.
 - **FR-013**: The testing deploy MUST build only after a green CI run, and E2E failures block promotion to staging. Issues: none. Tests: `scripts/test_deploy_graph.py::DeployGraphTest.test_build_requires_ci_success`, `scripts/test_deploy_graph.py::DeployGraphTest.test_staging_waits_for_e2e`, `scripts/test_deploy_graph.py::SpecMatchesMechanismTest.test_spec_still_claims_e2e_blocks_staging` (this spec must keep the sentence "E2E failures block promotion to staging").
+- **FR-014**: A feature slice under `internal/features/<name>` MUST NOT import another slice, `internal/api`, `internal/mcp`, `internal/service`, `internal/ports`, `internal/command` or `internal/repository`, and `internal/domain` MUST NOT import a slice. Issues: none. Tests: `internal/archtest/archtest_test.go::TestArchitecture`, `::TestSliceViolations`.
 
 ---
 
@@ -56,6 +57,7 @@ CI enforces the architecture and quality rules of the codebase mechanically. The
 | `goose up` and `goose down` are available as a CLI subcommand | Migration Tooling | `goose.Up` runs in `internal/repository/db.go` at start-up; no `goose` subcommand exists in `cmd/` |
 | Repository tests use `:memory:` SQLite | Unit Tests | Tests open a temp-file database (`repository.Open(filepath.Join(t.TempDir(), "test.db"))`); the write and read pools of an in-memory database alias each other (spec 012) |
 | Every service and repository function has a unit test | Unit Tests | not established |
+| Code is grouped by feature, one folder per feature (estate architecture standard, `File and folder structure`) | Package Layout | Migration in progress: `internal/features/widgets` is the first slice; the other features still live across `internal/api`, `internal/service`, `internal/repository` and `internal/ports` |
 | Files stay under about 200 lines | Style | `MAX_FILE_LINES=848` in `scripts/go-quality-gates.sh`; the estate target of 500 is report-only (`scripts/soak-baselines/file-length.txt`) |
 | `pages/ABTests.tsx` exists, `lib/hooks/` holds custom hooks | Frontend layout | Neither exists |
 | `lib/api.ts` is the only file that calls `fetch` | Frontend rules | `fetch(` appears in `App.tsx`, `lib/bugbarn.ts`, `lib/projects.tsx`, `lib/analytics.ts` and `pages/Live.tsx` as well |

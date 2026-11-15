@@ -125,6 +125,51 @@ func (g *Graph) Check(rules []*Rule) error {
 // lies beneath it, on path-segment boundaries. "internal/service" matches
 // ".../internal/service" and ".../internal/service/foo" but not
 // ".../internal/serviceless".
+// sliceRoot is the directory that holds one package tree per feature slice.
+const sliceRoot = "internal/features"
+
+// SliceViolations lists the imports from one feature slice into another. A
+// slice reaches another slice only through a function or interface that
+// cmd/funnelbarn injects, so the slices stay movable on their own.
+func (g *Graph) SliceViolations() []*Violation {
+	var out []*Violation
+	for _, pkg := range g.Packages {
+		from := sliceOf(pkg.ImportPath)
+		if from == "" {
+			continue
+		}
+		for _, imp := range pkg.Imports {
+			if to := sliceOf(imp); to != "" && to != from {
+				out = append(out, &Violation{
+					Rule: &Rule{
+						From:          sliceRoot + "/" + from,
+						MustNotImport: sliceRoot + "/" + to,
+						Reason:        "feature slices do not import each other; inject what one needs from another in cmd/funnelbarn",
+					},
+					Package: pkg.ImportPath,
+					Import:  imp,
+				})
+			}
+		}
+	}
+	return out
+}
+
+// sliceOf returns the feature slice an import path belongs to, or "" when it
+// is outside internal/features.
+func sliceOf(importPath string) string {
+	marker := "/" + sliceRoot + "/"
+	i := strings.Index(importPath, marker)
+	if i < 0 {
+		return ""
+	}
+	rest := importPath[i+len(marker):]
+	if j := strings.Index(rest, "/"); j >= 0 {
+		rest = rest[:j]
+	}
+	return rest
+}
+
 func matchesPath(importPath, pattern string) bool {
 	return importPath == pattern ||
 		strings.HasSuffix(importPath, "/"+pattern) ||
@@ -171,6 +216,10 @@ func layerRules() []*Rule {
 			[]string{"internal/api", "internal/mcp"}},
 		{"internal/mcp", "the MCP server and the HTTP API are sibling transports",
 			[]string{"internal/api"}},
+		{"internal/features", "a feature slice owns its handlers, service and store; the transports and cmd/funnelbarn compose it, never the reverse",
+			[]string{"internal/api", "internal/mcp", "internal/service", "internal/ports", "internal/command", "internal/repository"}},
+		{"internal/domain", "domain is the shared kernel below every feature slice",
+			[]string{"internal/features"}},
 	}
 	var rules []*Rule
 	for _, f := range forbidden {

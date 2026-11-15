@@ -1,9 +1,11 @@
-package domain
+// Package widgets is the dashboard widget slice: the breakdown cards on the
+// Insights page, from their HTTP handlers down to their SQL.
+package widgets
 
 import "time"
 
-// DashboardWidget is a user-configured breakdown card on the Insights page.
-type DashboardWidget struct {
+// Widget is a user-configured breakdown card on the Insights page.
+type Widget struct {
 	ID        string    `json:"id"`
 	ProjectID string    `json:"project_id"`
 	EventName string    `json:"event_name"`
@@ -12,10 +14,4 @@ type DashboardWidget struct {
 	Position  int       `json:"position"`
 	Size      int       `json:"size"`
 	CreatedAt time.Time `json:"created_at"`
-}
-
-// PropertyBreakdown is one row of a top-N breakdown result.
-type PropertyBreakdown struct {
-	Value string `json:"value"`
-	Count int64  `json:"count"`
 }

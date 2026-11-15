@@ -244,26 +244,6 @@ type AgentQueries interface {
 	AgentEvents(ctx context.Context, projectID string, names []string, from, to time.Time) ([]domain.AgentEvent, error)
 }
 
-// WidgetQueries is the read side of the dashboard widget port.
-type WidgetQueries interface {
-	WidgetByID(ctx context.Context, id string) (domain.DashboardWidget, error)
-	ListWidgets(ctx context.Context, projectID string) ([]domain.DashboardWidget, error)
-	WidgetBreakdown(ctx context.Context, projectID, eventName, property string, window, limit int) ([]domain.PropertyBreakdown, error)
-}
-
-// WidgetCommands is the write side of the dashboard widget port.
-type WidgetCommands interface {
-	CreateWidget(ctx context.Context, w domain.DashboardWidget) (domain.DashboardWidget, error)
-	UpdateWidget(ctx context.Context, w domain.DashboardWidget) (domain.DashboardWidget, error)
-	DeleteWidget(ctx context.Context, id string) error
-}
-
-// WidgetRepo is the persistence port for dashboard widgets.
-type WidgetRepo interface {
-	WidgetQueries
-	WidgetCommands
-}
-
 // SegmentQueries is the read side of the segment port.
 type SegmentQueries interface {
 	SegmentByID(ctx context.Context, id string) (domain.Segment, error)

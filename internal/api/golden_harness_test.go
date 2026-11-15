@@ -26,6 +26,7 @@ import (
 
 	"github.com/wiebe-xyz/funnelbarn/internal/auth"
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
@@ -124,7 +125,7 @@ func newGoldenServer(t *testing.T, store *repository.Store, health ports.Project
 		Overview:            service.NewOverviewService(store),
 		Sessions:            service.NewSessionService(store),
 		APIKeys:             service.NewAPIKeyService(store),
-		Widgets:             service.NewWidgetService(store),
+		Widgets:             widgets.New(store.DB(), store.ReadDB()),
 		Segments:            service.NewSegmentService(store),
 		Recordings:          recordingsSvc,
 		ProjectHealth:       healthSvc,

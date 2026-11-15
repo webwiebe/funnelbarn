@@ -1,59 +1,78 @@
-package repository
+package widgets
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
-	"slices"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/idgen"
 )
 
-var metadataColumns = []string{
-	"url", "referrer", "referrer_domain",
-	"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-	"browser", "os", "device_type", "country_code",
+// querier is the read surface shared by *sql.DB handles. Methods that read
+// back their own write take the write pool explicitly; plain reads take the
+// read pool.
+type querier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-func IsMetadataColumn(name string) bool {
-	return slices.Contains(metadataColumns, name)
+// ReadStore is the query side of the widget store. It holds only the read
+// pool, so a method with a *ReadStore receiver has no write handle to misuse.
+type ReadStore struct {
+	rdb *sql.DB
 }
 
-func MetadataColumns() []string {
-	return metadataColumns
+// Store embeds the ReadStore and adds the write pool for the command methods.
+type Store struct {
+	*ReadStore
+	db    *sql.DB
+	newID func() (string, error)
 }
 
-func (s *Store) CreateWidget(ctx context.Context, w domain.DashboardWidget) (domain.DashboardWidget, error) {
+// NewStore returns a widget store over the write pool db and the read pool
+// rdb. For an in-memory database both are the same pool.
+func NewStore(db, rdb *sql.DB) *Store {
+	return &Store{ReadStore: &ReadStore{rdb: rdb}, db: db, newID: idgen.UUID}
+}
+
+// clampSize keeps a widget between one and three columns wide.
+func clampSize(size int) int {
+	if size < 1 || size > 3 {
+		return 1
+	}
+	return size
+}
+
+func (s *Store) CreateWidget(ctx context.Context, w Widget) (Widget, error) {
 	var err error
-	w.ID, err = generateUUID()
+	w.ID, err = s.newID()
 	if err != nil {
-		return domain.DashboardWidget{}, fmt.Errorf("generate uuid: %w", err)
+		return Widget{}, fmt.Errorf("generate uuid: %w", err)
 	}
 
-	if w.Size < 1 || w.Size > 3 {
-		w.Size = 1
-	}
+	w.Size = clampSize(w.Size)
 	const q = `INSERT INTO dashboard_widgets (id, project_id, event_name, property, title, position, size) VALUES (?, ?, ?, ?, ?, ?, ?)`
 	if _, err := s.db.ExecContext(ctx, q, w.ID, w.ProjectID, w.EventName, w.Property, w.Title, w.Position, w.Size); err != nil {
-		return domain.DashboardWidget{}, fmt.Errorf("insert widget: %w", err)
+		return Widget{}, fmt.Errorf("insert widget: %w", err)
 	}
 
 	return s.widgetByID(ctx, s.db, w.ID)
 }
 
-func (s *ReadStore) WidgetByID(ctx context.Context, id string) (domain.DashboardWidget, error) {
+func (s *ReadStore) WidgetByID(ctx context.Context, id string) (Widget, error) {
 	return s.widgetByID(ctx, s.rdb, id)
 }
 
-func (s *ReadStore) widgetByID(ctx context.Context, db querier, id string) (domain.DashboardWidget, error) {
+func (s *ReadStore) widgetByID(ctx context.Context, db querier, id string) (Widget, error) {
 	const q = `SELECT id, project_id, event_name, property, COALESCE(title,''), position, size, created_at FROM dashboard_widgets WHERE id = ?`
-	var w domain.DashboardWidget
+	var w Widget
 	if err := db.QueryRowContext(ctx, q, id).Scan(&w.ID, &w.ProjectID, &w.EventName, &w.Property, &w.Title, &w.Position, &w.Size, &w.CreatedAt); err != nil {
-		return domain.DashboardWidget{}, err
+		return Widget{}, err
 	}
 	return w, nil
 }
 
-func (s *ReadStore) ListWidgets(ctx context.Context, projectID string) ([]domain.DashboardWidget, error) {
+func (s *ReadStore) ListWidgets(ctx context.Context, projectID string) ([]Widget, error) {
 	const q = `SELECT id, project_id, event_name, property, COALESCE(title,''), position, size, created_at FROM dashboard_widgets WHERE project_id = ? ORDER BY position, created_at`
 	rows, err := s.rdb.QueryContext(ctx, q, projectID)
 	if err != nil {
@@ -61,9 +80,9 @@ func (s *ReadStore) ListWidgets(ctx context.Context, projectID string) ([]domain
 	}
 	defer rows.Close()
 
-	var widgets []domain.DashboardWidget
+	var widgets []Widget
 	for rows.Next() {
-		var w domain.DashboardWidget
+		var w Widget
 		if err := rows.Scan(&w.ID, &w.ProjectID, &w.EventName, &w.Property, &w.Title, &w.Position, &w.Size, &w.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -72,13 +91,11 @@ func (s *ReadStore) ListWidgets(ctx context.Context, projectID string) ([]domain
 	return widgets, rows.Err()
 }
 
-func (s *Store) UpdateWidget(ctx context.Context, w domain.DashboardWidget) (domain.DashboardWidget, error) {
-	if w.Size < 1 || w.Size > 3 {
-		w.Size = 1
-	}
+func (s *Store) UpdateWidget(ctx context.Context, w Widget) (Widget, error) {
+	w.Size = clampSize(w.Size)
 	const q = `UPDATE dashboard_widgets SET event_name=?, property=?, title=?, position=?, size=? WHERE id=?`
 	if _, err := s.db.ExecContext(ctx, q, w.EventName, w.Property, w.Title, w.Position, w.Size, w.ID); err != nil {
-		return domain.DashboardWidget{}, fmt.Errorf("update widget: %w", err)
+		return Widget{}, fmt.Errorf("update widget: %w", err)
 	}
 	return s.widgetByID(ctx, s.db, w.ID)
 }
@@ -98,7 +115,7 @@ func (s *ReadStore) WidgetBreakdown(ctx context.Context, projectID, eventName, p
 	}
 
 	var q string
-	if IsMetadataColumn(property) {
+	if domain.IsMetadataColumn(property) {
 		q = fmt.Sprintf(`
 			SELECT val, COUNT(*) AS cnt
 			FROM (

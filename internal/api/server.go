@@ -11,6 +11,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/environment"
+	"github.com/wiebe-xyz/funnelbarn/internal/features/widgets"
 	"github.com/wiebe-xyz/funnelbarn/internal/ingest"
 	"github.com/wiebe-xyz/funnelbarn/internal/metrics"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
@@ -33,7 +34,7 @@ type ServerConfig struct {
 	Overview       service.Overview
 	Sessions       service.Sessions
 	APIKeys        service.APIKeys
-	Widgets        service.Widgets
+	Widgets        widgets.API
 	UserAuth       *auth.UserAuthenticator
 	SessionManager *auth.SessionManager
 	AllowedOrigins []string
@@ -153,7 +154,7 @@ type Server struct {
 	overview            service.Overview
 	sessions            service.Sessions
 	apikeys             service.APIKeys
-	widgets             service.Widgets
+	widgets             *widgets.Handler
 	ingest              *ingest.Handler
 	userAuth            *auth.UserAuthenticator
 	sessionManager      *auth.SessionManager
@@ -242,7 +243,7 @@ func NewServer(cfg ServerConfig) *Server {
 		overview:            cfg.Overview,
 		sessions:            cfg.Sessions,
 		apikeys:             cfg.APIKeys,
-		widgets:             cfg.Widgets,
+		widgets:             widgets.NewHandler(cfg.Widgets),
 		ingest:              cfg.Ingest,
 		userAuth:            cfg.UserAuth,
 		sessionManager:      cfg.SessionManager,
@@ -426,13 +427,12 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/v1/projects/{id}/abtests", s.requireSession(s.handleCreateABTest))
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/abtests/{abid}/analysis", s.requireSession(s.handleABTestAnalysis))
 
-	// Widgets (Insights)
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/widgets", s.requireSession(s.handleListWidgets))
-	s.mux.HandleFunc("POST /api/v1/projects/{id}/widgets", s.requireSession(s.handleCreateWidget))
-	s.mux.HandleFunc("PUT /api/v1/projects/{id}/widgets/{wid}", s.requireSession(s.handleUpdateWidget))
-	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/widgets/{wid}", s.requireSession(s.handleDeleteWidget))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/widgets/{wid}/breakdown", s.requireSession(s.handleWidgetBreakdown))
-	s.mux.HandleFunc("GET /api/v1/projects/{id}/widgets/breakdowns", s.requireSession(s.handleBatchBreakdowns))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/widgets", s.requireSession(s.widgets.List))
+	s.mux.HandleFunc("POST /api/v1/projects/{id}/widgets", s.requireSession(s.widgets.Create))
+	s.mux.HandleFunc("PUT /api/v1/projects/{id}/widgets/{wid}", s.requireSession(s.widgets.Update))
+	s.mux.HandleFunc("DELETE /api/v1/projects/{id}/widgets/{wid}", s.requireSession(s.widgets.Delete))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/widgets/{wid}/breakdown", s.requireSession(s.widgets.Breakdown))
+	s.mux.HandleFunc("GET /api/v1/projects/{id}/widgets/breakdowns", s.requireSession(s.widgets.BatchBreakdowns))
 
 	// Sessions
 	s.mux.HandleFunc("GET /api/v1/projects/{id}/sessions", s.requireSession(s.handleListSessions))
