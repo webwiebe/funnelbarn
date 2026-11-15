@@ -8,7 +8,7 @@ import (
 )
 
 func TestIsSensitiveParam(t *testing.T) {
-	sensitive := []string{"token", "TOKEN", "code", "state", "invite", "access_token", "id_token",
+	sensitive := []string{"token", "TOKEN", "code", "user_code", "USER_CODE", "state", "invite", "access_token", "id_token",
 		"refresh-token", "magicToken", "client_secret", "Secret", "password", "new_password"}
 	for _, name := range sensitive {
 		if !IsSensitiveParam(name) {
@@ -55,6 +55,7 @@ func TestRedactURL(t *testing.T) {
 			"https://e.com/cb#access_token=redacted&expires_in=3600"},
 		{"hash-router fragment", "https://e.com/#/reset?token=t&x=1", "https://e.com/#/reset?token=redacted&x=1"},
 		{"plain anchor untouched", "https://e.com/p?token=t#pricing", "https://e.com/p?token=redacted#pricing"},
+		{"device flow user_code", "https://iam.test/device?user_code=ABCD-EFGH&x=1", "https://iam.test/device?user_code=redacted&x=1"},
 		{"zipcode is not code", "https://e.com/?zipcode=1234", "https://e.com/?zipcode=1234"},
 		{"unparseable escape still redacted", "https://e.com/?bad=%zz&token=t", "https://e.com/?bad=%zz&token=redacted"},
 	}

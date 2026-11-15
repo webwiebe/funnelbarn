@@ -15,10 +15,11 @@ const RedactedValue = "redacted"
 // word. code, state and invite are too short to match as substrings: "zipcode"
 // or "statement" are ordinary parameters.
 var exactSensitiveParams = map[string]bool{
-	"token":  true,
-	"code":   true,
-	"state":  true,
-	"invite": true,
+	"token":     true,
+	"code":      true,
+	"user_code": true,
+	"state":     true,
+	"invite":    true,
 }
 
 // sensitiveParamParts are substrings that mark a parameter name sensitive
