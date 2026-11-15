@@ -33,6 +33,15 @@ func NewHandler(svc API) *Handler {
 	return &Handler{svc: svc}
 }
 
+// API returns the service the handlers run on, for the MCP tools. A nil
+// Handler (no agents service configured) returns nil.
+func (h *Handler) API() API {
+	if h == nil {
+		return nil
+	}
+	return h.svc
+}
+
 // LeadTimes reports lead times over ?from/?to (or ?range),
 // optionally for one ?repo (owner/name).
 func (h *Handler) LeadTimes(w http.ResponseWriter, r *http.Request) {
