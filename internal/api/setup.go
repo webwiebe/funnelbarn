@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -39,6 +40,11 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 
 	// Ensure project exists (pending if new).
 	project, err := s.projects.EnsureProjectPending(ctx, slug, slug)
+	var verr *domain.ValidationError
+	if errors.As(err, &verr) {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
 	if err != nil {
 		tracing.RecordError(span, err)
 		slog.Error("setup: ensure project", "slug", slug, "err", err)

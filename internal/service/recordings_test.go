@@ -231,7 +231,7 @@ func TestRecordingService_IngestChunk_BotChunksAreDropped(t *testing.T) {
 	storage := newMemStorage()
 
 	projSvc := service.NewProjectService(store)
-	p, err := projSvc.CreateProject(ctx, "Bot Test", "bot-test")
+	p, err := projSvc.CreateProject(ctx, "Bot Test", "bot-recordings")
 	require.NoError(t, err)
 
 	svc := service.NewRecordingService(store, store, store, storage)
@@ -248,7 +248,7 @@ func TestRecordingService_IngestChunk_BotChunksAreDropped(t *testing.T) {
 			Events:      json.RawMessage(`[{"type":2,"data":{}}]`),
 			StartedAt:   time.Now().UTC().Truncate(time.Second),
 			DurationMs:  1000,
-			ProjectSlug: "bot-test",
+			ProjectSlug: "bot-recordings",
 			ProjectID:   p.ID,
 			UserAgent:   ua,
 		}
@@ -269,7 +269,7 @@ func TestRecordingService_IngestChunk_HumanChunkStillStored(t *testing.T) {
 	storage := newMemStorage()
 
 	projSvc := service.NewProjectService(store)
-	p, err := projSvc.CreateProject(ctx, "Human Test", "human-test")
+	p, err := projSvc.CreateProject(ctx, "Human Test", "human-recordings")
 	require.NoError(t, err)
 
 	svc := service.NewRecordingService(store, store, store, storage)
@@ -280,7 +280,7 @@ func TestRecordingService_IngestChunk_HumanChunkStillStored(t *testing.T) {
 		Events:      json.RawMessage(`[{"type":2,"data":{}}]`),
 		StartedAt:   time.Now().UTC().Truncate(time.Second),
 		DurationMs:  1000,
-		ProjectSlug: "human-test",
+		ProjectSlug: "human-recordings",
 		ProjectID:   p.ID,
 		UserAgent:   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124.0",
 	}))

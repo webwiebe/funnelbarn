@@ -58,7 +58,7 @@ func TestProjectCRUD(t *testing.T) {
 	srv, _ := newTestServer(t)
 
 	// Create
-	w := postJSON(t, srv, "/api/v1/projects", map[string]string{"name": "CRUD Test", "slug": "crud-test"}, nil)
+	w := postJSON(t, srv, "/api/v1/projects", map[string]string{"name": "CRUD Test", "slug": "crud-project"}, nil)
 	assertStatus(t, w, 201)
 	var proj domain.Project
 	decodeJSON(t, w, &proj)
@@ -345,7 +345,7 @@ func TestFunnelSegmentsEndpoint(t *testing.T) {
 func TestProjectResponseShape(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	w := postJSON(t, srv, "/api/v1/projects", map[string]string{"name": "Shape Test", "slug": "shape-test"}, nil)
+	w := postJSON(t, srv, "/api/v1/projects", map[string]string{"name": "Shape Test", "slug": "shape-project"}, nil)
 	assertStatus(t, w, 201)
 
 	var proj map[string]any
