@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -24,7 +25,7 @@ const flagCreateUsage = "usage: funnelbarn flag create --project=<slug> --key=<f
 // an IAMBarn user token, which a deploy has neither of.
 func runFlagCmd(cfg config.Config, args []string) error {
 	if len(args) == 0 || args[0] != "create" {
-		return fmt.Errorf(flagCreateUsage)
+		return errors.New(flagCreateUsage)
 	}
 	fs := flag.NewFlagSet("flag create", flag.ContinueOnError)
 	projectSlug := fs.String("project", "", "project slug")
