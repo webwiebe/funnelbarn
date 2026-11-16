@@ -46,6 +46,7 @@ Authentication tokens used by SDKs and integrations. Keys are hashed before stor
 | `key_hash` | TEXT UNIQUE | NO | SHA256 hex of the plaintext key — 64 hex chars |
 | `scope` | TEXT | NO | `"full"` (complete API access) or `"ingest"` (events only) |
 | `last_used_at` | DATETIME | YES | Updated on each successful authentication via `TouchAPIKey()` |
+| `environment` | TEXT | NO | Canonical environment the key files every event under (#545); `""` = the key chooses none |
 | `expires_at` | DATETIME | YES | Optional expiration (NULL = never expires) |
 | `created_at` | DATETIME | NO | Creation timestamp |
 
