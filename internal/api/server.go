@@ -53,6 +53,7 @@ type Server struct {
 	bugbarnProject      string
 	dogfoodAPIKey       string
 	dogfoodProject      string
+	dogfoodEnvironment  string
 	trustedProxies      []string
 	iambarnUsers        service.IAMBarnUsers
 	postLogoutRedirect  string
@@ -138,6 +139,7 @@ func NewServer(cfg ServerConfig) *Server {
 		bugbarnProject:      cfg.BugbarnProject,
 		dogfoodAPIKey:       cfg.DogfoodAPIKey,
 		dogfoodProject:      cfg.DogfoodProject,
+		dogfoodEnvironment:  cfg.DogfoodEnvironment,
 		trustedProxies:      cfg.TrustedProxies,
 		loginLimiter:        newRateLimiter(cfg.LoginRatePerMinute, cfg.LoginRateBurst),
 		eventsLimiter:       newRateLimiter(cfg.IngestRatePerMinute, cfg.IngestRateBurst),

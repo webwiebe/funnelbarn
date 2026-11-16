@@ -180,6 +180,7 @@ func startDogfood(cfg config.Config, cleanup *cleanupStack) {
 		APIKey:      cfg.DogfoodAPIKey,
 		Endpoint:    strings.TrimRight(cfg.PublicURL, "/"),
 		ProjectName: cfg.DogfoodProject,
+		Environment: environment.Normalize(cfg.SelfEnvironment),
 		// Without this the SDK falls back to its own log.Printf, which
 		// bypasses slog and so never reaches BugBarn. A dogfood key minted
 		// for the wrong project rejects every event permanently; that has
@@ -277,6 +278,7 @@ func newServerConfig(ctx context.Context, cfg config.Config, version string, d d
 		BugbarnProject:        cfg.SelfProject,
 		DogfoodAPIKey:         cfg.DogfoodAPIKey,
 		DogfoodProject:        cfg.DogfoodProject,
+		DogfoodEnvironment:    environment.Normalize(cfg.SelfEnvironment),
 		IAMBarnUsers:          service.NewIAMBarnUserService(store),
 		PostLogoutRedirectURI: cfg.PostLogoutRedirectURI,
 		WebSessions:           service.NewWebSessionService(store),

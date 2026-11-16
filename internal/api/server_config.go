@@ -52,6 +52,9 @@ type ServerConfig struct {
 	BugbarnProject   string
 	DogfoodAPIKey    string
 	DogfoodProject   string
+	// DogfoodEnvironment is the deploy environment the dashboard tags its own
+	// analytics events with, so one project and key serve every environment.
+	DogfoodEnvironment string
 
 	IAMBarnUsers service.IAMBarnUsers
 
