@@ -36,7 +36,7 @@ func (q *Queries) EnsureSetupAPIKey(ctx context.Context, arg EnsureSetupAPIKeyPa
 }
 
 const getAPIKeyByID = `-- name: GetAPIKeyByID :one
-SELECT id, project_id, name, key_hash, scope, last_used_at, created_at
+SELECT id, project_id, name, key_hash, scope, last_used_at, created_at, environment
 FROM api_keys WHERE id = ?
 `
 
@@ -51,20 +51,22 @@ func (q *Queries) GetAPIKeyByID(ctx context.Context, id string) (ApiKey, error) 
 		&i.Scope,
 		&i.LastUsedAt,
 		&i.CreatedAt,
+		&i.Environment,
 	)
 	return i, err
 }
 
 const insertAPIKey = `-- name: InsertAPIKey :exec
-INSERT INTO api_keys (id, project_id, name, key_hash, scope) VALUES (?, ?, ?, ?, ?)
+INSERT INTO api_keys (id, project_id, name, key_hash, scope, environment) VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type InsertAPIKeyParams struct {
-	ID        string `json:"id"`
-	ProjectID string `json:"project_id"`
-	Name      string `json:"name"`
-	KeyHash   string `json:"key_hash"`
-	Scope     string `json:"scope"`
+	ID          string `json:"id"`
+	ProjectID   string `json:"project_id"`
+	Name        string `json:"name"`
+	KeyHash     string `json:"key_hash"`
+	Scope       string `json:"scope"`
+	Environment string `json:"environment"`
 }
 
 func (q *Queries) InsertAPIKey(ctx context.Context, arg InsertAPIKeyParams) error {
@@ -74,12 +76,13 @@ func (q *Queries) InsertAPIKey(ctx context.Context, arg InsertAPIKeyParams) erro
 		arg.Name,
 		arg.KeyHash,
 		arg.Scope,
+		arg.Environment,
 	)
 	return err
 }
 
 const listAPIKeysByProject = `-- name: ListAPIKeysByProject :many
-SELECT id, project_id, name, key_hash, scope, last_used_at, created_at
+SELECT id, project_id, name, key_hash, scope, last_used_at, created_at, environment
 FROM api_keys WHERE project_id = ? ORDER BY created_at
 `
 
@@ -100,6 +103,7 @@ func (q *Queries) ListAPIKeysByProject(ctx context.Context, projectID string) ([
 			&i.Scope,
 			&i.LastUsedAt,
 			&i.CreatedAt,
+			&i.Environment,
 		); err != nil {
 			return nil, err
 		}
@@ -115,7 +119,7 @@ func (q *Queries) ListAPIKeysByProject(ctx context.Context, projectID string) ([
 }
 
 const listAllAPIKeys = `-- name: ListAllAPIKeys :many
-SELECT id, project_id, name, key_hash, scope, last_used_at, created_at
+SELECT id, project_id, name, key_hash, scope, last_used_at, created_at, environment
 FROM api_keys ORDER BY created_at
 `
 
@@ -136,6 +140,7 @@ func (q *Queries) ListAllAPIKeys(ctx context.Context) ([]ApiKey, error) {
 			&i.Scope,
 			&i.LastUsedAt,
 			&i.CreatedAt,
+			&i.Environment,
 		); err != nil {
 			return nil, err
 		}
@@ -170,6 +175,36 @@ func (q *Queries) LookupAPIKeyBySHA256(ctx context.Context, keyHash string) (Loo
 	var i LookupAPIKeyBySHA256Row
 	err := row.Scan(&i.ProjectID, &i.Scope)
 	return i, err
+}
+
+const lookupAPIKeyEnvironmentBySHA256 = `-- name: LookupAPIKeyEnvironmentBySHA256 :one
+SELECT environment FROM api_keys WHERE key_hash = ? LIMIT 1
+`
+
+// The environment a key is mapped to (#545), empty when it chooses none. Read
+// only after the key authenticated, so it needs no project join.
+func (q *Queries) LookupAPIKeyEnvironmentBySHA256(ctx context.Context, keyHash string) (string, error) {
+	row := q.db.QueryRowContext(ctx, lookupAPIKeyEnvironmentBySHA256, keyHash)
+	var environment string
+	err := row.Scan(&environment)
+	return environment, err
+}
+
+const setAPIKeyEnvironment = `-- name: SetAPIKeyEnvironment :execrows
+UPDATE api_keys SET environment = ? WHERE id = ?
+`
+
+type SetAPIKeyEnvironmentParams struct {
+	Environment string `json:"environment"`
+	ID          string `json:"id"`
+}
+
+func (q *Queries) SetAPIKeyEnvironment(ctx context.Context, arg SetAPIKeyEnvironmentParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setAPIKeyEnvironment, arg.Environment, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const touchAPIKey = `-- name: TouchAPIKey :exec

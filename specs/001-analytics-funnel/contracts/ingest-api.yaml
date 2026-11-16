@@ -1273,6 +1273,9 @@ components:
           type: string
           format: date-time
           description: Omitted when the key has never authenticated a request
+        environment:
+          type: string
+          description: Environment every event ingested with this key is filed under, whatever the event says. Omitted when the key chooses none.
 
     APIKeyScope:
       type: string

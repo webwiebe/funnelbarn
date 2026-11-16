@@ -248,50 +248,13 @@ func runProjectCmd(cfg config.Config, args []string) error {
 // runAPIKeyCmd handles: funnelbarn apikey create --project=default --name=my-app
 func runAPIKeyCmd(cfg config.Config, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: funnelbarn apikey <create>")
+		return fmt.Errorf("usage: funnelbarn apikey <create|set-environment>")
 	}
 	switch args[0] {
 	case "create":
-		fs := flag.NewFlagSet("apikey create", flag.ContinueOnError)
-		projectSlug := fs.String("project", "default", "project slug")
-		name := fs.String("name", "", "key name/label")
-		scope := fs.String("scope", domain.APIKeyScopeFull, "key scope: full or ingest")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		*name = strings.TrimSpace(*name)
-		if *name == "" {
-			return fmt.Errorf("--name is required")
-		}
-		if *scope != domain.APIKeyScopeFull && *scope != domain.APIKeyScopeIngest {
-			return fmt.Errorf("--scope must be %q or %q", domain.APIKeyScopeFull, domain.APIKeyScopeIngest)
-		}
-		store, err := repository.Open(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		defer logShutdown(slog.LevelError, "store", store.Close)
-		ctx := context.Background()
-		projects := service.NewProjectService(store)
-		project, err := projects.GetProjectBySlug(ctx, *projectSlug)
-		if err != nil {
-			project, err = projects.CreateProject(ctx, *projectSlug, *projectSlug)
-			if err != nil {
-				return fmt.Errorf("create project %q: %w", *projectSlug, err)
-			}
-			fmt.Printf("Project %q created automatically.\n", *projectSlug)
-		}
-		key, plaintext, err := service.NewAPIKeyService(store).IssueAPIKey(ctx, *name, project.ID, *scope)
-		if err != nil {
-			var genErr *service.KeyGenerationError
-			if errors.As(err, &genErr) {
-				return fmt.Errorf("generate key: %w", genErr.Err)
-			}
-			return fmt.Errorf("create api key: %w", err)
-		}
-		fmt.Printf("API key created (id=%s, project=%s, name=%s, scope=%s)\n", key.ID, project.Slug, key.Name, key.Scope)
-		fmt.Printf("Key (shown once, store securely): %s\n", plaintext)
-		return nil
+		return runAPIKeyCreate(cfg, args[1:])
+	case "set-environment":
+		return runAPIKeySetEnvironment(cfg, args[1:])
 	default:
 		return fmt.Errorf("unknown apikey subcommand %q", args[0])
 	}
@@ -337,4 +300,48 @@ func runSubcommand(cfg config.Config, args []string) (handled bool, err error) {
 		return false, nil
 	}
 	return true, fn(cfg, args[1:])
+}
+
+// runAPIKeyCreate handles: funnelbarn apikey create --project=default --name=my-app
+func runAPIKeyCreate(cfg config.Config, args []string) error {
+	fs := flag.NewFlagSet("apikey create", flag.ContinueOnError)
+	projectSlug := fs.String("project", "default", "project slug")
+	name := fs.String("name", "", "key name/label")
+	scope := fs.String("scope", domain.APIKeyScopeFull, "key scope: full or ingest")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	*name = strings.TrimSpace(*name)
+	if *name == "" {
+		return fmt.Errorf("--name is required")
+	}
+	if *scope != domain.APIKeyScopeFull && *scope != domain.APIKeyScopeIngest {
+		return fmt.Errorf("--scope must be %q or %q", domain.APIKeyScopeFull, domain.APIKeyScopeIngest)
+	}
+	store, err := repository.Open(cfg.DBPath)
+	if err != nil {
+		return err
+	}
+	defer logShutdown(slog.LevelError, "store", store.Close)
+	ctx := context.Background()
+	projects := service.NewProjectService(store)
+	project, err := projects.GetProjectBySlug(ctx, *projectSlug)
+	if err != nil {
+		project, err = projects.CreateProject(ctx, *projectSlug, *projectSlug)
+		if err != nil {
+			return fmt.Errorf("create project %q: %w", *projectSlug, err)
+		}
+		fmt.Printf("Project %q created automatically.\n", *projectSlug)
+	}
+	key, plaintext, err := service.NewAPIKeyService(store).IssueAPIKey(ctx, *name, project.ID, *scope)
+	if err != nil {
+		var genErr *service.KeyGenerationError
+		if errors.As(err, &genErr) {
+			return fmt.Errorf("generate key: %w", genErr.Err)
+		}
+		return fmt.Errorf("create api key: %w", err)
+	}
+	fmt.Printf("API key created (id=%s, project=%s, name=%s, scope=%s)\n", key.ID, project.Slug, key.Name, key.Scope)
+	fmt.Printf("Key (shown once, store securely): %s\n", plaintext)
+	return nil
 }

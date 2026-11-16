@@ -70,7 +70,7 @@ func newAPIAuthorizer(cfg config.Config, store *repository.Store, commands comma
 	} else {
 		base = auth.New(cfg.APIKey)
 	}
-	return base.WithDBLookup(store.ValidAPIKeySHA256, apiKeyToucher(store, commands)), nil
+	return base.WithDBLookup(store.ValidAPIKeySHA256, apiKeyToucher(store, commands)).WithKeyEnvironment(store.APIKeyEnvironmentSHA256), nil
 }
 
 // apiKeyToucher returns the DBKeyTouch for the authorizer: a direct write when

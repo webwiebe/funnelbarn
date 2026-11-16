@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -472,5 +473,40 @@ func TestServeHTTP_LiveKeyStillAccepted(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("no record enqueued")
+	}
+}
+
+// The environment a key is mapped to (#545) travels with the spooled record,
+// and a failing lookup still accepts the event.
+func TestServeHTTP_RecordCarriesTheKeyEnvironment(t *testing.T) {
+	lookup := func(_ context.Context, _ string) (string, string, bool, error) {
+		return "proj-123", "ingest", true, nil
+	}
+	for _, tc := range []struct {
+		name string
+		env  func(context.Context, string) (string, error)
+		want string
+	}{
+		{"mapped", func(context.Context, string) (string, error) { return "staging", nil }, "staging"},
+		{"unmapped", func(context.Context, string) (string, error) { return "", nil }, ""},
+		{"lookup fails", func(context.Context, string) (string, error) { return "", errors.New("db down") }, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := auth.New("static").WithDBLookup(lookup, nil).WithKeyEnvironment(tc.env)
+			h := NewHandler(a, newTestSpool(t), 0)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{"name":"pageview"}`))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set(auth.HeaderAPIKey, "project-key")
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+
+			if w.Code != http.StatusAccepted {
+				t.Fatalf("want 202, got %d (body: %s)", w.Code, w.Body.String())
+			}
+			if got := (<-h.queue).KeyEnvironment; got != tc.want {
+				t.Errorf("KeyEnvironment: want %q, got %q", tc.want, got)
+			}
+		})
 	}
 }
