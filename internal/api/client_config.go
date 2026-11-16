@@ -30,6 +30,7 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		FunnelbarnEndpoint      string     `json:"funnelbarn_endpoint,omitempty"`
 		FunnelbarnAPIKey        string     `json:"funnelbarn_api_key,omitempty"`
 		FunnelbarnProject       string     `json:"funnelbarn_project,omitempty"`
+		FunnelbarnEnvironment   string     `json:"funnelbarn_environment,omitempty"`
 		FunnelbarnRecording     bool       `json:"funnelbarn_recording,omitempty"`
 		FunnelbarnRecordingRate float64    `json:"funnelbarn_recording_rate,omitempty"`
 		IAMBarn                 iambarnOut `json:"iambarn,omitempty"`
@@ -37,13 +38,14 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		LocalAuthAvailable      bool       `json:"local_auth_available"`
 	}
 	resp := response{
-		BugbarnEndpoint:    s.bugbarnEndpoint,
-		BugbarnIngestKey:   s.bugbarnIngestKey,
-		BugbarnProject:     s.bugbarnProject,
-		FunnelbarnEndpoint: s.publicURL,
-		FunnelbarnAPIKey:   s.dogfoodAPIKey,
-		FunnelbarnProject:  s.dogfoodProject,
-		LocalAuthAvailable: s.userAuth != nil && s.userAuth.Enabled(),
+		BugbarnEndpoint:       s.bugbarnEndpoint,
+		BugbarnIngestKey:      s.bugbarnIngestKey,
+		BugbarnProject:        s.bugbarnProject,
+		FunnelbarnEndpoint:    s.publicURL,
+		FunnelbarnAPIKey:      s.dogfoodAPIKey,
+		FunnelbarnProject:     s.dogfoodProject,
+		FunnelbarnEnvironment: s.dogfoodEnvironment,
+		LocalAuthAvailable:    s.userAuth != nil && s.userAuth.Enabled(),
 	}
 
 	// Expose recording config when recording is enabled and settings are available.

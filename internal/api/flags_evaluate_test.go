@@ -263,6 +263,7 @@ func TestHandleClientConfig_ExposesBugbarnFields(t *testing.T) {
 		BugbarnEndpoint:     "https://bugbarn.example.com",
 		BugbarnIngestKey:    "secret-key",
 		BugbarnProject:      "funnelbarn",
+		DogfoodEnvironment:  "staging",
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/client-config", nil)
@@ -282,6 +283,9 @@ func TestHandleClientConfig_ExposesBugbarnFields(t *testing.T) {
 	}
 	if resp["bugbarn_project"] != "funnelbarn" {
 		t.Errorf("bugbarn_project: got %v (expected dogfood routing slug)", resp["bugbarn_project"])
+	}
+	if resp["funnelbarn_environment"] != "staging" {
+		t.Errorf("funnelbarn_environment: got %v (the dashboard tags its events with the deploy environment)", resp["funnelbarn_environment"])
 	}
 }
 

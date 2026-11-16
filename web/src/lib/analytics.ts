@@ -25,7 +25,7 @@ async function loadConfig(): Promise<void> {
       ? cfg.funnelbarn_recording_rate : 1.0
     const recording = recordingEnabled && Math.random() < sampleRate
 
-    client = new FunnelBarnClient({ endpoint, apiKey, projectName, recording })
+    client = new FunnelBarnClient({ endpoint, apiKey, projectName, recording, environment: cfg.funnelbarn_environment })
   } catch {
     // Config fetch failed — tracking disabled.
   }
