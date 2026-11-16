@@ -21,12 +21,14 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:type" content="website" />
     <script
+      is:inline
       src="https://funnelbarn.wiebe.xyz/sdk.js"
       data-api-key="fc65701346b18aa3122fb31d9a5a85ff5d5d6825b1e1c3a806a06d953eca73b6"
       data-recording="true"
       defer
     ></script>
     <script
+      is:inline
       src="https://brandtrace.net/sdk.js"
       data-site-key="6dce329d58a24c94a6d2db444349a6a4"
       defer
