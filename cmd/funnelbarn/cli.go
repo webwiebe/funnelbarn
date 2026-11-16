@@ -317,6 +317,7 @@ var subcommands = map[string]func(cfg config.Config, args []string) error{
 	"user":               runUserCmd,
 	"project":            runProjectCmd,
 	"apikey":             runAPIKeyCmd,
+	"flag":               runFlagCmd,
 	"recordings":         runRecordingsCmd,
 }
 
