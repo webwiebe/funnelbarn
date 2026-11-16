@@ -31,13 +31,6 @@ Dimensions, their thresholds, and their written exit criteria:
                   dimension. Interim walk-down of the blocking limits:
                   848/845 -> 700 -> 600 -> 500.
 
-  go-complexity   Go functions over cyclomatic 12 in internal/, cmd/, sdks/go.
-                  27 functions in 21 files today. The blocking limit in
-                  scripts/go-quality-gates.sh is still 49.
-                  ENFORCE AT 0: when the baseline is empty, set MAX_CYCLO=12
-                  there and delete this dimension. Interim walk-down of the
-                  blocking limit: 49 -> 30 -> 20 -> 15 -> 12.
-
   web-complexity  web/src functions over cyclomatic 12. 22 violations in 17
                   files today. The blocking eslint limit is still 55.
                   ENFORCE AT 0: when the baseline is empty, set
@@ -66,7 +59,6 @@ BASELINE_DIR = REPO_ROOT / "scripts" / "soak-baselines"
 
 # Pinned tool versions. A soak that fetches @latest is a check whose behaviour
 # can change without a commit; that is how a green run stops meaning anything.
-GOCYCLO_VERSION = "v0.6.0"
 GOLANGCI_VERSION = "v2.15.0"
 
 # Estate targets. These are the thresholds the soaks measure against; they are
@@ -205,52 +197,6 @@ def _run(cmd: list[str], cwd: Path, allowed_returncodes: tuple[int, ...]) -> sub
     return proc
 
 
-def _ensure_gocyclo() -> str:
-    """Return a path to a pinned gocyclo, installing it if needed."""
-    gobin = Path(
-        subprocess.run(
-            ["go", "env", "GOPATH"], capture_output=True, text=True, check=True
-        ).stdout.strip()
-    ) / "bin"
-    binary = gobin / f"gocyclo-{GOCYCLO_VERSION}"
-    if not binary.exists():
-        env = dict(os.environ, GOBIN=str(gobin))
-        staged = gobin / "gocyclo"
-        subprocess.run(
-            ["go", "install", f"github.com/fzipp/gocyclo/cmd/gocyclo@{GOCYCLO_VERSION}"],
-            env=env,
-            check=True,
-        )
-        shutil.move(str(staged), str(binary))
-    return str(binary)
-
-
-def measure_go_complexity(root: Path = REPO_ROOT) -> dict[str, int]:
-    gocyclo = _ensure_gocyclo()
-    targets = [d for d in ("internal", "cmd", "sdks/go") if (root / d).is_dir()]
-    if not targets:
-        raise MeasurementError("no Go source roots found; refusing to report zero findings")
-    proc = _run(
-        [gocyclo, "-over", str(CYCLO_LIMIT), "-ignore", r"_test|sqlcgen|/mock/", *targets],
-        cwd=root,
-        allowed_returncodes=(0, 1),
-    )
-    if proc.stderr.strip():
-        raise MeasurementError(f"gocyclo wrote to stderr:\n{proc.stderr}")
-    if proc.returncode == 1 and not proc.stdout.strip():
-        raise MeasurementError("gocyclo exited 1 with no findings; treating that as a tool failure")
-
-    measured: dict[str, int] = {}
-    for line in proc.stdout.splitlines():
-        # <complexity> <package> <func> <file>:<line>:<col>
-        fields = line.split()
-        if len(fields) < 4:
-            raise MeasurementError(f"unparseable gocyclo line: {line!r}")
-        path = fields[-1].rsplit(":", 2)[0]
-        measured[path] = measured.get(path, 0) + 1
-    return measured
-
-
 def measure_web_complexity(root: Path = REPO_ROOT) -> dict[str, int]:
     web = root / "web"
     if not (web / "node_modules").is_dir():
@@ -313,18 +259,6 @@ DIMENSIONS = {
             "ENFORCE AT 0 entries: set MAX_FILE_LINES=500 in scripts/go-quality-gates.sh,\n"
             "extend that scan to sdks/, set eslint max-lines to 500, drop this dimension.\n"
             "Refresh with: python3 scripts/quality-soak.py file-length --update-baseline"
-        ),
-    },
-    "go-complexity": {
-        "measure": measure_go_complexity,
-        "unit": "functions",
-        "header": (
-            f"SOAK BASELINE: Go functions over cyclomatic complexity {CYCLO_LIMIT}.\n"
-            "Scope: internal/, cmd/, sdks/go. Value is the count of offending functions\n"
-            "in that file, which stays stable when code moves inside the file.\n"
-            "The BLOCKING limit in scripts/go-quality-gates.sh is still 49.\n"
-            "ENFORCE AT 0 entries: set MAX_CYCLO=12 there and drop this dimension.\n"
-            "Refresh with: python3 scripts/quality-soak.py go-complexity --update-baseline"
         ),
     },
     "web-complexity": {

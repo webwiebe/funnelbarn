@@ -6,15 +6,19 @@
 # (the numbers may only ratchet DOWN, never up).
 #
 # Covers: cyclomatic complexity, file length, and code duplication.
-# First-party code only (internal/, cmd/); generated (sqlcgen), mocks, and
+# First-party code only (internal/, cmd/; complexity also covers sdks/go); generated (sqlcgen), mocks, and
 # _test.go files are excluded.
 set -euo pipefail
 
 # ---- pinned thresholds -------------------------------------------------------
-MAX_CYCLO=49        # gocyclo: no function may exceed this complexity
+MAX_CYCLO=12        # gocyclo: no function may exceed this complexity (estate target)
 MAX_FILE_LINES=848  # no non-test/non-generated .go file may exceed this
 MAX_DUPL_HITS=2     # dupl -plumbing lines (2 = one known clone group)
 DUPL_TOKENS=150     # dupl clone-detection sensitivity (tokens)
+# Pinned tool versions: a gate whose tool version can change without a commit is
+# a gate whose green run stops meaning anything.
+GOCYCLO_VERSION=v0.6.0
+DUPL_VERSION=v1.1.0
 # -----------------------------------------------------------------------------
 
 GB="$(go env GOPATH)/bin"
@@ -27,10 +31,13 @@ while IFS= read -r f; do SRC+=("$f"); done < <(find internal cmd -name '*.go' \
   -not -name '*_test.go' -not -path '*/sqlcgen/*' -not -path '*/mock/*' | sort)
 
 echo "==> cyclomatic complexity (gocyclo, max ${MAX_CYCLO})"
-if ! command -v "${GB}/gocyclo" >/dev/null 2>&1; then
-  go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+# A binary already on disk may be any version, so check the build info and
+# (re)install the pin when it differs.
+tool_version() { go version -m "$1" 2>/dev/null | awk '$1 == "mod" { print $3; exit }'; }
+if [ "$(tool_version "${GB}/gocyclo")" != "${GOCYCLO_VERSION}" ]; then
+  go install "github.com/fzipp/gocyclo/cmd/gocyclo@${GOCYCLO_VERSION}"
 fi
-if "${GB}/gocyclo" -over "${MAX_CYCLO}" -ignore '_test|sqlcgen|/mock/' internal cmd; then
+if "${GB}/gocyclo" -over "${MAX_CYCLO}" -ignore '_test|sqlcgen|/mock/' internal cmd sdks/go; then
   echo "    ok: no function over ${MAX_CYCLO}"
 else
   echo "    FAIL: function(s) above cyclomatic ${MAX_CYCLO} (listed above)"; fail=1
@@ -45,8 +52,8 @@ done
 if [ "$overlen" -eq 0 ]; then echo "    ok: no file over ${MAX_FILE_LINES} lines"; else fail=1; fi
 
 echo "==> code duplication (dupl, ${DUPL_TOKENS} tokens, max ${MAX_DUPL_HITS} hits)"
-if ! command -v "${GB}/dupl" >/dev/null 2>&1; then
-  go install github.com/mibk/dupl@latest
+if [ "$(tool_version "${GB}/dupl")" != "${DUPL_VERSION}" ]; then
+  go install "github.com/mibk/dupl@${DUPL_VERSION}"
 fi
 hits=$("${GB}/dupl" -plumbing -t "${DUPL_TOKENS}" "${SRC[@]}" 2>/dev/null | wc -l | tr -d ' ')
 if [ "$hits" -gt "$MAX_DUPL_HITS" ]; then

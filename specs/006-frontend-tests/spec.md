@@ -27,7 +27,7 @@ The web app has unit tests that run under Vitest with React Testing Library, and
 | Vitest `^1.6.0`, jsdom `^24.0.0`, `@testing-library/user-event` | Original task | `web/package.json` has vitest `^4.1.5`, jsdom `^29.1.0`, and no `user-event` |
 | `npm test` in `web/`, and a step `cd web && npm test` in `build-and-test.yml` | Original task | The repo is a pnpm workspace; tests run as `pnpm test:coverage` in the `frontend-test` job of `ci.yml` |
 | At least 8 test cases | Acceptance criteria | 48 test files exist under `web/src` |
-| Not stated | | Coverage floors are lines 51, statements 48, functions 42, branches 45 (`web/vite.config.ts`); the 80 percent target in spec 003 is not enforced |
+| Not stated | | Coverage floors are lines 66, statements 63, functions 56, branches 63 (`web/vite.config.ts`, 2 points under the live 68/65/58/65); the 80 percent target in spec 003 is not enforced |
 
 ## Proof contract
 

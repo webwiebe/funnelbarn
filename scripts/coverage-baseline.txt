@@ -1,7 +1,7 @@
 # Go coverage ratchet floors — whole-percent, pinned at current.
 # Raise (never lower) these as coverage improves. Regenerate with
 #   python3 scripts/coverage-gate.py --update
-TOTAL	64
+TOTAL	84
 cmd/funnelbarn	11
 internal/api	61
 internal/archtest	88
