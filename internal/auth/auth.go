@@ -23,6 +23,9 @@ const HeaderAPIKey = "x-funnelbarn-api-key"
 // Returns (projectID, scope, true, nil) on match, ("", "", false, nil) when not found.
 type DBKeyLookupWithProject func(ctx context.Context, keySHA256 string) (projectID string, scope string, found bool, err error)
 
+// DBKeyEnvironment returns the environment a key is mapped to ("" for none).
+type DBKeyEnvironment func(ctx context.Context, keySHA256 string) (string, error)
+
 // DBKeyTouch is called after a successful DB-based auth to update last_used_at.
 type DBKeyTouch func(ctx context.Context, keySHA256 string) error
 
@@ -31,6 +34,8 @@ type Authorizer struct {
 	apiKeyHash []byte
 	dbLookup   DBKeyLookupWithProject
 	dbTouch    DBKeyTouch
+	// dbEnvironment, when set, answers KeyEnvironment.
+	dbEnvironment DBKeyEnvironment
 	// evaluateKeys, when set, answers ValidForEvaluate from memory (key_snapshot.go).
 	evaluateKeys *KeySnapshot
 }
@@ -66,7 +71,29 @@ func (a *Authorizer) WithDBLookup(lookup DBKeyLookupWithProject, touch DBKeyTouc
 	if a == nil {
 		return &Authorizer{dbLookup: lookup, dbTouch: touch}
 	}
-	return &Authorizer{apiKeyHash: a.apiKeyHash, dbLookup: lookup, dbTouch: touch, evaluateKeys: a.evaluateKeys}
+	return &Authorizer{apiKeyHash: a.apiKeyHash, dbLookup: lookup, dbTouch: touch, dbEnvironment: a.dbEnvironment, evaluateKeys: a.evaluateKeys}
+}
+
+// WithKeyEnvironment returns a copy of the Authorizer that can say which
+// environment a DB key is mapped to.
+func (a *Authorizer) WithKeyEnvironment(lookup DBKeyEnvironment) *Authorizer {
+	cp := Authorizer{}
+	if a != nil {
+		cp = *a
+	}
+	cp.dbEnvironment = lookup
+	return &cp
+}
+
+// KeyEnvironment returns the environment the provided key is mapped to, or ""
+// when it has none, is not a DB key, or no lookup is configured. Call it after
+// the key authenticated.
+func (a *Authorizer) KeyEnvironment(ctx context.Context, provided string) (string, error) {
+	if a == nil || a.dbEnvironment == nil {
+		return "", nil
+	}
+	sum := sha256.Sum256([]byte(strings.TrimSpace(provided)))
+	return a.dbEnvironment(ctx, hex.EncodeToString(sum[:]))
 }
 
 // Enabled returns true when at least one auth mechanism is configured.

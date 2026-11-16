@@ -1,16 +1,16 @@
 -- name: InsertAPIKey :exec
-INSERT INTO api_keys (id, project_id, name, key_hash, scope) VALUES (?, ?, ?, ?, ?);
+INSERT INTO api_keys (id, project_id, name, key_hash, scope, environment) VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: GetAPIKeyByID :one
-SELECT id, project_id, name, key_hash, scope, last_used_at, created_at
+SELECT id, project_id, name, key_hash, scope, last_used_at, created_at, environment
 FROM api_keys WHERE id = ?;
 
 -- name: ListAPIKeysByProject :many
-SELECT id, project_id, name, key_hash, scope, last_used_at, created_at
+SELECT id, project_id, name, key_hash, scope, last_used_at, created_at, environment
 FROM api_keys WHERE project_id = ? ORDER BY created_at;
 
 -- name: ListAllAPIKeys :many
-SELECT id, project_id, name, key_hash, scope, last_used_at, created_at
+SELECT id, project_id, name, key_hash, scope, last_used_at, created_at, environment
 FROM api_keys ORDER BY created_at;
 
 -- name: DeleteAPIKey :exec
@@ -24,6 +24,14 @@ DELETE FROM api_keys WHERE id = ?;
 -- dead-lettered. The inner join makes such a key not found, so the caller gets
 -- a 401 it can act on instead of silence.
 SELECT k.project_id, k.scope FROM api_keys k JOIN projects p ON p.id = k.project_id WHERE k.key_hash = ? LIMIT 1;
+
+-- name: LookupAPIKeyEnvironmentBySHA256 :one
+-- The environment a key is mapped to (#545), empty when it chooses none. Read
+-- only after the key authenticated, so it needs no project join.
+SELECT environment FROM api_keys WHERE key_hash = ? LIMIT 1;
+
+-- name: SetAPIKeyEnvironment :execrows
+UPDATE api_keys SET environment = ? WHERE id = ?;
 
 -- name: TouchAPIKey :exec
 UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key_hash = ?;

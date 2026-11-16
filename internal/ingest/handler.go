@@ -263,6 +263,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ProjectSlug:   projectSlug,
 		UserAgent:     r.Header.Get("User-Agent"),
 	}
+	record.KeyEnvironment = h.keyEnvironment(r)
 
 	select {
 	case h.queue <- record:
@@ -291,6 +292,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"accepted": true,
 		"ingestId": ingestID,
 	})
+}
+
+// keyEnvironment returns the environment the request's key is mapped to. A
+// failed lookup files the event by its own environment instead of refusing it:
+// dropping an event costs more than mis-filing it, and the warning says so.
+func (h *Handler) keyEnvironment(r *http.Request) string {
+	env, err := h.auth.KeyEnvironment(r.Context(), r.Header.Get(auth.HeaderAPIKey))
+	if err != nil {
+		slog.WarnContext(r.Context(), "ingest: key environment lookup failed", "err", err)
+		return ""
+	}
+	return env
 }
 
 // available reports whether the handler is wired to serve ingest. When it is

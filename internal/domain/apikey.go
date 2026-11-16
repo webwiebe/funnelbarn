@@ -10,6 +10,10 @@ type APIKey struct {
 	KeyHash   string    `json:"-"`
 	Scope     string    `json:"scope"`
 	CreatedAt time.Time `json:"created_at"`
+	// Environment is the deploy environment this key files every event under
+	// (#545), set when the key outlived a merged per-environment project. Empty
+	// means the key chooses none.
+	Environment string `json:"environment,omitempty"`
 	// LastUsedAt is when a request last authenticated with this key. Nil means
 	// never used — which is how you tell a token that was issued and forgotten
 	// from one something depends on before revoking it.

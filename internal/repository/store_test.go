@@ -1456,3 +1456,38 @@ func TestListFunnels_NoEventsFlagsNothing(t *testing.T) {
 	assert.Empty(t, funnels[0].UnmatchedSteps,
 		"a project with no events yet should not have every funnel flagged")
 }
+
+// A key can be mapped to an environment (#545): the lookup returns it, the
+// listings carry it, an unmapped key reads as empty, and an unknown id errors.
+func TestStore_APIKeyEnvironment(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	p, err := s.CreateProject(ctx, "Proj", "proj-keyenv")
+	require.NoError(t, err)
+	const hash = "hash5555555555555555555555555555555555555555555555555555555555555"
+	key, err := s.CreateAPIKey(ctx, "mapped", p.ID, hash, "ingest")
+	require.NoError(t, err)
+	assert.Empty(t, key.Environment)
+
+	env, err := s.APIKeyEnvironmentSHA256(ctx, hash)
+	require.NoError(t, err)
+	assert.Empty(t, env)
+
+	require.NoError(t, s.SetAPIKeyEnvironment(ctx, key.ID, "staging"))
+	env, err = s.APIKeyEnvironmentSHA256(ctx, hash)
+	require.NoError(t, err)
+	assert.Equal(t, "staging", env)
+
+	keys, err := s.ListAPIKeys(ctx, p.ID)
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+	assert.Equal(t, "staging", keys[0].Environment)
+
+	env, err = s.APIKeyEnvironmentSHA256(ctx, "unknown-hash")
+	require.NoError(t, err)
+	assert.Empty(t, env)
+
+	err = s.SetAPIKeyEnvironment(ctx, "no-such-key", "staging")
+	assert.True(t, domain.IsNotFound(err))
+}

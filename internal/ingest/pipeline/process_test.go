@@ -526,3 +526,23 @@ func TestProcessRecord_RedactsSensitiveURLParams(t *testing.T) {
 		t.Errorf("properties.plan: want pro, got %v", props["plan"])
 	}
 }
+
+// A key mapped to an environment (#545) files the event there whatever the
+// payload says, and a key that chooses none leaves the payload's value alone.
+func TestProcessRecord_KeyEnvironmentOverridesPayload(t *testing.T) {
+	body := base64.StdEncoding.EncodeToString([]byte(`{"name":"page_view","environment":"production"}`))
+	for _, tc := range []struct{ keyEnv, want string }{
+		{environment.Staging, environment.Staging},
+		{"", environment.Production},
+	} {
+		event, err := ProcessRecord(spool.Record{
+			IngestID: "ingest-key-env", ReceivedAt: time.Now().UTC(), BodyBase64: body, KeyEnvironment: tc.keyEnv,
+		})
+		if err != nil {
+			t.Fatalf("ProcessRecord: %v", err)
+		}
+		if event.Environment != tc.want {
+			t.Errorf("key environment %q: want %q, got %q", tc.keyEnv, tc.want, event.Environment)
+		}
+	}
+}

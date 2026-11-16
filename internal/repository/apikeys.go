@@ -22,6 +22,32 @@ func (s *ReadStore) ValidAPIKeySHA256(ctx context.Context, keySHA256 string) (pr
 	return row.ProjectID, row.Scope, true, nil
 }
 
+// APIKeyEnvironmentSHA256 returns the environment a key is mapped to, or ""
+// when the key is unknown or chooses none.
+func (s *ReadStore) APIKeyEnvironmentSHA256(ctx context.Context, keySHA256 string) (string, error) {
+	env, err := s.rq.LookupAPIKeyEnvironmentBySHA256(ctx, keySHA256)
+	if err != nil {
+		if isNoRows(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return env, nil
+}
+
+// SetAPIKeyEnvironment maps a key to an environment ("" clears the mapping).
+// The caller passes a canonical value. An unknown id is domain.ErrNotFound.
+func (s *Store) SetAPIKeyEnvironment(ctx context.Context, id, env string) error {
+	n, err := s.q.SetAPIKeyEnvironment(ctx, sqlcgen.SetAPIKeyEnvironmentParams{Environment: env, ID: id})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("api key %q: %w", id, domain.ErrNotFound)
+	}
+	return nil
+}
+
 // TouchAPIKey updates last_used_at for a key by its SHA256 hash.
 func (s *Store) TouchAPIKey(ctx context.Context, keySHA256 string) error {
 	return s.q.TouchAPIKey(ctx, keySHA256)
@@ -102,12 +128,13 @@ func isNoRows(err error) bool {
 
 func apiKeyFromGen(k sqlcgen.ApiKey) domain.APIKey {
 	key := domain.APIKey{
-		ID:        k.ID,
-		ProjectID: k.ProjectID,
-		Name:      k.Name,
-		KeyHash:   k.KeyHash,
-		Scope:     k.Scope,
-		CreatedAt: k.CreatedAt,
+		ID:          k.ID,
+		ProjectID:   k.ProjectID,
+		Name:        k.Name,
+		KeyHash:     k.KeyHash,
+		Scope:       k.Scope,
+		CreatedAt:   k.CreatedAt,
+		Environment: k.Environment,
 	}
 	if k.LastUsedAt.Valid {
 		t := k.LastUsedAt.Time

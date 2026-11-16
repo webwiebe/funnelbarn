@@ -75,17 +75,7 @@ func ProcessRecord(record spool.Record) (domain.Event, error) {
 		occurredAt = record.ReceivedAt
 	}
 
-	// Normalize environment to a canonical value. An unrecognised value is
-	// filed as development rather than rejected — dropping an event over a typo
-	// is worse than mis-filing it — and said once per distinct value, because a
-	// production client with a typo goes missing from production. An absent
-	// value is filed as production: the analytics filters compare environment
-	// for equality, so an untagged event is invisible under every filter
-	// including the one the dashboard defaults to.
-	env := environment.NormalizeEvent(payload.Environment)
-	if !environment.IsKnown(payload.Environment) {
-		warnUnknownEnvironment(payload.Environment, env, record.ProjectSlug)
-	}
+	env := recordEnvironment(payload.Environment, record)
 
 	// The user agent. SDKs that post from a browser leave user_agent out of the
 	// payload (XHR cannot set it), so fall back to the request header the ingest
@@ -354,4 +344,23 @@ func warnUnknownEnvironment(raw, filedAs, project string) {
 		"project", project,
 		"known", environment.Canonical(),
 	)
+}
+
+// recordEnvironment resolves an event's canonical environment. An unrecognised
+// value is filed as development rather than rejected — dropping an event over a
+// typo is worse than mis-filing it — and said once per distinct value, because
+// a production client with a typo goes missing from production. An absent value
+// is filed as production: the analytics filters compare environment for
+// equality, so an untagged event is invisible under every filter including the
+// one the dashboard defaults to. A key mapped to an environment (#545) overrides
+// the payload: it stands for the per-environment project the key was issued for.
+func recordEnvironment(payloadEnv string, record spool.Record) string {
+	env := environment.NormalizeEvent(payloadEnv)
+	if !environment.IsKnown(payloadEnv) {
+		warnUnknownEnvironment(payloadEnv, env, record.ProjectSlug)
+	}
+	if record.KeyEnvironment != "" {
+		env = record.KeyEnvironment
+	}
+	return env
 }

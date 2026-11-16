@@ -21,13 +21,14 @@ type AbTest struct {
 }
 
 type ApiKey struct {
-	ID         string       `json:"id"`
-	ProjectID  string       `json:"project_id"`
-	Name       string       `json:"name"`
-	KeyHash    string       `json:"key_hash"`
-	Scope      string       `json:"scope"`
-	LastUsedAt sql.NullTime `json:"last_used_at"`
-	CreatedAt  time.Time    `json:"created_at"`
+	ID          string       `json:"id"`
+	ProjectID   string       `json:"project_id"`
+	Name        string       `json:"name"`
+	KeyHash     string       `json:"key_hash"`
+	Scope       string       `json:"scope"`
+	LastUsedAt  sql.NullTime `json:"last_used_at"`
+	CreatedAt   time.Time    `json:"created_at"`
+	Environment string       `json:"environment"`
 }
 
 type CanonicalEvent struct {

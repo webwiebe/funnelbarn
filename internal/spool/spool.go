@@ -36,6 +36,10 @@ type Record struct {
 	// back to it when the JSON payload carries no user_agent of its own. Without
 	// it, browser/os/device_type stay empty for every SDK that omits the field.
 	UserAgent string `json:"userAgent,omitempty"`
+	// KeyEnvironment is the environment the API key is mapped to (#545). The
+	// worker files the event under it whatever the payload says, so an old
+	// per-environment key keeps its history's environment after a merge.
+	KeyEnvironment string `json:"keyEnvironment,omitempty"`
 }
 
 // cursor tracks the byte offset of the last successfully processed record.
