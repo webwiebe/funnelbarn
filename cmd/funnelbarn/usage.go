@@ -7,7 +7,7 @@ import (
 
 // usageText lists the subcommands. Running the binary with no argument, or
 // with `serve`, starts the server.
-const usageText = "usage: funnelbarn [serve | version | worker-once | replay-dead-letter | user | project | apikey | recordings | help]"
+const usageText = "usage: funnelbarn [serve | version | worker-once | replay-dead-letter | user | project | apikey | flag | recordings | help]"
 
 // argAction is what the first command-line argument asks the process to do.
 type argAction int
