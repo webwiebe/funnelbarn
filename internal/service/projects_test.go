@@ -134,3 +134,34 @@ func TestProjectService_DeleteProject_Extended(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, projects)
 }
+
+func TestProjectService_RefusesEnvironmentSuffix(t *testing.T) {
+	ctx := context.Background()
+	svc := service.NewProjectService(newTestStore(t))
+
+	for _, slug := range []string{"shop-staging", "shop-prod", "shop-production", "shop-test", "shop-e2e", "shop-dev", "Shop Staging"} {
+		_, err := svc.CreateProject(ctx, "Shop", slug)
+		var verr *domain.ValidationError
+		require.ErrorAs(t, err, &verr, slug)
+		assert.Equal(t, "slug", verr.Field, slug)
+
+		_, err = svc.EnsureProjectPending(ctx, "Shop", slug)
+		require.ErrorAs(t, err, &verr, slug)
+	}
+
+	for _, slug := range []string{"shop", "test", "shop-frontend", "contest", "latest-news"} {
+		_, err := svc.CreateProject(ctx, "Shop", slug)
+		require.NoError(t, err, slug)
+	}
+}
+
+func TestProjectService_EnsureProjectPendingKeepsExistingEnvSuffixedProject(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	legacy, err := store.CreateProject(ctx, "Legacy", "legacy-staging")
+	require.NoError(t, err)
+
+	got, err := service.NewProjectService(store).EnsureProjectPending(ctx, "Legacy", "legacy-staging")
+	require.NoError(t, err)
+	assert.Equal(t, legacy.ID, got.ID)
+}

@@ -9,8 +9,36 @@ import (
 	"strings"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/ports"
 )
+
+// envSuffixToken returns the environment alias a project slug ends with
+// ("shop-staging" gives "staging"), or "" when it has none. A slug that is only
+// an alias ("test") has no product part and is left alone.
+func envSuffixToken(slug string) string {
+	i := strings.LastIndex(slug, "-")
+	if i <= 0 {
+		return ""
+	}
+	tail := slug[i+1:]
+	if tail != "" && environment.IsKnown(tail) {
+		return tail
+	}
+	return ""
+}
+
+// refuseEnvSuffix rejects a new project whose slug names an environment. An
+// environment is an attribute of the event, never a separate project (#545).
+func refuseEnvSuffix(slug string) error {
+	if tok := envSuffixToken(slug); tok != "" {
+		return &domain.ValidationError{
+			Field:   "slug",
+			Message: fmt.Sprintf("must not end in an environment name (%q): create one project per product and send environment=%s on its events", tok, environment.Normalize(tok)),
+		}
+	}
+	return nil
+}
 
 // reNonSlug matches any character that is not a lowercase letter, digit, or hyphen.
 var reNonSlug = regexp.MustCompile(`[^a-z0-9-]+`)
@@ -45,6 +73,9 @@ func (svc *ProjectService) CreateProject(ctx context.Context, name, slug string)
 	slug = normalizeSlug(slug)
 	if slug == "" {
 		return domain.Project{}, &domain.ValidationError{Field: "slug", Message: "required"}
+	}
+	if err := refuseEnvSuffix(slug); err != nil {
+		return domain.Project{}, err
 	}
 	p, err := svc.store.CreateProject(ctx, strings.TrimSpace(name), slug)
 	if err != nil {
@@ -117,7 +148,16 @@ func (svc *ProjectService) ApproveProject(ctx context.Context, id string) (domai
 	return p, nil
 }
 
+// EnsureProjectPending returns the project for slug, creating it as pending when
+// it is new. An existing project is returned as it is, whatever its name; only a
+// new project with an environment suffix is refused.
 func (svc *ProjectService) EnsureProjectPending(ctx context.Context, name, slug string) (domain.Project, error) {
+	if err := refuseEnvSuffix(normalizeSlug(slug)); err != nil {
+		if p, perr := svc.store.ProjectBySlug(ctx, slug); perr == nil {
+			return p, nil
+		}
+		return domain.Project{}, err
+	}
 	return svc.store.EnsureProjectPending(ctx, name, slug)
 }
 

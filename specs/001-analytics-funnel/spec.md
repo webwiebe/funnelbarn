@@ -100,6 +100,7 @@ Each story lists the requirements that implement it. Stories whose behaviour the
 - **FR-017**: The binary MUST offer the subcommands `version`, `worker-once`, `replay-dead-letter`, `user`, `project` and `apikey`. Issues: none. [inferred]
 - **FR-018**: Distribution MUST cover container images (`deploy/docker`), a Debian package with a post-install script (`deploy/deb`), a Homebrew formula and per-environment Kubernetes manifests (`deploy/k8s/{testing,staging,production}`). Issues: none. [inferred]
 - **FR-023**: The server MUST report its own errors to BugBarn when a self-reporting endpoint and key are configured. Issues: none. [inferred]
+- **FR-024**: A new project whose slug ends in an environment name (`-prod`, `-production`, `-staging`, `-test`, `-e2e`, `-dev` and the other aliases of `internal/environment`) MUST be refused with a validation error on the API create, the CLI and the setup endpoint; an existing project of that name keeps working. The environment is an attribute of the event, never a separate project. Issues: [#545](https://github.com/webwiebe/funnelbarn/issues/545). Tests: `internal/service/projects_test.go::TestProjectService_RefusesEnvironmentSuffix`, `internal/service/projects_test.go::TestProjectService_EnsureProjectPendingKeepsExistingEnvSuffixedProject`.
 
 ---
 
