@@ -3,8 +3,8 @@
 #   deploy/release-tag.sh <vX.Y.Z tag or commit sha>
 #
 # A vX.Y.Z tag prints itself. A commit prints the highest vX.Y.Z tag on that
-# commit. binary-release creates that tag on the same push to main, beside CI,
-# so when it is not there yet the script fetches tags and tries again, up to
+# commit. binary-release creates that tag when CI completes green on main, beside
+# build-and-test, so when it is not there yet the script fetches tags and tries again, up to
 # RELEASE_TAG_ATTEMPTS times (default 10) with RELEASE_TAG_WAIT seconds between
 # them (default 30). A commit without a release tag fails, so production and
 # staging never report a bare commit sha (#489). Run it in a checkout with tags,
@@ -46,5 +46,5 @@ for i in $(seq 1 "$attempts"); do
     git fetch -q --tags --force origin
   fi
 done
-echo "::error::no vX.Y.Z tag points at ${sha} after ${attempts} attempts; binary-release creates it on every push to main" >&2
+echo "::error::no vX.Y.Z tag points at ${sha} after ${attempts} attempts; binary-release creates it for every green CI run on main" >&2
 exit 1

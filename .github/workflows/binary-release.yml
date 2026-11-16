@@ -1,6 +1,13 @@
 name: Binary Release
 
-# Builds and publishes funnelbarn binaries on every push to main.
+# Builds and publishes funnelbarn binaries for every commit on main that passed CI.
+#
+# Gated on CI, the way build-and-test.yml is: it starts when the CI workflow
+# completes on main and releases only when that run succeeded, from
+# workflow_run.head_sha. A red CI run therefore never tags or publishes apt,
+# brew, npm or PyPI artifacts, and the release is the commit CI actually
+# passed even when a newer push has landed since. workflow_dispatch stays for a
+# manual release of the checked-out ref.
 # Publishes to:
 #   - APT repository:      https://webwiebe.nl/apt/ (via rapid-root centralized workflow)
 #   - Homebrew tap (Cloudflare R2): https://webwiebe.nl/brew/funnelbarn-darwin-*.tar.gz
@@ -22,17 +29,27 @@ name: Binary Release
 #   R2_BUCKET      — webwiebe-apt-repository-production
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
 
+env:
+  # The commit CI passed (workflow_run), or the dispatched ref. github.sha on a
+  # workflow_run event is the branch head at trigger time, which a newer push
+  # may have moved past the commit CI tested.
+  RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
 jobs:
   tag:
     name: Create Release Tag
+    # workflow_run fires for every CI conclusion; only a green run releases.
+    # Every other job needs this one, so a red run skips the whole workflow.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: [self-hosted, build]
     outputs:
       version: ${{ steps.next_version.outputs.version }}
@@ -50,6 +67,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
+          ref: ${{ env.RELEASE_SHA }}
           fetch-depth: 0
           fetch-tags: true
 
@@ -111,6 +129,8 @@ jobs:
             rm -rf "$c" 2>/dev/null || true
           fi
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_SHA }}
       - name: Check whether this SDK version is released
         id: sdk
         run: |
@@ -149,7 +169,7 @@ jobs:
         run: |
           gh release create "${{ steps.sdk.outputs.tag }}" \
             "$RUNNER_TEMP/funnelbarn-js-${{ steps.sdk.outputs.version }}.tgz" \
-            --target "${GITHUB_SHA}" \
+            --target "${RELEASE_SHA}" \
             --title "@funnelbarn/js ${{ steps.sdk.outputs.version }}" \
             --notes "Install: \`npm install https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ steps.sdk.outputs.tag }}/funnelbarn-js-${{ steps.sdk.outputs.version }}.tgz\`" \
             --latest=false
@@ -173,6 +193,8 @@ jobs:
             rm -rf "$c" 2>/dev/null || true
           fi
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_SHA }}
       - name: Sync pyproject.toml version to release tag
         # Same reason as the npm job: PyPI rejects re-uploads of an existing
         # version, so we rewrite the version line before building.
@@ -213,6 +235,8 @@ jobs:
             rm -rf "$c" 2>/dev/null || true
           fi
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_SHA }}
       - name: Set up pnpm
         shell: bash
         run: |
@@ -276,6 +300,8 @@ jobs:
             rm -rf "$c" 2>/dev/null || true
           fi
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_SHA }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -297,7 +323,7 @@ jobs:
           GOARCH="${{ matrix.arch }}"
           export GOARCH
           BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          LDFLAGS="-X main.Version=v${VERSION} -X main.Commit=${GITHUB_SHA} -X main.BuildTime=${BUILD_TIME}"
+          LDFLAGS="-X main.Version=v${VERSION} -X main.Commit=${RELEASE_SHA} -X main.BuildTime=${BUILD_TIME}"
           mkdir -p dist
           go build -ldflags "${LDFLAGS}" -o dist/funnelbarn-linux-${GOARCH} ./cmd/funnelbarn
 
@@ -340,6 +366,8 @@ jobs:
             rm -rf "$c" 2>/dev/null || true
           fi
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_SHA }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -357,7 +385,7 @@ jobs:
           VERSION: ${{ needs.tag.outputs.version_num }}
         run: |
           BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          LDFLAGS="-X main.Version=v${VERSION} -X main.Commit=${GITHUB_SHA} -X main.BuildTime=${BUILD_TIME}"
+          LDFLAGS="-X main.Version=v${VERSION} -X main.Commit=${RELEASE_SHA} -X main.BuildTime=${BUILD_TIME}"
           mkdir -p dist
           go build -ldflags "${LDFLAGS}" -o dist/funnelbarn ./cmd/funnelbarn
           TARBALL="funnelbarn-darwin-${{ matrix.arch }}-${VERSION}.tar.gz"

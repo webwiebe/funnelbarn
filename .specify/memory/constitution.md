@@ -167,9 +167,9 @@ Candidates checked against the tree and left out because nothing enforces them:
 - Files stay under about 200 lines
   ([specs/003-engineering-standards/spec.md](../../specs/003-engineering-standards/spec.md)).
   The pinned limit is 848 lines (`MAX_FILE_LINES` in `scripts/go-quality-gates.sh`); the 500 line target is report-only (`scripts/soak-baselines/file-length.txt`).
-- Services and handlers stay under the estate complexity target of 12. The
-  blocking limit is 49 (`MAX_CYCLO`); 12 is report-only
-  (`scripts/soak-baselines/go-complexity.txt`).
+- Services and handlers stay under the estate complexity target of 12. It is
+  the blocking limit (`MAX_CYCLO` in `scripts/go-quality-gates.sh`, covering
+  `internal/`, `cmd/` and `sdks/go`).
 - golangci-lint blocks on any finding. It blocks only on a new one while
   `scripts/soak-baselines/golangci.txt` records the existing ones. Issues
   [#273](https://github.com/webwiebe/funnelbarn/issues/273) and

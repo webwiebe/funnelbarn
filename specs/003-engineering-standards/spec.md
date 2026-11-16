@@ -62,7 +62,7 @@ CI enforces the architecture and quality rules of the codebase mechanically. The
 | `pages/ABTests.tsx` exists, `lib/hooks/` holds custom hooks | Frontend layout | Neither exists |
 | `lib/api.ts` is the only file that calls `fetch` | Frontend rules | `fetch(` appears in `App.tsx`, `lib/bugbarn.ts`, `lib/projects.tsx`, `lib/analytics.ts` and `pages/Live.tsx` as well |
 | Each component file exports exactly one default component | Frontend rules | not established |
-| Vitest coverage fails under 80 percent (and 70 percent in the CI table) | Unit Tests and CI table | `web/vite.config.ts` pins lines 51, statements 48, functions 42, branches 45; the per-file gate adds a floor per source file |
+| Vitest coverage fails under 80 percent (and 70 percent in the CI table) | Unit Tests and CI table | `web/vite.config.ts` pins lines 66, statements 63, functions 56, branches 63; the per-file gate adds a floor per source file |
 | Lint is `golangci-lint run ./...`, with 120 findings in the soak | CI table | Findings reached zero and `golangci-lint run ./...` is a blocking step in `go-quality` (#273) |
 | Coverage fails below 70 percent on `service/` and `repository/` | CI table | Per-package floors are 74 and 74 in `scripts/coverage-baseline.txt`, plus a total floor of 64 |
 | `sqlc vet` checks the generated code | CI table | CI runs `sqlc generate` and `git diff --exit-code` on `internal/repository/sqlcgen` |
