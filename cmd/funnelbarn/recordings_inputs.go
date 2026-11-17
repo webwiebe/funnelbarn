@@ -16,7 +16,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
-const checkInputsUsage = "usage: funnelbarn recordings check-inputs --id <recording id> [--id <recording id> ...]"
+const checkInputsUsage = "usage: funnelbarn recordings check-inputs --id <recording id> [--id ...] [--contains <text> ...]"
 
 // idList collects a repeated --id flag.
 type idList []string
@@ -24,31 +24,38 @@ type idList []string
 func (l *idList) String() string     { return strings.Join(*l, ",") }
 func (l *idList) Set(v string) error { *l = append(*l, v); return nil }
 
-func parseCheckInputsFlags(args []string) (idList, error) {
+// checkInputsFlags are the options of recordings check-inputs.
+type checkInputsFlags struct {
+	ids     idList
+	needles idList
+}
+
+func parseCheckInputsFlags(args []string) (checkInputsFlags, error) {
 	fs := flag.NewFlagSet("recordings check-inputs", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	var ids idList
-	fs.Var(&ids, "id", "recording id to check (repeatable)")
+	var f checkInputsFlags
+	fs.Var(&f.ids, "id", "recording id to check (repeatable)")
+	fs.Var(&f.needles, "contains", "text to look for in the stored chunks; only yes or no is reported (repeatable)")
 	if err := fs.Parse(args); err != nil {
-		return nil, fmt.Errorf("%s: %w", checkInputsUsage, err)
+		return f, fmt.Errorf("%s: %w", checkInputsUsage, err)
 	}
-	if len(ids) == 0 || fs.NArg() > 0 {
-		return nil, errors.New(checkInputsUsage)
+	if len(f.ids) == 0 || fs.NArg() > 0 {
+		return f, errors.New(checkInputsUsage)
 	}
-	return ids, nil
+	return f, nil
 }
 
 // inputChecker is the one service method the command needs.
 type inputChecker interface {
-	CheckInputs(ctx context.Context, recordingID string) (service.InputCheck, error)
+	CheckInputs(ctx context.Context, recordingID string, needles ...string) (service.InputCheck, error)
 }
 
 // writeInputChecks prints one JSON line per recording: counts per input type,
 // never a value.
-func writeInputChecks(ctx context.Context, w io.Writer, checker inputChecker, ids []string) error {
+func writeInputChecks(ctx context.Context, w io.Writer, checker inputChecker, ids, needles []string) error {
 	enc := json.NewEncoder(w)
 	for _, id := range ids {
-		res, err := checker.CheckInputs(ctx, id)
+		res, err := checker.CheckInputs(ctx, id, needles...)
 		if err != nil {
 			return fmt.Errorf("recordings check-inputs: %s: %w", id, err)
 		}
@@ -62,7 +69,7 @@ func writeInputChecks(ctx context.Context, w io.Writer, checker inputChecker, id
 // runCheckInputs handles: funnelbarn recordings check-inputs --id <id>. It
 // opens the database read-only and only reads object storage.
 func runCheckInputs(cfg config.Config, args []string) error {
-	ids, err := parseCheckInputsFlags(args)
+	flags, err := parseCheckInputsFlags(args)
 	if err != nil {
 		return err
 	}
@@ -78,5 +85,5 @@ func runCheckInputs(cfg config.Config, args []string) error {
 	if err != nil {
 		return fmt.Errorf("recordings check-inputs: object storage: %w", err)
 	}
-	return writeInputChecks(context.Background(), os.Stdout, service.NewRecordingService(store, store, store, r2), ids)
+	return writeInputChecks(context.Background(), os.Stdout, service.NewRecordingService(store, store, store, r2), flags.ids, flags.needles)
 }
