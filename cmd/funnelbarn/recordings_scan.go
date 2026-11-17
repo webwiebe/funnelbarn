@@ -21,7 +21,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
-const recordingsUsage = "usage: funnelbarn recordings <scan-url-params [--project <slug>] [--max-memory-mib <n>] [--by-url] [--max-duration <d>] [--fresh] | check-inputs --id <recording id> | strip-page-urls --project <slug> [--apply]>"
+const recordingsUsage = "usage: funnelbarn recordings <scan-url-params [--project <slug>] [--max-memory-mib <n>] [--by-url] [--max-duration <d>] [--fresh] | check-inputs --id <recording id> | strip-page-urls --project <slug> [--apply] | backfill-environment --project <slug> [--apply]>"
 
 // scanFlags are the options of recordings scan-url-params.
 type scanFlags struct {
@@ -70,6 +70,9 @@ func runRecordingsCmd(cfg config.Config, args []string) error {
 	}
 	if len(args) > 0 && args[0] == "strip-page-urls" {
 		return runStripPageURLs(cfg, args[1:])
+	}
+	if len(args) > 0 && args[0] == "backfill-environment" {
+		return runBackfillEnvironment(cfg, args[1:])
 	}
 	if len(args) == 0 || args[0] != "scan-url-params" {
 		return errors.New(recordingsUsage)
