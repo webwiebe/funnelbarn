@@ -209,7 +209,7 @@ func runUserCmd(cfg config.Config, args []string) error {
 // runProjectCmd handles: funnelbarn project create --name=X [--slug=Y]
 func runProjectCmd(cfg config.Config, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: funnelbarn project <create>")
+		return fmt.Errorf("usage: funnelbarn project <create|merge>")
 	}
 	switch args[0] {
 	case "create":
@@ -240,6 +240,8 @@ func runProjectCmd(cfg config.Config, args []string) error {
 		}
 		fmt.Printf("{\"id\":%q,\"name\":%q,\"slug\":%q}\n", p.ID, p.Name, p.Slug)
 		return nil
+	case "merge":
+		return runProjectMerge(cfg, args[1:])
 	default:
 		return fmt.Errorf("unknown project subcommand %q", args[0])
 	}
