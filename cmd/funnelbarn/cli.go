@@ -250,13 +250,15 @@ func runProjectCmd(cfg config.Config, args []string) error {
 // runAPIKeyCmd handles: funnelbarn apikey create --project=default --name=my-app
 func runAPIKeyCmd(cfg config.Config, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: funnelbarn apikey <create|set-environment>")
+		return fmt.Errorf("usage: funnelbarn apikey <create|set-environment|revoke>")
 	}
 	switch args[0] {
 	case "create":
 		return runAPIKeyCreate(cfg, args[1:])
 	case "set-environment":
 		return runAPIKeySetEnvironment(cfg, args[1:])
+	case "revoke":
+		return runAPIKeyRevoke(cfg, args[1:])
 	default:
 		return fmt.Errorf("unknown apikey subcommand %q", args[0])
 	}
