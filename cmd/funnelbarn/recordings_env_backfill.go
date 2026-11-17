@@ -37,7 +37,7 @@ func parseBackfillEnvFlags(args []string) (stripFlags, error) {
 // environmentBackfiller is the store surface the command needs.
 type environmentBackfiller interface {
 	projectLister
-	BackfillRecordingEnvironments(ctx context.Context, projectID string, batch int, apply bool) (repository.EnvironmentBackfill, error)
+	BackfillRecordingEnvironments(ctx context.Context, projectID string, batch int, apply bool, onBatch func(repository.EnvironmentBackfill)) (repository.EnvironmentBackfill, error)
 }
 
 // backfillResult is the one JSON line the command prints: counts only.
@@ -47,12 +47,15 @@ type backfillResult struct {
 	repository.EnvironmentBackfill
 }
 
-func backfillEnvironments(ctx context.Context, w io.Writer, store environmentBackfiller, f stripFlags) error {
+func backfillEnvironments(ctx context.Context, w, progress io.Writer, store environmentBackfiller, f stripFlags) error {
 	projects, err := selectProjects(ctx, store, f.project)
 	if err != nil {
 		return err
 	}
-	res, err := store.BackfillRecordingEnvironments(ctx, projects[0].ID, f.batch, f.apply)
+	onBatch := func(r repository.EnvironmentBackfill) {
+		_, _ = fmt.Fprintf(progress, "batch %d: scanned %d filled %d mixed %d no_events %d\n", r.Batches, r.Scanned, r.Filled, r.Mixed, r.NoEvents)
+	}
+	res, err := store.BackfillRecordingEnvironments(ctx, projects[0].ID, f.batch, f.apply, onBatch)
 	if err != nil {
 		return fmt.Errorf("recordings backfill-environment: project %s: %w", f.project, err)
 	}
@@ -77,5 +80,5 @@ func runBackfillEnvironment(cfg config.Config, args []string) error {
 	defer logShutdown(slog.LevelError, "store", store.Close)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return backfillEnvironments(ctx, os.Stdout, store, f)
+	return backfillEnvironments(ctx, os.Stdout, os.Stderr, store, f)
 }
