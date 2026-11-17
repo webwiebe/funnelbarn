@@ -403,8 +403,12 @@ func pruneExpiredWebSessions(ctx context.Context, cfg config.Config, store *repo
 
 // newIngestHandler builds the ingest handler and starts its background flush.
 // The flush stops before the spool closes, so its final write reaches the file.
-func newIngestHandler(ctx context.Context, cfg config.Config, authorizer *auth.Authorizer, eventSpool *spool.Spool, health service.ProjectHealth, cleanup *cleanupStack) *ingest.Handler {
+func newIngestHandler(ctx context.Context, cfg config.Config, authorizer *auth.Authorizer, eventSpool *spool.Spool, health service.ProjectHealth, store *repository.Store, cleanup *cleanupStack) *ingest.Handler {
 	handler := ingest.NewHandler(authorizer, eventSpool, cfg.MaxBodyBytes)
+	handler.ProjectSlug = func(ctx context.Context, id string) (string, error) {
+		p, err := store.ProjectByID(ctx, id)
+		return p.Slug, err
+	}
 	handler.OnEventsReceived = func(ctx context.Context, projectID string) {
 		firstEvent, err := health.MarkEventsReceived(ctx, projectID)
 		if err != nil {

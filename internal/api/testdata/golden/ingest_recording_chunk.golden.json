@@ -1,6 +1,7 @@
 {
   "body": {
-    "accepted": true
+    "accepted": true,
+    "project": "acme-shop"
   },
   "headers": {
     "Content-Type": "application/json"

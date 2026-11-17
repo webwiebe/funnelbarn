@@ -115,7 +115,9 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 	// Only a stored chunk counts: marking before validation would show a
 	// project whose chunks are all rejected as receiving recordings.
 	s.markRecordingsReceived(projectID)
-	writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true})
+	answer := s.ingest.ProjectAnswer(ctx, projectID, proj.Slug, r.Header.Get("x-funnelbarn-project"))
+	answer["accepted"] = true
+	writeJSON(w, http.StatusAccepted, answer)
 }
 
 // recordingEnvironment files a recording under the canonical environment, the
