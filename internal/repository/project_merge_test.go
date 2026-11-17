@@ -169,9 +169,12 @@ func TestMergeProjects_MovesEveryTableAndKeepsEveryColumn(t *testing.T) {
 		}
 		require.Equal(t, want, got, table)
 	}
-	var env string
+	var env, targetEnv string
 	require.NoError(t, db.QueryRow(`SELECT environment FROM api_keys WHERE id = 'key-from'`).Scan(&env))
 	require.Equal(t, "production", env)
+	// The target's own key keeps the environment it had.
+	require.NoError(t, db.QueryRow(`SELECT environment FROM api_keys WHERE id = 'key-to'`).Scan(&targetEnv))
+	require.Equal(t, "", targetEnv)
 
 	got, err := s.ProjectByID(ctx, from.ID)
 	require.NoError(t, err)

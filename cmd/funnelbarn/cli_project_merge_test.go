@@ -54,10 +54,14 @@ func TestRunProjectMerge(t *testing.T) {
 		t.Errorf("old-site status = %q (err %v), want archived", old.Status, err)
 	}
 	keys, _ := store.ListAllAPIKeys(context.Background())
+	moved := 0
 	for _, k := range keys {
-		if k.Environment != "production" {
-			t.Errorf("key %s environment = %q, want production", k.ID, k.Environment)
+		if k.Environment == "production" {
+			moved++
 		}
+	}
+	if moved != 1 {
+		t.Errorf("%d keys carry environment production, want only the moved one", moved)
 	}
 }
 

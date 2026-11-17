@@ -71,20 +71,15 @@ func (s *Store) MergeProjects(ctx context.Context, from, to domain.Project, env 
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	for _, table := range mergeTables {
-		count, err := moveTable(ctx, tx, table, from.ID, to.ID)
-		if err != nil {
-			return report, fmt.Errorf("merge projects: %s: %w", table, err)
-		}
-		report.Tables = append(report.Tables, count)
-	}
-	if report.CanonicalFunnels, err = repointCanonicalFunnels(ctx, tx, from.ID, to.ID); err != nil {
-		return report, fmt.Errorf("merge projects: canonical funnels: %w", err)
-	}
+	// Set the environment on the source's keys before they move, so the
+	// target's own keys keep the environment they have.
 	if env != "" {
-		if _, err := tx.ExecContext(ctx, `UPDATE api_keys SET environment = ? WHERE project_id = ?`, env, to.ID); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE api_keys SET environment = ? WHERE project_id = ?`, env, from.ID); err != nil {
 			return report, fmt.Errorf("merge projects: key environment: %w", err)
 		}
+	}
+	if err := moveAll(ctx, tx, &report, from.ID, to.ID); err != nil {
+		return report, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE projects SET status = ? WHERE id = ?`, ProjectArchivedStatus, from.ID); err != nil {
 		return report, fmt.Errorf("merge projects: archive source: %w", err)
@@ -96,6 +91,24 @@ func (s *Store) MergeProjects(ctx context.Context, from, to domain.Project, env 
 		return report, fmt.Errorf("merge projects: commit: %w", err)
 	}
 	return report, nil
+}
+
+// moveAll moves every merge table and the cross-project funnels, recording the
+// counts in report.
+func moveAll(ctx context.Context, tx *sql.Tx, report *MergeReport, from, to string) error {
+	for _, table := range mergeTables {
+		count, err := moveTable(ctx, tx, table, from, to)
+		if err != nil {
+			return fmt.Errorf("merge projects: %s: %w", table, err)
+		}
+		report.Tables = append(report.Tables, count)
+	}
+	n, err := repointCanonicalFunnels(ctx, tx, from, to)
+	if err != nil {
+		return fmt.Errorf("merge projects: canonical funnels: %w", err)
+	}
+	report.CanonicalFunnels = n
+	return nil
 }
 
 // moveTable repoints a table's rows from one project to another. UPDATE OR
