@@ -137,16 +137,13 @@ func seedGoldenEntities(t *testing.T, store *repository.Store, storage *memStora
 		Rules: []domain.SegmentRule{{Field: "device_type", Operator: "eq", Value: "mobile"}}})
 	must(err, "segment")
 	s.SegmentMobile = fix(seg.ID, kindSegment, 1)
-	_, err = segments.NewStore(store.DB(), store.ReadDB()).CreateSegment(ctx, segments.Segment{ProjectID: s.ProjectA, Name: "Dutch visitors",
+	// The fixed id comes from the creation order, never from a listing: both
+	// segments are created within one second, so ORDER BY created_at ties and
+	// a list position swaps the two ids between runs (#557).
+	dutch, err := segments.NewStore(store.DB(), store.ReadDB()).CreateSegment(ctx, segments.Segment{ProjectID: s.ProjectA, Name: "Dutch visitors",
 		Rules: []domain.SegmentRule{{Field: "country_code", Operator: "eq", Value: "NL"}}})
 	must(err, "segment 2")
-	if segs, err := segments.NewStore(store.DB(), store.ReadDB()).ListSegments(ctx, s.ProjectA); err == nil {
-		for i, sg := range segs {
-			if sg.ID != s.SegmentMobile {
-				fix(sg.ID, kindSegment, 100+i)
-			}
-		}
-	}
+	fix(dutch.ID, kindSegment, 2)
 
 	seedGoldenRecordings(t, store, storage, s)
 
