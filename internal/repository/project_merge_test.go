@@ -263,3 +263,24 @@ func TestMergeProjects_RefusesTheSameProject(t *testing.T) {
 	_, err := s.MergeProjects(context.Background(), p, p, "", false)
 	require.ErrorIs(t, err, domain.ErrValidation)
 }
+
+func TestListProjects_HidesArchivedProjects(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	from, to := mustProject(t, s, "src"), mustProject(t, s, "dst")
+	_, err := s.MergeProjects(ctx, from, to, "", false)
+	require.NoError(t, err)
+
+	list, err := s.Reader().ListProjects(ctx)
+	require.NoError(t, err)
+	var slugs []string
+	for _, p := range list {
+		slugs = append(slugs, p.Slug)
+	}
+	require.Equal(t, []string{"dst"}, slugs)
+
+	// An archived project still resolves by slug, so an old reference reads it.
+	got, err := s.ProjectBySlug(ctx, "src")
+	require.NoError(t, err)
+	require.Equal(t, repository.ProjectArchivedStatus, got.Status)
+}

@@ -2,10 +2,10 @@ import { createContext, useContext, useEffect, useState, ReactNode, useCallback 
 import { api, Project } from './api'
 import { reportError } from './bugbarn'
 import { useAuth } from './auth'
+import { readStoredEnvironment, writeStoredEnvironment } from './selectedEnvironment'
 import { readLastProjectId, resolveProjectId, subscribeLastProjectId, writeLastProjectId } from './selectedProject'
 
 const STORAGE_KEY = 'funnelbarn_default_project'
-const ENV_STORAGE_KEY = 'funnelbarn_environment'
 
 interface ProjectContextValue {
   projects: Project[]
@@ -34,7 +34,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     () => readLastProjectId() ?? null
   )
   const [selectedEnvironment, setSelectedEnvironmentState] = useState<string>(
-    () => localStorage.getItem(ENV_STORAGE_KEY) ?? ''
+    readStoredEnvironment
   )
 
   const setDefaultProjectId = useCallback((id: string) => {
@@ -49,11 +49,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
   const setSelectedEnvironment = useCallback((env: string) => {
     setSelectedEnvironmentState(env)
-    if (env) {
-      localStorage.setItem(ENV_STORAGE_KEY, env)
-    } else {
-      localStorage.removeItem(ENV_STORAGE_KEY)
-    }
+    writeStoredEnvironment(env)
   }, [])
 
   const refetch = useCallback(() => {

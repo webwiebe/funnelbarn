@@ -5,7 +5,7 @@ SELECT id, name, slug, status, created_at, domain FROM projects WHERE id = ?;
 SELECT id, name, slug, status, created_at, domain FROM projects WHERE slug = ?;
 
 -- name: ListProjects :many
-SELECT id, name, slug, status, created_at, domain FROM projects ORDER BY name;
+SELECT id, name, slug, status, created_at, domain FROM projects WHERE status <> 'archived' ORDER BY name;
 
 -- name: InsertProject :exec
 INSERT INTO projects (id, name, slug) VALUES (?, ?, ?);
