@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
+	"github.com/wiebe-xyz/funnelbarn/internal/environment"
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 	"github.com/wiebe-xyz/funnelbarn/internal/tracing"
 )
@@ -89,7 +90,7 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 
 	chunk.ProjectID = projectID
 	chunk.ProjectSlug = proj.Slug
-	chunk.Environment = r.Header.Get("x-funnelbarn-environment")
+	chunk.Environment = s.recordingEnvironment(r, chunk.Environment)
 	chunk.UserAgent = r.Header.Get("User-Agent")
 
 	span.SetAttributes(
@@ -115,6 +116,21 @@ func (s *Server) handleIngestRecordingChunk(w http.ResponseWriter, r *http.Reque
 	// project whose chunks are all rejected as receiving recordings.
 	s.markRecordingsReceived(projectID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true})
+}
+
+// recordingEnvironment files a recording under the canonical environment, the
+// way an event is filed: the value the SDK sent in the body (or the
+// x-funnelbarn-environment header), an absent one as production, and a key
+// mapped to an environment overrides both. A recording's environment is set on
+// its first chunk and kept after that.
+func (s *Server) recordingEnvironment(r *http.Request, sent string) string {
+	if sent == "" {
+		sent = r.Header.Get("x-funnelbarn-environment")
+	}
+	if keyEnv := s.ingest.RequestKeyEnvironment(r); keyEnv != "" {
+		return keyEnv
+	}
+	return environment.NormalizeEvent(sent)
 }
 
 func readRecordingChunk(ctx context.Context, span trace.Span, w http.ResponseWriter, r *http.Request, projectID string) (service.RecordingChunk, bool) {

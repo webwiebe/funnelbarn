@@ -74,7 +74,7 @@ func newRecordingServerWithStorage(t *testing.T, storage service.RecordingStorag
 	if len(staticKey) > 0 {
 		global = staticKey[0]
 	}
-	authz := auth.New(global).WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey)
+	authz := auth.New(global).WithDBLookup(store.ValidAPIKeySHA256, store.TouchAPIKey).WithKeyEnvironment(store.APIKeyEnvironmentSHA256)
 	ingestHandler := ingest.NewHandler(authz, sp, 0)
 	sm := auth.NewSessionManager("test-secret", time.Hour)
 	userAuth, _ := auth.NewUserAuthenticator("", "", "")

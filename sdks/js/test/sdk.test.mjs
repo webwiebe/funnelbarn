@@ -484,6 +484,20 @@ describe('recording trace capture', () => {
     assert.equal(body.traces, undefined);
   });
 
+  it('stamps the environment and the project header on every chunk (#560)', async () => {
+    const client = new FunnelBarnClient({ apiKey: 'k', endpoint: 'http://localhost:8080', environment: 'staging', projectName: 'shop' });
+    client.recordingId = 'rec3';
+    client.recordingStartedAt = new Date().toISOString();
+    client.recordingStartMs = Date.now();
+    client.rrwebBuffer.push({ type: 3, data: {} });
+
+    await client.flushRecordingChunk();
+
+    const chunkReq = requests.find((r) => String(r.url).includes('/recordings/chunk'));
+    assert.equal(JSON.parse(chunkReq.options.body).environment, 'staging');
+    assert.equal(chunkReq.options.headers['x-funnelbarn-project'], 'shop');
+  });
+
   it('harvests an existing traceparent from an outgoing fetch', async () => {
     const restoreWindow = defineWritable(global, 'window', {
       location: { href: 'https://app.example/p', origin: 'https://app.example' },

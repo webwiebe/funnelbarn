@@ -919,6 +919,12 @@ export class FunnelBarnClient {
     return '';
   }
 
+  private recordingHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', 'x-funnelbarn-api-key': this.apiKey };
+    if (this.projectName) headers['x-funnelbarn-project'] = this.projectName;
+    return headers;
+  }
+
   private async flushRecordingChunk(useKeepalive = false): Promise<void> {
     if (!this.shouldRecordCurrentPage()) {
       this.rrwebBuffer = [];
@@ -934,9 +940,10 @@ export class FunnelBarnClient {
     this.recordingChunkIndex += groups.length;
     const sent = await sendInOrder(groups, (chunk, g) => fetch(`${this.endpoint}/api/v1/recordings/chunk`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-funnelbarn-api-key': this.apiKey },
+      headers: this.recordingHeaders(),
       body: JSON.stringify({
         recording_id: this.recordingId,
+        environment: this.environment,
         session_id: this.getOrCreateSessionID(),
         chunk_index: first + g,
         events: chunk,

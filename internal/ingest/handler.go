@@ -306,6 +306,15 @@ func (h *Handler) keyEnvironment(r *http.Request) string {
 	return env
 }
 
+// RequestKeyEnvironment is the environment the request's API key is mapped to,
+// or "" when it has none. Recording chunks use it the way events do.
+func (h *Handler) RequestKeyEnvironment(r *http.Request) string {
+	if h == nil || h.auth == nil {
+		return ""
+	}
+	return h.keyEnvironment(r)
+}
+
 // available reports whether the handler is wired to serve ingest. When it is
 // not, it answers 503 and logs at Error: the process is up but ingest is not
 // wired correctly, which BugBarn has to see.
