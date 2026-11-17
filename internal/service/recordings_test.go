@@ -119,8 +119,8 @@ func TestRecordingService_IngestChunk(t *testing.T) {
 	assert.Equal(t, int64(10000), rec.DurationMs)
 }
 
-// The page URL and the trace URLs are stored with sensitive query parameter
-// values dropped.
+// The page URL is stored as origin and path plus utm_* parameters, and the
+// trace URLs with sensitive query parameter values dropped.
 func TestRecordingService_IngestChunk_RedactsSensitiveURLParams(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -138,7 +138,7 @@ func TestRecordingService_IngestChunk_RedactsSensitiveURLParams(t *testing.T) {
 		Events:      json.RawMessage(`[{"type":4,"data":{},"timestamp":1000}]`),
 		StartedAt:   time.Now().UTC().Truncate(time.Second),
 		DurationMs:  1000,
-		PageURL:     "https://id.example.com/verify?token=one-time&lang=nl",
+		PageURL:     "https://id.example.com/verify?token=one-time&utm_source=mail&lang=nl#state=x",
 		Traces: []domain.TraceLink{{
 			TraceID:    "4bf92f3577b34da6a3ce929d0e0e4736",
 			URL:        "https://api.example.com/session?code=abc",
@@ -153,7 +153,7 @@ func TestRecordingService_IngestChunk_RedactsSensitiveURLParams(t *testing.T) {
 
 	rec, err := store.GetRecording(ctx, "rec-redact-001")
 	require.NoError(t, err)
-	assert.Equal(t, "https://id.example.com/verify?token=redacted&lang=nl", rec.PageURL)
+	assert.Equal(t, "https://id.example.com/verify?utm_source=mail", rec.PageURL)
 
 	traces, err := store.TracesForRecording(ctx, "rec-redact-001")
 	require.NoError(t, err)
