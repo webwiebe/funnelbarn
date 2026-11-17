@@ -106,7 +106,7 @@ func (q *Queries) InsertProjectPending(ctx context.Context, arg InsertProjectPen
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, name, slug, status, created_at, domain FROM projects ORDER BY name
+SELECT id, name, slug, status, created_at, domain FROM projects WHERE status <> 'archived' ORDER BY name
 `
 
 func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {

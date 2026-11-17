@@ -161,7 +161,8 @@ func (s *Store) ApproveProject(ctx context.Context, id string) (domain.Project, 
 	return s.projectByID(ctx, s.q, id)
 }
 
-// ListProjects returns all projects.
+// ListProjects returns the projects that are not archived. A project merged
+// into another keeps its row and its leftovers but leaves every list (#545).
 func (s *ReadStore) ListProjects(ctx context.Context) ([]domain.Project, error) {
 	rows, err := s.rq.ListProjects(ctx)
 	if err != nil {
