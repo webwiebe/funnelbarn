@@ -21,7 +21,7 @@ import (
 	"github.com/wiebe-xyz/funnelbarn/internal/service"
 )
 
-const recordingsUsage = "usage: funnelbarn recordings scan-url-params [--project <slug>] [--max-memory-mib <n>] [--by-url] [--max-duration <d>] [--fresh]"
+const recordingsUsage = "usage: funnelbarn recordings <scan-url-params [--project <slug>] [--max-memory-mib <n>] [--by-url] [--max-duration <d>] [--fresh] | check-inputs --id <recording id>>"
 
 // scanFlags are the options of recordings scan-url-params.
 type scanFlags struct {
@@ -65,10 +65,19 @@ func parseScanFlags(args []string) (scanFlags, error) {
 // parameter value is printed. The process runs under a Go memory limit of --max-memory-mib and
 // stops, printing the counts so far, when it holds more than that.
 func runRecordingsCmd(cfg config.Config, args []string) error {
+	if len(args) > 0 && args[0] == "check-inputs" {
+		return runCheckInputs(cfg, args[1:])
+	}
 	if len(args) == 0 || args[0] != "scan-url-params" {
 		return errors.New(recordingsUsage)
 	}
-	flags, err := parseScanFlags(args[1:])
+	return runScanURLParams(cfg, args[1:])
+}
+
+// runScanURLParams reads the stored chunks of every project (or one) and
+// prints the counts.
+func runScanURLParams(cfg config.Config, args []string) error {
+	flags, err := parseScanFlags(args)
 	if err != nil {
 		return err
 	}

@@ -112,9 +112,10 @@ func (svc *RecordingService) UploadChunk(ctx context.Context, chunk RecordingChu
 		return ChunkMeta{}, false, nil
 	}
 
-	// The page URL and trace URLs are stored in the database; drop the values
-	// of sensitive query parameters first, as event ingest does.
-	chunk.PageURL = enrich.RedactURL(chunk.PageURL)
+	// The recording's page URL is stored in the database as origin and path
+	// plus utm_* parameters. Trace URLs are stored too; drop the values of
+	// sensitive query parameters first, as event ingest does.
+	chunk.PageURL = enrich.RecordingPageURL(chunk.PageURL)
 	for i := range chunk.Traces {
 		chunk.Traces[i].URL = enrich.RedactURL(chunk.Traces[i].URL)
 	}
