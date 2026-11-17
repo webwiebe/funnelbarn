@@ -279,6 +279,7 @@ func newServerConfig(ctx context.Context, cfg config.Config, version string, d d
 		DogfoodAPIKey:         cfg.DogfoodAPIKey,
 		DogfoodProject:        cfg.DogfoodProject,
 		DogfoodEnvironment:    environment.Normalize(cfg.SelfEnvironment),
+		BrandTraceSiteKey:     cfg.BrandTraceSiteKey,
 		IAMBarnUsers:          service.NewIAMBarnUserService(store),
 		PostLogoutRedirectURI: cfg.PostLogoutRedirectURI,
 		WebSessions:           service.NewWebSessionService(store),

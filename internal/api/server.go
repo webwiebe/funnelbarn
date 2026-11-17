@@ -54,6 +54,7 @@ type Server struct {
 	dogfoodAPIKey       string
 	dogfoodProject      string
 	dogfoodEnvironment  string
+	brandTraceSiteKey   string
 	trustedProxies      []string
 	iambarnUsers        service.IAMBarnUsers
 	postLogoutRedirect  string
@@ -140,6 +141,7 @@ func NewServer(cfg ServerConfig) *Server {
 		dogfoodAPIKey:       cfg.DogfoodAPIKey,
 		dogfoodProject:      cfg.DogfoodProject,
 		dogfoodEnvironment:  cfg.DogfoodEnvironment,
+		brandTraceSiteKey:   cfg.BrandTraceSiteKey,
 		trustedProxies:      cfg.TrustedProxies,
 		loginLimiter:        newRateLimiter(cfg.LoginRatePerMinute, cfg.LoginRateBurst),
 		eventsLimiter:       newRateLimiter(cfg.IngestRatePerMinute, cfg.IngestRateBurst),

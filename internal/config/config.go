@@ -31,6 +31,9 @@ type Config struct {
 	SelfAPIKey          string
 	SelfProject         string
 	SelfEnvironment     string
+	// BrandTraceSiteKey is the public BrandTrace site key the dashboard loads
+	// the BrandTrace SDK with. Empty keeps the SDK off.
+	BrandTraceSiteKey string
 	// Version, when set (FUNNELBARN_VERSION), overrides the build-time version
 	// baked into the binary. Images are SHA-tagged and reused across
 	// environments, so the deploy injects the actual release tag here to make
@@ -222,6 +225,7 @@ func (cfg *Config) loadSelfReporting() {
 	cfg.SelfEnvironment = getenv("FUNNELBARN_ENVIRONMENT", "production")
 	cfg.DogfoodAPIKey = os.Getenv("FUNNELBARN_DOGFOOD_API_KEY")
 	cfg.DogfoodProject = getenv("FUNNELBARN_DOGFOOD_PROJECT", "funnelbarn")
+	cfg.BrandTraceSiteKey = os.Getenv("FUNNELBARN_BRANDTRACE_SITE_KEY")
 }
 
 // loadRetention reads the retention and flag auto-registration settings.

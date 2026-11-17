@@ -96,3 +96,25 @@ func TestClientConfig_OIDCSetsProfileURLAndLoginURL(t *testing.T) {
 		t.Errorf("loginURL: got %q", got.OIDC.LoginURL)
 	}
 }
+
+func TestClientConfig_ServesTheBrandTraceSiteKeyOnlyWhenSet(t *testing.T) {
+	for _, tc := range []struct{ name, key, want string }{
+		{"set", "site-key-123", "site-key-123"},
+		{"empty", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := &Server{brandTraceSiteKey: tc.key}
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/client-config", nil)
+			w := httptest.NewRecorder()
+			srv.handleClientConfig(w, req)
+			var out map[string]any
+			if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			got, present := out["brandtrace_site_key"].(string)
+			if got != tc.want || (tc.want == "") == present {
+				t.Errorf("brandtrace_site_key = %q (present %v), want %q", got, present, tc.want)
+			}
+		})
+	}
+}

@@ -129,6 +129,8 @@ spec:
               optional: true
         - name: FUNNELBARN_DOGFOOD_PROJECT
           value: funnelbarn
+        - name: FUNNELBARN_BRANDTRACE_SITE_KEY
+          value: 6dce329d58a24c94a6d2db444349a6a4
         - name: FUNNELBARN_R2_ENDPOINT
           valueFrom:
             secretKeyRef:
