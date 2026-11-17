@@ -31,6 +31,7 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		FunnelbarnAPIKey        string     `json:"funnelbarn_api_key,omitempty"`
 		FunnelbarnProject       string     `json:"funnelbarn_project,omitempty"`
 		FunnelbarnEnvironment   string     `json:"funnelbarn_environment,omitempty"`
+		BrandTraceSiteKey       string     `json:"brandtrace_site_key,omitempty"`
 		FunnelbarnRecording     bool       `json:"funnelbarn_recording,omitempty"`
 		FunnelbarnRecordingRate float64    `json:"funnelbarn_recording_rate,omitempty"`
 		IAMBarn                 iambarnOut `json:"iambarn,omitempty"`
@@ -45,6 +46,7 @@ func (s *Server) handleClientConfig(w http.ResponseWriter, r *http.Request) {
 		FunnelbarnAPIKey:      s.dogfoodAPIKey,
 		FunnelbarnProject:     s.dogfoodProject,
 		FunnelbarnEnvironment: s.dogfoodEnvironment,
+		BrandTraceSiteKey:     s.brandTraceSiteKey,
 		LocalAuthAvailable:    s.userAuth != nil && s.userAuth.Enabled(),
 	}
 

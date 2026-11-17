@@ -55,6 +55,9 @@ type ServerConfig struct {
 	// DogfoodEnvironment is the deploy environment the dashboard tags its own
 	// analytics events with, so one project and key serve every environment.
 	DogfoodEnvironment string
+	// BrandTraceSiteKey is the public BrandTrace site key served to the
+	// dashboard through client-config. Empty keeps the BrandTrace SDK off.
+	BrandTraceSiteKey string
 
 	IAMBarnUsers service.IAMBarnUsers
 

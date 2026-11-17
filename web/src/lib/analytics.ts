@@ -3,6 +3,7 @@
 // Falls back to no-op when unconfigured.
 
 import { FunnelBarnClient } from '@funnelbarn/js'
+import { loadBrandTrace } from './brandtrace'
 
 let client: FunnelBarnClient | null = null
 let configLoaded = false
@@ -14,6 +15,7 @@ async function loadConfig(): Promise<void> {
     const res = await fetch('/api/v1/client-config')
     if (!res.ok) return
     const cfg = await res.json()
+    loadBrandTrace(cfg.brandtrace_site_key)
     const endpoint: string = cfg.funnelbarn_endpoint ?? ''
     const apiKey: string = cfg.funnelbarn_api_key ?? ''
     const projectName: string = cfg.funnelbarn_project ?? ''
