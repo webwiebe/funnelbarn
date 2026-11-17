@@ -81,3 +81,20 @@ func TestCheckInputs_CountsAnUnreadableChunkAndRefusesAnUnknownRecording(t *test
 	_, err = svc.CheckInputs(context.Background(), "missing")
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 }
+
+func TestCheckInputs_ReportsOnlyYesOrNoForNeedles(t *testing.T) {
+	svc, _ := seedRecordings(t, 1, [][]byte{gz(t, snapshotChunk), gz(t, typingChunk)})
+
+	res, err := svc.CheckInputs(context.Background(), "rec-big-000", "visible name", "never typed", "0612345678", "")
+	require.NoError(t, err)
+	assert.Equal(t, []bool{true, false, true, false}, res.NeedlesFound)
+
+	out, err := json.Marshal(res)
+	require.NoError(t, err)
+	assert.NotContains(t, string(out), "visible name")
+	assert.NotContains(t, string(out), "never typed")
+
+	none, err := svc.CheckInputs(context.Background(), "rec-big-000")
+	require.NoError(t, err)
+	assert.Nil(t, none.NeedlesFound)
+}

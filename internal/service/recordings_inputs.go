@@ -44,6 +44,9 @@ type InputCheck struct {
 	UnmatchedEvents int `json:"unmatched_events"`
 	// BlockedElements counts every element carrying the block class.
 	BlockedElements int `json:"blocked_elements"`
+	// NeedlesFound answers, in the order the strings were given, whether each
+	// appears anywhere in the stored chunks. The strings are not echoed.
+	NeedlesFound []bool `json:"needles_found,omitempty"`
 }
 
 // ReadableTotal is the number of readable field values and typed events.
@@ -67,8 +70,9 @@ func (c InputCheck) Types() []string {
 
 // CheckInputs reads the stored chunks of one recording and reports, per input
 // type, how many fields and typed values are blocked, masked, empty or
-// readable. It prints and returns no field value.
-func (svc *RecordingService) CheckInputs(ctx context.Context, recordingID string) (InputCheck, error) {
+// readable. It prints and returns no field value. Each needle is searched in
+// the raw stored chunks and only a yes or no comes back.
+func (svc *RecordingService) CheckInputs(ctx context.Context, recordingID string, needles ...string) (InputCheck, error) {
 	rec, err := svc.store.GetRecording(ctx, recordingID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return InputCheck{}, fmt.Errorf("%w: recording %s", domain.ErrNotFound, recordingID)
@@ -77,6 +81,9 @@ func (svc *RecordingService) CheckInputs(ctx context.Context, recordingID string
 		return InputCheck{}, fmt.Errorf("recordings: get recording: %w", err)
 	}
 	out := InputCheck{RecordingID: rec.ID, Page: rec.PageURL, Inputs: map[string]*InputCounts{}}
+	if len(needles) > 0 {
+		out.NeedlesFound = make([]bool, len(needles))
+	}
 	w := &inputWalker{out: &out, types: map[int]string{}}
 	upper := rec.LastChunkIndex
 	if upper < rec.ChunkCount-1 {
@@ -87,8 +94,18 @@ func (svc *RecordingService) CheckInputs(ctx context.Context, recordingID string
 			return out, err
 		}
 		out.Chunks++
-		events, ok := svc.readChunkEvents(ctx, chunkKey(rec.ProjectID, rec.ID, i))
+		raw, ok := svc.readChunk(ctx, chunkKey(rec.ProjectID, rec.ID, i))
 		if !ok {
+			out.Unreadable++
+			continue
+		}
+		for n, needle := range needles {
+			if needle != "" && bytes.Contains(raw, []byte(needle)) {
+				out.NeedlesFound[n] = true
+			}
+		}
+		var events []rrEvent
+		if json.Unmarshal(raw, &events) != nil {
 			out.Unreadable++
 			continue
 		}
@@ -97,8 +114,8 @@ func (svc *RecordingService) CheckInputs(ctx context.Context, recordingID string
 	return out, nil
 }
 
-// readChunkEvents loads and decodes one stored chunk.
-func (svc *RecordingService) readChunkEvents(ctx context.Context, key string) ([]rrEvent, bool) {
+// readChunk loads and decompresses one stored chunk.
+func (svc *RecordingService) readChunk(ctx context.Context, key string) ([]byte, bool) {
 	compressed, err := svc.storage.Get(ctx, key)
 	if err != nil {
 		return nil, false
@@ -112,11 +129,7 @@ func (svc *RecordingService) readChunkEvents(ctx context.Context, key string) ([
 	if err != nil {
 		return nil, false
 	}
-	var events []rrEvent
-	if json.Unmarshal(raw, &events) != nil {
-		return nil, false
-	}
-	return events, true
+	return raw, true
 }
 
 // rrEvent is the part of an rrweb event the check reads.
