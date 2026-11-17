@@ -380,13 +380,7 @@ export class FunnelBarnClient {
 
   private async sendEvent(event: EventPayload): Promise<void> {
     const url = `${this.endpoint}/api/v1/events`;
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      "x-funnelbarn-api-key": this.apiKey,
-    };
-    if (this.projectName) {
-      headers["x-funnelbarn-project"] = this.projectName;
-    }
+    const headers = this.requestHeaders();
 
     const body = JSON.stringify(event);
 
@@ -919,6 +913,12 @@ export class FunnelBarnClient {
     return '';
   }
 
+  private requestHeaders(): Record<string, string> { // events and recording chunks
+    const headers: Record<string, string> = { "Content-Type": "application/json", "x-funnelbarn-api-key": this.apiKey };
+    if (this.projectName) headers["x-funnelbarn-project"] = this.projectName;
+    return headers;
+  }
+
   private async flushRecordingChunk(useKeepalive = false): Promise<void> {
     if (!this.shouldRecordCurrentPage()) {
       this.rrwebBuffer = [];
@@ -934,9 +934,9 @@ export class FunnelBarnClient {
     this.recordingChunkIndex += groups.length;
     const sent = await sendInOrder(groups, (chunk, g) => fetch(`${this.endpoint}/api/v1/recordings/chunk`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-funnelbarn-api-key': this.apiKey },
+      headers: this.requestHeaders(),
       body: JSON.stringify({
-        recording_id: this.recordingId,
+        recording_id: this.recordingId, environment: this.environment,
         session_id: this.getOrCreateSessionID(),
         chunk_index: first + g,
         events: chunk,

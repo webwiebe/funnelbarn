@@ -9,7 +9,7 @@
         "device_type": "desktop",
         "duration_ms": 4000,
         "ended_at": "2026-03-02T12:00:04Z",
-        "environment": "",
+        "environment": "production",
         "first_chunk_index": 0,
         "has_snapshot": false,
         "id": "rec-A-03",

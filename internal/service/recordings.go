@@ -30,11 +30,13 @@ type RecordingChunk struct {
 	// Traces are the W3C trace links observed in the browser during this chunk's
 	// window. They are the cross-stack join key (SpanBarn/BugBarn trace_id ->
 	// session/recording). Optional: a chunk with no instrumented requests sends none.
-	Traces      []domain.TraceLink `json:"traces,omitempty"`
-	Environment string             `json:"-"` // set by the handler from the resolved project
-	ProjectSlug string             `json:"-"` // set by the handler
-	ProjectID   string             `json:"-"` // set by the handler after slug lookup
-	UserAgent   string             `json:"-"` // set by the handler from the request UA header
+	Traces []domain.TraceLink `json:"traces,omitempty"`
+	// Environment is what the SDK sent, then the canonical value the handler
+	// files the recording under (the key environment overrides it).
+	Environment string `json:"environment,omitempty"`
+	ProjectSlug string `json:"-"` // set by the handler
+	ProjectID   string `json:"-"` // set by the handler after slug lookup
+	UserAgent   string `json:"-"` // set by the handler from the request UA header
 }
 
 // RecordingStorage is the interface for chunk blob storage (R2).
