@@ -143,7 +143,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	handler := newIngestHandler(ctx, cfg, authn.authorizer, ing.spool, data.health, &cleanup)
+	handler := newIngestHandler(ctx, cfg, authn.authorizer, ing.spool, data.health, data.store, &cleanup)
 	serverCfg.Ingest = handler
 	serverCfg.UserAuth = authn.users
 	serverCfg.SessionManager = authn.sessions

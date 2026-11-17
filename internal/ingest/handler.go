@@ -36,6 +36,11 @@ type Handler struct {
 	// OnEventsReceived is called once per request after successful auth.
 	// It is optional; set by the server to track integration health.
 	OnEventsReceived func(ctx context.Context, projectID string)
+	// ProjectSlug resolves a project id to its slug for the project field of
+	// the 202 body. Optional; without it the field is left out.
+	ProjectSlug func(ctx context.Context, projectID string) (string, error)
+
+	notes projectNotes
 
 	// unattributedMu guards the throttle for the "no resolvable project" alert.
 	unattributedMu     sync.Mutex
@@ -288,10 +293,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"accepted": true,
-		"ingestId": ingestID,
-	})
+	answer := h.projectAnswer(r.Context(), projectID, r.Header.Get("x-funnelbarn-project"))
+	if projectID == "" {
+		// An instance-wide key files the event under the header's project.
+		answer["project"] = projectSlug
+	}
+	answer["accepted"] = true
+	answer["ingestId"] = ingestID
+	_ = json.NewEncoder(w).Encode(answer)
 }
 
 // keyEnvironment returns the environment the request's key is mapped to. A
