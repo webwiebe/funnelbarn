@@ -48,14 +48,14 @@ func TestBackfillRecordingEnvironments(t *testing.T) {
 	backfillRecording(t, s, a.ID, "r-set", "sess-test", "staging")
 	backfillRecording(t, s, b.ID, "r-other", "sess-other", "")
 
-	dry, err := s.BackfillRecordingEnvironments(ctx, a.ID, 2, false)
+	dry, err := s.BackfillRecordingEnvironments(ctx, a.ID, 2, false, nil)
 	require.NoError(t, err)
 	assert.Equal(t, repository.EnvironmentBackfill{Scanned: 4, Filled: 2, Mixed: 1, NoEvents: 1, Batches: 2}, dry)
 	got, err := s.GetRecording(ctx, "r-test")
 	require.NoError(t, err)
 	assert.Equal(t, "", got.Environment, "a dry run writes nothing")
 
-	applied, err := s.BackfillRecordingEnvironments(ctx, a.ID, 2, true)
+	applied, err := s.BackfillRecordingEnvironments(ctx, a.ID, 2, true, nil)
 	require.NoError(t, err)
 	assert.Equal(t, dry, applied)
 
@@ -69,7 +69,7 @@ func TestBackfillRecordingEnvironments(t *testing.T) {
 		assert.Equal(t, env, rec.Environment, id)
 	}
 
-	again, err := s.BackfillRecordingEnvironments(ctx, a.ID, 2, true)
+	again, err := s.BackfillRecordingEnvironments(ctx, a.ID, 2, true, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 0, again.Filled, "a second run fills nothing")
 	assert.Equal(t, 2, again.Scanned, "mixed and event-less recordings stay and are counted again")

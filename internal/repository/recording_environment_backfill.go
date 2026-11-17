@@ -27,8 +27,8 @@ type envRecordingRow struct{ id, sessionID string }
 // counted. Rows are read in id order, at most batch at a time (capped at
 // MaxPageURLBatch), one transaction per batch. With apply false nothing is
 // written. Events with an empty environment count as production, the way the
-// dashboard reads them.
-func (s *Store) BackfillRecordingEnvironments(ctx context.Context, projectID string, batch int, apply bool) (EnvironmentBackfill, error) {
+// dashboard reads them. onBatch, when set, receives the running totals after each batch.
+func (s *Store) BackfillRecordingEnvironments(ctx context.Context, projectID string, batch int, apply bool, onBatch func(EnvironmentBackfill)) (EnvironmentBackfill, error) {
 	if batch <= 0 || batch > MaxPageURLBatch {
 		batch = MaxPageURLBatch
 	}
@@ -47,6 +47,9 @@ func (s *Store) BackfillRecordingEnvironments(ctx context.Context, projectID str
 			return out, err
 		}
 		out.Batches++
+		if onBatch != nil {
+			onBatch(out)
+		}
 		if len(rows) < batch {
 			return out, nil
 		}
