@@ -29,6 +29,7 @@
 - **FR-015**: The dashboard MUST show a Sessions page at `/sessions/:projectId` with a replay player, reachable from the navigation, from a funnel step and from a flow page. Issues: none. [inferred]
 - **FR-016**: The system MUST store a recording's `page_url` as origin and path plus `utm_*` parameters, with the query and fragment otherwise dropped, for every project (iambarn#489). Issues: iambarn#489. Tests: `internal/enrich/page_url_test.go::TestRecordingPageURL`, `internal/service/recordings_test.go::TestRecordingService_IngestChunk_RedactsSensitiveURLParams`.
 - **FR-017**: `funnelbarn recordings check-inputs --id <id>` MUST report, per input type, how many fields and typed values of a stored recording are blocked, masked, empty or readable, and MUST print no field value. With `--contains <text>` (repeatable) it also reports, in order, whether each text appears anywhere in the stored chunks as yes or no, without echoing it. It opens the database read-only. Issues: iambarn#489. Tests: `internal/service/recordings_inputs_test.go`, `cmd/funnelbarn/recordings_inputs_test.go`.
+- **FR-018**: `funnelbarn recordings strip-page-urls --project <slug>` MUST rewrite `recordings.page_url` of that one project to the FR-016 form and print counts only. It is a dry run unless `--apply` is given, reads at most `repository.MaxPageURLBatch` rows at a time, writes each batch in one transaction and is idempotent. Issues: iambarn#489. Tests: `internal/repository/recording_page_urls_test.go`, `cmd/funnelbarn/recordings_strip_test.go`.
 
 ---
 
