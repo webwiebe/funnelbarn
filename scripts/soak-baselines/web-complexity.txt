@@ -5,12 +5,9 @@
 # ENFORCE AT 0 entries: set complexity: ['error', 12] in web/eslint.config.js,
 # delete web/eslint.soak.config.js, drop this dimension.
 # Refresh with: python3 scripts/quality-soak.py web-complexity --update-baseline
-# entries: 9  total: 12
+# entries: 6  total: 9
 #
 1 web/src/components/flags/FlagFormModal.tsx
-1 web/src/components/settings/ProjectHealthCard.tsx
-1 web/src/components/settings/ProjectRecordingSettings.tsx
-1 web/src/lib/api.ts
 1 web/src/pages/Dashboard.tsx
 3 web/src/pages/Funnels.tsx
 1 web/src/pages/Overview.tsx

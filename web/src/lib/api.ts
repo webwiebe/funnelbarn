@@ -1,6 +1,6 @@
 // Typed API client with 401 interceptor and BugBarn 5xx reporting
-import { reportError } from './bugbarn'
 import { ApiError } from './api-error'
+import { buildHeaders, failFor, fetchWithRetry } from './request-core'
 import type { IambarnConfig } from './iambarn-config'
 import type { LogoutResponse } from './auth-types'
 import type { Funnel, FunnelAnalysis, FunnelScope, FunnelSegments, FunnelStepInput, StepResult } from './funnel-types'
@@ -8,80 +8,11 @@ export type { Funnel, FunnelAnalysis, FunnelScope, FunnelSegments, FunnelStepInp
 
 export { ApiError }
 
-function getCookie(name: string): string | undefined {
-  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
-  return match ? decodeURIComponent(match[1]) : undefined
-}
-
-// Transient statuses we'll retry once. 502/503/504 are almost always a
-// k8s rollout in flight (pod cycling) — they recover in a couple of seconds.
-const TRANSIENT_STATUSES = new Set([502, 503, 504])
-
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...options.headers as Record<string, string> }
-
   const method = (options.method || 'GET').toUpperCase()
-  if (method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH') {
-    const csrfToken = getCookie('funnelbarn_csrf')
-    if (csrfToken) {
-      headers['X-FunnelBarn-CSRF'] = csrfToken
-    }
-  }
-
-  const doFetch = () => fetch(path, { ...options, headers, credentials: 'include' })
-
-  let res: Response
-  try {
-    res = await doFetch()
-  } catch (e) {
-    // TypeError: Failed to fetch — browser-level network failure. Don't
-    // report (it's the user's network, not our code). Surface as an
-    // ApiError so callers can render a "lost connection" state if they want.
-    throw new ApiError(0, e instanceof Error ? e.message : 'network error')
-  }
-
-  // One-shot retry on transient 5xx after a short delay. Don't retry mutating
-  // methods — the request may have already partially applied server-side.
-  if (TRANSIENT_STATUSES.has(res.status) && method === 'GET') {
-    await new Promise((r) => setTimeout(r, 800))
-    try {
-      res = await doFetch()
-    } catch {
-      // Same network-failure rationale as above.
-      throw new ApiError(0, 'network error after retry')
-    }
-  }
-
-  if (res.status === 401) {
-    const { pathname } = window.location
-    if (pathname !== '/' && !pathname.startsWith('/login')) {
-      window.location.href = '/login'
-    }
-    throw new ApiError(401, 'Unauthorized')
-  }
-
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`
-    try {
-      const body = await res.json()
-      if (body.error) msg = body.error
-    } catch {
-      // ignore parse errors
-    }
-    const apiErr = new ApiError(res.status, msg)
-    // Report unexpected server errors (5xx) to BugBarn — but skip the transient
-    // statuses we just retried. If we retried and still got 503, it's likely a
-    // longer rollout or real outage; we still don't want a BugBarn spam storm
-    // for either case, so suppress those too.
-    if (res.status >= 500 && !TRANSIENT_STATUSES.has(res.status)) {
-      reportError(apiErr, {
-        source: 'api.request',
-        path,
-        status: res.status,
-      })
-    }
-    throw apiErr
-  }
+  const headers = buildHeaders(options, method)
+  const res = await fetchWithRetry(() => fetch(path, { ...options, headers, credentials: 'include' }), method)
+  if (!res.ok) return failFor(res, path)
 
   const text = await res.text()
   if (!text) return undefined as T
