@@ -1,227 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Plus, Layers, Pencil, Trash2, Video } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { api, ApiError, Funnel, FunnelAnalysis, Segment } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { trackEvent } from '../lib/analytics'
 import { reportError } from '../lib/bugbarn'
 import { C } from '../lib/theme'
-import { ImplementationSnippet } from '../components/funnels/ImplementationSnippet'
-import { CreateFunnelModal } from '../components/funnels/CreateFunnelModal'
-import { EditFunnelModal } from '../components/funnels/EditFunnelModal'
+import { AnalysisResult, CreateFunnelButton, FunnelModals, DetailHeader, FunnelList, NoSelection, SegmentPills } from '../components/funnels/FunnelPanels'
 import { SegmentManager } from '../components/funnels/SegmentManager'
 import { EnvironmentSwitch } from '../components/funnels/EnvironmentSwitch'
-import { BreakdownPanel } from '../components/funnels/BreakdownPanel'
 import { useFunnelDeepLink } from '../components/funnels/funnelLink'
 import { TemplatesButton } from '../components/funnels/TemplatesButton'
-import { FunnelTemplate, PRESET_SEGMENTS, conversionColor, watchRecordingsPath } from '../components/funnels/constants'
-
-// ─── Funnel Detail ────────────────────────────────────────────────────────────
-
-function FunnelDetail({ analysis, activeSegment, apiKey, onWatchRecordings }: { analysis: FunnelAnalysis; activeSegment: string; apiKey?: string; onWatchRecordings?: (step: number) => void }) {
-  const hasData = analysis.results && analysis.results.length > 0 && analysis.results[0]?.count > 0
-  const [showImpl, setShowImpl] = useState(false)
-
-  if (!hasData) {
-    return (
-      <div>
-        <div style={{ padding: '2rem', textAlign: 'center', color: C.muted, maxWidth: '100%', overflow: 'hidden' }}>
-          <div style={{ fontSize: 40, marginBottom: 16 }}>📭</div>
-          <div style={{ fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 8, wordBreak: 'break-word' }}>
-            No data yet for "{analysis.funnel?.name}"
-          </div>
-          <div style={{ fontSize: 14, lineHeight: 1.6, maxWidth: '100%', wordBreak: 'break-word' }}>
-            Start sending events using your tracking snippet.<br />
-            This funnel tracks: {analysis.funnel?.steps?.map(s => s.event_name).filter(Boolean).join(' → ') || '(no steps defined)'}
-          </div>
-        </div>
-        <div style={{ marginTop: '1.5rem' }}>
-          <button
-            onClick={() => setShowImpl((v) => !v)}
-            style={{
-              background: 'transparent',
-              border: `1px solid ${C.border}`,
-              borderRadius: 8,
-              color: C.muted,
-              padding: '0.5rem 1rem',
-              cursor: 'pointer',
-              fontSize: 13,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            <span>{showImpl ? '▲' : '▼'}</span>
-            How to implement
-          </button>
-          {showImpl && analysis.funnel && <ImplementationSnippet funnel={analysis.funnel} apiKey={apiKey} />}
-        </div>
-      </div>
-    )
-  }
-
-  const maxCount = Math.max(...(analysis.results?.map((r) => r.count) ?? [1]))
-  const segLabel = PRESET_SEGMENTS.find((s) => s.id === activeSegment)?.label ?? activeSegment
-  const entryCount = analysis.results?.[0]?.count ?? 0
-
-  return (
-    <div>
-      <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>{analysis.funnel.name}</h2>
-      <p style={{ color: C.muted, fontSize: 13, marginBottom: '0.75rem' }}>
-        {analysis.from?.slice(0, 10)} → {analysis.to?.slice(0, 10)}
-      </p>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1.25rem', flexWrap: 'wrap' }}>
-        <span style={{ color: C.muted, fontSize: 13 }}>
-          {entryCount.toLocaleString()} {analysis.funnel?.scope === 'page_view' ? 'page views' : analysis.funnel?.scope === 'user' ? 'users' : 'sessions'}
-        </span>
-        {activeSegment !== 'all' && (
-          <span style={{
-            fontSize: 12,
-            fontWeight: 700,
-            background: 'rgba(245,158,11,0.15)',
-            color: C.amber,
-            border: '1px solid rgba(245,158,11,0.35)',
-            borderRadius: 99,
-            padding: '0.15rem 0.6rem',
-          }}>
-            {segLabel}
-          </span>
-        )}
-      </div>
-
-      {(analysis.funnel?.unmatched_steps?.length ?? 0) > 0 && (
-        <div
-          style={{
-            background: 'rgba(239,68,68,0.08)',
-            border: '1px solid rgba(239,68,68,0.35)',
-            borderRadius: 10,
-            padding: '0.75rem 1rem',
-            marginBottom: '1.25rem',
-            fontSize: 13,
-            color: C.text,
-          }}
-        >
-          <div style={{ fontWeight: 700, color: C.error, marginBottom: 4 }}>
-            This funnel is not receiving events
-          </div>
-          <div style={{ color: C.muted, lineHeight: 1.5 }}>
-            {analysis.funnel.unmatched_steps?.length === analysis.funnel.steps?.length
-              ? 'None of its steps match an event this project has sent, so it can never report a conversion. '
-              : 'Some of its steps match no event this project has sent, so it stalls at those steps. '}
-            Never received:{' '}
-            {analysis.funnel.unmatched_steps?.map((name, i) => (
-              <span key={name}>
-                {i > 0 && ', '}
-                <code style={{ color: C.error, fontFamily: 'ui-monospace, monospace' }}>{name}</code>
-              </span>
-            ))}
-            . Check the event names your site sends, then edit the funnel to match them.
-          </div>
-        </div>
-      )}
-
-      {analysis.results?.map((step, i) => (
-        <div key={step.step_order} style={{ marginBottom: '1.25rem' }}>
-          {/* Drop-off indicator between steps */}
-          {i > 0 && step.drop_off > 0 && (
-            <div style={{
-              fontSize: 12,
-              color: C.error,
-              marginBottom: 6,
-              paddingLeft: 40,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-            }}>
-              <span>▼</span>
-              {(step.drop_off * 100).toFixed(1)}% dropped off
-            </div>
-          )}
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{
-              width: 32,
-              height: 32,
-              background: conversionColor(step.conversion),
-              color: '#0f1117',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800,
-              fontSize: 13,
-              flexShrink: 0,
-            }}>
-              {i + 1}
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 6 }}>
-                {step.event_name}
-              </div>
-              <div style={{ height: 20, background: '#2a2d3a', borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
-                <div style={{
-                  position: 'absolute',
-                  inset: 0,
-                  width: `${(step.count / maxCount) * 100}%`,
-                  background: conversionColor(step.conversion),
-                  borderRadius: 4,
-                  display: 'flex',
-                  alignItems: 'center',
-                  paddingLeft: 8,
-                  transition: 'width 0.5s',
-                }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#0f1117', whiteSpace: 'nowrap' }}>
-                    {(step.conversion * 100).toFixed(1)}%
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div style={{ textAlign: 'right', minWidth: 70 }}>
-              <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>{step.count.toLocaleString()}</div>
-              <div style={{ fontSize: 12, color: C.muted }}>users</div>
-            </div>
-            {onWatchRecordings && (
-              <button
-                title="Watch recordings for this step"
-                onClick={() => onWatchRecordings(step.step_order)}
-                style={{
-                  background: 'none', border: `1px solid ${C.border}`, borderRadius: 6,
-                  color: C.muted, cursor: 'pointer', padding: '4px 6px',
-                  display: 'flex', alignItems: 'center',
-                }}
-              >
-                <Video size={13} />
-              </button>
-            )}
-          </div>
-        </div>
-      ))}
-
-      <div style={{ marginTop: '1.5rem' }}>
-        <button
-          onClick={() => setShowImpl((v) => !v)}
-          style={{
-            background: 'transparent',
-            border: `1px solid ${C.border}`,
-            borderRadius: 8,
-            color: C.muted,
-            padding: '0.5rem 1rem',
-            cursor: 'pointer',
-            fontSize: 13,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
-          <span>{showImpl ? '▲' : '▼'}</span>
-          How to implement
-        </button>
-        {showImpl && analysis.funnel && <ImplementationSnippet funnel={analysis.funnel} apiKey={apiKey} />}
-      </div>
-    </div>
-  )
-}
+import { FunnelTemplate, watchRecordingsPath } from '../components/funnels/constants'
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -386,33 +176,27 @@ export default function Funnels() {
         }
       `}</style>
 
-      {showCreate && projectId && (
-        <CreateFunnelModal
-          projectId={projectId}
-          initialTemplate={pendingTemplate}
-          onClose={() => { setShowCreate(false); setPendingTemplate(undefined) }}
-          onCreated={(f) => {
-            setFunnels((prev) => [...prev, f])
-            setShowCreate(false)
-            setPendingTemplate(undefined)
-            loadAnalysis(f)
-          }}
-        />
-      )}
-
-      {showEdit && selected && projectId && (
-        <EditFunnelModal
-          projectId={projectId}
-          funnel={selected}
-          onClose={() => setShowEdit(false)}
-          onUpdated={(updated) => {
-            setFunnels((prev) => prev.map((f) => f.id === updated.id ? updated : f))
-            setSelected(updated)
-            setShowEdit(false)
-            setAnalysis(null)
-          }}
-        />
-      )}
+      <FunnelModals
+        projectId={projectId}
+        showCreate={showCreate}
+        showEdit={showEdit}
+        selected={selected}
+        pendingTemplate={pendingTemplate}
+        onCloseCreate={() => { setShowCreate(false); setPendingTemplate(undefined) }}
+        onCloseEdit={() => setShowEdit(false)}
+        onCreated={(f) => {
+          setFunnels((prev) => [...prev, f])
+          setShowCreate(false)
+          setPendingTemplate(undefined)
+          loadAnalysis(f)
+        }}
+        onUpdated={(updated) => {
+          setFunnels((prev) => prev.map((f) => f.id === updated.id ? updated : f))
+          setSelected(updated)
+          setShowEdit(false)
+          setAnalysis(null)
+        }}
+      />
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', gap: 8, flexWrap: 'wrap' }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.5px', margin: 0 }}>Funnels</h1>
@@ -423,111 +207,18 @@ export default function Funnels() {
               setShowCreate(true)
             }}
           />
-          <button
-            onClick={() => { setPendingTemplate(undefined); setShowCreate(true) }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              background: C.amber,
-              border: 'none',
-              borderRadius: 8,
-              color: '#0f1117',
-              padding: '0.6rem 1.1rem',
-              cursor: 'pointer',
-              fontSize: 14,
-              fontWeight: 700,
-            }}
-          >
-            <Plus size={16} />
-            Create funnel
-          </button>
+          <CreateFunnelButton onClick={() => { setPendingTemplate(undefined); setShowCreate(true) }} />
         </div>
       </div>
 
       <div className="funnels-layout" style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '1.5rem' }}>
-        {/* Funnel list */}
-        <div className={`funnels-list${showDetail ? ' detail-open' : ''}`}>
-          {funnels.length === 0 ? (
-            <div style={{
-              background: C.surface,
-              border: `1px solid ${C.border}`,
-              borderRadius: 12,
-              padding: '2rem',
-              textAlign: 'center',
-              color: C.muted,
-            }}>
-              <Layers size={32} style={{ opacity: 0.3, marginBottom: 8 }} />
-              <div style={{ fontSize: 14 }}>No funnels yet</div>
-              <button
-                onClick={() => setShowCreate(true)}
-                style={{
-                  marginTop: 12,
-                  background: 'transparent',
-                  border: `1px solid ${C.border}`,
-                  borderRadius: 7,
-                  color: C.amber,
-                  padding: '0.4rem 0.8rem',
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
-              >
-                Create one
-              </button>
-            </div>
-          ) : (
-            funnels.map((f) => (
-              <div
-                key={f.id}
-                onClick={() => loadAnalysis(f)}
-                style={{
-                  padding: '0.875rem 1rem',
-                  marginBottom: '0.5rem',
-                  cursor: 'pointer',
-                  background: selected?.id === f.id ? 'rgba(245,158,11,0.1)' : C.surface,
-                  border: `1px solid ${selected?.id === f.id ? 'rgba(245,158,11,0.4)' : C.border}`,
-                  borderRadius: 10,
-                  transition: 'all 0.15s',
-                }}
-              >
-                <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{f.name}</div>
-                <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
-                  {f.steps?.length ?? 0} steps
-                  {(f.unmatched_steps?.length ?? 0) > 0 && (
-                    <span
-                      title={`Never received: ${f.unmatched_steps?.join(', ')}`}
-                      style={{
-                        marginLeft: 6,
-                        background: 'rgba(239,68,68,0.12)',
-                        color: C.error,
-                        borderRadius: 4,
-                        padding: '0.05rem 0.35rem',
-                        fontSize: 10,
-                        fontWeight: 600,
-                      }}
-                    >
-                      not configured
-                    </span>
-                  )}
-                  {f.scope && f.scope !== 'session' && (
-                    <span style={{
-                      marginLeft: 6,
-                      background: 'rgba(245,158,11,0.12)',
-                      color: C.amber,
-                      borderRadius: 4,
-                      padding: '0.05rem 0.35rem',
-                      fontSize: 10,
-                      fontWeight: 600,
-                    }}>
-                      {f.scope === 'user' ? 'user' : 'page view'}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+        <FunnelList
+          funnels={funnels}
+          selectedId={selected?.id}
+          detailOpen={showDetail}
+          onSelect={loadAnalysis}
+          onCreate={() => setShowCreate(true)}
+        />
 
         {/* Analysis panel */}
         <div className={`funnels-detail${!selected ? ' no-selection' : ''}`} style={{
@@ -557,147 +248,37 @@ export default function Funnels() {
           >
             ← Back
           </button>
-          {!selected && (
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: 300,
-              color: C.muted,
-              gap: 8,
-            }}>
-              <Layers size={40} opacity={0.3} />
-              <div>Select a funnel to view analysis</div>
-            </div>
-          )}
+          {!selected && <NoSelection />}
           {selected && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ fontWeight: 700, fontSize: 16, color: C.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {selected.name}
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                <button
-                  onClick={() => setShowEdit(true)}
-                  title="Edit funnel"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    background: 'transparent',
-                    border: `1px solid ${C.border}`,
-                    borderRadius: 7,
-                    color: C.muted,
-                    padding: '0.35rem 0.7rem',
-                    cursor: 'pointer',
-                    fontSize: 13,
-                  }}
-                >
-                  <Pencil size={13} /> Edit
-                </button>
-                <button
-                  onClick={handleDeleteFunnel}
-                  disabled={deleting}
-                  title="Delete funnel"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    background: 'transparent',
-                    border: `1px solid rgba(239,68,68,0.4)`,
-                    borderRadius: 7,
-                    color: C.error,
-                    padding: '0.35rem 0.7rem',
-                    cursor: deleting ? 'not-allowed' : 'pointer',
-                    fontSize: 13,
-                    opacity: deleting ? 0.5 : 1,
-                  }}
-                >
-                  <Trash2 size={13} /> {deleting ? 'Deleting…' : 'Delete'}
-                </button>
-              </div>
-            </div>
-          )}
-          {selected && (
-            <div style={{ marginBottom: '1.25rem' }}>
-              {/* Preset segment pills */}
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxWidth: '100%', boxSizing: 'border-box', marginBottom: segments.length > 0 ? 6 : 0 }}>
-                {PRESET_SEGMENTS.map((seg) => {
-                  const active = !activeSegmentId && activeSegment === seg.id
-                  return (
-                    <button
-                      key={seg.id}
-                      onClick={() => handleSegmentSelect(seg.id)}
-                      title={seg.tip}
-                      style={{
-                        padding: '0.35rem 0.875rem',
-                        borderRadius: 99,
-                        border: `1px solid ${active ? C.amber : C.border}`,
-                        background: active ? 'rgba(245,158,11,0.15)' : 'transparent',
-                        color: active ? C.amber : C.muted,
-                        cursor: 'pointer',
-                        fontSize: 13,
-                        fontWeight: active ? 600 : 400,
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      {seg.label}
-                    </button>
-                  )
-                })}
-              </div>
-              {/* Stored segment pills */}
-              {segments.length > 0 && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxWidth: '100%', boxSizing: 'border-box' }}>
-                  {segments.map((seg) => {
-                    const active = activeSegmentId === seg.id
-                    return (
-                      <button
-                        key={seg.id}
-                        onClick={() => handleStoredSegmentSelect(seg)}
-                        title={`Segment: ${seg.name}`}
-                        style={{
-                          padding: '0.35rem 0.875rem',
-                          borderRadius: 99,
-                          border: `1px solid ${active ? C.amber : C.border}`,
-                          background: active ? 'rgba(245,158,11,0.15)' : 'rgba(245,158,11,0.04)',
-                          color: active ? C.amber : C.muted,
-                          cursor: 'pointer',
-                          fontSize: 13,
-                          fontWeight: active ? 600 : 400,
-                          transition: 'all 0.15s',
-                        }}
-                      >
-                        {seg.name}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-          <EnvironmentSwitch projectId={projectId} value={selectedEnvironment} onChange={setSelectedEnvironment} />
-          {analysisLoading && (
-            <div style={{ color: C.muted, padding: '2rem' }}>Loading analysis…</div>
-          )}
-          {analysisError && !analysisLoading && (
-            <div style={{
-              background: 'rgba(239,68,68,0.1)',
-              border: `1px solid rgba(239,68,68,0.3)`,
-              borderRadius: 8, padding: '1rem 1.25rem', color: C.error, fontSize: 14,
-            }}>
-              Failed to load analysis: {analysisError}
-            </div>
-          )}
-          {analysis && !analysisLoading && !analysisError && (
-            <FunnelDetail
-              analysis={analysis}
-              activeSegment={activeSegmentLabel}
-              apiKey={ingestKey}
-              onWatchRecordings={(step) => projectId && analysis?.funnel?.id && navigate(watchRecordingsPath(projectId, analysis.funnel.id, step, selectedEnvironment))}
+            <DetailHeader
+              funnel={selected}
+              deleting={deleting}
+              onEdit={() => setShowEdit(true)}
+              onDelete={handleDeleteFunnel}
             />
           )}
-          {projectId && analysis && !analysisLoading && !analysisError && <BreakdownPanel projectId={projectId} funnel={analysis.funnel} environment={selectedEnvironment} segment={activeSegmentId ? undefined : activeSegment} segmentId={activeSegmentId} />}
+          {selected && (
+            <SegmentPills
+              segments={segments}
+              activeSegment={activeSegment}
+              activeSegmentId={activeSegmentId}
+              onPreset={handleSegmentSelect}
+              onStored={handleStoredSegmentSelect}
+            />
+          )}
+          <EnvironmentSwitch projectId={projectId} value={selectedEnvironment} onChange={setSelectedEnvironment} />
+          <AnalysisResult
+            projectId={projectId}
+            analysis={analysis}
+            loading={analysisLoading}
+            error={analysisError}
+            segmentLabel={activeSegmentLabel}
+            activeSegment={activeSegment}
+            activeSegmentId={activeSegmentId}
+            environment={selectedEnvironment}
+            apiKey={ingestKey}
+            onWatchRecordings={(step) => analysis?.funnel?.id && navigate(watchRecordingsPath(projectId, analysis.funnel.id, step, selectedEnvironment))}
+          />
         </div>
       </div>
 
