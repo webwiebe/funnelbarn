@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Globe, ShieldOff, Video } from 'lucide-react'
+import { ToggleSwitch, PillOptions } from '../components/settings/SettingsControls'
 import Shell from '../components/shell/Shell'
 import { api, ApiKey } from '../lib/api'
 import { useProjects, useEffectiveProjectId } from '../lib/projects'
@@ -21,6 +22,110 @@ const C = {
   success: '#10b981',
 }
 
+function parseInstanceSettings(settings: Record<string, string> | undefined) {
+  const rate = parseFloat(settings?.recording_sample_rate ?? '1')
+  const retention = parseInt(settings?.recording_retention_days ?? '90', 10)
+  return {
+    geoEnabled: settings?.geo_enabled !== 'false',
+    recordingEnabled: settings?.recording_enabled === 'true',
+    sampleRatePct: isNaN(rate) ? 100 : Math.round(rate * 100),
+    retentionDays: isNaN(retention) ? 90 : retention,
+  }
+}
+
+function anonymizeParams(val: string): { ip: string } | { session_id: string } {
+  const isIP = /^[\d.:a-fA-F]+$/.test(val) && !val.includes('-')
+  return isIP ? { ip: val } : { session_id: val }
+}
+
+function anonymizeMessage(count: number): string {
+  return `${count} session${count !== 1 ? 's' : ''} anonymized`
+}
+
+function AnonymizeForm() {
+  const [anonymizeInput, setAnonymizeInput] = useState('')
+  const [anonymizing, setAnonymizing] = useState(false)
+  const [anonymizeResult, setAnonymizeResult] = useState<string | null>(null)
+  const [anonymizeError, setAnonymizeError] = useState<string | null>(null)
+
+  const handleAnonymize = async () => {
+    const val = anonymizeInput.trim()
+    if (!val) return
+    setAnonymizing(true)
+    setAnonymizeResult(null)
+    setAnonymizeError(null)
+    try {
+      const res = await api.anonymizeGeo(anonymizeParams(val))
+      setAnonymizeResult(anonymizeMessage(res.anonymized))
+      setAnonymizeInput('')
+    } catch (e) {
+      setAnonymizeError(String(e))
+    } finally {
+      setAnonymizing(false)
+    }
+  }
+
+  return (
+    <div style={{ padding: '1.25rem 1.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <ShieldOff size={14} color={C.muted} />
+        <div style={{ fontWeight: 600, fontSize: 14 }}>Anonymize geo data</div>
+      </div>
+      <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, lineHeight: 1.5 }}>
+        Enter a session ID or IP address to zero out the stored geo fields (IP, city, region, coordinates, ISP).
+        Country code is preserved for aggregate analytics. Use this to fulfill GDPR right-to-erasure requests.
+      </div>
+      {anonymizeResult && (
+        <div style={{ fontSize: 13, color: C.success, marginBottom: 10 }}>{anonymizeResult}</div>
+      )}
+      {anonymizeError && (
+        <div style={{ fontSize: 13, color: C.error, marginBottom: 10 }}>{anonymizeError}</div>
+      )}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <input
+          value={anonymizeInput}
+          onChange={(e) => setAnonymizeInput(e.target.value)}
+          placeholder="Session ID or IP address"
+          style={{
+            flex: '1 1 240px',
+            background: C.bg,
+            border: `1px solid ${C.border}`,
+            borderRadius: 7,
+            padding: '0.55rem 0.875rem',
+            color: C.text,
+            fontSize: 13,
+            outline: 'none',
+            fontFamily: '"SF Mono", "Fira Code", monospace',
+          }}
+          onFocus={(e) => (e.target.style.borderColor = C.amber)}
+          onBlur={(e) => (e.target.style.borderColor = C.border)}
+          onKeyDown={(e) => e.key === 'Enter' && handleAnonymize()}
+        />
+        <button
+          onClick={handleAnonymize}
+          disabled={anonymizing || !anonymizeInput.trim()}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: anonymizing ? C.surface : 'rgba(239,68,68,0.1)',
+            border: '1px solid rgba(239,68,68,0.3)',
+            borderRadius: 7,
+            color: '#ef4444',
+            padding: '0.55rem 1rem',
+            cursor: (anonymizing || !anonymizeInput.trim()) ? 'not-allowed' : 'pointer',
+            fontSize: 13,
+            fontWeight: 700,
+          }}
+        >
+          <ShieldOff size={13} />
+          {anonymizing ? 'Anonymizing…' : 'Anonymize'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function Settings() {
   const { projects, isLoading: projectsLoading, refetch: refetchProjects, defaultProjectId, setDefaultProjectId } = useProjects()
   // /settings carries no /:projectId, so resolve the same project the header
@@ -40,10 +145,6 @@ export default function Settings() {
   const [recordingSampleRate, setRecordingSampleRate] = useState(100)
   const [recordingRetentionDays, setRecordingRetentionDays] = useState(90)
   const [savingRecording, setSavingRecording] = useState(false)
-  const [anonymizeInput, setAnonymizeInput] = useState('')
-  const [anonymizing, setAnonymizing] = useState(false)
-  const [anonymizeResult, setAnonymizeResult] = useState<string | null>(null)
-  const [anonymizeError, setAnonymizeError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!activeProjectId) {
@@ -68,12 +169,11 @@ export default function Settings() {
   useEffect(() => {
     api.getInstanceSettings()
       .then((d) => {
-        setGeoEnabled(d.settings?.geo_enabled !== 'false')
-        setRecordingEnabled(d.settings?.recording_enabled === 'true')
-        const rate = parseFloat(d.settings?.recording_sample_rate ?? '1')
-        setRecordingSampleRate(isNaN(rate) ? 100 : Math.round(rate * 100))
-        const ret = parseInt(d.settings?.recording_retention_days ?? '90', 10)
-        setRecordingRetentionDays(isNaN(ret) ? 90 : ret)
+        const parsed = parseInstanceSettings(d.settings)
+        setGeoEnabled(parsed.geoEnabled)
+        setRecordingEnabled(parsed.recordingEnabled)
+        setRecordingSampleRate(parsed.sampleRatePct)
+        setRecordingRetentionDays(parsed.retentionDays)
       })
       .catch(() => {})
   }, [])
@@ -105,25 +205,6 @@ export default function Settings() {
       setError(String(e))
     } finally {
       setSavingRecording(false)
-    }
-  }
-
-  const handleAnonymize = async () => {
-    const val = anonymizeInput.trim()
-    if (!val) return
-    setAnonymizing(true)
-    setAnonymizeResult(null)
-    setAnonymizeError(null)
-    try {
-      const isIP = /^[\d.:a-fA-F]+$/.test(val) && !val.includes('-')
-      const params = isIP ? { ip: val } : { session_id: val }
-      const res = await api.anonymizeGeo(params)
-      setAnonymizeResult(`${res.anonymized} session${res.anonymized !== 1 ? 's' : ''} anonymized`)
-      setAnonymizeInput('')
-    } catch (e) {
-      setAnonymizeError(String(e))
-    } finally {
-      setAnonymizing(false)
     }
   }
 
@@ -274,94 +355,15 @@ export default function Settings() {
               {' '}to point to a GeoLite2-City.mmdb file.
             </div>
           </div>
-          <button
-            onClick={() => handleGeoToggle(!geoEnabled)}
+          <ToggleSwitch
+            on={geoEnabled}
             disabled={savingGeo}
-            aria-label="Geo enrichment"
-            aria-pressed={geoEnabled}
-            style={{
-              position: 'relative',
-              width: 44,
-              height: 24,
-              borderRadius: 99,
-              border: 'none',
-              background: geoEnabled ? C.amber : C.border,
-              cursor: savingGeo ? 'not-allowed' : 'pointer',
-              transition: 'background 0.2s',
-              flexShrink: 0,
-            }}
-          >
-            <span style={{
-              position: 'absolute',
-              top: 3,
-              left: geoEnabled ? 23 : 3,
-              width: 18,
-              height: 18,
-              borderRadius: '50%',
-              background: geoEnabled ? '#0f1117' : C.muted,
-              transition: 'left 0.2s',
-            }} />
-          </button>
+            label="Geo enrichment"
+            onToggle={() => handleGeoToggle(!geoEnabled)}
+          />
         </div>
 
-        {/* Anonymize form */}
-        <div style={{ padding: '1.25rem 1.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <ShieldOff size={14} color={C.muted} />
-            <div style={{ fontWeight: 600, fontSize: 14 }}>Anonymize geo data</div>
-          </div>
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, lineHeight: 1.5 }}>
-            Enter a session ID or IP address to zero out the stored geo fields (IP, city, region, coordinates, ISP).
-            Country code is preserved for aggregate analytics. Use this to fulfill GDPR right-to-erasure requests.
-          </div>
-          {anonymizeResult && (
-            <div style={{ fontSize: 13, color: C.success, marginBottom: 10 }}>{anonymizeResult}</div>
-          )}
-          {anonymizeError && (
-            <div style={{ fontSize: 13, color: C.error, marginBottom: 10 }}>{anonymizeError}</div>
-          )}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <input
-              value={anonymizeInput}
-              onChange={(e) => setAnonymizeInput(e.target.value)}
-              placeholder="Session ID or IP address"
-              style={{
-                flex: '1 1 240px',
-                background: C.bg,
-                border: `1px solid ${C.border}`,
-                borderRadius: 7,
-                padding: '0.55rem 0.875rem',
-                color: C.text,
-                fontSize: 13,
-                outline: 'none',
-                fontFamily: '"SF Mono", "Fira Code", monospace',
-              }}
-              onFocus={(e) => (e.target.style.borderColor = C.amber)}
-              onBlur={(e) => (e.target.style.borderColor = C.border)}
-              onKeyDown={(e) => e.key === 'Enter' && handleAnonymize()}
-            />
-            <button
-              onClick={handleAnonymize}
-              disabled={anonymizing || !anonymizeInput.trim()}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                background: anonymizing ? C.surface : 'rgba(239,68,68,0.1)',
-                border: '1px solid rgba(239,68,68,0.3)',
-                borderRadius: 7,
-                color: '#ef4444',
-                padding: '0.55rem 1rem',
-                cursor: (anonymizing || !anonymizeInput.trim()) ? 'not-allowed' : 'pointer',
-                fontSize: 13,
-                fontWeight: 700,
-              }}
-            >
-              <ShieldOff size={13} />
-              {anonymizing ? 'Anonymizing…' : 'Anonymize'}
-            </button>
-          </div>
-        </div>
+        <AnonymizeForm />
       </div>
 
       {/* Session Recordings */}
@@ -393,20 +395,7 @@ export default function Settings() {
               When enabled, visitor sessions on the FunnelBarn dashboard are recorded using rrweb.
             </div>
           </div>
-          <button
-            onClick={() => setRecordingEnabled((v) => !v)}
-            style={{
-              position: 'relative', width: 44, height: 24, borderRadius: 99, border: 'none',
-              background: recordingEnabled ? C.amber : C.border, cursor: 'pointer', transition: 'background 0.2s',
-              flexShrink: 0,
-            }}
-          >
-            <span style={{
-              position: 'absolute', top: 3, left: recordingEnabled ? 23 : 3,
-              width: 18, height: 18, borderRadius: '50%',
-              background: recordingEnabled ? '#0f1117' : C.muted, transition: 'left 0.2s',
-            }} />
-          </button>
+          <ToggleSwitch on={recordingEnabled} onToggle={() => setRecordingEnabled((v) => !v)} />
         </div>
 
         {/* Sample rate */}
@@ -417,22 +406,7 @@ export default function Settings() {
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, lineHeight: 1.5 }}>
             Percentage of sessions to record. 100% records all sessions; lower values reduce storage usage.
           </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {[10, 25, 50, 100].map((pct) => (
-              <button
-                key={pct}
-                onClick={() => setRecordingSampleRate(pct)}
-                style={{
-                  padding: '4px 14px', borderRadius: 99, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                  border: `1px solid ${recordingSampleRate === pct ? C.amber : C.border}`,
-                  background: recordingSampleRate === pct ? 'rgba(245,158,11,0.1)' : 'none',
-                  color: recordingSampleRate === pct ? C.amber : C.muted,
-                }}
-              >
-                {pct}%
-              </button>
-            ))}
-          </div>
+          <PillOptions options={[10, 25, 50, 100]} value={recordingSampleRate} suffix="%" onSelect={setRecordingSampleRate} />
         </div>
 
         {/* Retention */}
@@ -443,22 +417,7 @@ export default function Settings() {
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, lineHeight: 1.5 }}>
             Recordings older than this are automatically deleted from R2 and the database during nightly cleanup.
           </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {[7, 14, 30, 60, 90].map((days) => (
-              <button
-                key={days}
-                onClick={() => setRecordingRetentionDays(days)}
-                style={{
-                  padding: '4px 14px', borderRadius: 99, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                  border: `1px solid ${recordingRetentionDays === days ? C.amber : C.border}`,
-                  background: recordingRetentionDays === days ? 'rgba(245,158,11,0.1)' : 'none',
-                  color: recordingRetentionDays === days ? C.amber : C.muted,
-                }}
-              >
-                {days}d
-              </button>
-            ))}
-          </div>
+          <PillOptions options={[7, 14, 30, 60, 90]} value={recordingRetentionDays} suffix="d" onSelect={setRecordingRetentionDays} />
         </div>
 
         {/* Save */}

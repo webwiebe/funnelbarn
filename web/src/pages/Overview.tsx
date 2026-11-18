@@ -74,6 +74,101 @@ function fillHours(byBucket: Map<string, ChartRow>, to: Date, ids: string[]) {
   }
 }
 
+function RangePicker({ range, onChange }: { range: string; onChange: (r: string) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      {RANGES.map((r) => (
+        <button
+          key={r.value}
+          onClick={() => onChange(r.value)}
+          style={{
+            background: range === r.value ? C.amber : 'transparent',
+            color: range === r.value ? '#1a1d27' : C.muted,
+            border: `1px solid ${range === r.value ? C.amber : C.border}`,
+            borderRadius: 8, padding: '0.35rem 0.75rem', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+          }}
+        >{r.label}</button>
+      ))}
+    </div>
+  )
+}
+
+function KpiTiles({ data, loading }: { data: OverviewData | null; loading: boolean }) {
+  return (
+    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+      <Tile label="Total events" value={loading ? '…' : (data?.total_events ?? 0).toLocaleString()} icon={<Activity size={15} />} />
+      <Tile label="Unique visitors" value={loading ? '…' : (data?.unique_sessions ?? 0).toLocaleString()} icon={<Users size={15} />} />
+      <Tile label="Active sites" value={loading ? '…' : String((data?.projects ?? []).length)} icon={<Layers size={15} />} />
+    </div>
+  )
+}
+
+function VisitorsChart({ chartRows, chartProjectIds, formatBucket, nameFor }: {
+  chartRows: ChartRow[]
+  chartProjectIds: string[]
+  formatBucket: (v: string) => string
+  nameFor: (id: string) => string
+}) {
+  return (
+    <div style={{ marginBottom: '1.25rem' }}>
+      <Card title="Visitors per site">
+        <div style={{ height: 260 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartRows} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+              <XAxis dataKey="day" stroke={C.muted} fontSize={11} tickFormatter={formatBucket} minTickGap={24} />
+              <YAxis stroke={C.muted} fontSize={11} allowDecimals={false} />
+              <Tooltip labelFormatter={(l) => formatBucket(String(l))} contentStyle={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text }} />
+              <Legend />
+              {chartProjectIds.map((pid, i) => (
+                <Line key={pid} type="monotone" dataKey={pid} name={nameFor(pid)} stroke={LINE_COLORS[i % LINE_COLORS.length]} dot={false} strokeWidth={2} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+function SiteTable({ data, loading, nameFor }: { data: OverviewData | null; loading: boolean; nameFor: (id: string) => string }) {
+  return (
+    <div style={{ marginBottom: '1.25rem' }}>
+      <Card title="Per-site performance">
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ color: C.muted, textAlign: 'left' }}>
+                <th style={{ padding: '0.4rem 0.5rem' }}>Site</th>
+                <th style={{ padding: '0.4rem 0.5rem', textAlign: 'right' }}>Events</th>
+                <th style={{ padding: '0.4rem 0.5rem', textAlign: 'right' }}>Visitors</th>
+                <th style={{ padding: '0.4rem 0.5rem', width: 32 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data?.projects ?? []).map((p) => (
+                <tr key={p.project_id} style={{ borderTop: `1px solid ${C.border}`, color: C.text }}>
+                  <td style={{ padding: '0.5rem' }}>{nameFor(p.project_id)}</td>
+                  <td style={{ padding: '0.5rem', textAlign: 'right' }}>{p.events.toLocaleString()}</td>
+                  <td style={{ padding: '0.5rem', textAlign: 'right' }}>{p.unique_sessions.toLocaleString()}</td>
+                  <td style={{ padding: '0.5rem', textAlign: 'right' }}>
+                    <Link to={`/dashboard/${p.project_id}`} style={{ color: C.amber, display: 'inline-flex' }} title="Open site dashboard">
+                      <ArrowUpRight size={16} />
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+              {!loading && (data?.projects ?? []).length === 0 && (
+                <tr><td colSpan={4} style={{ padding: '1rem', color: C.muted, textAlign: 'center' }}>No events in this range.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
 export default function Overview() {
   const { projects, selectedEnvironment } = useProjects()
   const [data, setData] = useState<OverviewData | null>(null)
@@ -110,20 +205,7 @@ export default function Overview() {
           <h1 style={{ fontSize: 22, fontWeight: 700, color: C.text, margin: 0 }}>All Projects</h1>
           <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>Instance-wide analytics across every site</div>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {RANGES.map((r) => (
-            <button
-              key={r.value}
-              onClick={() => setRange(r.value)}
-              style={{
-                background: range === r.value ? C.amber : 'transparent',
-                color: range === r.value ? '#1a1d27' : C.muted,
-                border: `1px solid ${range === r.value ? C.amber : C.border}`,
-                borderRadius: 8, padding: '0.35rem 0.75rem', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-              }}
-            >{r.label}</button>
-          ))}
-        </div>
+        <RangePicker range={range} onChange={setRange} />
       </div>
 
       {error && (
@@ -131,66 +213,13 @@ export default function Overview() {
       )}
 
       {/* KPI tiles */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: '1.25rem' }}>
-        <Tile label="Total events" value={loading ? '…' : (data?.total_events ?? 0).toLocaleString()} icon={<Activity size={15} />} />
-        <Tile label="Unique visitors" value={loading ? '…' : (data?.unique_sessions ?? 0).toLocaleString()} icon={<Users size={15} />} />
-        <Tile label="Active sites" value={loading ? '…' : String((data?.projects ?? []).length)} icon={<Layers size={15} />} />
-      </div>
+      <KpiTiles data={data} loading={loading} />
 
       {/* Visitors per site */}
-      <div style={{ marginBottom: '1.25rem' }}>
-        <Card title="Visitors per site">
-          <div style={{ height: 260 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartRows} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-                <XAxis dataKey="day" stroke={C.muted} fontSize={11} tickFormatter={formatBucket} minTickGap={24} />
-                <YAxis stroke={C.muted} fontSize={11} allowDecimals={false} />
-                <Tooltip labelFormatter={(l) => formatBucket(String(l))} contentStyle={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text }} />
-                <Legend />
-                {chartProjectIds.map((pid, i) => (
-                  <Line key={pid} type="monotone" dataKey={pid} name={nameFor(pid)} stroke={LINE_COLORS[i % LINE_COLORS.length]} dot={false} strokeWidth={2} />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-      </div>
+      <VisitorsChart chartRows={chartRows} chartProjectIds={chartProjectIds} formatBucket={formatBucket} nameFor={nameFor} />
 
       {/* Per-project performance table */}
-      <div style={{ marginBottom: '1.25rem' }}>
-        <Card title="Per-site performance">
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ color: C.muted, textAlign: 'left' }}>
-                  <th style={{ padding: '0.4rem 0.5rem' }}>Site</th>
-                  <th style={{ padding: '0.4rem 0.5rem', textAlign: 'right' }}>Events</th>
-                  <th style={{ padding: '0.4rem 0.5rem', textAlign: 'right' }}>Visitors</th>
-                  <th style={{ padding: '0.4rem 0.5rem', width: 32 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data?.projects ?? []).map((p) => (
-                  <tr key={p.project_id} style={{ borderTop: `1px solid ${C.border}`, color: C.text }}>
-                    <td style={{ padding: '0.5rem' }}>{nameFor(p.project_id)}</td>
-                    <td style={{ padding: '0.5rem', textAlign: 'right' }}>{p.events.toLocaleString()}</td>
-                    <td style={{ padding: '0.5rem', textAlign: 'right' }}>{p.unique_sessions.toLocaleString()}</td>
-                    <td style={{ padding: '0.5rem', textAlign: 'right' }}>
-                      <Link to={`/dashboard/${p.project_id}`} style={{ color: C.amber, display: 'inline-flex' }} title="Open site dashboard">
-                        <ArrowUpRight size={16} />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-                {!loading && (data?.projects ?? []).length === 0 && (
-                  <tr><td colSpan={4} style={{ padding: '1rem', color: C.muted, textAlign: 'center' }}>No events in this range.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
+      <SiteTable data={data} loading={loading} nameFor={nameFor} />
 
       {/* Breakdown row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
