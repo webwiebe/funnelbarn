@@ -1,7 +1,7 @@
 import { reportError } from './bugbarn'
 import { ApiError } from './api-error'
 
-export function getCookie(name: string): string | undefined {
+function getCookie(name: string): string | undefined {
   const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
   return match ? decodeURIComponent(match[1]) : undefined
 }
