@@ -49,6 +49,17 @@ interface StringVariantRow {
   splitPct: number
 }
 
+function parseJSONOr<T>(raw: string, fallback: T): T {
+  try { return JSON.parse(raw) as T } catch { return fallback }
+}
+
+function defaultVariantRows(): StringVariantRow[] {
+  return [
+    { name: 'control', returnValue: 'control', splitPct: 50 },
+    { name: 'treatment', returnValue: 'treatment', splitPct: 50 },
+  ]
+}
+
 // parseFlagFormState converts a stored FeatureFlag back into the form state.
 // Returns the values the modal needs to pre-fill when editing.
 export function parseFlagFormState(flag: FeatureFlag): {
@@ -60,12 +71,9 @@ export function parseFlagFormState(flag: FeatureFlag): {
   advancedReturnValues: boolean
   targetingRules: TargetingRule[]
 } {
-  let split: Record<string, number> = {}
-  try { split = JSON.parse(flag.split) as Record<string, number> } catch { /* leave empty */ }
-  let variantsObj: Record<string, unknown> = {}
-  try { variantsObj = JSON.parse(flag.variants) as Record<string, unknown> } catch { /* leave empty */ }
-  let rules: TargetingRule[] = []
-  try { rules = JSON.parse(flag.targeting_rules || '[]') as TargetingRule[] } catch { /* leave empty */ }
+  const split = parseJSONOr<Record<string, number>>(flag.split, {})
+  const variantsObj = parseJSONOr<Record<string, unknown>>(flag.variants, {})
+  const rules = parseJSONOr<TargetingRule[]>(flag.targeting_rules || '[]', [])
 
   if (flag.flag_type === 'boolean') {
     const defaultBool: 'on' | 'off' = flag.default_variant === 'on' ? 'on' : 'off'
@@ -76,10 +84,7 @@ export function parseFlagFormState(flag: FeatureFlag): {
       defaultBool,
       rolloutEnabled,
       rolloutPct: rolloutEnabled ? oppositePct : 0,
-      variants: [
-        { name: 'control', returnValue: 'control', splitPct: 50 },
-        { name: 'treatment', returnValue: 'treatment', splitPct: 50 },
-      ],
+      variants: defaultVariantRows(),
       defaultVariant: 'control',
       advancedReturnValues: false,
       targetingRules: rules,
@@ -97,10 +102,7 @@ export function parseFlagFormState(flag: FeatureFlag): {
     defaultBool: 'off',
     rolloutEnabled: false,
     rolloutPct: 0,
-    variants: rows.length >= 2 ? rows : [
-      { name: 'control', returnValue: 'control', splitPct: 50 },
-      { name: 'treatment', returnValue: 'treatment', splitPct: 50 },
-    ],
+    variants: rows.length >= 2 ? rows : defaultVariantRows(),
     defaultVariant: flag.default_variant || (rows[0]?.name ?? 'control'),
     advancedReturnValues: advanced,
     targetingRules: rules,
@@ -176,17 +178,13 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   )
 }
 
-export function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
-  flag: FeatureFlag; projectId: string
-  onUpdated: (f: FeatureFlag) => void
-  onDeleted: () => void
-}) {
-  const { analysis, loading } = useFlagAnalysis(projectId, flag.id)
+function useFlagActions(
+  flag: FeatureFlag, projectId: string,
+  onUpdated: (f: FeatureFlag) => void, onDeleted: () => void,
+) {
   const [toggling, setToggling] = useState(false)
   const [togglingDefault, setTogglingDefault] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [tab, setTab] = useState<'analytics' | 'tryit'>('analytics')
-  const [editing, setEditing] = useState(false)
 
   const toggleStatus = async () => {
     setToggling(true)
@@ -234,24 +232,26 @@ export function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
     }
   }
 
-  const variants = (() => { try { return JSON.parse(flag.variants) as Record<string, unknown> } catch { return {} } })()
-  const split = (() => { try { return JSON.parse(flag.split) as Record<string, number> } catch { return {} } })()
+  return { toggling, togglingDefault, deleting, toggleStatus, toggleDefault, handleDelete }
+}
 
-  const results = analysis?.results ?? []
-  const bestRate = Math.max(...results.map(r => r.rate), 0)
-  const isConfig = flag.flag_kind === 'config'
-  const configValue = isConfig ? variants[flag.default_variant] : undefined
-
+function FlagHeader({ flag, isConfig, configValue, actions, onEdit }: {
+  flag: FeatureFlag
+  isConfig: boolean
+  configValue: unknown
+  actions: ReturnType<typeof useFlagActions>
+  onEdit: () => void
+}) {
+  const { toggling, togglingDefault, deleting, toggleStatus, toggleDefault, handleDelete } = actions
   return (
-    <div>
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        gap: 12,
-        flexWrap: 'wrap',
-        marginBottom: 16,
-      }}>
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      gap: 12,
+      flexWrap: 'wrap',
+      marginBottom: 16,
+    }}>
         <div style={{ flex: '1 1 200px', minWidth: 0 }}>
           <h2 style={{ fontSize: 20, fontWeight: 800, margin: '0 0 4px', overflowWrap: 'anywhere' }}>{flag.name}</h2>
           <code style={{
@@ -275,7 +275,7 @@ export function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
             style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, cursor: 'pointer', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
             {flag.status === 'active' ? <Pause size={14} /> : <Play size={14} />}
           </button>
-          <button onClick={() => setEditing(true)} title="Edit"
+          <button onClick={() => onEdit()} title="Edit"
             style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, cursor: 'pointer', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
             <Pencil size={14} />
           </button>
@@ -284,8 +284,12 @@ export function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
             <Trash2 size={14} />
           </button>
         </div>
-      </div>
+    </div>
+  )
+}
 
+function FlagMeta({ flag, isConfig }: { flag: FeatureFlag; isConfig: boolean }) {
+  return (
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16, fontSize: 13, color: C.muted }}>
         <div>Kind: <span style={{ color: C.text }}>{isConfig ? 'config value' : 'experiment'}</span></div>
         <div>Type: <span style={{ color: C.text }}>{flag.flag_type}</span></div>
@@ -296,30 +300,123 @@ export function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
         <div>Created: <span style={{ color: C.text }}>{flagDate(flag.created_at) ?? 'unknown'}</span></div>
         <div>Last evaluated: <span style={{ color: C.text }}>{flagDate(flag.last_evaluated_at) ?? 'never'}</span></div>
       </div>
+  )
+}
 
-      {(() => {
-        // For boolean flags, only render the split tiles when there's a real
-        // rollout (neither side is 0%). A 100/0 split is just "use the
-        // default" and the header toggle already conveys that.
-        if (isConfig) return null
-        const entries = Object.entries(split)
-        const hasRollout = flag.flag_type !== 'boolean' || entries.every(([, pct]) => pct !== 0)
-        if (!hasRollout) return null
-        return (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-            {entries.map(([variant, pct]) => (
-              <div key={variant} style={{
-                background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
-                padding: '8px 12px', fontSize: 13,
-              }}>
-                <span style={{ color: C.text, fontWeight: 600 }}>{variant}</span>
-                <span style={{ color: C.muted }}> = {JSON.stringify(variants[variant])}</span>
-                <span style={{ color: C.amber, marginLeft: 8 }}>{pct}%</span>
-              </div>
-            ))}
-          </div>
-        )
-      })()}
+// For boolean flags, only render the split tiles when there's a real
+// rollout (neither side is 0%). A 100/0 split is just "use the default" and
+// the header toggle already conveys that.
+function SplitTiles({ flag, variants, split }: {
+  flag: FeatureFlag
+  variants: Record<string, unknown>
+  split: Record<string, number>
+}) {
+  const entries = Object.entries(split)
+  const hasRollout = flag.flag_type !== 'boolean' || entries.every(([, pct]) => pct !== 0)
+  if (!hasRollout) return null
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+      {entries.map(([variant, pct]) => (
+        <div key={variant} style={{
+          background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
+          padding: '8px 12px', fontSize: 13,
+        }}>
+          <span style={{ color: C.text, fontWeight: 600 }}>{variant}</span>
+          <span style={{ color: C.muted }}> = {JSON.stringify(variants[variant])}</span>
+          <span style={{ color: C.amber, marginLeft: 8 }}>{pct}%</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+type FlagAnalysis = ReturnType<typeof useFlagAnalysis>['analysis']
+
+function AnalyticsPanel({ analysis, loading }: { analysis: FlagAnalysis; loading: boolean }) {
+  if (analysis?.unavailable === 'config') {
+    return (
+      <div style={{ color: C.muted, fontSize: 14, textAlign: 'center', padding: '2rem', lineHeight: 1.6 }}>
+        Config values record no evaluations, so there is no variant or conversion
+        report for this flag.
+        <br />
+        That is the point — a server polling this value would otherwise write
+        thousands of meaningless rows a day.
+      </div>
+    )
+  }
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', gap: '1rem' }}>
+        <Skeleton height={180} />
+        <Skeleton height={180} />
+      </div>
+    )
+  }
+  const results = analysis?.results ?? []
+  const bestRate = Math.max(...results.map(r => r.rate), 0)
+  if (results.length === 0) {
+    return (
+      <div style={{ color: C.muted, fontSize: 14, textAlign: 'center', padding: '2rem' }}>
+        No evaluations yet. Integrate the flag in your application to start collecting data.
+      </div>
+    )
+  }
+  return (
+    <>
+      <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+        {results.map((r) => (
+          <StatCard
+            key={r.variant}
+            label={r.variant}
+            sample={r.sample}
+            conversions={r.conversions}
+            rate={r.rate}
+            winner={analysis?.significant === true && r.rate === bestRate && results.length > 1}
+          />
+        ))}
+      </div>
+      {analysis && <SignificanceBanner analysis={analysis} />}
+    </>
+  )
+}
+
+function SignificanceBanner({ analysis }: { analysis: NonNullable<FlagAnalysis> }) {
+  return (
+    <div style={{
+      background: analysis.significant ? 'rgba(16,185,129,0.08)' : 'rgba(245,158,11,0.08)',
+      border: `1px solid ${analysis.significant ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)'}`,
+      borderRadius: 10, padding: '1rem 1.25rem',
+      fontSize: 14, color: analysis.significant ? C.success : C.amber, fontWeight: 600,
+    }}>
+      {analysis.significant
+        ? `Significant (95% CI) — z = ${(analysis.z_score ?? 0).toFixed(2)}`
+        : `Not significant yet${analysis.z_score ? ` — z = ${analysis.z_score.toFixed(2)}` : ''}`}
+    </div>
+  )
+}
+
+export function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
+  flag: FeatureFlag; projectId: string
+  onUpdated: (f: FeatureFlag) => void
+  onDeleted: () => void
+}) {
+  const { analysis, loading } = useFlagAnalysis(projectId, flag.id)
+  const [tab, setTab] = useState<'analytics' | 'tryit'>('analytics')
+  const [editing, setEditing] = useState(false)
+  const actions = useFlagActions(flag, projectId, onUpdated, onDeleted)
+
+  const variants = parseJSONOr<Record<string, unknown>>(flag.variants, {})
+  const split = parseJSONOr<Record<string, number>>(flag.split, {})
+  const isConfig = flag.flag_kind === 'config'
+  const configValue = isConfig ? variants[flag.default_variant] : undefined
+
+  return (
+    <div>
+      <FlagHeader flag={flag} isConfig={isConfig} configValue={configValue} actions={actions} onEdit={() => setEditing(true)} />
+
+      <FlagMeta flag={flag} isConfig={isConfig} />
+
+      {!isConfig && <SplitTiles flag={flag} variants={variants} split={split} />}
 
       {isConfig && <ConfigCurrentValue value={configValue} defaultVariant={flag.default_variant} />}
 
@@ -332,54 +429,9 @@ export function FlagDetail({ flag, projectId, onUpdated, onDeleted }: {
         <TabButton active={tab === 'tryit'} onClick={() => setTab('tryit')}>Try it</TabButton>
       </div>
 
-      {tab === 'tryit' ? (
-        <FlagPlayground projectId={projectId} flag={flag} />
-      ) : analysis?.unavailable === 'config' ? (
-        <div style={{ color: C.muted, fontSize: 14, textAlign: 'center', padding: '2rem', lineHeight: 1.6 }}>
-          Config values record no evaluations, so there is no variant or conversion
-          report for this flag.
-          <br />
-          That is the point — a server polling this value would otherwise write
-          thousands of meaningless rows a day.
-        </div>
-      ) : loading ? (
-        <div style={{ display: 'flex', gap: '1rem' }}>
-          <Skeleton height={180} />
-          <Skeleton height={180} />
-        </div>
-      ) : results.length === 0 ? (
-        <div style={{ color: C.muted, fontSize: 14, textAlign: 'center', padding: '2rem' }}>
-          No evaluations yet. Integrate the flag in your application to start collecting data.
-        </div>
-      ) : (
-        <>
-          <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-            {results.map((r) => (
-              <StatCard
-                key={r.variant}
-                label={r.variant}
-                sample={r.sample}
-                conversions={r.conversions}
-                rate={r.rate}
-                winner={analysis?.significant === true && r.rate === bestRate && results.length > 1}
-              />
-            ))}
-          </div>
-
-          {analysis && (
-            <div style={{
-              background: analysis.significant ? 'rgba(16,185,129,0.08)' : 'rgba(245,158,11,0.08)',
-              border: `1px solid ${analysis.significant ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)'}`,
-              borderRadius: 10, padding: '1rem 1.25rem',
-              fontSize: 14, color: analysis.significant ? C.success : C.amber, fontWeight: 600,
-            }}>
-              {analysis.significant
-                ? `Significant (95% CI) — z = ${(analysis.z_score ?? 0).toFixed(2)}`
-                : `Not significant yet${analysis.z_score ? ` — z = ${analysis.z_score.toFixed(2)}` : ''}`}
-            </div>
-          )}
-        </>
-      )}
+      {tab === 'tryit'
+        ? <FlagPlayground projectId={projectId} flag={flag} />
+        : <AnalyticsPanel analysis={analysis} loading={loading} />}
 
       {editing && (
         <FlagFormModal
