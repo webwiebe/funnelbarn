@@ -5,6 +5,11 @@ import { Skeleton } from '../ui/Skeleton'
 import { reportError } from '../../lib/bugbarn'
 import { C } from '../../lib/theme'
 
+// widgetTitle is the title a widget gets when the user types none.
+function widgetTitle(event: string, property: string): string {
+  return property ? `${event} → ${property}` : `${event} (count)`
+}
+
 export function AddWidgetModal({ projectId, onClose, onAdded }: {
   projectId: string
   onClose: () => void
@@ -39,17 +44,16 @@ export function AddWidgetModal({ projectId, onClose, onAdded }: {
       .finally(() => setLoadingProps(false))
   }, [projectId, selectedEvent])
 
+  const canSave = Boolean(selectedEvent) && !saving
+
   const handleSave = async () => {
     if (!selectedEvent) return
     setSaving(true)
     try {
-      const defaultTitle = selectedProperty
-        ? `${selectedEvent} → ${selectedProperty}`
-        : `${selectedEvent} (count)`
       await api.createWidget(projectId, {
         event_name: selectedEvent,
         property: selectedProperty,
-        title: title || defaultTitle,
+        title: title || widgetTitle(selectedEvent, selectedProperty),
       })
       onAdded()
     } catch (e) {
@@ -162,7 +166,7 @@ export function AddWidgetModal({ projectId, onClose, onAdded }: {
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder={selectedEvent ? (selectedProperty ? `${selectedEvent} → ${selectedProperty}` : `${selectedEvent} (count)`) : 'Widget title'}
+            placeholder={selectedEvent ? widgetTitle(selectedEvent, selectedProperty) : 'Widget title'}
             style={{
               width: '100%',
               padding: '0.6rem 0.75rem',
@@ -200,16 +204,16 @@ export function AddWidgetModal({ projectId, onClose, onAdded }: {
           </button>
           <button
             onClick={handleSave}
-            disabled={!selectedEvent || saving}
+            disabled={!canSave}
             style={{
               padding: '0.5rem 1rem',
-              background: !selectedEvent || saving ? '#4a4d5a' : C.amber,
+              background: canSave ? C.amber : '#4a4d5a',
               border: 'none',
               borderRadius: 8,
-              color: !selectedEvent || saving ? C.muted : '#000',
+              color: canSave ? '#000' : C.muted,
               fontSize: 13,
               fontWeight: 700,
-              cursor: !selectedEvent || saving ? 'default' : 'pointer',
+              cursor: canSave ? 'pointer' : 'default',
             }}
           >
             {saving ? 'Adding...' : 'Add Widget'}

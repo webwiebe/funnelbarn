@@ -17,6 +17,23 @@ interface MoreSheetProps {
   onLogout: () => void
 }
 
+// overflowLinks are the nav links that do not fit the bottom bar. A project
+// scoped page links to the selected project when there is one.
+function overflowLinks(projectId?: string) {
+  const scoped = (path: string) => (projectId ? `/${path}/${projectId}` : `/${path}`)
+  return [
+    { to: '/overview', label: 'All Projects', icon: Globe },
+    { to: '/overview/events', label: 'All Events', icon: ListOrdered },
+    { to: '/overview/funnels', label: 'Cross-site Funnels', icon: Filter },
+    { to: '/event-mapping', label: 'Event Normalization', icon: Shuffle },
+    { to: scoped('flags'), label: 'Flags', icon: Flag },
+    { to: scoped('live'), label: 'Live', icon: Radio },
+    { to: scoped('insights'), label: 'Insights', icon: Lightbulb },
+    { to: scoped('agents'), label: 'Agents', icon: Bot },
+    { to: '/integrations', label: 'Integrations', icon: PlugZap },
+  ]
+}
+
 export function MoreSheet({ projectId, projects, iambarn, iambarnReady, onClose, onLogout }: MoreSheetProps) {
   const { user } = useAuth()
   const location = useLocation()
@@ -111,17 +128,7 @@ export function MoreSheet({ projectId, projects, iambarn, iambarnReady, onClose,
         )}
 
         {/* Overflow nav links */}
-        {[
-          { to: '/overview', label: 'All Projects', icon: Globe },
-          { to: '/overview/events', label: 'All Events', icon: ListOrdered },
-          { to: '/overview/funnels', label: 'Cross-site Funnels', icon: Filter },
-          { to: '/event-mapping', label: 'Event Normalization', icon: Shuffle },
-          { to: projectId ? `/flags/${projectId}` : '/flags', label: 'Flags', icon: Flag },
-          { to: projectId ? `/live/${projectId}` : '/live', label: 'Live', icon: Radio },
-          { to: projectId ? `/insights/${projectId}` : '/insights', label: 'Insights', icon: Lightbulb },
-          { to: projectId ? `/agents/${projectId}` : '/agents', label: 'Agents', icon: Bot },
-          { to: '/integrations', label: 'Integrations', icon: PlugZap },
-        ].map(({ to, label, icon: Icon }) => (
+        {overflowLinks(projectId).map(({ to, label, icon: Icon }) => (
           <Link
             key={to}
             to={to}
