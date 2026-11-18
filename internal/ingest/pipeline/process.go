@@ -53,21 +53,26 @@ func resolveSessionID(sent string, in session.FingerprintInput) string {
 	return session.Fingerprint(in)
 }
 
+// ErrInvalidPayload marks a record whose body can never become an event: it is
+// not valid base64 or JSON, or it carries no event name. Retrying it cannot
+// help, so the consumers park it at once (#554).
+var ErrInvalidPayload = errors.New("invalid event payload")
+
 // ProcessRecord decodes and enriches a spool record into a domain.Event.
 // It does not touch the database.
 func ProcessRecord(record spool.Record) (domain.Event, error) {
 	body, err := base64.StdEncoding.DecodeString(record.BodyBase64)
 	if err != nil {
-		return domain.Event{}, fmt.Errorf("decode body: %w", err)
+		return domain.Event{}, fmt.Errorf("%w: decode body: %w", ErrInvalidPayload, err)
 	}
 
 	var payload EventPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return domain.Event{}, fmt.Errorf("unmarshal payload: %w", err)
+		return domain.Event{}, fmt.Errorf("%w: unmarshal payload: %w", ErrInvalidPayload, err)
 	}
 
 	if payload.Name == "" {
-		return domain.Event{}, fmt.Errorf("event name is required")
+		return domain.Event{}, fmt.Errorf("%w: event name is required", ErrInvalidPayload)
 	}
 
 	occurredAt := payload.Timestamp

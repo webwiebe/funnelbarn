@@ -3,6 +3,7 @@ package pipeline
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -82,6 +83,9 @@ func TestProcessRecord_MissingName(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for empty event name")
 	}
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Errorf("err = %v, want ErrInvalidPayload", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +102,9 @@ func TestProcessRecord_InvalidBase64(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid base64")
 	}
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Errorf("err = %v, want ErrInvalidPayload", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +120,9 @@ func TestProcessRecord_InvalidJSON(t *testing.T) {
 	_, err := ProcessRecord(rec)
 	if err == nil {
 		t.Fatal("expected error for invalid JSON body")
+	}
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Errorf("err = %v, want ErrInvalidPayload", err)
 	}
 }
 

@@ -37,6 +37,8 @@ type Applier struct {
 //   - nil: stored, or skipped as a duplicate.
 //   - wraps domain.ErrProjectUnresolvable: it can never apply; dead-letter
 //     it now instead of retrying.
+//   - wraps ErrInvalidPayload: it can never apply either; dead-letter it
+//     now, at Warn.
 //   - wraps errProcessRecord, or any other error: retry it.
 func (a *Applier) apply(ctx context.Context, record spool.Record, geoEnabled bool) error {
 	event, err := SafeProcess(record)
@@ -122,6 +124,13 @@ func (a *Applier) applyEntries(ctx context.Context, spoolDir string, entries []s
 		record := entry.Record
 
 		err := a.apply(ctx, record, geoEnabled)
+		if errors.Is(err, ErrInvalidPayload) {
+			slog.Warn("worker dead-lettering record: invalid payload",
+				"err", err, "handled", true, "ingest_id", record.IngestID)
+			delete(retryCounts, record.IngestID)
+			offset = deadLetterRecord(spoolDir, record, entry.EndOffset, "invalid_payload")
+			continue
+		}
 		if errors.Is(err, domain.ErrProjectUnresolvable) {
 			delete(retryCounts, record.IngestID)
 			offset = deadLetterRecord(spoolDir, record, entry.EndOffset, "unresolved_project")

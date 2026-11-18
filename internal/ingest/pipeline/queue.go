@@ -62,11 +62,18 @@ func NewIngestQueue(ctx context.Context, cfg config.Config, applier *Applier, lo
 		DeadLetter: func(ctx context.Context, c command.Command, err error) {
 			rec := c.(command.IngestRecord).Record
 			reason := "dead_letter"
+			level := slog.LevelError
 			if errors.Is(err, domain.ErrProjectUnresolvable) {
 				reason = "unresolved_project"
 			}
-			logger.ErrorContext(ctx, "ingest queue dead-lettering record",
-				"err", err, "handled", false, "ingest_id", rec.IngestID, "reason", reason)
+			if errors.Is(err, ErrInvalidPayload) {
+				// A client sent a body that is no event. The record is parked
+				// for inspection; it is not a fault of ours (#554).
+				reason = "invalid_payload"
+				level = slog.LevelWarn
+			}
+			logger.Log(ctx, level, "ingest queue dead-lettering record",
+				"err", err, "handled", level != slog.LevelError, "ingest_id", rec.IngestID, "reason", reason)
 			parkRecord(cfg.SpoolDir, rec, reason)
 		},
 	})
@@ -89,7 +96,7 @@ func (q *IngestQueue) Close(ctx context.Context) error {
 
 // applyQueued stores one record taken from the ingest queue. Geo enrichment is
 // read per record here; the queue carries a few thousand records a day.
-// A record whose project can never resolve is marked ErrPermanent, so the bus
+// A record whose project can never resolve, or whose payload is invalid, is marked ErrPermanent, so the bus
 // dead-letters it without retrying.
 func (a *Applier) applyQueued(ctx context.Context, rec spool.Record) error {
 	geoEnabled := a.Geo != nil
@@ -98,7 +105,7 @@ func (a *Applier) applyQueued(ctx context.Context, rec spool.Record) error {
 		geoEnabled = val != "false"
 	}
 	err := a.apply(ctx, rec, geoEnabled)
-	if errors.Is(err, domain.ErrProjectUnresolvable) {
+	if errors.Is(err, domain.ErrProjectUnresolvable) || errors.Is(err, ErrInvalidPayload) {
 		return fmt.Errorf("%w: %w", command.ErrPermanent, err)
 	}
 	return err
