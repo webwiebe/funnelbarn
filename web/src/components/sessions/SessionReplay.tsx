@@ -59,6 +59,152 @@ function formatClock(ms: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+type ChunkRef = { id: string; first_chunk_index?: number | null; last_chunk_index?: number | null; chunk_count: number }
+
+// Fetches every stored chunk in order. Returns null when the effect was
+// cancelled midway. Iterates the explicit stored span [first, last] inclusive:
+// first + chunk_count breaks when chunks arrive out of order, retry, or leave
+// gaps; last_chunk_index is the true upper bound. Legacy rows predating
+// last_chunk_index fall back to the count-based span.
+async function fetchRecordingEvents(
+  projectId: string,
+  recording: ChunkRef,
+  isCancelled: () => boolean,
+  onProgress: (pct: number) => void,
+): Promise<unknown[] | null> {
+  const allEvents: unknown[] = []
+  const start = recording.first_chunk_index ?? 0
+  const end = recording.last_chunk_index || (start + recording.chunk_count - 1)
+  const span = Math.max(end - start + 1, 1)
+  for (let i = start; i <= end; i++) {
+    onProgress(Math.round(((i - start) / span) * 100))
+    try {
+      const chunk = await api.getRecordingChunk(projectId, recording.id, i)
+      if (isCancelled()) return null
+      allEvents.push(...chunk)
+    } catch {
+      // chunk missing in storage — skip and continue
+    }
+  }
+  return allEvents
+}
+
+function recordingProblem(allEvents: unknown[]): string | null {
+  if (allEvents.length === 0) {
+    return 'Recording data not found — chunks may still be uploading or were never stored.'
+  }
+  // rrweb requires a full-snapshot event (type 2) to reconstruct the page
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hasSnapshot = allEvents.some((e: any) => e?.type === 2)
+  return hasSnapshot ? null : 'Recording is incomplete — the initial page snapshot is missing.'
+}
+
+function applyReplayScale(container: HTMLDivElement | null, size: ReturnType<typeof recordedSize>) {
+  if (!container) return
+  const wrapper = container.querySelector<HTMLElement>('.replayer-wrapper')
+  if (!wrapper) return
+  const scale = replayScale(container.clientWidth, container.clientHeight, size)
+  // The E2E check reads these when the scale is wrong.
+  container.dataset.recordedWidth = String(size.width)
+  container.dataset.recordedHeight = String(size.height)
+  container.dataset.recordedSize = size.fallback ? 'fallback' : 'meta'
+  wrapper.style.transformOrigin = 'top left'
+  wrapper.style.transform = `scale(${scale})`
+  wrapper.style.position = 'absolute'
+  wrapper.style.top = '0'
+  wrapper.style.left = '0'
+}
+
+function PlaybackControls({ playing, currentMs, totalMs, speed, skipInactive, iconBtn, onSeek, onTogglePlay, onSpeed, onToggleSkip }: {
+  playing: boolean
+  currentMs: number
+  totalMs: number
+  speed: number
+  skipInactive: boolean
+  iconBtn: CSSProperties
+  onSeek: (ms: number) => void
+  onTogglePlay: () => void
+  onSpeed: (s: number) => void
+  onToggleSkip: () => void
+}) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12,
+      padding: '0.5rem 1rem', borderTop: `1px solid ${C.border}`,
+      background: C.surface, flexShrink: 0,
+    }}>
+      <button onClick={() => onSeek(currentMs - 10000)} title="Back 10s" style={iconBtn}>
+        <SkipBack size={16} />
+      </button>
+      <button onClick={onTogglePlay} title={playing ? 'Pause' : 'Play'} style={iconBtn}>
+        {playing ? <Pause size={18} /> : <Play size={18} />}
+      </button>
+      <button onClick={() => onSeek(currentMs + 10000)} title="Forward 10s" style={iconBtn}>
+        <SkipForward size={16} />
+      </button>
+      <span style={{
+        fontSize: 12, color: C.muted, fontVariantNumeric: 'tabular-nums',
+        minWidth: 92, textAlign: 'center',
+      }}>
+        {formatClock(currentMs)} / {formatClock(totalMs)}
+      </span>
+      <input
+        type="range" min={0} max={totalMs || 0} value={Math.min(currentMs, totalMs || 0)}
+        onChange={(e) => onSeek(Number(e.target.value))}
+        style={{ flex: 1, accentColor: C.amber, cursor: 'pointer' }}
+      />
+      <select
+        value={speed}
+        onChange={(e) => onSpeed(Number(e.target.value))}
+        title="Playback speed"
+        style={{
+          background: C.bg, color: C.text, border: `1px solid ${C.border}`,
+          borderRadius: 6, fontSize: 12, padding: '3px 6px', cursor: 'pointer',
+        }}
+      >
+        {[0.5, 1, 2, 4, 8].map((s) => <option key={s} value={s}>{s}x</option>)}
+      </select>
+      <button
+        onClick={() => onToggleSkip()}
+        title="Skip periods with no user activity"
+        style={{
+          background: skipInactive ? 'rgba(245,158,11,0.1)' : 'none',
+          border: `1px solid ${skipInactive ? C.amber : C.border}`,
+          cursor: 'pointer',
+          color: skipInactive ? C.amber : C.muted,
+          fontSize: 11, padding: '3px 8px', borderRadius: 6, whiteSpace: 'nowrap',
+        }}
+      >
+        Skip inactive
+      </button>
+    </div>
+  )
+}
+
+function LoadingOverlay({ error, progress }: { error: string | null; progress: number }) {
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', gap: 16, color: C.muted,
+      zIndex: 1,
+    }}>
+      {!error && (
+        <div style={{
+          width: 200, height: 4, background: C.surface, borderRadius: 2, overflow: 'hidden',
+        }}>
+          <div style={{
+            height: '100%', background: C.amber, borderRadius: 2,
+            width: `${progress}%`, transition: 'width 0.2s',
+          }} />
+        </div>
+      )}
+      <span style={{ fontSize: 13, maxWidth: 320, textAlign: 'center' }}>
+        {error ?? `Loading chunks… ${progress}%`}
+      </span>
+    </div>
+  )
+}
+
 export function SessionReplay({ projectId, recording, onClose }: Props) {
   const playerRef = useRef<HTMLDivElement>(null)
   const replayerRef = useRef<Replayer | null>(null)
@@ -80,38 +226,15 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
     async function loadAndPlay() {
       if (!playerRef.current) return
       try {
-        const allEvents: unknown[] = []
-        // Iterate the explicit stored span [first, last] inclusive. Relying on
-        // first + chunk_count breaks when chunks arrive out of order, retry, or
-        // leave gaps; last_chunk_index is the true upper bound. Fall back to the
-        // count-based span for legacy rows predating last_chunk_index.
-        const start = recording.first_chunk_index ?? 0
-        const end = recording.last_chunk_index || (start + recording.chunk_count - 1)
-        const span = Math.max(end - start + 1, 1)
-        for (let i = start; i <= end; i++) {
-          setProgress(Math.round(((i - start) / span) * 100))
-          try {
-            const chunk = await api.getRecordingChunk(projectId, recording.id, i)
-            if (cancelled) return
-            allEvents.push(...chunk)
-          } catch {
-            // chunk missing in storage — skip and continue
-          }
-        }
+        const allEvents = await fetchRecordingEvents(projectId, recording, () => cancelled, setProgress)
+        if (!allEvents) return
         setProgress(100)
 
         if (!playerRef.current || cancelled) return
 
-        if (allEvents.length === 0) {
-          setError('Recording data not found — chunks may still be uploading or were never stored.')
-          return
-        }
-
-        // rrweb requires a full-snapshot event (type 2) to reconstruct the page
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const hasSnapshot = allEvents.some((e: any) => e?.type === 2)
-        if (!hasSnapshot) {
-          setError('Recording is incomplete — the initial page snapshot is missing.')
+        const problem = recordingProblem(allEvents)
+        if (problem) {
+          setError(problem)
           return
         }
 
@@ -125,22 +248,7 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
         })
         replayerRef.current = replayer
 
-        function applyScale() {
-          const container = playerRef.current
-          if (!container) return
-          const wrapper = container.querySelector<HTMLElement>('.replayer-wrapper')
-          if (!wrapper) return
-          const scale = replayScale(container.clientWidth, container.clientHeight, size)
-          // The E2E check reads these when the scale is wrong.
-          container.dataset.recordedWidth = String(size.width)
-          container.dataset.recordedHeight = String(size.height)
-          container.dataset.recordedSize = size.fallback ? 'fallback' : 'meta'
-          wrapper.style.transformOrigin = 'top left'
-          wrapper.style.transform = `scale(${scale})`
-          wrapper.style.position = 'absolute'
-          wrapper.style.top = '0'
-          wrapper.style.left = '0'
-        }
+        const applyScale = () => applyReplayScale(playerRef.current, size)
 
         // Give rrweb one frame to build the .replayer-wrapper DOM before scaling
         requestAnimationFrame(() => setTimeout(applyScale, 0))
@@ -280,82 +388,17 @@ export function SessionReplay({ projectId, recording, onClose }: Props) {
           {/* Player column: viewport + controls */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
             <div style={{ flex: 1, position: 'relative', background: '#000', overflow: 'hidden' }}>
-              {(loading || error) && (
-                <div style={{
-                  position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', justifyContent: 'center', gap: 16, color: C.muted,
-                  zIndex: 1,
-                }}>
-                  {!error && (
-                    <div style={{
-                      width: 200, height: 4, background: C.surface, borderRadius: 2, overflow: 'hidden',
-                    }}>
-                      <div style={{
-                        height: '100%', background: C.amber, borderRadius: 2,
-                        width: `${progress}%`, transition: 'width 0.2s',
-                      }} />
-                    </div>
-                  )}
-                  <span style={{ fontSize: 13, maxWidth: 320, textAlign: 'center' }}>
-                    {error ?? `Loading chunks… ${progress}%`}
-                  </span>
-                </div>
-              )}
+              {(loading || error) && <LoadingOverlay error={error} progress={progress} />}
               <div ref={playerRef} style={{ width: '100%', height: '100%', position: 'relative' }} />
             </div>
 
-            {/* Playback controls */}
             {!loading && !error && (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                padding: '0.5rem 1rem', borderTop: `1px solid ${C.border}`,
-                background: C.surface, flexShrink: 0,
-              }}>
-                <button onClick={() => seek(currentMs - 10000)} title="Back 10s" style={iconBtn}>
-                  <SkipBack size={16} />
-                </button>
-                <button onClick={togglePlay} title={playing ? 'Pause' : 'Play'} style={iconBtn}>
-                  {playing ? <Pause size={18} /> : <Play size={18} />}
-                </button>
-                <button onClick={() => seek(currentMs + 10000)} title="Forward 10s" style={iconBtn}>
-                  <SkipForward size={16} />
-                </button>
-                <span style={{
-                  fontSize: 12, color: C.muted, fontVariantNumeric: 'tabular-nums',
-                  minWidth: 92, textAlign: 'center',
-                }}>
-                  {formatClock(currentMs)} / {formatClock(totalMs)}
-                </span>
-                <input
-                  type="range" min={0} max={totalMs || 0} value={Math.min(currentMs, totalMs || 0)}
-                  onChange={(e) => seek(Number(e.target.value))}
-                  style={{ flex: 1, accentColor: C.amber, cursor: 'pointer' }}
-                />
-                <select
-                  value={speed}
-                  onChange={(e) => changeSpeed(Number(e.target.value))}
-                  title="Playback speed"
-                  style={{
-                    background: C.bg, color: C.text, border: `1px solid ${C.border}`,
-                    borderRadius: 6, fontSize: 12, padding: '3px 6px', cursor: 'pointer',
-                  }}
-                >
-                  {[0.5, 1, 2, 4, 8].map((s) => <option key={s} value={s}>{s}x</option>)}
-                </select>
-                <button
-                  onClick={() => setSkipInactive(!skipInactive)}
-                  title="Skip periods with no user activity"
-                  style={{
-                    background: skipInactive ? 'rgba(245,158,11,0.1)' : 'none',
-                    border: `1px solid ${skipInactive ? C.amber : C.border}`,
-                    cursor: 'pointer',
-                    color: skipInactive ? C.amber : C.muted,
-                    fontSize: 11, padding: '3px 8px', borderRadius: 6, whiteSpace: 'nowrap',
-                  }}
-                >
-                  Skip inactive
-                </button>
-              </div>
+              <PlaybackControls
+                playing={playing} currentMs={currentMs} totalMs={totalMs} speed={speed}
+                skipInactive={skipInactive} iconBtn={iconBtn}
+                onSeek={seek} onTogglePlay={togglePlay} onSpeed={changeSpeed}
+                onToggleSkip={() => setSkipInactive(!skipInactive)}
+              />
             )}
           </div>
 
