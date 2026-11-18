@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/wiebe-xyz/funnelbarn/internal/command"
 	"github.com/wiebe-xyz/funnelbarn/internal/domain"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository"
 	"github.com/wiebe-xyz/funnelbarn/internal/repository/repotest"
@@ -81,7 +83,45 @@ func TestIngestApply_BadPayloadIsAProcessError(t *testing.T) {
 		t.Fatalf("err = %v, want errProcessRecord", err)
 	}
 	if errors.Is(err, domain.ErrProjectUnresolvable) {
-		t.Error("a process error must be retried, not dead-lettered as unresolvable")
+		t.Error("a process error is not an unresolvable project")
+	}
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Errorf("err = %v, want ErrInvalidPayload", err)
+	}
+}
+
+// A nameless event can never become an event (#554): the queue consumer must
+// mark it permanent, so the bus parks it without retrying.
+func TestApplyQueued_InvalidPayloadIsPermanent(t *testing.T) {
+	a, _ := newTestApplier(t)
+	rec := applyRecord("ing-apply-4", "apply-site", `{"name":"","url":"https://example.com/"}`)
+
+	err := a.applyQueued(context.Background(), rec)
+	if !errors.Is(err, command.ErrPermanent) || !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("err = %v, want ErrPermanent wrapping ErrInvalidPayload", err)
+	}
+}
+
+// The spool worker parks an invalid payload at once instead of retrying it
+// maxRetries times.
+func TestApplyEntries_InvalidPayloadIsParkedAtOnce(t *testing.T) {
+	a, store := newTestApplier(t)
+	dir := t.TempDir()
+	rec := applyRecord("ing-apply-5", "apply-site", `{"name":"","url":"https://example.com/"}`)
+	counts := map[string]int{}
+
+	offset := a.applyEntries(context.Background(), dir, []spool.RecordAtOffset{{Record: rec, EndOffset: 42}}, 0, counts)
+	if offset != 42 {
+		t.Errorf("offset = %d, want 42 (record skipped)", offset)
+	}
+	if len(counts) != 0 {
+		t.Errorf("retryCounts = %v, want empty", counts)
+	}
+	if n := countEvents(t, store, "ing-apply-5"); n != 0 {
+		t.Errorf("events = %d, want 0", n)
+	}
+	if _, err := os.Stat(spool.DeadLetterPath(dir)); err != nil {
+		t.Errorf("record not parked: %v", err)
 	}
 }
 
