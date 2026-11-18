@@ -1,32 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { Video, VideoOff, Trash2, ChevronLeft, ChevronRight, Monitor, Smartphone, Tablet, Bot, User } from 'lucide-react'
 import Shell from '../components/shell/Shell'
 import { SessionReplay } from '../components/sessions/SessionReplay'
-import { PAGE_SIZE, loadRecordingPage, recordingPath } from '../components/sessions/loadRecordings'
+import { PAGE_SIZE, loadRecordingPage } from '../components/sessions/loadRecordings'
+import {
+  BulkBar, EmptyRecordings, Pagination, PendingDeleteRow, RecordingRow, RecordingsHeader,
+} from '../components/sessions/RecordingRows'
 import { api, type Recording } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { reportError } from '../lib/bugbarn'
 import { trackEvent } from '../lib/analytics'
 import { C } from '../lib/theme'
-
-function formatDuration(ms: number): string {
-  const s = Math.floor(ms / 1000)
-  const m = Math.floor(s / 60)
-  return m > 0 ? `${m}m ${s % 60}s` : `${s}s`
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
-}
-
-function DeviceIcon({ type }: { type: string }) {
-  if (type === 'mobile') return <Smartphone size={12} />
-  if (type === 'tablet') return <Tablet size={12} />
-  return <Monitor size={12} />
-}
 
 type TrafficFilter = 'all' | 'human' | 'bot'
 type DeviceFilter = 'all' | 'desktop' | 'mobile' | 'tablet'
@@ -66,6 +50,16 @@ function FilterPills<T extends string>({
       ))}
     </div>
   )
+}
+
+function filterLabelFor(funnelId: string | null, step: string | null, page: string | null): string | null {
+  if (funnelId && step) return `Funnel step ${step} drop-offs`
+  return page ? `Sessions on ${decodeURIComponent(page)}` : null
+}
+
+function selectionState(total: number, selected: number) {
+  const allSelected = total > 0 && selected === total
+  return { allSelected, someSelected: selected > 0 && !allSelected }
 }
 
 export default function Sessions() {
@@ -169,8 +163,7 @@ export default function Sessions() {
     })
   }
 
-  const allSelected = recordings.length > 0 && selectedIds.size === recordings.length
-  const someSelected = selectedIds.size > 0 && !allSelected
+  const { allSelected, someSelected } = selectionState(recordings.length, selectedIds.size)
 
   const toggleSelectAll = () => {
     setPendingDeleteId(null)
@@ -179,11 +172,7 @@ export default function Sessions() {
 
   const projectName = projects.find((p) => p.id === projectId)?.name
 
-  const filterLabel = funnelId && stepParam
-    ? `Funnel step ${stepParam} drop-offs`
-    : pageParam
-    ? `Sessions on ${decodeURIComponent(pageParam)}`
-    : null
+  const filterLabel = filterLabelFor(funnelId, stepParam, pageParam)
 
   if (!projectId) {
     return (
@@ -193,6 +182,13 @@ export default function Sessions() {
         </div>
       </Shell>
     )
+  }
+
+  const goToPage = (next: number) => {
+    setOffset(next)
+    setSelectedIds(new Set())
+    setBulkPendingDelete(false)
+    void load(next, filters)
   }
 
   const updateFilter = <K extends keyof FilterState>(key: K, value: FilterState[K]) => {
@@ -271,313 +267,40 @@ export default function Sessions() {
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           background: bulkPendingDelete ? 'rgba(239,68,68,0.04)' : undefined,
         }}>
-          {bulkPendingDelete ? (
-            <>
-              <button
-                onClick={() => { void handleBulkDelete() }}
-                style={{
-                  fontSize: 12, padding: '4px 14px', borderRadius: 6,
-                  background: C.error, color: '#fff', border: 'none',
-                  cursor: 'pointer', fontWeight: 600,
-                }}
-              >
-                Confirm delete {selectedIds.size} recording{selectedIds.size !== 1 ? 's' : ''}
-              </button>
-              <button
-                onClick={() => setBulkPendingDelete(false)}
-                style={{
-                  fontSize: 12, padding: '4px 14px', borderRadius: 6,
-                  background: 'none', color: C.muted,
-                  border: `1px solid ${C.border}`, cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-            </>
-          ) : selectedIds.size > 0 ? (
-            <>
-              <span style={{ fontSize: 13, color: C.muted, fontWeight: 400 }}>
-                {selectedIds.size} selected
-              </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button
-                  onClick={() => { setSelectedIds(new Set()); setBulkPendingDelete(false) }}
-                  style={{
-                    fontSize: 12, padding: '4px 10px', borderRadius: 6,
-                    background: 'none', color: C.muted,
-                    border: `1px solid ${C.border}`, cursor: 'pointer',
-                  }}
-                >
-                  Clear
-                </button>
-                <button
-                  onClick={() => setBulkPendingDelete(true)}
-                  style={{
-                    fontSize: 12, padding: '4px 12px', borderRadius: 6,
-                    background: 'none', color: C.error,
-                    border: `1px solid ${C.error}`, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600,
-                  }}
-                >
-                  <Trash2 size={12} /> Delete {selectedIds.size}
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <span>Recordings</span>
-              <span style={{ fontSize: 12, color: C.muted, fontWeight: 400 }}>
-                {loading ? 'Loading…' : `${recordings.length} shown`}
-              </span>
-            </>
-          )}
+          <BulkBar
+            bulkPendingDelete={bulkPendingDelete} selectedCount={selectedIds.size} loading={loading} shown={recordings.length}
+            onConfirm={() => { void handleBulkDelete() }} onCancel={() => setBulkPendingDelete(false)}
+            onClear={() => { setSelectedIds(new Set()); setBulkPendingDelete(false) }} onAskDelete={() => setBulkPendingDelete(true)}
+          />
         </div>
 
         {loading ? (
           <div style={{ padding: '3rem', textAlign: 'center', color: C.muted }}>Loading…</div>
         ) : recordings.length === 0 ? (
-          <div style={{
-            padding: '3rem', textAlign: 'center', color: C.muted,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-          }}>
-            <Video size={32} opacity={0.3} />
-            {loadFailed ? (
-              <>
-                <div>Could not load recordings</div>
-                <div style={{ fontSize: 13 }}>Change a filter or reload the page to try again.</div>
-              </>
-            ) : (
-              <>
-                <div>No recordings found</div>
-                <div style={{ fontSize: 13 }}>
-                  Enable recording by passing <code style={{ background: C.bg, padding: '1px 6px', borderRadius: 4 }}>record: true</code> to the SDK
-                </div>
-              </>
-            )}
-          </div>
+          <EmptyRecordings loadFailed={loadFailed} />
         ) : (
           <>
-            {/* Table header */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? '32px 1fr auto' : '32px 1fr 90px 90px 110px 90px 110px',
-              padding: '0.5rem 1.5rem',
-              fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase',
-              borderBottom: `1px solid ${C.border}`,
-              alignItems: 'center',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  ref={(el) => { if (el) el.indeterminate = someSelected }}
-                  onChange={toggleSelectAll}
-                  style={{ cursor: 'pointer', accentColor: C.amber }}
-                />
-              </div>
-              <span>Started</span>
-              {isMobile ? (
-                <span>Replay</span>
-              ) : (
-                <>
-                  <span>Duration</span>
-                  <span>Device</span>
-                  <span>Environment</span>
-                  <span>Traffic</span>
-                  <span>Replay</span>
-                </>
-              )}
-            </div>
+            <RecordingsHeader isMobile={isMobile} allSelected={allSelected} someSelected={someSelected} onToggleAll={toggleSelectAll} />
 
-            {recordings.map((rec) => {
-              if (pendingDeleteId === rec.id) {
-                return (
-                  <div
-                    key={rec.id}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 12,
-                      padding: '0.75rem 1.5rem',
-                      borderBottom: `1px solid ${C.border}`,
-                      background: 'rgba(239,68,68,0.04)',
-                    }}
-                  >
-                    <button
-                      onClick={(e) => { e.stopPropagation(); void handleDelete(rec) }}
-                      style={{
-                        fontSize: 12, padding: '4px 14px', borderRadius: 6,
-                        background: C.error, color: '#fff', border: 'none',
-                        cursor: 'pointer', fontWeight: 600, flexShrink: 0,
-                      }}
-                    >
-                      Confirm delete
-                    </button>
-                    <span style={{ fontSize: 12, color: C.muted }}>
-                      Delete this recording? This cannot be undone.
-                    </span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setPendingDeleteId(null) }}
-                      style={{
-                        marginLeft: 'auto', fontSize: 12, padding: '4px 14px', borderRadius: 6,
-                        background: 'none', color: C.muted,
-                        border: `1px solid ${C.border}`, cursor: 'pointer', flexShrink: 0,
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )
-              }
-
-              const isSelected = selectedIds.has(rec.id)
-              const replayCell = (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {rec.has_snapshot ? (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.muted, fontSize: 12 }}>
-                      <Video size={14} /> Play
-                    </span>
-                  ) : (
-                    <span
-                      title="No initial snapshot was captured — this recording can't be replayed."
-                      style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.muted, fontSize: 11, opacity: 0.7 }}
-                    >
-                      <VideoOff size={14} />
-                      {!isMobile && ' No replay'}
-                    </span>
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setPendingDeleteId(rec.id) }}
-                    title="Delete recording"
-                    style={{
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      color: C.muted, padding: 2, display: 'flex', alignItems: 'center',
-                    }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = C.error }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = C.muted }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              )
-
-
-              return (
-                <div
-                  key={rec.id}
-                  onClick={() => {
-                    if (!rec.has_snapshot) return
-                    trackEvent('recording_viewed', { recording_id: rec.id, session_id: rec.session_id })
-                    setSelected(rec)
-                  }}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: isMobile ? '32px 1fr auto' : '32px 1fr 90px 90px 110px 90px 110px',
-                    padding: '0.75rem 1.5rem',
-                    borderBottom: `1px solid ${C.border}`,
-                    cursor: rec.has_snapshot ? 'pointer' : 'default',
-                    transition: 'background 0.1s',
-                    alignItems: 'center',
-                    background: isSelected ? 'rgba(245,158,11,0.04)' : undefined,
-                  }}
-                  onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)' }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = isSelected ? 'rgba(245,158,11,0.04)' : 'transparent' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelect(rec.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ cursor: 'pointer', accentColor: C.amber }}
-                    />
-                  </div>
-                  {isMobile ? (
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(rec.started_at)}</div>
-                      <div style={{ fontSize: 11, color: C.muted, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {rec.page_url ? recordingPath(rec.page_url) : rec.session_id.slice(0, 12) + '…'}
-                      </div>
-                      <div style={{ fontSize: 11, color: C.muted, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-                        <span>{formatDuration(rec.duration_ms)}</span>
-                        <span>·</span>
-                        <DeviceIcon type={rec.device_type} />
-                        <span style={{ textTransform: 'capitalize' }}>{rec.device_type || 'desktop'}</span>
-                        {rec.environment && (
-                          <>
-                            <span>·</span>
-                            <span style={{ color: C.amber }}>{rec.environment}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(rec.started_at)}</div>
-                      <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                        {rec.page_url ? recordingPath(rec.page_url) : rec.session_id.slice(0, 12) + '…'}
-                      </div>
-                    </div>
-                  )}
-                  {!isMobile && (
-                    <>
-                      <div style={{ fontSize: 13, color: C.text }}>{formatDuration(rec.duration_ms)}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.muted }}>
-                        <DeviceIcon type={rec.device_type} />
-                        <span style={{ textTransform: 'capitalize' }}>{rec.device_type || 'desktop'}</span>
-                      </div>
-                      <div>
-                        {rec.environment ? (
-                          <span style={{
-                            fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
-                            background: 'rgba(245,158,11,0.08)', color: C.amber,
-                            border: `1px solid rgba(245,158,11,0.2)`,
-                          }}>
-                            {rec.environment}
-                          </span>
-                        ) : (
-                          <span style={{ color: C.muted, fontSize: 12 }}>—</span>
-                        )}
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: C.muted }}>
-                        {rec.is_bot ? <Bot size={12} /> : <User size={12} />}
-                        <span>{rec.is_bot ? 'Bot' : 'Human'}</span>
-                      </div>
-                    </>
-                  )}
-                  {replayCell}
-                </div>
-              )
-            })}
-
-            {/* Pagination */}
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-              gap: 8, padding: '0.75rem 1.5rem',
-            }}>
-              <button
-                disabled={offset === 0}
-                onClick={() => { const next = Math.max(0, offset - PAGE_SIZE); setOffset(next); setSelectedIds(new Set()); setBulkPendingDelete(false); void load(next, filters) }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  background: 'none', border: `1px solid ${C.border}`, borderRadius: 6,
-                  color: offset === 0 ? C.muted : C.text, cursor: offset === 0 ? 'not-allowed' : 'pointer',
-                  padding: '4px 10px', fontSize: 12,
+            {recordings.map((rec) => pendingDeleteId === rec.id ? (
+              <PendingDeleteRow key={rec.id} onConfirm={() => { void handleDelete(rec) }} onCancel={() => setPendingDeleteId(null)} />
+            ) : (
+              <RecordingRow
+                key={rec.id} rec={rec} isMobile={isMobile} isSelected={selectedIds.has(rec.id)}
+                onToggleSelect={() => toggleSelect(rec.id)} onAskDelete={() => setPendingDeleteId(rec.id)}
+                onOpen={() => {
+                  if (!rec.has_snapshot) return
+                  trackEvent('recording_viewed', { recording_id: rec.id, session_id: rec.session_id })
+                  setSelected(rec)
                 }}
-              >
-                <ChevronLeft size={14} /> Prev
-              </button>
-              <button
-                disabled={!hasMore}
-                onClick={() => { const next = offset + PAGE_SIZE; setOffset(next); setSelectedIds(new Set()); setBulkPendingDelete(false); void load(next, filters) }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  background: 'none', border: `1px solid ${C.border}`, borderRadius: 6,
-                  color: !hasMore ? C.muted : C.text, cursor: !hasMore ? 'not-allowed' : 'pointer',
-                  padding: '4px 10px', fontSize: 12,
-                }}
-              >
-                Next <ChevronRight size={14} />
-              </button>
-            </div>
+              />
+            ))}
+
+            <Pagination
+              offset={offset} hasMore={hasMore}
+              onPrev={() => goToPage(Math.max(0, offset - PAGE_SIZE))}
+              onNext={() => goToPage(offset + PAGE_SIZE)}
+            />
           </>
         )}
       </div>
