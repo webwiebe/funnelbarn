@@ -28,6 +28,57 @@ interface TopNavProps {
   isActive: (to: string) => boolean
 }
 
+// hasHostedLogout reports whether the IAMBarn logout component can be shown.
+function hasHostedLogout(iambarn: TopNavProps['iambarn'], ready: boolean): boolean {
+  return Boolean(iambarn?.server_url && iambarn?.client_id && ready)
+}
+
+function ProjectNameBadge({ name }: { name?: string }) {
+  if (!name) return null
+  return (
+    <span style={{
+      fontSize: 12, color: '#94a3b8', background: '#1a1d27',
+      border: '1px solid #2a2d3a', borderRadius: 4,
+      padding: '0.2rem 0.5rem', marginRight: 8, flexShrink: 0,
+      maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    }}>
+      {name}
+    </span>
+  )
+}
+
+function DesktopNavLinks({ navLinks, isActive }: Pick<TopNavProps, 'navLinks' | 'isActive'>) {
+  return (
+    <>
+      {navLinks.map((link) => (
+        <Link
+          key={link.to}
+          to={link.to}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '0.4rem 0.75rem',
+            borderRadius: 6,
+            textDecoration: 'none',
+            fontSize: 13,
+            fontWeight: 500,
+            color: isActive(link.to) ? C.amber : C.muted,
+            background: isActive(link.to) ? 'rgba(245,158,11,0.1)' : 'transparent',
+            transition: 'all 0.15s',
+            minHeight: 'unset',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {link.icon}
+          <span className="nav-label">{link.label}</span>
+        </Link>
+      ))}
+    </>
+  )
+}
+
 export function TopNav({
   projectId,
   resolvedProjectName,
@@ -85,44 +136,11 @@ export function TopNav({
         </div>
       )}
       {/* Fallback static badge when no projects loaded yet but name is known */}
-      {projects.length === 0 && resolvedProjectName && (
-        <span style={{
-          fontSize: 12, color: '#94a3b8', background: '#1a1d27',
-          border: '1px solid #2a2d3a', borderRadius: 4,
-          padding: '0.2rem 0.5rem', marginRight: 8, flexShrink: 0,
-          maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>
-          {resolvedProjectName}
-        </span>
-      )}
+      {projects.length === 0 && <ProjectNameBadge name={resolvedProjectName} />}
 
       {/* Desktop: Nav links */}
       <div className="desktop-nav" style={{ display: 'flex', gap: 4, flex: 1 }}>
-        {navLinks.map((link) => (
-          <Link
-            key={link.to}
-            to={link.to}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '0.4rem 0.75rem',
-              borderRadius: 6,
-              textDecoration: 'none',
-              fontSize: 13,
-              fontWeight: 500,
-              color: isActive(link.to) ? C.amber : C.muted,
-              background: isActive(link.to) ? 'rgba(245,158,11,0.1)' : 'transparent',
-              transition: 'all 0.15s',
-              minHeight: 'unset',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {link.icon}
-            <span className="nav-label">{link.label}</span>
-          </Link>
-        ))}
+        <DesktopNavLinks navLinks={navLinks} isActive={isActive} />
       </div>
 
       {/* Desktop: Right side user menu + live indicator */}
@@ -145,7 +163,7 @@ export function TopNav({
         {/* User menu — hosted IAMBarn component for OIDC sessions (avatar,
             name, account link + RP-initiated logout), else the built-in
             username dropdown for local-password sessions. */}
-        {iambarn?.server_url && iambarn?.client_id && iambarnReady ? (
+        {hasHostedLogout(iambarn, iambarnReady) && iambarn ? (
           <iambarn-user-menu
             server-url={iambarn.server_url}
             client-id={iambarn.client_id}

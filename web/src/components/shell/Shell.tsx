@@ -20,6 +20,25 @@ interface ShellProps {
   projects?: Project[]
 }
 
+// mainNavLinks are the top navigation links. A project scoped page links to
+// the selected project when there is one.
+function mainNavLinks(projectId?: string) {
+  const scoped = (path: string) => (projectId ? `/${path}/${projectId}` : `/${path}`)
+  return [
+    { to: '/overview', label: 'All Projects', icon: <Globe size={16} /> },
+    { to: scoped('dashboard'), label: 'Overview', icon: <BarChart2 size={16} /> },
+    { to: scoped('flows'), label: 'Flows', icon: <GitBranch size={16} /> },
+    { to: scoped('funnels'), label: 'Funnels', icon: <Layers size={16} /> },
+    { to: scoped('flags'), label: 'Flags', icon: <Flag size={16} /> },
+    { to: scoped('insights'), label: 'Insights', icon: <Lightbulb size={16} /> },
+    { to: scoped('live'), label: 'Live', icon: <Radio size={16} /> },
+    { to: scoped('sessions'), label: 'Sessions', icon: <Video size={16} /> },
+    { to: scoped('agents'), label: 'Agents', icon: <Bot size={16} /> },
+    { to: '/integrations', label: 'Integrations', icon: <PlugZap size={16} /> },
+    { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
+  ]
+}
+
 export default function Shell({ children, projectId, projectName, projects: projectsProp }: ShellProps) {
   const { logout } = useAuth()
   const { projects: ctxProjects } = useProjects()
@@ -74,19 +93,7 @@ export default function Shell({ children, projectId, projectName, projects: proj
     navigate('/')
   }
 
-  const navLinks = [
-    { to: '/overview', label: 'All Projects', icon: <Globe size={16} /> },
-    { to: projectId ? `/dashboard/${projectId}` : '/dashboard', label: 'Overview', icon: <BarChart2 size={16} /> },
-    { to: projectId ? `/flows/${projectId}` : '/flows', label: 'Flows', icon: <GitBranch size={16} /> },
-    { to: projectId ? `/funnels/${projectId}` : '/funnels', label: 'Funnels', icon: <Layers size={16} /> },
-    { to: projectId ? `/flags/${projectId}` : '/flags', label: 'Flags', icon: <Flag size={16} /> },
-    { to: projectId ? `/insights/${projectId}` : '/insights', label: 'Insights', icon: <Lightbulb size={16} /> },
-    { to: projectId ? `/live/${projectId}` : '/live', label: 'Live', icon: <Radio size={16} /> },
-    { to: projectId ? `/sessions/${projectId}` : '/sessions', label: 'Sessions', icon: <Video size={16} /> },
-    { to: projectId ? `/agents/${projectId}` : '/agents', label: 'Agents', icon: <Bot size={16} /> },
-    { to: '/integrations', label: 'Integrations', icon: <PlugZap size={16} /> },
-    { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
-  ]
+  const navLinks = mainNavLinks(projectId)
 
   const isActive = (to: string) => {
     const base = to.split('/')[1]

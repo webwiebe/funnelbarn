@@ -43,6 +43,13 @@ interface ProjectPickerProps {
   variant?: 'badge' | 'full'
 }
 
+// pickCurrentProject resolves the "current" project: explicit prop > URL
+// param > remembered id > first project.
+function pickCurrentProject(projects: Project[], projectId?: string, urlProjectId?: string): Project | undefined {
+  const effectiveProjectId = projectId ?? urlProjectId ?? readLastProjectId()
+  return projects.find((p) => p.id === effectiveProjectId) ?? projects[0]
+}
+
 export function ProjectPicker({ projects, base, projectId, onSelect, variant = 'badge' }: ProjectPickerProps) {
   const navigate = useNavigate()
   const { projectId: urlProjectId } = useParams<{ projectId?: string }>()
@@ -51,9 +58,7 @@ export function ProjectPicker({ projects, base, projectId, onSelect, variant = '
 
   const sortedProjects = [...projects].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
 
-  // Resolve the "current" project: explicit prop > URL param > remembered id > first project.
-  const effectiveProjectId = projectId ?? urlProjectId ?? readLastProjectId()
-  const currentProject = projects.find((p) => p.id === effectiveProjectId) ?? projects[0]
+  const currentProject = pickCurrentProject(projects, projectId, urlProjectId)
 
   // Close dropdown when clicking outside
   useEffect(() => {
