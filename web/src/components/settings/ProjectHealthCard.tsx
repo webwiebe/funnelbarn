@@ -23,6 +23,61 @@ interface ProjectHealthCardProps {
   onHealthChange?: (health: ProjectHealth | null, project: Project | null) => void
 }
 
+function FeatureRows({ loading, error, health }: { loading: boolean; error: string | null; health: ProjectHealth | null }) {
+  if (loading) {
+    return <div style={{ padding: '1.25rem 1.5rem', color: C.muted, fontSize: 13 }}>Loading…</div>
+  }
+  if (error) {
+    return <div style={{ padding: '1.25rem 1.5rem', color: C.error, fontSize: 13 }}>{error}</div>
+  }
+  return (
+    <>
+      {FEATURES.map((f, i) => {
+        const checked = health ? (health[f.key] as boolean) : false
+        return (
+          <div
+            key={f.key}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '0.75rem 1.5rem',
+              borderBottom: i < FEATURES.length - 1 ? `1px solid ${C.border}` : undefined,
+            }}
+          >
+            {checked
+              ? <CheckCircle size={18} color={C.success} />
+              : <Circle size={18} color={C.muted} />
+            }
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, color: C.text, fontWeight: checked ? 600 : 400 }}>
+                {f.label}
+              </div>
+              <div style={{ fontSize: 12, color: C.muted }}>{f.description}</div>
+            </div>
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+function ActiveSummary({ health }: { health: ProjectHealth | null }) {
+  const active = health ? FEATURES.filter((f) => health[f.key] as boolean).length : 0
+  if (active === FEATURES.length) {
+    return (
+      <div style={{ fontSize: 13, color: C.success, fontWeight: 600 }}>
+        All features active
+      </div>
+    )
+  }
+  return (
+    <div style={{ fontSize: 13, color: C.muted }}>
+      {active} / {FEATURES.length} active
+    </div>
+  )
+}
+
 export function ProjectHealthCard({ projects, defaultProjectId, onHealthChange }: ProjectHealthCardProps) {
   const [selectedId, setSelectedId] = useState<string>('')
   const [health, setHealth] = useState<ProjectHealth | null>(null)
@@ -69,10 +124,6 @@ export function ProjectHealthCard({ projects, defaultProjectId, onHealthChange }
   }
 
   if (projects.length === 0) return null
-
-  const allChecked = health
-    ? FEATURES.every((f) => health[f.key] as boolean)
-    : false
 
   return (
     <div style={{
@@ -121,38 +172,7 @@ export function ProjectHealthCard({ projects, defaultProjectId, onHealthChange }
 
       {/* Feature rows */}
       <div style={{ padding: '0.5rem 0' }}>
-        {loading ? (
-          <div style={{ padding: '1.25rem 1.5rem', color: C.muted, fontSize: 13 }}>Loading…</div>
-        ) : error ? (
-          <div style={{ padding: '1.25rem 1.5rem', color: C.error, fontSize: 13 }}>{error}</div>
-        ) : (
-          FEATURES.map((f, i) => {
-            const checked = health ? (health[f.key] as boolean) : false
-            return (
-              <div
-                key={f.key}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  padding: '0.75rem 1.5rem',
-                  borderBottom: i < FEATURES.length - 1 ? `1px solid ${C.border}` : undefined,
-                }}
-              >
-                {checked
-                  ? <CheckCircle size={18} color={C.success} />
-                  : <Circle size={18} color={C.muted} />
-                }
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, color: C.text, fontWeight: checked ? 600 : 400 }}>
-                    {f.label}
-                  </div>
-                  <div style={{ fontSize: 12, color: C.muted }}>{f.description}</div>
-                </div>
-              </div>
-            )
-          })
-        )}
+        <FeatureRows loading={loading} error={error} health={health} />
       </div>
 
       {/* Footer */}
@@ -165,15 +185,7 @@ export function ProjectHealthCard({ projects, defaultProjectId, onHealthChange }
           justifyContent: 'space-between',
           gap: 8,
         }}>
-          {allChecked ? (
-            <div style={{ fontSize: 13, color: C.success, fontWeight: 600 }}>
-              All features active
-            </div>
-          ) : (
-            <div style={{ fontSize: 13, color: C.muted }}>
-              {health ? FEATURES.filter((f) => health[f.key] as boolean).length : 0} / {FEATURES.length} active
-            </div>
-          )}
+          <ActiveSummary health={health} />
           <button
             onClick={handleReset}
             disabled={resetting}

@@ -17,6 +17,88 @@ interface Props {
   projectId: string
 }
 
+function chipStyle(base: React.CSSProperties, active: boolean): React.CSSProperties {
+  return {
+    ...base,
+    background: active ? 'rgba(245,158,11,0.12)' : 'transparent',
+    borderColor: active ? C.amber : C.border,
+    color: active ? C.amber : C.muted,
+  }
+}
+
+function forceLabel(val: boolean | null): string {
+  if (val === null) return 'Inherit'
+  return val ? 'Force on' : 'Force off'
+}
+
+function RuleRow({ rule, onChange, onRemove }: {
+  rule: RecordingRule
+  onChange: (field: keyof RecordingRule, value: string) => void
+  onRemove: () => void
+}) {
+  return (
+    <div style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+      <input
+        value={rule.pattern}
+        onChange={(e) => onChange('pattern', e.target.value)}
+        placeholder="/path/* or /exact"
+        style={{
+          flex: 1,
+          background: C.bg,
+          border: `1px solid ${C.border}`,
+          borderRadius: 6,
+          padding: '0.35rem 0.6rem',
+          color: C.text,
+          fontSize: 12,
+          fontFamily: '"SF Mono", "Fira Code", monospace',
+          outline: 'none',
+        }}
+        onFocus={(e) => (e.target.style.borderColor = C.amber)}
+        onBlur={(e) => (e.target.style.borderColor = C.border)}
+      />
+      <select
+        value={rule.action}
+        onChange={(e) => onChange('action', e.target.value)}
+        style={{
+          background: C.bg,
+          border: `1px solid ${C.border}`,
+          borderRadius: 6,
+          padding: '0.35rem 0.5rem',
+          color: rule.action === 'capture' ? C.success : C.error,
+          fontSize: 12,
+          outline: 'none',
+          cursor: 'pointer',
+        }}
+      >
+        <option value="capture">Capture</option>
+        <option value="ignore">Ignore</option>
+      </select>
+      <button
+        onClick={() => onRemove()}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: C.muted,
+          cursor: 'pointer',
+          padding: 2,
+          display: 'flex',
+        }}
+      >
+        <Trash2 size={13} />
+      </button>
+    </div>
+  )
+}
+
+function EffectiveNote({ settings }: { settings: ProjectRecordingSettingsData | null }) {
+  if (!settings) return null
+  return (
+    <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
+      Effective: {settings.effective_enabled ? 'on' : 'off'} at {Math.round((settings.effective_rate ?? 1) * 100)}%
+    </div>
+  )
+}
+
 export function ProjectRecordingSettings({ projectId }: Props) {
   const [open, setOpen] = useState(false)
   const [settings, setSettings] = useState<ProjectRecordingSettingsData | null>(null)
@@ -109,29 +191,20 @@ export function ProjectRecordingSettings({ projectId }: Props) {
                 <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>Recording</div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {([null, true, false] as const).map((val) => {
-                    const label = val === null ? 'Inherit' : val ? 'Force on' : 'Force off'
+                    const label = forceLabel(val)
                     const active = enabled === val
                     return (
                       <button
                         key={String(val)}
                         onClick={() => setEnabled(val)}
-                        style={{
-                          ...buttonBase,
-                          background: active ? 'rgba(245,158,11,0.12)' : 'transparent',
-                          borderColor: active ? C.amber : C.border,
-                          color: active ? C.amber : C.muted,
-                        }}
+                        style={chipStyle(buttonBase, active)}
                       >
                         {label}
                       </button>
                     )
                   })}
                 </div>
-                {settings && (
-                  <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
-                    Effective: {settings.effective_enabled ? 'on' : 'off'} at {Math.round((settings.effective_rate ?? 1) * 100)}%
-                  </div>
-                )}
+                <EffectiveNote settings={settings} />
               </div>
 
               {/* Sample rate override */}
@@ -140,12 +213,7 @@ export function ProjectRecordingSettings({ projectId }: Props) {
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <button
                     onClick={() => setSampleRate(null)}
-                    style={{
-                      ...buttonBase,
-                      background: sampleRate === null ? 'rgba(245,158,11,0.12)' : 'transparent',
-                      borderColor: sampleRate === null ? C.amber : C.border,
-                      color: sampleRate === null ? C.amber : C.muted,
-                    }}
+                    style={chipStyle(buttonBase, sampleRate === null)}
                   >
                     Inherit
                   </button>
@@ -153,12 +221,7 @@ export function ProjectRecordingSettings({ projectId }: Props) {
                     <button
                       key={rate}
                       onClick={() => setSampleRate(rate)}
-                      style={{
-                        ...buttonBase,
-                        background: sampleRate === rate ? 'rgba(245,158,11,0.12)' : 'transparent',
-                        borderColor: sampleRate === rate ? C.amber : C.border,
-                        color: sampleRate === rate ? C.amber : C.muted,
-                      }}
+                      style={chipStyle(buttonBase, sampleRate === rate)}
                     >
                       {Math.round(rate * 100)}%
                     </button>
@@ -197,56 +260,7 @@ export function ProjectRecordingSettings({ projectId }: Props) {
                 )}
 
                 {rules.map((rule, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                    <input
-                      value={rule.pattern}
-                      onChange={(e) => updateRule(i, 'pattern', e.target.value)}
-                      placeholder="/path/* or /exact"
-                      style={{
-                        flex: 1,
-                        background: C.bg,
-                        border: `1px solid ${C.border}`,
-                        borderRadius: 6,
-                        padding: '0.35rem 0.6rem',
-                        color: C.text,
-                        fontSize: 12,
-                        fontFamily: '"SF Mono", "Fira Code", monospace',
-                        outline: 'none',
-                      }}
-                      onFocus={(e) => (e.target.style.borderColor = C.amber)}
-                      onBlur={(e) => (e.target.style.borderColor = C.border)}
-                    />
-                    <select
-                      value={rule.action}
-                      onChange={(e) => updateRule(i, 'action', e.target.value)}
-                      style={{
-                        background: C.bg,
-                        border: `1px solid ${C.border}`,
-                        borderRadius: 6,
-                        padding: '0.35rem 0.5rem',
-                        color: rule.action === 'capture' ? C.success : C.error,
-                        fontSize: 12,
-                        outline: 'none',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <option value="capture">Capture</option>
-                      <option value="ignore">Ignore</option>
-                    </select>
-                    <button
-                      onClick={() => removeRule(i)}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: C.muted,
-                        cursor: 'pointer',
-                        padding: 2,
-                        display: 'flex',
-                      }}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
+                  <RuleRow key={i} rule={rule} onChange={(field, value) => updateRule(i, field, value)} onRemove={() => removeRule(i)} />
                 ))}
 
                 {rules.length > 0 && (

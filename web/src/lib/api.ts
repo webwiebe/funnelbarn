@@ -17,19 +17,20 @@ function getCookie(name: string): string | undefined {
 // k8s rollout in flight (pod cycling) — they recover in a couple of seconds.
 const TRANSIENT_STATUSES = new Set([502, 503, 504])
 
-export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...options.headers as Record<string, string> }
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH'])
 
-  const method = (options.method || 'GET').toUpperCase()
-  if (method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH') {
+function buildHeaders(options: RequestInit, method: string): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...options.headers as Record<string, string> }
+  if (MUTATING_METHODS.has(method)) {
     const csrfToken = getCookie('funnelbarn_csrf')
     if (csrfToken) {
       headers['X-FunnelBarn-CSRF'] = csrfToken
     }
   }
+  return headers
+}
 
-  const doFetch = () => fetch(path, { ...options, headers, credentials: 'include' })
-
+async function fetchWithRetry(doFetch: () => Promise<Response>, method: string): Promise<Response> {
   let res: Response
   try {
     res = await doFetch()
@@ -51,7 +52,20 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
       throw new ApiError(0, 'network error after retry')
     }
   }
+  return res
+}
 
+async function errorMessage(res: Response): Promise<string> {
+  try {
+    const body = await res.json()
+    if (body.error) return body.error
+  } catch {
+    // ignore parse errors
+  }
+  return `HTTP ${res.status}`
+}
+
+async function failFor(res: Response, path: string): Promise<never> {
   if (res.status === 401) {
     const { pathname } = window.location
     if (pathname !== '/' && !pathname.startsWith('/login')) {
@@ -59,29 +73,26 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
     }
     throw new ApiError(401, 'Unauthorized')
   }
-
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`
-    try {
-      const body = await res.json()
-      if (body.error) msg = body.error
-    } catch {
-      // ignore parse errors
-    }
-    const apiErr = new ApiError(res.status, msg)
-    // Report unexpected server errors (5xx) to BugBarn — but skip the transient
-    // statuses we just retried. If we retried and still got 503, it's likely a
-    // longer rollout or real outage; we still don't want a BugBarn spam storm
-    // for either case, so suppress those too.
-    if (res.status >= 500 && !TRANSIENT_STATUSES.has(res.status)) {
-      reportError(apiErr, {
-        source: 'api.request',
-        path,
-        status: res.status,
-      })
-    }
-    throw apiErr
+  const apiErr = new ApiError(res.status, await errorMessage(res))
+  // Report unexpected server errors (5xx) to BugBarn — but skip the transient
+  // statuses we just retried. If we retried and still got 503, it's likely a
+  // longer rollout or real outage; we still don't want a BugBarn spam storm
+  // for either case, so suppress those too.
+  if (res.status >= 500 && !TRANSIENT_STATUSES.has(res.status)) {
+    reportError(apiErr, {
+      source: 'api.request',
+      path,
+      status: res.status,
+    })
   }
+  throw apiErr
+}
+
+export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const method = (options.method || 'GET').toUpperCase()
+  const headers = buildHeaders(options, method)
+  const res = await fetchWithRetry(() => fetch(path, { ...options, headers, credentials: 'include' }), method)
+  if (!res.ok) return failFor(res, path)
 
   const text = await res.text()
   if (!text) return undefined as T
