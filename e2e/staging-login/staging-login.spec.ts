@@ -28,12 +28,14 @@ test('an organization admin signs in through IAMBarn and gets a session', async 
   await page.goto('/api/v1/oidc/login')
   await page.waitForURL(/iam\./, { waitUntil: 'commit', timeout: 15_000 })
 
-  // The sign-in page also carries a hidden twin of each field for password
-  // managers (tabindex -1, aria-hidden); the visible fields are the ones to use.
-  await page.locator('input[name="email"]:not([tabindex="-1"])').fill(email!)
-  await page.getByRole('button', { name: /continue|next/i }).first().click()
-  await page.locator('input[type="password"]:not([tabindex="-1"])').fill(password!)
-  await page.locator('button[type="submit"]').click()
+  // The sign-in page offers a magic link by default. "Use password" reveals the
+  // password form, which posts to /auth/password-login-form. The page also
+  // carries a hidden twin of the email field for password managers, so the
+  // visible field is addressed by its id.
+  await page.locator('#f-email').fill(email!)
+  await page.getByRole('button', { name: /use password/i }).click()
+  await page.locator('#_pw_input').fill(password!)
+  await page.getByRole('button', { name: /^sign in$/i }).click()
 
   const allow = page.getByRole('button', { name: /allow/i })
   if (await allow.isVisible({ timeout: 3_000 }).catch(() => false)) {
