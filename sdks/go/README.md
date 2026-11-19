@@ -96,6 +96,29 @@ funnelbarn.Init(funnelbarn.Options{
 funnelbarn.Rejected() // cumulative since the last Init
 ```
 
+### Reading the ingest answer
+
+Pass your own `*http.Client` to observe the ingest response (or to set a proxy
+or timeout) without wrapping `http.DefaultTransport` for the whole process.
+The client serves event ingest and flag evaluation:
+
+```go
+type tap struct{ next http.RoundTripper }
+
+func (t tap) RoundTrip(r *http.Request) (*http.Response, error) {
+    resp, err := t.next.RoundTrip(r)
+    if err == nil {
+        slog.Info("funnelbarn answered", "path", r.URL.Path, "status", resp.StatusCode)
+    }
+    return resp, err
+}
+
+funnelbarn.Init(funnelbarn.Options{
+    // ...
+    HTTPClient: &http.Client{Timeout: 5 * time.Second, Transport: tap{http.DefaultTransport}},
+})
+```
+
 This exists because it didn't. `send` used to discard the status code, so a
 `404` (wrong endpoint), a `401` (wrong key) and a `403` (key minted for another
 project) all returned success — a whole app's server-side events went nowhere
