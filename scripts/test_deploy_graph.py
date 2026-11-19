@@ -109,6 +109,12 @@ class DeployGraphTest(unittest.TestCase):
         self.assertIn("e2e", self.jobs["deploy-staging"]["needs"])
         self.assertIn("deploy", self.jobs["e2e"]["needs"])
 
+    def test_staging_e2e_gates_the_staging_smoke_check_and_promotion(self):
+        """Issue #364: a red E2E run against staging stops promotion."""
+        self.assertIn("deploy-staging", self.jobs["e2e-staging"]["needs"])
+        self.assertIn("e2e-staging", self.jobs["smoke-staging"]["needs"])
+        self.assertIn("e2e-staging", self.jobs["promote"]["needs"])
+
     def test_production_waits_for_staging_and_its_smoke_check(self):
         """Issue #364: a broken staging stops promotion."""
         promote = self.jobs["promote"]
