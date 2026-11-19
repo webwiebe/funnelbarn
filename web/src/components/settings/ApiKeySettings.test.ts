@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { scopeTone, scopeHint, formatLastUsed } from './ApiKeySettings'
+import { scopeTone, scopeHint, formatLastUsed } from './apiKeyScopes'
 
 describe('scopeTone', () => {
   it('marks scopes that can change state', () => {
