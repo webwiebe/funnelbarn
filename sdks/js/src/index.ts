@@ -9,140 +9,20 @@
 import { record } from "rrweb";
 import { isAutomatedBrowser, observePerformance } from "./browser.js";
 import { RECORDING_CHUNK_BUDGET_BYTES, sendInOrder, splitByBudget } from "./recording-chunks.js";
+import { SESSION_MAX_AGE_DEFAULT, SESSION_TIMEOUT_DEFAULT } from "./types.js";
+import type { EventPayload, EventProperties, FunnelBarnOptions, RecordingRule, SessionSignals, TraceLink } from "./types.js";
+import {
+  collectSessionSignals, detectReferrer, detectURL, extractUTMs, generateSessionID, generateUUID,
+  normaliseEndpoint, shouldRecordPath,
+} from "./helpers.js";
+import { clearRecordingState, resumeRecordingState, saveRecordingState } from "./recording-state.js";
+import { installTraceCapture } from "./trace-capture.js";
+import { postJSON } from "./http-fallback.js";
+import { EngagementTracker } from "./engagement.js";
+import { getOrCreateSessionID } from "./session.js";
 
-export interface RecordingRule {
-  pattern: string;
-  action: 'capture' | 'ignore';
-}
-
-export interface FunnelBarnOptions {
-  apiKey: string;
-  endpoint: string;
-  /** Optional project name sent as x-funnelbarn-project header */
-  projectName?: string;
-  /**
-   * Deployment environment tagged on every event, so one API key and project
-   * can be reused across dev / staging / production and filtered apart in the
-   * dashboard. Aliases are normalised server-side ("prod" and "live" both mean
-   * production); an unrecognised value is filed as development, so a typo is
-   * worth avoiding. A browser under automation (navigator.webdriver) sends
-   * "test" whatever this says.
-   */
-  environment?: string;
-  /** Flush interval in ms (default: 5000) */
-  flushInterval?: number;
-  /** Session idle timeout in ms (default: 30 minutes) */
-  sessionTimeout?: number;
-  /**
-   * Hard cap on how long one session ID may live, regardless of activity
-   * (default: 24 hours). The idle timeout alone never fires for a tab that
-   * stays busy — a kiosk, a dashboard left open, a page with a polling
-   * heartbeat — so without this a single session ID can run for months.
-   */
-  sessionMaxAge?: number;
-  /** Enable session recording by default (default: false). Server config can override. */
-  recording?: boolean;
-  /** Recording chunk flush interval in ms (default: 10000) */
-  recordingChunkMs?: number;
-  /** URL path patterns to always capture (checked before server rules) */
-  recordInclude?: string[];
-  /** URL path patterns to always ignore (checked before server rules) */
-  recordExclude?: string[];
-  /**
-   * Capture W3C trace context (traceparent) from outgoing fetch/XHR requests
-   * during a recording and link it to the session. This is the cross-stack join
-   * key: a trace_id seen in SpanBarn/BugBarn resolves back to this recording.
-   * Read-only — never modifies requests. Default: true (only active while recording).
-   */
-  traceCapture?: boolean;
-  /**
-   * When an outgoing request carries no traceparent, generate one and inject it
-   * so an un-instrumented backend's trace still reaches SpanBarn correlatable to
-   * this recording. The injected trace_id is the recording_id (deterministic, so
-   * it resolves with no lookup). Same-origin requests only, unless an origin is
-   * listed in tracePropagateOrigins. Default: false (opt-in — injecting a header
-   * cross-origin requires the server to allow it via CORS).
-   */
-  tracePropagate?: boolean;
-  /** Extra origins (besides same-origin) eligible for traceparent injection. */
-  tracePropagateOrigins?: string[];
-}
-
-/** A W3C trace observed in the browser during a recording. */
-export interface TraceLink {
-  trace_id: string;
-  span_id?: string;
-  url?: string;
-  occurred_at: string;
-}
-
-export interface EventProperties {
-  [key: string]: unknown;
-}
-
-interface SessionSignals {
-  screen_width?: number;
-  screen_height?: number;
-  pixel_ratio?: number;
-  touch?: boolean;
-  dark_mode?: boolean;
-  reduced_motion?: boolean;
-  browser_timezone?: string;
-  cpu_cores?: number;
-}
-
-interface EventPayload {
-  name: string;
-  url?: string;
-  referrer?: string;
-  utm_source?: string;
-  utm_medium?: string;
-  utm_campaign?: string;
-  utm_term?: string;
-  utm_content?: string;
-  properties?: EventProperties;
-  session_id?: string;
-  user_id?: string;
-  timestamp: string;
-  page_view_id?: string;
-  session_signals?: Record<string, unknown>;
-  vitals?: Record<string, number>;
-  environment?: string;
-}
-
-const SESSION_KEY = "funnelbarn_sid";
-const SESSION_EXPIRY_KEY = "funnelbarn_sid_exp";
-const SESSION_STARTED_KEY = "funnelbarn_sid_start";
-const SESSION_TIMEOUT_DEFAULT = 30 * 60 * 1000; // 30 min
-const SESSION_MAX_AGE_DEFAULT = 24 * 60 * 60 * 1000; // 24 h
-
-// Per-tab recording continuity. Persisted to sessionStorage on unload so a
-// full-page navigation resumes the same recording instead of starting a new
-// one — a visitor's whole journey becomes a single, continuous replay.
-const RECORDING_STATE_KEY = "funnelbarn_rec";
-
-interface RecordingState {
-  id: string;
-  chunkIndex: number;
-  startedAt: string;
-  elapsedMs: number;
-  savedAt: number;
-}
-
-/**
- * FunnelBarnClient is the main analytics client.
- */
-/**
- * Reduces whatever was configured to a base URL. `endpoint` is the server root
- * — the SDK appends `/api/v1/events` itself — but the setup page used to hand
- * out the full ingest URL, so a config value copied from there produced
- * `/api/v1/events/api/v1/events` and 404'd every event. Accepting both
- * spellings costs one line and removes the whole failure mode. See #237.
- */
-function normaliseEndpoint(endpoint: string): string {
-  const trimmed = endpoint.trim().replace(/\/+$/, "");
-  return trimmed.replace(/\/api\/v1\/events$/, "");
-}
+export type { EventProperties, FunnelBarnOptions, RecordingRule, TraceLink } from "./types.js";
+export { buildTraceparent, parseTraceparent } from "./trace-context.js";
 
 export class FunnelBarnClient {
   private readonly apiKey: string;
@@ -164,9 +44,15 @@ export class FunnelBarnClient {
   private sessionSignalsSent = false;
 
   // engagement tracking
-  private engagementTimer?: ReturnType<typeof setTimeout>;
-  private engagementScrollHandler?: () => void;
-  private engagementFired = false;
+  private readonly engagement = new EngagementTracker((url, pageViewId) => {
+    this.enqueue({
+      name: "page_engaged",
+      url,
+      page_view_id: pageViewId,
+      session_id: this.getOrCreateSessionID(),
+      timestamp: new Date().toISOString(),
+    });
+  });
 
   // web vitals
   private pendingVitals: Record<string, number> = {};
@@ -190,10 +76,7 @@ export class FunnelBarnClient {
   // trace capture (fetch/XHR instrumentation, active only while recording)
   private traceBuffer: TraceLink[] = [];
   private traceCaptureInstalled = false;
-  private origFetch?: typeof fetch;
-  private origXhrOpen?: typeof XMLHttpRequest.prototype.open;
-  private origXhrSetHeader?: typeof XMLHttpRequest.prototype.setRequestHeader;
-  private origXhrSend?: typeof XMLHttpRequest.prototype.send;
+  private uninstallTrace?: () => void;
 
   constructor(options: FunnelBarnOptions) {
     this.apiKey = options.apiKey;
@@ -258,12 +141,12 @@ export class FunnelBarnClient {
    */
   page(properties?: EventProperties): void {
     // Generate a new page_view_id for this page view.
-    this.currentPageViewId = this.generateUUID();
+    this.currentPageViewId = generateUUID();
 
     // Clean up engagement tracking from any previous page view.
-    this.cleanupEngagement();
+    this.engagement.cleanup();
 
-    const url = this.detectURL();
+    const url = detectURL();
 
     // Reset web vitals state for this page view.
     this.pendingVitals = {};
@@ -288,11 +171,11 @@ export class FunnelBarnClient {
     let sessionSignals: SessionSignals | undefined;
     if (!this.sessionSignalsSent) {
       this.sessionSignalsSent = true;
-      sessionSignals = this.collectSessionSignals();
+      sessionSignals = collectSessionSignals();
     }
 
-    const referrer = this.detectReferrer();
-    const utms = this.extractUTMs(url);
+    const referrer = detectReferrer();
+    const utms = extractUTMs(url);
 
     const payload: EventPayload = {
       name: "page_view",
@@ -317,7 +200,7 @@ export class FunnelBarnClient {
     this.enqueue(payload);
 
     // Start engagement tracking for this page view.
-    this.startEngagementTracking(url);
+    this.engagement.start(url, this.currentPageViewId);
   }
 
   /**
@@ -337,8 +220,8 @@ export class FunnelBarnClient {
    */
   track(name: string, properties?: EventProperties): void {
     if (!name) return;
-    const url = this.detectURL();
-    const utms = this.extractUTMs(url);
+    const url = detectURL();
+    const utms = extractUTMs(url);
 
     this.enqueue({
       name,
@@ -379,26 +262,7 @@ export class FunnelBarnClient {
   // --------------------------------------------------------------------------
 
   private async sendEvent(event: EventPayload): Promise<void> {
-    const url = `${this.endpoint}/api/v1/events`;
-    const headers = this.requestHeaders();
-
-    const body = JSON.stringify(event);
-
-    if (typeof fetch !== "undefined") {
-      // Use fetch (browser + Node 18+).
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body,
-        keepalive: true,
-      });
-      if (!response.ok) {
-        throw new Error(`funnelbarn: server returned ${response.status}`);
-      }
-    } else {
-      // Node < 18: use http/https module.
-      await sendWithHttp(url, headers, body);
-    }
+    await postJSON(`${this.endpoint}/api/v1/events`, this.requestHeaders(), JSON.stringify(event));
   }
 
   private startFlushTimer(): void {
@@ -419,171 +283,9 @@ export class FunnelBarnClient {
   }
 
   private getOrCreateSessionID(): string {
-    if (typeof localStorage === "undefined") {
-      return "";
-    }
-
-    const now = Date.now();
-    const expiry = parseInt(
-      localStorage.getItem(SESSION_EXPIRY_KEY) ?? "0",
-      10
-    );
-    const startedAt = parseInt(
-      localStorage.getItem(SESSION_STARTED_KEY) ?? "0",
-      10
-    );
-
-    // The idle window slides on every event, so on its own it never expires a
-    // session that keeps seeing activity. Age it out as well.
-    const idle = now >= expiry;
-    const tooOld = startedAt > 0 && now - startedAt >= this.sessionMaxAge;
-    const existing = localStorage.getItem(SESSION_KEY);
-
-    if (!idle && !tooOld && existing) {
-      // Extend session expiry on activity.
-      localStorage.setItem(
-        SESSION_EXPIRY_KEY,
-        String(now + this.sessionTimeout)
-      );
-      return existing;
-    }
-
-    // New session.
-    const id = this.generateSessionID();
-    localStorage.setItem(SESSION_KEY, id);
-    localStorage.setItem(SESSION_EXPIRY_KEY, String(now + this.sessionTimeout));
-    localStorage.setItem(SESSION_STARTED_KEY, String(now));
-    return id;
+    return getOrCreateSessionID(this.sessionTimeout, this.sessionMaxAge);
   }
 
-  private generateSessionID(): string {
-    const bytes = new Uint8Array(16);
-    if (typeof crypto !== "undefined" && crypto.getRandomValues) {
-      crypto.getRandomValues(bytes);
-    } else {
-      for (let i = 0; i < bytes.length; i++) {
-        bytes[i] = Math.floor(Math.random() * 256);
-      }
-    }
-    return Array.from(bytes)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-  }
-
-  private generateUUID(): string {
-    const bytes = new Uint8Array(16);
-    if (typeof crypto !== "undefined" && crypto.getRandomValues) {
-      crypto.getRandomValues(bytes);
-    } else {
-      for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
-    }
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    const hex = Array.from(bytes)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-  }
-
-  private collectSessionSignals(): SessionSignals {
-    if (typeof window === "undefined") return {};
-    const signals: SessionSignals = {};
-    if (typeof screen !== "undefined") {
-      signals.screen_width = screen.width;
-      signals.screen_height = screen.height;
-    }
-    if (typeof window.devicePixelRatio !== "undefined") {
-      signals.pixel_ratio = window.devicePixelRatio;
-    }
-    if (typeof navigator !== "undefined") {
-      if (typeof navigator.maxTouchPoints !== "undefined") {
-        signals.touch = navigator.maxTouchPoints > 0;
-      }
-      if (typeof navigator.hardwareConcurrency !== "undefined") {
-        signals.cpu_cores = navigator.hardwareConcurrency;
-      }
-    }
-    try {
-      signals.dark_mode = window.matchMedia(
-        "(prefers-color-scheme: dark)"
-      ).matches;
-    } catch {
-      // ignore
-    }
-    try {
-      signals.reduced_motion = window.matchMedia(
-        "(prefers-reduced-motion: reduce)"
-      ).matches;
-    } catch {
-      // ignore
-    }
-    try {
-      signals.browser_timezone =
-        Intl.DateTimeFormat().resolvedOptions().timeZone;
-    } catch {
-      // ignore
-    }
-    return signals;
-  }
-
-  private startEngagementTracking(url: string | undefined): void {
-    if (typeof window === "undefined") return;
-
-    this.engagementFired = false;
-    const pageViewId = this.currentPageViewId;
-
-    const fireEngagement = () => {
-      if (this.engagementFired) return;
-      this.engagementFired = true;
-      this.cleanupEngagement();
-      this.enqueue({
-        name: "page_engaged",
-        url,
-        page_view_id: pageViewId,
-        session_id: this.getOrCreateSessionID(),
-        timestamp: new Date().toISOString(),
-      });
-    };
-
-    // 15-second wall-clock timer using 1s ticks.
-    let ticks = 0;
-    const tick = () => {
-      if (this.engagementFired) return;
-      ticks++;
-      if (ticks >= 15) {
-        fireEngagement();
-      } else {
-        this.engagementTimer = setTimeout(tick, 1000);
-      }
-    };
-    this.engagementTimer = setTimeout(tick, 1000);
-
-    // Passive scroll listener — fires when scrolled past 50%.
-    const scrollHandler = () => {
-      const scrollable =
-        document.documentElement.scrollHeight -
-        document.documentElement.clientHeight;
-      if (scrollable <= 0) return;
-      if (
-        window.scrollY / scrollable >= 0.5
-      ) {
-        fireEngagement();
-      }
-    };
-    this.engagementScrollHandler = scrollHandler;
-    window.addEventListener("scroll", scrollHandler, { passive: true });
-  }
-
-  private cleanupEngagement(): void {
-    if (this.engagementTimer !== undefined) {
-      clearTimeout(this.engagementTimer);
-      this.engagementTimer = undefined;
-    }
-    if (this.engagementScrollHandler !== undefined && typeof window !== "undefined") {
-      window.removeEventListener("scroll", this.engagementScrollHandler);
-      this.engagementScrollHandler = undefined;
-    }
-  }
 
   private startRecording(chunkMs?: number): void {
     if (this.rrwebStop) return; // already running
@@ -594,14 +296,14 @@ export class FunnelBarnClient {
     // increasing chunk_index). The rrweb full snapshot emitted on the new page
     // becomes a later chunk of the same recording, which the player re-anchors
     // on. When there is nothing to resume we start fresh at chunk 0.
-    const resumed = this.resumeRecordingState();
+    const resumed = resumeRecordingState(this.sessionTimeout);
     if (resumed) {
       this.recordingId = resumed.id;
       this.recordingChunkIndex = resumed.chunkIndex;
       this.recordingStartedAt = resumed.startedAt;
       this.recordingStartMs = Date.now() - resumed.elapsedMs;
     } else {
-      this.recordingId = this.generateSessionID();
+      this.recordingId = generateSessionID();
       this.recordingStartedAt = new Date().toISOString();
       this.recordingStartMs = Date.now();
       // A fresh recording always starts at chunk 0 with an empty buffer so the
@@ -637,56 +339,16 @@ export class FunnelBarnClient {
     // Persist continuity state first, then flush the incremental tail. The tail
     // is small, so keepalive (64 KB cap) is safe here; the snapshot already left
     // earlier via a normal fetch.
-    this.saveRecordingState();
-    this.flushRecordingChunk(true).catch(() => {});
-  };
-
-  private saveRecordingState(): void {
-    if (typeof sessionStorage === "undefined" || !this.recordingId) return;
-    const state: RecordingState = {
+    saveRecordingState({
       id: this.recordingId,
       chunkIndex: this.recordingChunkIndex,
       startedAt: this.recordingStartedAt,
       elapsedMs: Date.now() - this.recordingStartMs,
       savedAt: Date.now(),
-    };
-    try {
-      sessionStorage.setItem(RECORDING_STATE_KEY, JSON.stringify(state));
-    } catch {
-      // sessionStorage may be full or unavailable — continuity is best-effort.
-    }
-  }
+    });
+    this.flushRecordingChunk(true).catch(() => {});
+  };
 
-  private resumeRecordingState(): RecordingState | null {
-    if (typeof sessionStorage === "undefined") return null;
-    let raw: string | null;
-    try {
-      raw = sessionStorage.getItem(RECORDING_STATE_KEY);
-    } catch {
-      return null;
-    }
-    if (!raw) return null;
-    try {
-      const state = JSON.parse(raw) as RecordingState;
-      // Discard stale state so a tab left idle past the session window starts a
-      // new recording rather than stitching onto an abandoned one.
-      if (!state.id || Date.now() - state.savedAt > this.sessionTimeout) {
-        return null;
-      }
-      return state;
-    } catch {
-      return null;
-    }
-  }
-
-  private clearRecordingState(): void {
-    if (typeof sessionStorage === "undefined") return;
-    try {
-      sessionStorage.removeItem(RECORDING_STATE_KEY);
-    } catch {
-      // ignore
-    }
-  }
 
   private stopRecording(): void {
     if (this.rrwebStop) {
@@ -701,7 +363,7 @@ export class FunnelBarnClient {
       window.removeEventListener('beforeunload', this.handleRecordingUnload);
     }
     this.uninstallTraceCapture();
-    this.clearRecordingState();
+    clearRecordingState();
     this.rrwebBuffer = [];
     this.traceBuffer = [];
     this.recordingChunkIndex = 0;
@@ -731,147 +393,34 @@ export class FunnelBarnClient {
     }
   }
 
-  // matchesPattern checks a URL path against a glob pattern.
-  // * matches any single path segment, ** matches any number of segments.
-  private matchesPattern(pattern: string, path: string): boolean {
-    const escaped = pattern
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*\*/g, '\x00')
-      .replace(/\*/g, '[^/]*')
-      .replace(/\x00/g, '.*');
-    try {
-      return new RegExp(`^${escaped}$`).test(path);
-    } catch {
-      return false;
-    }
-  }
-
   // shouldRecordCurrentPage checks SDK-local and server rules to decide
   // whether to flush recording events for the current page.
   private shouldRecordCurrentPage(): boolean {
     if (typeof window === 'undefined') return true;
-    const path = window.location.pathname;
-    const opts = this.recordingOptions;
-
-    // SDK-local include/exclude (checked first, highest priority).
-    for (const p of opts.recordExclude ?? []) {
-      if (this.matchesPattern(p, path)) return false;
-    }
-    for (const p of opts.recordInclude ?? []) {
-      if (this.matchesPattern(p, path)) return true;
-    }
-
-    // Server rules (first match wins).
-    for (const rule of this.serverRecordingRules) {
-      if (this.matchesPattern(rule.pattern, path)) {
-        return rule.action === 'capture';
-      }
-    }
-
-    return true; // default: capture
+    return shouldRecordPath(window.location.pathname, this.recordingOptions, this.serverRecordingRules);
   }
 
-  // installTraceCapture wraps fetch + XHR to observe the W3C traceparent on
-  // outgoing requests while a recording is active. Harvesting is read-only;
-  // injection (tracePropagate) only mutates same-origin / allow-listed requests.
+
+  // installTraceCapture starts observing outgoing requests' trace context
+  // while a recording is active (see ./trace-capture.ts).
   private installTraceCapture(): void {
     if (this.traceCaptureInstalled) return;
     if (typeof window === 'undefined') return;
     if (this.recordingOptions.traceCapture === false) return;
     this.traceCaptureInstalled = true;
-
-    // fetch
-    if (typeof window.fetch === 'function' && !(window.fetch as { __fb?: boolean }).__fb) {
-      const orig = window.fetch.bind(window);
-      this.origFetch = orig;
-      const wrapped = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-        try {
-          const url = this.resolveURL(input);
-          let hdrs: Headers;
-          if (init?.headers) hdrs = new Headers(init.headers as HeadersInit);
-          else if (typeof Request !== 'undefined' && input instanceof Request) hdrs = new Headers(input.headers);
-          else hdrs = new Headers();
-
-          const existing = hdrs.get('traceparent');
-          if (existing) {
-            const p = parseTraceparent(existing);
-            if (p) this.recordTrace(p.traceId, p.spanId, url);
-          } else if (this.shouldPropagate(url)) {
-            const traceId = this.recordingId || randomHex(16);
-            const spanId = randomHex(8);
-            hdrs.set('traceparent', buildTraceparent(traceId, spanId));
-            this.recordTrace(traceId, spanId, url);
-            if (typeof Request !== 'undefined' && input instanceof Request) {
-              input = new Request(input, { headers: hdrs });
-            } else {
-              init = { ...(init || {}), headers: hdrs };
-            }
-          }
-        } catch {
-          // Never let trace capture break the app's own request.
-        }
-        return orig(input, init);
-      };
-      (wrapped as { __fb?: boolean }).__fb = true;
-      window.fetch = wrapped;
-    }
-
-    // XMLHttpRequest
-    if (typeof XMLHttpRequest !== 'undefined' && !(XMLHttpRequest.prototype.send as { __fb?: boolean }).__fb) {
-      const proto = XMLHttpRequest.prototype;
-      this.origXhrOpen = proto.open;
-      this.origXhrSetHeader = proto.setRequestHeader;
-      this.origXhrSend = proto.send;
-      const self = this;
-      proto.open = function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) {
-        (this as { __fbUrl?: string; __fbTp?: string }).__fbUrl = self.resolveURL(url);
-        (this as { __fbTp?: string }).__fbTp = undefined;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return (self.origXhrOpen as any).call(this, method, url, ...rest);
-      };
-      proto.setRequestHeader = function (this: XMLHttpRequest, name: string, value: string) {
-        if (String(name).toLowerCase() === 'traceparent') {
-          (this as { __fbTp?: string }).__fbTp = value;
-        }
-        return (self.origXhrSetHeader as typeof proto.setRequestHeader).call(this, name, value);
-      };
-      const sendWrapped = function (this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit | null) {
-        try {
-          const url = (this as { __fbUrl?: string }).__fbUrl ?? '';
-          const tp = (this as { __fbTp?: string }).__fbTp;
-          if (tp) {
-            const p = parseTraceparent(tp);
-            if (p) self.recordTrace(p.traceId, p.spanId, url);
-          } else if (self.shouldPropagate(url)) {
-            const traceId = self.recordingId || randomHex(16);
-            const spanId = randomHex(8);
-            (self.origXhrSetHeader as typeof proto.setRequestHeader).call(this, 'traceparent', buildTraceparent(traceId, spanId));
-            self.recordTrace(traceId, spanId, url);
-          }
-        } catch {
-          // ignore — never break the app's request
-        }
-        return (self.origXhrSend as typeof proto.send).call(this, body ?? null);
-      };
-      (sendWrapped as { __fb?: boolean }).__fb = true;
-      proto.send = sendWrapped;
-    }
+    this.uninstallTrace = installTraceCapture({
+      options: this.recordingOptions,
+      isRecording: () => !!this.rrwebStop,
+      recordingId: () => this.recordingId,
+      record: (traceId, spanId, url) => this.recordTrace(traceId, spanId, url),
+    });
   }
 
   private uninstallTraceCapture(): void {
     if (!this.traceCaptureInstalled) return;
     this.traceCaptureInstalled = false;
-    if (this.origFetch && typeof window !== 'undefined') {
-      window.fetch = this.origFetch;
-      this.origFetch = undefined;
-    }
-    if (typeof XMLHttpRequest !== 'undefined' && this.origXhrSend) {
-      const proto = XMLHttpRequest.prototype;
-      if (this.origXhrOpen) proto.open = this.origXhrOpen;
-      if (this.origXhrSetHeader) proto.setRequestHeader = this.origXhrSetHeader;
-      proto.send = this.origXhrSend;
-      this.origXhrOpen = this.origXhrSetHeader = this.origXhrSend = undefined;
-    }
+    this.uninstallTrace?.();
+    this.uninstallTrace = undefined;
   }
 
   // recordTrace buffers a trace link, but only while a recording is active and
@@ -885,32 +434,6 @@ export class FunnelBarnClient {
       url: url || undefined,
       occurred_at: new Date().toISOString(),
     });
-  }
-
-  // shouldPropagate reports whether a traceparent may be injected on this URL.
-  private shouldPropagate(url: string): boolean {
-    if (!this.rrwebStop) return false;
-    if (!this.recordingOptions.tracePropagate) return false;
-    if (typeof window === 'undefined') return false;
-    try {
-      const u = new URL(url, window.location.href);
-      if (u.origin === window.location.origin) return true;
-      return (this.recordingOptions.tracePropagateOrigins ?? []).includes(u.origin);
-    } catch {
-      return false;
-    }
-  }
-
-  private resolveURL(input: unknown): string {
-    try {
-      if (typeof input === 'string') return input;
-      if (typeof URL !== 'undefined' && input instanceof URL) return input.href;
-      if (typeof Request !== 'undefined' && input instanceof Request) return input.url;
-      if (input && typeof (input as { url?: unknown }).url === 'string') return (input as { url: string }).url;
-    } catch {
-      // fall through
-    }
-    return '';
   }
 
   private requestHeaders(): Record<string, string> { // events and recording chunks
@@ -958,112 +481,4 @@ export class FunnelBarnClient {
     if (this.recordingChunkIndex === first + groups.length) this.recordingChunkIndex = first + sent;
   }
 
-  private detectURL(): string | undefined {
-    if (typeof window !== "undefined" && window.location) {
-      return window.location.href;
-    }
-    return undefined;
-  }
-
-  private detectReferrer(): string | undefined {
-    if (typeof document !== "undefined" && document.referrer) {
-      return document.referrer;
-    }
-    return undefined;
-  }
-
-  private extractUTMs(url?: string): Partial<EventPayload> {
-    if (!url) return {};
-    try {
-      const u = new URL(url);
-      const result: Partial<EventPayload> = {};
-      if (u.searchParams.get("utm_source"))
-        result.utm_source = u.searchParams.get("utm_source")!;
-      if (u.searchParams.get("utm_medium"))
-        result.utm_medium = u.searchParams.get("utm_medium")!;
-      if (u.searchParams.get("utm_campaign"))
-        result.utm_campaign = u.searchParams.get("utm_campaign")!;
-      if (u.searchParams.get("utm_term"))
-        result.utm_term = u.searchParams.get("utm_term")!;
-      if (u.searchParams.get("utm_content"))
-        result.utm_content = u.searchParams.get("utm_content")!;
-      return result;
-    } catch {
-      return {};
-    }
-  }
-}
-
-// --------------------------------------------------------------------------
-// W3C trace context helpers
-// --------------------------------------------------------------------------
-
-/**
- * parseTraceparent validates a W3C `traceparent` header and extracts the
- * trace + span ids. Returns null for malformed or all-zero (invalid) ids.
- * Format: `00-<32 hex trace-id>-<16 hex span-id>-<2 hex flags>`.
- */
-export function parseTraceparent(value: string): { traceId: string; spanId: string } | null {
-  if (!value) return null;
-  const m = /^00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$/i.exec(value.trim());
-  if (!m) return null;
-  const traceId = m[1].toLowerCase();
-  const spanId = m[2].toLowerCase();
-  if (traceId === '0'.repeat(32) || spanId === '0'.repeat(16)) return null;
-  return { traceId, spanId };
-}
-
-/** buildTraceparent assembles a sampled (flags=01) W3C traceparent header. */
-export function buildTraceparent(traceId: string, spanId: string): string {
-  return `00-${traceId}-${spanId}-01`;
-}
-
-/** randomHex returns `bytes` cryptographically-random bytes as a lowercase hex string. */
-function randomHex(bytes: number): string {
-  const arr = new Uint8Array(bytes);
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(arr);
-  } else {
-    for (let i = 0; i < arr.length; i++) arr[i] = Math.floor(Math.random() * 256);
-  }
-  return Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-// --------------------------------------------------------------------------
-// Node < 18 HTTP fallback
-// --------------------------------------------------------------------------
-
-function sendWithHttp(
-  url: string,
-  headers: Record<string, string>,
-  body: string
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const protocol = url.startsWith("https") ? require("https") : require("http");
-      const parsed = new URL(url);
-      const req = protocol.request(
-        {
-          hostname: parsed.hostname,
-          port: parsed.port,
-          path: parsed.pathname,
-          method: "POST",
-          headers,
-        },
-        (res: { statusCode: number }) => {
-          if (res.statusCode && res.statusCode >= 400) {
-            reject(new Error(`funnelbarn: server returned ${res.statusCode}`));
-          } else {
-            resolve();
-          }
-        }
-      );
-      req.on("error", reject);
-      req.write(body);
-      req.end();
-    } catch (err) {
-      reject(err);
-    }
-  });
 }
