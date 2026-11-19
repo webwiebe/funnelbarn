@@ -28,9 +28,11 @@ test('an organization admin signs in through IAMBarn and gets a session', async 
   await page.goto('/api/v1/oidc/login')
   await page.waitForURL(/iam\./, { waitUntil: 'commit', timeout: 15_000 })
 
-  await page.locator('input[name="email"]').fill(email!)
+  // The sign-in page also carries a hidden twin of each field for password
+  // managers (tabindex -1, aria-hidden); the visible fields are the ones to use.
+  await page.locator('input[name="email"]:not([tabindex="-1"])').fill(email!)
   await page.getByRole('button', { name: /continue|next/i }).first().click()
-  await page.locator('input[type="password"]').fill(password!)
+  await page.locator('input[type="password"]:not([tabindex="-1"])').fill(password!)
   await page.locator('button[type="submit"]').click()
 
   const allow = page.getByRole('button', { name: /allow/i })
