@@ -116,13 +116,11 @@ Go complexity, file length and duplication are pinned in
 floors per package and in total are pinned in `scripts/coverage-baseline.txt`
 and may only go up. Web coverage floors are pinned in `web/vite.config.ts`,
 per-file coverage and duplication have their own gates, and the dead-code
-ratchet has a test. The golangci-lint soak blocks a new finding, a worsened
-file and a baseline that became beatable. The gate scripts MUST have tests.
+ratchet has a test. The gate scripts MUST have tests.
 
 Sources:
 - `scripts/go-quality-gates.sh`, `scripts/coverage-gate.py`, `scripts/coverage-baseline.txt`, run in the `go-quality` and `go-test` jobs of `.github/workflows/ci.yml`
 - `web/vite.config.ts` (coverage thresholds), `pnpm gate:coverage-perfile`, `pnpm gate:duplication`, `pnpm lint:knip-test`, run in the `frontend-lint` and `frontend-test` jobs
-- `scripts/quality-soak.py` against `scripts/soak-baselines/`, tested by `scripts/test_quality_soak.py`
 - `scripts/diff-coverage.sh`, tested by `scripts/diff-coverage.test.sh`, in the `go-test` job on pull requests: changed-line coverage, report only until 2026-10-31, with input floors that fail in both modes (issue [#379](https://github.com/webwiebe/funnelbarn/issues/379))
 - `python3 -m unittest discover -s scripts -p 'test_*.py'` ("Gate script tests" step of `ci.yml`)
 - Issue [#196](https://github.com/webwiebe/funnelbarn/issues/196)
@@ -166,14 +164,11 @@ Candidates checked against the tree and left out because nothing enforces them:
   [#364](https://github.com/webwiebe/funnelbarn/issues/364) is open.
 - Files stay under about 200 lines
   ([specs/003-engineering-standards/spec.md](../../specs/003-engineering-standards/spec.md)).
-  The pinned limit is 848 lines (`MAX_FILE_LINES` in `scripts/go-quality-gates.sh`); the 500 line target is report-only (`scripts/soak-baselines/file-length.txt`).
+  The blocking limit is 500 lines (`MAX_FILE_LINES` in `scripts/go-quality-gates.sh`, covering `internal/`, `cmd/` and `sdks/`; `max-lines` in `web/eslint.config.js`).
 - Services and handlers stay under the estate complexity target of 12. It is
   the blocking limit (`MAX_CYCLO` in `scripts/go-quality-gates.sh`, covering
   `internal/`, `cmd/` and `sdks/go`).
-- golangci-lint blocks on any finding. It blocks only on a new one while
-  `scripts/soak-baselines/golangci.txt` records the existing ones. Issues
-  [#273](https://github.com/webwiebe/funnelbarn/issues/273) and
-  [#275](https://github.com/webwiebe/funnelbarn/issues/275) are open.
+- golangci-lint blocks on any finding.
 - 70 percent Go coverage on `service/` and `repository/`, and 80 percent web
   line coverage ([specs/003-engineering-standards/spec.md](../../specs/003-engineering-standards/spec.md)).
   The floors are the current values in `scripts/coverage-baseline.txt` and

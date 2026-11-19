@@ -113,12 +113,6 @@ jobs:
           (cd sdks/go && golangci-lint run ./...)
           (cd sdks/go-bugbarn && golangci-lint run ./...)
 
-      - name: Soak, file length at the estate target
-        # REPORT-ONLY at 500 lines across internal/, cmd/, web/src/ AND sdks/.
-        # sdks/ was covered by neither the Go scan nor the eslint scan, which is
-        # where the repo's largest file (sdks/js/src/index.ts, 1076 lines) lives.
-        run: python3 scripts/quality-soak.py file-length
-
   go-test:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, build]

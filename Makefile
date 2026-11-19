@@ -8,7 +8,7 @@ export XDG_CACHE_HOME := $(CURDIR)/.cache
 export GOCACHE := $(CURDIR)/.cache/go-build
 export GOMODCACHE := $(CURDIR)/.cache/go-mod
 
-.PHONY: help setup build test lint soak gate-test secret-scan regress dev docker-build clean
+.PHONY: help setup build test lint gate-test secret-scan regress dev docker-build clean
 
 help:
 	@printf '%s\n' \
@@ -17,7 +17,6 @@ help:
 		'  build        build Go binary and frontend' \
 		'  test         run all tests' \
 		'  lint         run linters' \
-		'  soak         run the report-only quality soaks against their baselines' \
 		'  gate-test    run the tests for the gate scripts themselves' \
 		'  secret-scan  scan git history for secrets (gitleaks, report mode here, CI enforces)' \
 		'  regress      run the regression harness (golden API, state snapshot, purge retention, reader/writer durability, architecture rules)' \
@@ -64,13 +63,6 @@ regress:
 	go test -race ./internal/repository -run TestPurgeRetention -count=1
 	go test -race ./cmd/funnelbarn -run TestReaderTrafficSurvivesAStoppedWriter -count=1
 	go test -race ./internal/archtest/... -count=1
-
-# Report-only soaks. Each compares the current measurement against a committed
-# baseline in scripts/soak-baselines/ and fails on a new violation, a worsened
-# file, or a baseline that has become beatable. Exit criteria are written into
-# scripts/quality-soak.py. Needs web/node_modules.
-soak:
-	python3 scripts/quality-soak.py all
 
 gate-test:
 	python3 -m unittest discover -s scripts -p 'test_*.py'
