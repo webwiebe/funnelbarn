@@ -23,6 +23,8 @@ export default defineConfig({
   use: {
     ...devices['Desktop Chrome'],
     baseURL,
+    // Non-production hosts use the internal CA, as in the main E2E config.
+    ignoreHTTPSErrors: true,
     trace: 'off',
     screenshot: 'off',
     video: 'off',
