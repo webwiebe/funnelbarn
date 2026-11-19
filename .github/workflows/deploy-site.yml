@@ -58,6 +58,9 @@ jobs:
         run: pnpm install --frozen-lockfile --filter @funnelbarn/site
 
       - name: Build
+        env:
+          # Public browser ingest key for the BugBarn project funnelbarn-site.
+          PUBLIC_BUGBARN_INGEST_KEY: ${{ secrets.SITE_BUGBARN_INGEST_KEY }}
         run: pnpm --filter @funnelbarn/site build
 
       - name: Upload Pages artifact
