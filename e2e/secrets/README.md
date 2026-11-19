@@ -21,3 +21,15 @@ which would make the smoke below pass without testing the role check.
 `member-signin-refusal.yml` (manual) decrypts the account in CI and runs
 `e2e/member/member-signin-refusal.spec.ts` against production: the OIDC
 callback must answer 403 and start no session.
+
+## staging-user.sops.yaml
+
+The FunnelBarn staging test user `qa@e2e-funnelbarn.wiebe.xyz`, created in the
+staging IAMBarn tenant with the `organization_admin` role in the
+funnelbarn-staging organization (#364). Keys: `staging_e2e_user.email` and
+`staging_e2e_user.password`.
+
+`staging-login-e2e.yml` (nightly and manual, never per PR) decrypts it in CI with
+`SOPS_AGE_KEY_STAGING` and runs `e2e/staging-login/staging-login.spec.ts`
+against staging: the sign-in goes through IAMBarn and must end in a
+`funnelbarn_session` cookie and a 200 from `/api/v1/me`.

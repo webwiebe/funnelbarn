@@ -1,0 +1,92 @@
+name: Staging login E2E
+
+# Nightly and on dispatch, never per PR. Signs in to staging FunnelBarn through
+# IAMBarn as the staging test user (qa@e2e-funnelbarn.wiebe.xyz, organization
+# admin in the funnelbarn-staging organization) and checks that the OIDC callback
+# ends in a FunnelBarn session. The account is SOPS ciphertext in
+# e2e/secrets/staging-user.sops.yaml, decrypted here in CI with the staging key
+# the deploys use. No screenshots, traces or videos are kept (#364).
+
+on:
+  schedule:
+    # 02:41 UTC, in the nightly window and off the :00 and :17 jobs.
+    - cron: '41 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-login-e2e
+  cancel-in-progress: false
+
+jobs:
+  login:
+    runs-on: [self-hosted, build]
+    timeout-minutes: 10
+    env:
+      HOME: /Users/wiebe
+      PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - name: Reclaim workspace (clear read-only Go cache from prior runs)
+        shell: bash
+        run: |
+          c="${GITHUB_WORKSPACE:?}/.cache"
+          if [ -d "$c" ]; then
+            chmod -R u+w "$c"
+            rm -rf "$c"
+          fi
+
+      - uses: actions/checkout@v6
+
+      - name: Install Node deps
+        run: pnpm install --frozen-lockfile --filter funnelbarn
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install chromium
+
+      - name: Run the staging IAMBarn login check
+        env:
+          E2E_BASE_URL: https://funnelbarn.staging.wiebe.xyz
+          # k3s cluster private IP, reachable from the Mac Mini runner; both the
+          # FunnelBarn and the IAMBarn staging hosts sit behind it.
+          E2E_CLUSTER_IP: 192.168.4.108
+          E2E_HOSTS: funnelbarn.staging.wiebe.xyz,iam.staging.wiebe.xyz
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY_STAGING }}
+        run: |
+          set -euo pipefail
+          f=e2e/secrets/staging-user.sops.yaml
+          E2E_STAGING_EMAIL="$(sops -d --extract '["staging_e2e_user"]["email"]' "$f")"
+          E2E_STAGING_PASSWORD="$(sops -d --extract '["staging_e2e_user"]["password"]' "$f")"
+          echo "::add-mask::${E2E_STAGING_EMAIL}"
+          echo "::add-mask::${E2E_STAGING_PASSWORD}"
+          export E2E_STAGING_EMAIL E2E_STAGING_PASSWORD
+          unset SOPS_AGE_KEY
+          pnpm exec playwright test -c e2e/staging-login/playwright.config.ts
+
+      # A failed scheduled run has nobody watching it. The event opens a BugBarn
+      # issue. No `|| echo`: a report that did not land has to show in the log.
+      - name: Report a failed login check to BugBarn
+        if: (failure() || cancelled()) && vars.BUGBARN_ENDPOINT != ''
+        shell: bash
+        env:
+          BUGBARN_ENDPOINT: ${{ vars.BUGBARN_ENDPOINT }}
+          BUGBARN_API_KEY: ${{ secrets.FUNNELBARN_BUGBARN_API_KEY }}
+        run: |
+          set -euo pipefail
+          curl -sf --retry 3 --max-time 20 -X POST "${BUGBARN_ENDPOINT}/api/v1/events" \
+            -H "Content-Type: application/json" \
+            -H "X-BugBarn-Api-Key: ${BUGBARN_API_KEY}" \
+            -H "X-BugBarn-Project: funnelbarn" \
+            -d "{
+              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+              \"severityText\": \"error\",
+              \"exception\": {
+                \"type\": \"StagingLoginE2EFailed\",
+                \"message\": \"The staging IAMBarn login check failed. The OIDC sign-in path on staging may be broken.\"
+              },
+              \"attributes\": {
+                \"environment\": \"staging\",
+                \"run_url\": \"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"
+              }
+            }" || { echo "::error::Could not report the failed login check to BugBarn."; exit 1; }
