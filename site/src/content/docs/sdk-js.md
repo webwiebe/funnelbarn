@@ -156,7 +156,9 @@ FunnelBarn can record user sessions with rrweb and replay them in the dashboard.
 
 ### Enabling recording
 
-Recording is off by default. Turn it on in one of two ways:
+A page records when the project's recording setting is on and the sample roll passes. This holds with or without `data-recording="true"` or `recording: true`. The client setting starts recording before the server config responds. Only the server setting stops it. A page with neither the client setting nor the project setting does not record.
+
+Turn it on in one of two ways:
 
 **Option A — enable in the dashboard** (recommended): Go to your project's Settings → Session Recording and toggle recording on. The SDK fetches this setting on init via `GET /api/v1/recording-config` and starts recording automatically.
 
@@ -177,7 +179,7 @@ const analytics = new FunnelBarnClient({
         data-api-key="your-project-scoped-api-key" defer></script>
 ```
 
-Recording is controlled server-side when using the script tag. Enable it from the project settings in the dashboard.
+Add `data-recording="true"` to start recording before the server config responds, or enable it from the project settings in the dashboard.
 
 ### Filtering which pages are recorded
 
