@@ -52,8 +52,9 @@ export default defineConfig({
     },
     {
       name: 'chromium',
-      // e2e/member/ runs only from member-signin-refusal.yml with its own config.
-      testIgnore: [/api\.spec\.ts/, /member\//],
+      // e2e/member/ and e2e/staging-login/ run only from their own workflows
+      // with their own configs.
+      testIgnore: [/api\.spec\.ts/, /member\//, /staging-login\//],
       use: {
         ...devices['Desktop Chrome'],
         // Browser tests use the real hostname; DNS is overridden via args
