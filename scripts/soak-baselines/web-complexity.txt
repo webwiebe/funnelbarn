@@ -1,9 +1,0 @@
-# SOAK BASELINE: web/src functions over cyclomatic complexity 12.
-# Measured with web/eslint.soak.config.js, which is the real eslint config with
-# complexity tightened to the estate target. The BLOCKING limit in
-# web/eslint.config.js is still 55.
-# ENFORCE AT 0 entries: set complexity: ['error', 12] in web/eslint.config.js,
-# delete web/eslint.soak.config.js, drop this dimension.
-# Refresh with: python3 scripts/quality-soak.py web-complexity --update-baseline
-# entries: 0  total: 0
-#

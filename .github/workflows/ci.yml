@@ -278,11 +278,6 @@ jobs:
           pnpm lint:knip-test
           pnpm lint:knip
 
-      - name: Soak, web cyclomatic complexity at the estate target
-        # REPORT-ONLY at complexity 12 via web/eslint.soak.config.js, while the
-        # blocking limit in web/eslint.config.js stays at 55.
-        run: python3 scripts/quality-soak.py web-complexity
-
   frontend-test:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, build]

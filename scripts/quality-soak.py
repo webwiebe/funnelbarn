@@ -31,12 +31,8 @@ Dimensions, their thresholds, and their written exit criteria:
                   dimension. Interim walk-down of the blocking limits:
                   848/845 -> 700 -> 600 -> 500.
 
-  web-complexity  web/src functions over cyclomatic 12. 22 violations in 17
-                  files today. The blocking eslint limit is still 55.
-                  ENFORCE AT 0: when the baseline is empty, set
-                  complexity: ['error', 12] in web/eslint.config.js, delete
-                  web/eslint.soak.config.js and this dimension. Interim
-                  walk-down: 55 -> 30 -> 20 -> 15 -> 12.
+Web cyclomatic complexity is no longer a soak dimension: complexity 12 is the
+blocking limit in web/eslint.config.js.
 
 Usage:
     python3 scripts/quality-soak.py <dimension> [--update-baseline]
@@ -46,12 +42,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -64,7 +58,6 @@ GOLANGCI_VERSION = "v2.15.0"
 # Estate targets. These are the thresholds the soaks measure against; they are
 # NOT the blocking limits, which are walked down separately.
 FILE_LINE_LIMIT = 500
-CYCLO_LIMIT = 12
 
 
 class MeasurementError(RuntimeError):
@@ -197,52 +190,6 @@ def _run(cmd: list[str], cwd: Path, allowed_returncodes: tuple[int, ...]) -> sub
     return proc
 
 
-def measure_web_complexity(root: Path = REPO_ROOT) -> dict[str, int]:
-    web = root / "web"
-    if not (web / "node_modules").is_dir():
-        raise MeasurementError(
-            "web/node_modules is missing; run `pnpm install` at the repo root first. "
-            "An uninstalled tree must fail this soak, never read as zero findings."
-        )
-    with tempfile.TemporaryDirectory() as tmp:
-        report = Path(tmp) / "eslint.json"
-        _run(
-            [
-                "pnpm",
-                "exec",
-                "eslint",
-                "src/",
-                "--config",
-                "eslint.soak.config.js",
-                "-f",
-                "json",
-                "-o",
-                str(report),
-            ],
-            cwd=web,
-            allowed_returncodes=(0, 1),
-        )
-        if not report.exists():
-            raise MeasurementError("eslint produced no JSON report")
-        try:
-            payload = json.loads(report.read_text())
-        except json.JSONDecodeError as exc:
-            raise MeasurementError(f"eslint report is not JSON: {exc}") from exc
-
-    if not payload:
-        raise MeasurementError("eslint linted zero files; refusing to report zero findings")
-
-    measured: dict[str, int] = {}
-    for file_result in payload:
-        rel = os.path.relpath(file_result["filePath"], root)
-        for message in file_result.get("messages", []):
-            if message.get("fatal"):
-                raise MeasurementError(f"eslint could not parse {rel}: {message.get('message')}")
-            if message.get("ruleId") == "complexity":
-                measured[rel] = measured.get(rel, 0) + 1
-    return measured
-
-
 # --------------------------------------------------------------------------
 # dimensions
 # --------------------------------------------------------------------------
@@ -259,19 +206,6 @@ DIMENSIONS = {
             "ENFORCE AT 0 entries: set MAX_FILE_LINES=500 in scripts/go-quality-gates.sh,\n"
             "extend that scan to sdks/, set eslint max-lines to 500, drop this dimension.\n"
             "Refresh with: python3 scripts/quality-soak.py file-length --update-baseline"
-        ),
-    },
-    "web-complexity": {
-        "measure": measure_web_complexity,
-        "unit": "functions",
-        "header": (
-            f"SOAK BASELINE: web/src functions over cyclomatic complexity {CYCLO_LIMIT}.\n"
-            "Measured with web/eslint.soak.config.js, which is the real eslint config with\n"
-            "complexity tightened to the estate target. The BLOCKING limit in\n"
-            "web/eslint.config.js is still 55.\n"
-            "ENFORCE AT 0 entries: set complexity: ['error', 12] in web/eslint.config.js,\n"
-            "delete web/eslint.soak.config.js, drop this dimension.\n"
-            "Refresh with: python3 scripts/quality-soak.py web-complexity --update-baseline"
         ),
     },
 }
