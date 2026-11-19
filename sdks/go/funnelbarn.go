@@ -39,6 +39,14 @@ type Options struct {
 	// an unrecognised value is filed under development and warned about.
 	Environment string
 
+	// HTTPClient is the client used for event ingest and flag evaluation. Nil
+	// means a client with a 5 second timeout. Pass your own to observe the
+	// ingest answer (wrap its Transport in a RoundTripper that reads the
+	// response), to set a proxy, or to change the timeout, without touching
+	// http.DefaultTransport for the whole process. The SDK uses the client as
+	// given and sets no timeout of its own on it.
+	HTTPClient *http.Client
+
 	// FlagCacheTTL is how long a resolved flag is reused when the server sends
 	// no cache hint of its own. Zero means DefaultFlagCacheTTL; negative
 	// disables the cache entirely. A server that does advertise
@@ -307,8 +315,11 @@ func newTransport(o Options) *transport {
 		opts:   o,
 		queue:  make(chan eventPayload, o.QueueSize),
 		done:   make(chan struct{}),
-		client: &http.Client{Timeout: 5 * time.Second},
+		client: o.HTTPClient,
 		flags:  newFlagCache(),
+	}
+	if t.client == nil {
+		t.client = &http.Client{Timeout: 5 * time.Second}
 	}
 	go t.run()
 	return t

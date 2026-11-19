@@ -2,6 +2,7 @@ package funnelbarn
 
 import (
 	"bytes"
+	"context"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -303,4 +304,62 @@ func TestUnconfiguredEndpointIsReported(t *testing.T) {
 		t.Fatal("timed out waiting for OnError")
 	}
 	_ = Shutdown(time.Second)
+}
+
+// A caller-supplied client carries the SDK's traffic, so its transport can
+// read the ingest answer without wrapping http.DefaultTransport.
+type recordingTransport struct {
+	mu     sync.Mutex
+	status []int
+	paths  []string
+}
+
+func (rt *recordingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	resp, err := http.DefaultTransport.RoundTrip(r)
+	if err == nil {
+		rt.mu.Lock()
+		rt.status = append(rt.status, resp.StatusCode)
+		rt.paths = append(rt.paths, r.URL.Path)
+		rt.mu.Unlock()
+	}
+	return resp, err
+}
+
+func TestHTTPClient_CarriesIngestAndEvaluate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/evaluate") {
+			_, _ = w.Write([]byte(`{"value":true}`))
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+
+	rt := &recordingTransport{}
+	tr := newTransport(Options{APIKey: "k", Endpoint: srv.URL, QueueSize: 1, HTTPClient: &http.Client{Transport: rt}})
+	defer tr.shutdown(time.Second)
+
+	if err := tr.send(Event{Name: "signup"}.payload()); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	req, _ := tr.newEvalRequest(context.Background(), "flag", false, nil)
+	resp, err := tr.client.Do(req)
+	if err != nil {
+		t.Fatalf("evaluate request: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if len(rt.paths) != 2 || rt.status[0] != http.StatusAccepted || rt.status[1] != http.StatusOK {
+		t.Fatalf("custom transport saw paths %v statuses %v, want ingest 202 then evaluate 200", rt.paths, rt.status)
+	}
+}
+
+func TestHTTPClient_DefaultsToFiveSecondTimeout(t *testing.T) {
+	tr := newTransport(Options{APIKey: "k", Endpoint: "http://x", QueueSize: 1})
+	defer tr.shutdown(time.Second)
+	if tr.client.Timeout != 5*time.Second {
+		t.Fatalf("default client timeout = %v, want 5s", tr.client.Timeout)
+	}
 }
