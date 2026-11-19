@@ -1,4 +1,3 @@
 {
-  "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["eslint.soak.config.js"]
+  "$schema": "https://unpkg.com/knip@6/schema.json"
 }

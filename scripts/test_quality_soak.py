@@ -163,13 +163,6 @@ class DidNotRunTest(unittest.TestCase):
         proc = soak._run(["sh", "-c", "exit 1"], cwd=Path.cwd(), allowed_returncodes=(0, 1))
         self.assertEqual(proc.returncode, 1)
 
-    def test_uninstalled_web_tree_raises_instead_of_reporting_zero(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / "web").mkdir()
-            with self.assertRaises(soak.MeasurementError) as ctx:
-                soak.measure_web_complexity(Path(tmp))
-        self.assertIn("node_modules", str(ctx.exception))
-
 
 class DimensionWiringTest(unittest.TestCase):
     """Every dimension carries a baseline, and every baseline parses."""

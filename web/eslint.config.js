@@ -32,8 +32,8 @@ export default [
       'react-hooks/set-state-in-effect': 'off',
       // Quality ratchets — PINNED AT CURRENT WORST. These may only be lowered,
       // never raised: a new function/file that exceeds today's worst fails lint.
-      // Cyclomatic complexity per function (current max = 55).
-      complexity: ['error', 55],
+      // Cyclomatic complexity per function: the estate target.
+      complexity: ['error', 12],
       // File length (current longest linted file = 845 lines).
       'max-lines': ['error', { max: 845, skipBlankLines: false, skipComments: false }],
     },
