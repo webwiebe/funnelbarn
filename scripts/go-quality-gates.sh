@@ -6,13 +6,13 @@
 # (the numbers may only ratchet DOWN, never up).
 #
 # Covers: cyclomatic complexity, file length, and code duplication.
-# First-party code only (internal/, cmd/; complexity also covers sdks/go); generated (sqlcgen), mocks, and
+# First-party code only (internal/, cmd/; complexity also covers sdks/go, file length also covers sdks/); generated (sqlcgen), mocks, and
 # _test.go files are excluded.
 set -euo pipefail
 
 # ---- pinned thresholds -------------------------------------------------------
 MAX_CYCLO=12        # gocyclo: no function may exceed this complexity (estate target)
-MAX_FILE_LINES=848  # no non-test/non-generated .go file may exceed this
+MAX_FILE_LINES=500  # no non-test/non-generated source file may exceed this (estate target)
 MAX_DUPL_HITS=2     # dupl -plumbing lines (2 = one known clone group)
 DUPL_TOKENS=150     # dupl clone-detection sensitivity (tokens)
 # Pinned tool versions: a gate whose tool version can change without a commit is
@@ -45,7 +45,12 @@ fi
 
 echo "==> file length (max ${MAX_FILE_LINES} lines, non-test/non-generated)"
 overlen=0
-for f in "${SRC[@]}"; do
+# SDK sources (Go, TypeScript, Python) count too; installed and built trees do not.
+LEN=("${SRC[@]}")
+while IFS= read -r f; do LEN+=("$f"); done < <(find sdks \( -name node_modules -o -name dist -o -name vendor -o -name .venv \) -prune -o \
+  -type f \( -name '*.go' -o -name '*.ts' -o -name '*.tsx' -o -name '*.py' \) \
+  -not -name '*_test.go' -not -name '*.test.*' -not -path '*/test/*' -not -path '*/tests/*' -print | sort)
+for f in "${LEN[@]}"; do
   n=$(wc -l < "$f")
   if [ "$n" -gt "$MAX_FILE_LINES" ]; then echo "    FAIL: $f has $n lines (> $MAX_FILE_LINES)"; overlen=1; fi
 done

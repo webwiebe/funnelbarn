@@ -34,8 +34,8 @@ export default [
       // never raised: a new function/file that exceeds today's worst fails lint.
       // Cyclomatic complexity per function: the estate target.
       complexity: ['error', 12],
-      // File length (current longest linted file = 845 lines).
-      'max-lines': ['error', { max: 845, skipBlankLines: false, skipComments: false }],
+      // File length: the estate target of 500 lines is the blocking limit.
+      'max-lines': ['error', { max: 500, skipBlankLines: false, skipComments: false }],
     },
   },
 ]

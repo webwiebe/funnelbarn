@@ -22,5 +22,5 @@ Mark a task [P] when it can run in parallel with the others in its phase.
 
 ## Phase 4: Verify
 
-- [ ] T004 `make test`, `make regress` and `make soak` green locally; CI green on the PR
+- [ ] T004 `make test` and `make regress` green locally; CI green on the PR
 - [ ] T005 Verified on testing and staging; spec status and Drift updated
