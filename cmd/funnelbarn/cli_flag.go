@@ -15,6 +15,7 @@ import (
 )
 
 const flagCreateUsage = "usage: funnelbarn flag create --project=<slug> --key=<flag_key> [--on-in=<environment>]"
+const flagSetUsage = "usage: funnelbarn flag set --project=<slug> --key=<flag_key> (--default=on|off | --on-in=<environment>)"
 
 // runFlagCmd handles: funnelbarn flag create --project=brandtrace --key=docs_public [--on-in=production]
 //
@@ -24,8 +25,11 @@ const flagCreateUsage = "usage: funnelbarn flag create --project=<slug> --key=<f
 // command can be repeated. Flag creation otherwise needs a dashboard session or
 // an IAMBarn user token, which a deploy has neither of.
 func runFlagCmd(cfg config.Config, args []string) error {
+	if len(args) > 0 && args[0] == "set" {
+		return runFlagSet(cfg, args[1:])
+	}
 	if len(args) == 0 || args[0] != "create" {
-		return errors.New(flagCreateUsage)
+		return errors.New(flagCreateUsage + "\n" + flagSetUsage)
 	}
 	fs := flag.NewFlagSet("flag create", flag.ContinueOnError)
 	projectSlug := fs.String("project", "", "project slug")
