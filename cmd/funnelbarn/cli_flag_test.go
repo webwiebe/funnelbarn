@@ -88,3 +88,52 @@ func TestRunAPIKeySetEnvironment(t *testing.T) {
 		t.Errorf("want environment staging, got %+v (err %v)", keys, err)
 	}
 }
+
+func TestRunFlagSet_DefaultOnAndOnInProductionAreRepeatable(t *testing.T) {
+	cfg := config.Config{DBPath: filepath.Join(t.TempDir(), "flagset.db")}
+	if err := runProjectCmd(cfg, []string{"create", "--name=Brand Trace"}); err != nil {
+		t.Fatalf("project create: %v", err)
+	}
+	for _, k := range []string{"versus_enabled", "coverage_enabled"} {
+		if err := runFlagCmd(cfg, []string{"create", "--project=brand-trace", "--key=" + k}); err != nil {
+			t.Fatalf("create %s: %v", k, err)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		if err := runFlagCmd(cfg, []string{"set", "--project=brand-trace", "--key=versus_enabled", "--default=on"}); err != nil {
+			t.Fatalf("set default run %d: %v", i, err)
+		}
+		if err := runFlagCmd(cfg, []string{"set", "--project=brand-trace", "--key=coverage_enabled", "--on-in=production"}); err != nil {
+			t.Fatalf("set on-in run %d: %v", i, err)
+		}
+	}
+	if err := runFlagCmd(cfg, []string{"set", "--project=brand-trace", "--key=nope", "--default=on"}); err == nil {
+		t.Error("expected an error for an unknown flag")
+	}
+	if err := runFlagCmd(cfg, []string{"set", "--project=brand-trace", "--key=versus_enabled"}); err == nil {
+		t.Error("expected usage error with neither --default nor --on-in")
+	}
+
+	store, err := repository.Open(cfg.DBPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.Close()
+	p, _ := store.ProjectBySlug(context.Background(), "brand-trace")
+	flags, err := store.ListFlags(context.Background(), p.ID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	for _, f := range flags {
+		switch f.FlagKey {
+		case "versus_enabled":
+			if f.DefaultVariant != "on" || f.TargetingRules != "[]" {
+				t.Errorf("versus_enabled: default %q rules %s", f.DefaultVariant, f.TargetingRules)
+			}
+		case "coverage_enabled":
+			if f.DefaultVariant != "off" || f.TargetingRules == "[]" {
+				t.Errorf("coverage_enabled: default %q rules %s", f.DefaultVariant, f.TargetingRules)
+			}
+		}
+	}
+}
