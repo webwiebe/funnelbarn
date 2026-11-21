@@ -90,6 +90,7 @@ for inst in "${INSTANCES[@]}"; do
     out=$(run_merge "$ctx" "$ns" "$pod" "$from" "$to" "$env" 0)
     echo "$out"
     if [ "$POST" = "1" ]; then
+      # shellcheck disable=SC2016  # the backticks are markdown, not command substitution
       body=$(printf '%s %s, seat run of scripts/project-merge-run.sh. Merged `%s` into `%s` on %s (env stamp: %s). Counts:\n\n```\n%s\n```\n' \
         "$(date '+%Y-%m-%d')" "$(date '+%H:%M %Z')" "$from" "$to" "$name" "${env/-/none}" "$out")
       gh issue comment "$ISSUE" --repo "$ISSUE_REPO" --body "$body" >/dev/null && echo "counts logged on #$ISSUE"
