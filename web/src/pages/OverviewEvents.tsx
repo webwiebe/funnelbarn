@@ -4,6 +4,7 @@ import { api, OverviewEvent } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { OverviewTabs } from '../components/OverviewTabs'
 import { C } from '../lib/theme'
+import { sortByLabel } from '../lib/sortOptions'
 
 export default function OverviewEvents() {
   const { projects } = useProjects()
@@ -73,7 +74,7 @@ export default function OverviewEvents() {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: '1rem' }}>
         <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} style={inputStyle}>
           <option value="">All sites</option>
-          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          {sortByLabel(projects, (p) => p.name).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
         <input
           placeholder="Filter by event name"

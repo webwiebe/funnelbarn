@@ -3,6 +3,7 @@ import { CheckCircle, Circle, RotateCcw } from 'lucide-react'
 import { api, Project, ProjectHealth } from '../../lib/api'
 import { reportError } from '../../lib/bugbarn'
 import { FEATURES } from '../integrations/features'
+import { sortByLabel } from '../../lib/sortOptions'
 
 const C = {
   bg: '#0f1117',
@@ -163,7 +164,7 @@ export function ProjectHealthCard({ projects, defaultProjectId, onHealthChange }
               cursor: 'pointer',
             }}
           >
-            {projects.map((p) => (
+            {sortByLabel(projects, (p) => p.name).map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>

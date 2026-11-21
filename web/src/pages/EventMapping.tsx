@@ -6,6 +6,7 @@ import { useProjects } from '../lib/projects'
 import { OverviewTabs } from '../components/OverviewTabs'
 import { trackEvent } from '../lib/analytics'
 import { C } from '../lib/theme'
+import { sortByLabel } from '../lib/sortOptions'
 
 // A single editable mapping row: a project's raw event name → a canonical key.
 interface Row {
@@ -138,7 +139,7 @@ export default function EventMapping() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: '0.75rem', flexWrap: 'wrap' }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>Mappings</div>
             <select value={projectId} onChange={(e) => setProjectId(e.target.value)} style={inputStyle}>
-              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {sortByLabel(projects, (p) => p.name).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
 
@@ -162,7 +163,7 @@ export default function EventMapping() {
                       <td style={{ padding: '0.5rem' }}>
                         <select value={r.canonical_key} onChange={(e) => setRowKey(r.raw_name, e.target.value)} style={{ ...inputStyle, width: '100%' }}>
                           <option value="">— ignore —</option>
-                          {catalog.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+                          {sortByLabel(catalog, (c) => c.label).map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
                         </select>
                       </td>
                     </tr>

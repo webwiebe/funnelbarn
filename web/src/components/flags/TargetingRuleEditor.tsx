@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
 import type { TargetingRule, TargetingOperator } from '../../lib/api'
+import { sortStrings } from '../../lib/sortOptions'
 
 const C = {
   bg: '#0f1117',
@@ -44,7 +45,7 @@ export function TargetingRuleEditor({
             <select value={rule.variant} onChange={(e) => {
               const updated = [...rules]; updated[ri] = { ...rule, variant: e.target.value }; onChange(updated)
             }} style={{ ...inputStyle, flex: 1 }}>
-              {variantNames.map((v) => <option key={v} value={v}>{v}</option>)}
+              {sortStrings(variantNames).map((v) => <option key={v} value={v}>{v}</option>)}
             </select>
             <button onClick={() => onChange(rules.filter((_, i) => i !== ri))} type="button"
               style={{ background: 'transparent', border: 'none', color: C.error, cursor: 'pointer', padding: 4 }}>
@@ -123,7 +124,7 @@ export function TargetingRuleEditor({
                 const conds = [...rule.conditions]; conds[ci] = { ...cond, operator: e.target.value as TargetingOperator }
                 updated[ri] = { ...rule, conditions: conds }; onChange(updated)
               }} style={{ ...inputStyle, flex: 1.5, fontSize: 12, padding: '0.4rem 0.4rem' }}>
-                {(['eq', 'neq', 'contains', 'not_contains', 'starts_with', 'ends_with', 'in', 'not_in', 'present', 'not_present'] as const).map((op) => (
+                {sortStrings(['eq', 'neq', 'contains', 'not_contains', 'starts_with', 'ends_with', 'in', 'not_in', 'present', 'not_present'] as const).map((op) => (
                   <option key={op} value={op}>{op}</option>
                 ))}
               </select>

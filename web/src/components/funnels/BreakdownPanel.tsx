@@ -3,6 +3,7 @@ import { api, Funnel } from '../../lib/api'
 import { FunnelBreakdown, getFunnelBreakdown } from '../../lib/api.funnelbreakdown'
 import { C } from '../../lib/theme'
 import { useFunnelLink } from './funnelLink'
+import { sortStrings } from '../../lib/sortOptions'
 
 const cell = { padding: '0.4rem 0.75rem', textAlign: 'right' as const, fontSize: 13 }
 
@@ -75,7 +76,7 @@ export function BreakdownPanel({
           style={{ background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 6, padding: '0.3rem 0.5rem' }}
         >
           <option value="">No breakdown</option>
-          {properties.map((p) => <option key={p} value={p}>{p}</option>)}
+          {sortStrings(properties).map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
       </label>
       {property && (
