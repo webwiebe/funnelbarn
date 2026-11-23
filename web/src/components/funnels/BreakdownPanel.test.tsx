@@ -60,7 +60,7 @@ describe('BreakdownPanel', () => {
     renderPanel(<BreakdownPanel projectId="p1" funnel={funnel} environment="" />)
     await screen.findByRole('option', { name: 'surface' })
     expect(mocks.getEventProperties).toHaveBeenCalledWith('p1', 'visit')
-    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['No breakdown', 'surface', 'plan'])
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['No breakdown', 'plan', 'surface'])
     expect(mocks.getFunnelBreakdown).not.toHaveBeenCalled()
   })
 

@@ -13,6 +13,7 @@ import {
 type SegmentOperator = SegmentRule['operator']
 
 import { DistributionSection, SegmentList, valueHidden } from './SegmentParts'
+import { sortByLabel } from '../../lib/sortOptions'
 
 export function SegmentManager({
   projectId,
@@ -232,7 +233,7 @@ export function SegmentManager({
                             cursor: 'pointer',
                           }}
                         >
-                          {SEGMENT_FIELDS.map((f) => (
+                          {sortByLabel(SEGMENT_FIELDS, (f) => SEGMENT_FIELD_META[f]?.label ?? f).map((f) => (
                             <option key={f} value={f}>{SEGMENT_FIELD_META[f]?.label ?? f}</option>
                           ))}
                         </select>
@@ -250,7 +251,7 @@ export function SegmentManager({
                             cursor: 'pointer',
                           }}
                         >
-                          {SEGMENT_OPERATORS.map((op) => (
+                          {sortByLabel(SEGMENT_OPERATORS, (op) => op.label).map((op) => (
                             <option key={op.value} value={op.value}>{op.label}</option>
                           ))}
                         </select>

@@ -6,6 +6,7 @@ import { trackEvent } from '../../lib/analytics'
 import { writeLastProjectId } from '../../lib/selectedProject'
 import { ScopeBadge, formatLastUsed } from './apiKeyScopes'
 import { C } from '../../lib/theme'
+import { sortByLabel } from '../../lib/sortOptions'
 
 interface ApiKeySettingsProps {
   apiKeys: ApiKey[]
@@ -395,7 +396,7 @@ export function ApiKeySettings({
             }}
           >
             {!newKeyProjectId && <option value="">Select a project…</option>}
-            {projects.map((p) => (
+            {sortByLabel(projects, (p) => p.name).map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>

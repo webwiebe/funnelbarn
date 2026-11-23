@@ -4,6 +4,7 @@ import { api } from '../../lib/api'
 import { Skeleton } from '../ui/Skeleton'
 import { reportError } from '../../lib/bugbarn'
 import { C } from '../../lib/theme'
+import { sortStrings } from '../../lib/sortOptions'
 
 // widgetTitle is the title a widget gets when the user types none.
 function widgetTitle(event: string, property: string): string {
@@ -125,7 +126,7 @@ export function AddWidgetModal({ projectId, onClose, onAdded }: {
               }}
             >
               <option value="">Select an event...</option>
-              {eventNames.map((n) => (
+              {sortStrings(eventNames).map((n) => (
                 <option key={n} value={n}>{n}</option>
               ))}
             </select>
@@ -153,7 +154,7 @@ export function AddWidgetModal({ projectId, onClose, onAdded }: {
               }}
             >
               <option value="">{selectedEvent ? 'None (total count)' : 'Select an event first'}</option>
-              {properties.map((p) => (
+              {sortStrings(properties).map((p) => (
                 <option key={p} value={p}>{p}</option>
               ))}
             </select>

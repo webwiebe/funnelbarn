@@ -8,6 +8,7 @@ import type { StringVariantRow } from './shape'
 import type { FlagForm } from './useFlagForm'
 import { autoKey } from './useFlagForm'
 import { C } from './flagFormTheme'
+import { sortStrings } from '../../lib/sortOptions'
 
 const labelStyle = { display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 6 } as const
 
@@ -311,7 +312,7 @@ export function ConversionField({ form }: { form: FlagForm }) {
       <select value={form.conversionEvent} onChange={(e) => form.setConversionEvent(e.target.value)}
         style={{ ...inputStyle, marginBottom: 16 }}>
         <option value="">Select an event (optional)...</option>
-        {form.rules.eventNames.map((n) => <option key={n} value={n}>{n}</option>)}
+        {sortStrings(form.rules.eventNames).map((n) => <option key={n} value={n}>{n}</option>)}
       </select>
     </>
   )

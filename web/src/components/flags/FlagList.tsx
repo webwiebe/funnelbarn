@@ -7,6 +7,7 @@ import {
   applyFlagListQuery, defaultFlagListQuery, isFiltered, statusCounts, STATUS_FILTERS,
   type FlagListQuery, type FlagSort, type KindFilter, type OriginFilter,
 } from './flagListQuery'
+import { sortByLabelPinned } from '../../lib/sortOptions'
 
 // FlagList is the left column of the flags page: a count, search, filters and
 // sort above the rows. On wide screens the rows scroll inside the column (see
@@ -135,7 +136,7 @@ function FacetSelect({ label, value, onChange, options, compact }: {
       flex: compact ? undefined : 1, minWidth: 0, padding: compact ? '0.2rem 0.4rem' : '0.4rem 0.5rem',
       background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, color: compact ? C.muted : C.text, fontSize: 13,
     }}>
-      {options.map(([v, text]) => <option key={v} value={v}>{text}</option>)}
+      {sortByLabelPinned(options, ([, text]) => text, ([v]) => v === 'all').map(([v, text]) => <option key={v} value={v}>{text}</option>)}
     </select>
   )
 }

@@ -4,6 +4,7 @@ import Shell from '../components/shell/Shell'
 import { api, CanonicalEvent, CanonicalFunnel, CanonicalFunnelAnalysis } from '../lib/api'
 import { OverviewTabs } from '../components/OverviewTabs'
 import { C } from '../lib/theme'
+import { sortByLabel, sortByLabelPinned } from '../lib/sortOptions'
 
 const SEGMENTS = [
   { label: 'All visitors', value: 'all' },
@@ -109,7 +110,7 @@ export default function OverviewFunnels() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: '1rem', flexWrap: 'wrap' }}>
                 <div style={{ fontSize: 16, fontWeight: 600, color: C.text }}>{analysis.funnel.name}</div>
                 <select value={segment} onChange={(e) => setSegment(e.target.value)} style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '0.35rem 0.6rem', fontSize: 13 }}>
-                  {SEGMENTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  {sortByLabelPinned(SEGMENTS, (s) => s.label, (s) => s.value === 'all').map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </div>
 
@@ -230,8 +231,8 @@ function CreateFunnelModal({ catalog, onClose, onCreated, onError }: {
 
         <label style={{ fontSize: 12, color: C.muted }}>Count by</label>
         <select value={scope} onChange={(e) => setScope(e.target.value as 'session' | 'page_view')} style={{ ...inputStyle, margin: '4px 0 12px' }}>
-          <option value="session">Sessions</option>
           <option value="page_view">Page views</option>
+          <option value="session">Sessions</option>
         </select>
 
         <label style={{ fontSize: 12, color: C.muted }}>Steps</label>
@@ -240,7 +241,7 @@ function CreateFunnelModal({ catalog, onClose, onCreated, onError }: {
             <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <span style={{ color: C.muted, fontSize: 13, width: 16 }}>{i + 1}</span>
               <select value={key} onChange={(e) => setStep(i, e.target.value)} style={inputStyle}>
-                {catalog.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+                {sortByLabel(catalog, (c) => c.label).map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
               </select>
               <button onClick={() => removeStep(i)} disabled={steps.length === 1} style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer' }}><Trash2 size={14} /></button>
             </div>
