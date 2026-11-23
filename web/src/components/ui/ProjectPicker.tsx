@@ -1,8 +1,9 @@
 import { useRef, useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronDown, Check, FolderOpen } from 'lucide-react'
+import { ChevronDown, FolderOpen } from 'lucide-react'
 import type { Project } from '../../lib/api'
 import { readLastProjectId, writeLastProjectId } from '../../lib/selectedProject'
+import { ProjectMenu } from './ProjectMenu'
 
 const C = {
   bg: '#0f1117',
@@ -50,13 +51,43 @@ function pickCurrentProject(projects: Project[], projectId?: string, urlProjectI
   return projects.find((p) => p.id === effectiveProjectId) ?? projects[0]
 }
 
+function BadgeButton({ name, multiple, open, onToggle }: { name?: string; multiple: boolean; open: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      aria-label="Switch project"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        fontSize: 12,
+        color: C.muted,
+        background: C.surface,
+        border: `1px solid ${C.border}`,
+        borderRadius: 4,
+        padding: '0.2rem 0.5rem',
+        cursor: multiple ? 'pointer' : 'default',
+        maxWidth: 160,
+        pointerEvents: multiple ? 'auto' : 'none',
+      }}
+    >
+      <FolderOpen size={11} style={{ flexShrink: 0 }} />
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name ?? 'Select project'}</span>
+      {multiple && (
+        <ChevronDown
+          size={11}
+          style={{ flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}
+        />
+      )}
+    </button>
+  )
+}
+
 export function ProjectPicker({ projects, base, projectId, onSelect, variant = 'badge' }: ProjectPickerProps) {
   const navigate = useNavigate()
   const { projectId: urlProjectId } = useParams<{ projectId?: string }>()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-
-  const sortedProjects = [...projects].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
 
   const currentProject = pickCurrentProject(projects, projectId, urlProjectId)
 
@@ -90,43 +121,7 @@ export function ProjectPicker({ projects, base, projectId, onSelect, variant = '
   if (variant === 'badge') {
     return (
       <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
-        <button
-          onClick={() => setOpen((v) => !v)}
-          aria-label="Switch project"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            fontSize: 12,
-            color: C.muted,
-            background: C.surface,
-            border: `1px solid ${C.border}`,
-            borderRadius: 4,
-            padding: '0.2rem 0.5rem',
-            cursor: projects.length > 1 ? 'pointer' : 'default',
-            maxWidth: 160,
-            pointerEvents: projects.length > 1 ? 'auto' : 'none',
-          }}
-        >
-          <FolderOpen size={11} style={{ flexShrink: 0 }} />
-          <span style={{
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}>
-            {currentProject?.name ?? 'Select project'}
-          </span>
-          {projects.length > 1 && (
-            <ChevronDown
-              size={11}
-              style={{
-                flexShrink: 0,
-                transform: open ? 'rotate(180deg)' : 'none',
-                transition: 'transform 0.15s',
-              }}
-            />
-          )}
-        </button>
+        <BadgeButton name={currentProject?.name} multiple={projects.length > 1} open={open} onToggle={() => setOpen((v) => !v)} />
 
         {open && (
           <div style={{
@@ -142,35 +137,13 @@ export function ProjectPicker({ projects, base, projectId, onSelect, variant = '
             zIndex: 300,
             overflow: 'hidden',
           }}>
-            {sortedProjects.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => handleSelect(p)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  width: '100%',
-                  background: p.id === currentProject?.id ? 'rgba(245,158,11,0.08)' : 'transparent',
-                  border: 'none',
-                  padding: '0.6rem 0.875rem',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  color: p.id === currentProject?.id ? C.amber : C.text,
-                  fontSize: 13,
-                  fontWeight: p.id === currentProject?.id ? 600 : 400,
-                  transition: 'background 0.1s',
-                  minHeight: 'unset',
-                }}
-                onMouseEnter={(e) => { if (p.id !== currentProject?.id) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.04)' }}
-                onMouseLeave={(e) => { if (p.id !== currentProject?.id) (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
-              >
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {p.name}
-                </span>
-                {p.id === currentProject?.id && <Check size={13} />}
-              </button>
-            ))}
+            <ProjectMenu
+              projects={projects}
+              currentId={currentProject?.id}
+              onPick={handleSelect}
+              onClose={() => setOpen(false)}
+              autoFocusSearch
+            />
           </div>
         )}
       </div>
@@ -196,34 +169,7 @@ export function ProjectPicker({ projects, base, projectId, onSelect, variant = '
         borderRadius: 10,
         overflow: 'hidden',
       }}>
-        {projects.map((p, i) => (
-          <button
-            key={p.id}
-            onClick={() => handleSelect(p)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              width: '100%',
-              background: p.id === currentProject?.id ? 'rgba(245,158,11,0.07)' : 'transparent',
-              border: 'none',
-              borderBottom: i < sortedProjects.length - 1 ? `1px solid ${C.border}` : 'none',
-              padding: '0.75rem 1rem',
-              cursor: 'pointer',
-              textAlign: 'left',
-              color: p.id === currentProject?.id ? C.amber : C.text,
-              fontSize: 14,
-              fontWeight: p.id === currentProject?.id ? 600 : 400,
-              minHeight: 'unset',
-            }}
-          >
-            <FolderOpen size={16} color={p.id === currentProject?.id ? C.amber : C.muted} style={{ flexShrink: 0 }} />
-            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {p.name}
-            </span>
-            {p.id === currentProject?.id && <Check size={15} color={C.amber} />}
-          </button>
-        ))}
+        <ProjectMenu projects={projects} currentId={currentProject?.id} onPick={handleSelect} size="roomy" />
       </div>
     </div>
   )
