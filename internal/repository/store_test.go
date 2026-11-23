@@ -691,13 +691,13 @@ func TestStore_UpsertSession_SameIDInTwoProjects(t *testing.T) {
 	require.NoError(t, s.UpsertSession(ctx, a))
 	require.NoError(t, s.UpsertSession(ctx, a))
 
-	forA, err := s.ListSessions(ctx, pa.ID, 10, 0)
+	forA, err := s.ListSessions(ctx, pa.ID, "", 10, 0)
 	require.NoError(t, err)
 	require.Len(t, forA, 1)
 	assert.Equal(t, 3, forA[0].EventCount, "project A should count its own three events")
 	assert.Equal(t, "https://a.example/landing", forA[0].EntryURL)
 
-	forC, err := s.ListSessions(ctx, pc.ID, 10, 0)
+	forC, err := s.ListSessions(ctx, pc.ID, "", 10, 0)
 	require.NoError(t, err)
 	require.Len(t, forC, 1, "project C must not have been overwritten by A")
 	assert.Equal(t, 1, forC[0].EventCount, "project C should count only its own event")
@@ -1066,7 +1066,7 @@ func TestStore_ActiveSessionCount(t *testing.T) {
 	err = s.UpsertSession(ctx, sess)
 	require.NoError(t, err)
 
-	count, err := s.ActiveSessionCount(ctx, p.ID, 5)
+	count, err := s.ActiveSessionCount(ctx, p.ID, "", 5)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 }
@@ -1090,7 +1090,7 @@ func TestStore_ListSessions(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	sessions, err := s.ListSessions(ctx, p.ID, 10, 0)
+	sessions, err := s.ListSessions(ctx, p.ID, "", 10, 0)
 	require.NoError(t, err)
 	assert.Len(t, sessions, 3)
 }

@@ -263,8 +263,10 @@ export const api = {
     request<{ values: string[] }>(`/api/v1/projects/${projectId}/event-property-values?event_name=${encodeURIComponent(eventName)}&property=${encodeURIComponent(property)}`),
 
   // Active sessions (last 5 minutes)
-  getActiveSessions: (projectId: string) =>
-    request<{ active_sessions: number; window_minutes: number }>(`/api/v1/projects/${projectId}/sessions/active`),
+  getActiveSessions: (projectId: string, environment?: string) =>
+    request<{ active_sessions: number; window_minutes: number }>(
+      `/api/v1/projects/${projectId}/sessions/active${environment ? `?environment=${encodeURIComponent(environment)}` : ''}`,
+    ),
 
   // Widgets (Insights)
   listWidgets: (projectId: string) =>
@@ -294,8 +296,10 @@ export const api = {
     request<{ results: WidgetBreakdownResult[] }>(`/api/v1/projects/${projectId}/widgets/breakdowns`),
 
   // Session distributions (for segment charts)
-  getSessionDistributions: (projectId: string) =>
-    request<{ distributions: Record<string, DistributionEntry[]> }>(`/api/v1/projects/${projectId}/session-distributions`),
+  getSessionDistributions: (projectId: string, environment?: string) =>
+    request<{ distributions: Record<string, DistributionEntry[]> }>(
+      `/api/v1/projects/${projectId}/session-distributions${environment ? `?environment=${encodeURIComponent(environment)}` : ''}`,
+    ),
 
   // Segments
   listSegments: (projectId: string) =>

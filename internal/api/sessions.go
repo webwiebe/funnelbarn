@@ -16,6 +16,10 @@ func (s *Server) handleActiveSessionCount(w http.ResponseWriter, r *http.Request
 		jsonError(w, "project id required", http.StatusBadRequest)
 		return
 	}
+	env, ok := s.environmentParam(w, r, projectID, "handleActiveSessionCount")
+	if !ok {
+		return
+	}
 
 	ctx, span := tracing.StartSpan(r.Context(), "sessions.active_count",
 		attribute.String("project.id", projectID),
@@ -23,7 +27,7 @@ func (s *Server) handleActiveSessionCount(w http.ResponseWriter, r *http.Request
 	)
 	defer span.End()
 
-	count, err := s.sessions.ActiveSessionCount(ctx, projectID, 5)
+	count, err := s.sessions.ActiveSessionCount(ctx, projectID, env, 5)
 	if err != nil {
 		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleActiveSessionCount")
@@ -40,6 +44,10 @@ func (s *Server) handleSessionDistributions(w http.ResponseWriter, r *http.Reque
 		jsonError(w, "project id required", http.StatusBadRequest)
 		return
 	}
+	env, ok := s.environmentParam(w, r, projectID, "handleSessionDistributions")
+	if !ok {
+		return
+	}
 	if s.sessions == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"distributions": map[string]any{}})
 		return
@@ -50,7 +58,7 @@ func (s *Server) handleSessionDistributions(w http.ResponseWriter, r *http.Reque
 	)
 	defer span.End()
 
-	dist, err := s.sessions.SessionDistributions(ctx, projectID)
+	dist, err := s.sessions.SessionDistributions(ctx, projectID, env)
 	if err != nil {
 		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleSessionDistributions")
@@ -65,6 +73,10 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
 		jsonError(w, "project id required", http.StatusBadRequest)
+		return
+	}
+	env, ok := s.environmentParam(w, r, projectID, "handleListSessions")
+	if !ok {
 		return
 	}
 
@@ -88,7 +100,7 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	)
 	defer span.End()
 
-	sessions, err := s.sessions.ListSessions(ctx, projectID, limit, offset)
+	sessions, err := s.sessions.ListSessions(ctx, projectID, env, limit, offset)
 	if err != nil {
 		tracing.RecordError(span, err)
 		mapServiceError(w, err, "handleListSessions")

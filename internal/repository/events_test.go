@@ -316,7 +316,7 @@ func TestUpsertSession_ActiveCount(t *testing.T) {
 	insertSession(t, s, p.ID, "sess-recent", now.Add(-1*time.Minute))
 	insertSession(t, s, p.ID, "sess-old", now.Add(-30*time.Minute))
 
-	n, err := s.ActiveSessionCount(ctx, p.ID, 5) // within 5 minutes
+	n, err := s.ActiveSessionCount(ctx, p.ID, "", 5) // within 5 minutes
 	require.NoError(t, err)
 	require.EqualValues(t, 1, n)
 }
@@ -329,7 +329,7 @@ func TestListSessions(t *testing.T) {
 	insertSession(t, s, p.ID, "s-a", time.Now().UTC())
 	insertSession(t, s, p.ID, "s-b", time.Now().UTC())
 
-	sessions, err := s.ListSessions(ctx, p.ID, 10, 0)
+	sessions, err := s.ListSessions(ctx, p.ID, "", 10, 0)
 	require.NoError(t, err)
 	require.Len(t, sessions, 2)
 }
@@ -368,7 +368,7 @@ func TestUpsertSession_UpdatesExisting(t *testing.T) {
 	require.NoError(t, s.UpsertSession(ctx, second))
 
 	// Should still be one session, not two.
-	sessions, err := s.ListSessions(ctx, p.ID, 10, 0)
+	sessions, err := s.ListSessions(ctx, p.ID, "", 10, 0)
 	require.NoError(t, err)
 	require.Len(t, sessions, 1)
 }
@@ -906,7 +906,7 @@ func TestUpsertSessionSignals_IsProjectScoped(t *testing.T) {
 	require.NoError(t, s.UpsertSessionSignals(ctx, pb.ID, "dup-sig",
 		domain.SessionSignals{ScreenWidth: &w2}))
 
-	sessions, err := s.ListSessions(ctx, pb.ID, 10, 0)
+	sessions, err := s.ListSessions(ctx, pb.ID, "", 10, 0)
 	require.NoError(t, err)
 	require.Len(t, sessions, 1)
 

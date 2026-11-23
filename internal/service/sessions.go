@@ -25,14 +25,14 @@ func (svc *SessionService) SessionByID(ctx context.Context, projectID, id string
 	return svc.store.SessionByID(ctx, projectID, id)
 }
 
-func (svc *SessionService) ListSessions(ctx context.Context, projectID string, limit, offset int) ([]domain.Session, error) {
-	return svc.store.ListSessions(ctx, projectID, limit, offset)
+func (svc *SessionService) ListSessions(ctx context.Context, projectID, env string, limit, offset int) ([]domain.Session, error) {
+	return svc.store.ListSessions(ctx, projectID, env, limit, offset)
 }
 
-func (svc *SessionService) ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error) {
-	return svc.store.ActiveSessionCount(ctx, projectID, withinMinutes)
+func (svc *SessionService) ActiveSessionCount(ctx context.Context, projectID, env string, withinMinutes int) (int64, error) {
+	return svc.store.ActiveSessionCount(ctx, projectID, env, withinMinutes)
 }
 
-func (svc *SessionService) SessionDistributions(ctx context.Context, projectID string) (map[string][]domain.DistributionEntry, error) {
-	return svc.store.SessionDistributions(ctx, projectID)
+func (svc *SessionService) SessionDistributions(ctx context.Context, projectID, env string) (map[string][]domain.DistributionEntry, error) {
+	return svc.store.SessionDistributions(ctx, projectID, env)
 }

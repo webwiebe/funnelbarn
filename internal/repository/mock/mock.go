@@ -404,7 +404,7 @@ func (s *Store) SessionByID(ctx context.Context, projectID, id string) (domain.S
 	return sess, nil
 }
 
-func (s *Store) ListSessions(ctx context.Context, projectID string, limit, offset int) ([]domain.Session, error) {
+func (s *Store) ListSessions(ctx context.Context, projectID, env string, limit, offset int) ([]domain.Session, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if limit <= 0 {
@@ -412,7 +412,7 @@ func (s *Store) ListSessions(ctx context.Context, projectID string, limit, offse
 	}
 	var all []domain.Session
 	for _, sess := range s.sessions {
-		if sess.ProjectID == projectID {
+		if sess.ProjectID == projectID && (env == "" || sess.Environment == env) {
 			all = append(all, sess)
 		}
 	}
@@ -427,7 +427,7 @@ func (s *Store) ListSessions(ctx context.Context, projectID string, limit, offse
 	return all, nil
 }
 
-func (s *Store) ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error) {
+func (s *Store) ActiveSessionCount(ctx context.Context, projectID, env string, withinMinutes int) (int64, error) {
 	return 0, nil
 }
 

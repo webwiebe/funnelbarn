@@ -134,9 +134,9 @@ type Overview interface {
 type Sessions interface {
 	UpsertSession(ctx context.Context, sess domain.Session) error
 	SessionByID(ctx context.Context, projectID, id string) (domain.Session, error)
-	ListSessions(ctx context.Context, projectID string, limit, offset int) ([]domain.Session, error)
-	ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error)
-	SessionDistributions(ctx context.Context, projectID string) (map[string][]domain.DistributionEntry, error)
+	ListSessions(ctx context.Context, projectID, env string, limit, offset int) ([]domain.Session, error)
+	ActiveSessionCount(ctx context.Context, projectID, env string, withinMinutes int) (int64, error)
+	SessionDistributions(ctx context.Context, projectID, env string) (map[string][]domain.DistributionEntry, error)
 }
 
 // InstanceSettings is the interface for instance-level settings.

@@ -32,7 +32,7 @@ func TestStore_SessionDistributions(t *testing.T) {
 		require.NoError(t, s.UpsertSession(ctx, sess))
 	}
 
-	dists, err := s.SessionDistributions(ctx, p.ID)
+	dists, err := s.SessionDistributions(ctx, p.ID, "")
 	require.NoError(t, err)
 
 	dt, ok := dists["device_type"]
@@ -49,7 +49,7 @@ func TestStore_SessionDistributions_Empty(t *testing.T) {
 	p, err := s.CreateProject(ctx, "Empty Dist", "empty-dist")
 	require.NoError(t, err)
 
-	dists, err := s.SessionDistributions(ctx, p.ID)
+	dists, err := s.SessionDistributions(ctx, p.ID, "")
 	require.NoError(t, err)
 	// No sessions — all fields should have nil/empty slices.
 	for _, v := range dists {
