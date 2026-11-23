@@ -61,7 +61,7 @@ func TestSessionService_ListSessions(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	sessions, err := sessSvc.ListSessions(ctx, p.ID, 10, 0)
+	sessions, err := sessSvc.ListSessions(ctx, p.ID, "", 10, 0)
 	require.NoError(t, err)
 	assert.Len(t, sessions, 3)
 }
@@ -85,7 +85,7 @@ func TestSessionService_ActiveSessionCount(t *testing.T) {
 	err = sessSvc.UpsertSession(ctx, sess)
 	require.NoError(t, err)
 
-	count, err := sessSvc.ActiveSessionCount(ctx, p.ID, 5)
+	count, err := sessSvc.ActiveSessionCount(ctx, p.ID, "", 5)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 }

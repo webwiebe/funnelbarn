@@ -17,7 +17,7 @@ func (s *Store) FlagUsageDaily(_ context.Context, _ string, _, _ time.Time) ([]d
 
 func (s *Store) AnonymizeSessionGeo(_ context.Context, _ string) error { return nil }
 
-func (s *Store) SessionDistributions(_ context.Context, _ string) (map[string][]domain.DistributionEntry, error) {
+func (s *Store) SessionDistributions(_ context.Context, _, _ string) (map[string][]domain.DistributionEntry, error) {
 	return map[string][]domain.DistributionEntry{}, nil
 }
 

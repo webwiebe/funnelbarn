@@ -10,7 +10,7 @@ import (
 // SessionDistributions returns project-wide value distributions for the fields
 // used by the segment system: device_type, country_code, connection_class,
 // dark_mode, browser_timezone (all from sessions), plus browser and os from events.
-func (s *ReadStore) SessionDistributions(ctx context.Context, projectID string) (map[string][]domain.DistributionEntry, error) {
+func (s *ReadStore) SessionDistributions(ctx context.Context, projectID, env string) (map[string][]domain.DistributionEntry, error) {
 	result := make(map[string][]domain.DistributionEntry)
 
 	// Fields on the sessions table.
@@ -22,7 +22,7 @@ func (s *ReadStore) SessionDistributions(ctx context.Context, projectID string) 
 		{"browser_timezone", "browser_timezone"},
 	}
 	for _, f := range sessionFields {
-		entries, err := s.sessionColDistribution(ctx, "sessions", projectID, f.col, f.key)
+		entries, err := s.sessionColDistribution(ctx, "sessions", projectID, env, f.col, f.key)
 		if err != nil {
 			continue
 		}
@@ -31,7 +31,7 @@ func (s *ReadStore) SessionDistributions(ctx context.Context, projectID string) 
 
 	// browser and os live on the events table (sampled — first 10k events in window).
 	for _, col := range []string{"browser", "os"} {
-		entries, err := s.sessionColDistribution(ctx, "events", projectID, col, col)
+		entries, err := s.sessionColDistribution(ctx, "events", projectID, env, col, col)
 		if err != nil {
 			continue
 		}
@@ -41,7 +41,7 @@ func (s *ReadStore) SessionDistributions(ctx context.Context, projectID string) 
 	return result, nil
 }
 
-func (s *ReadStore) sessionColDistribution(ctx context.Context, table, projectID, col, key string) ([]domain.DistributionEntry, error) {
+func (s *ReadStore) sessionColDistribution(ctx context.Context, table, projectID, env, col, key string) ([]domain.DistributionEntry, error) {
 	// Friendly label for dark_mode values.
 	var labelExpr string
 	if key == "dark_mode" {
@@ -55,6 +55,7 @@ func (s *ReadStore) sessionColDistribution(ctx context.Context, table, projectID
 			SELECT COUNT(*) AS n
 			FROM %s
 			WHERE project_id = ?
+			  AND (? = '' OR environment = ?)
 			  AND %s IS NOT NULL
 			  AND %s != ''
 		)
@@ -63,6 +64,7 @@ func (s *ReadStore) sessionColDistribution(ctx context.Context, table, projectID
 		       CAST(ROUND(COUNT(*) * 100.0 / NULLIF(t.n, 0)) AS INTEGER) AS pct
 		FROM %s, total t
 		WHERE project_id = ?
+		  AND (? = '' OR environment = ?)
 		  AND %s IS NOT NULL
 		  AND %s != ''
 		GROUP BY %s
@@ -73,7 +75,7 @@ func (s *ReadStore) sessionColDistribution(ctx context.Context, table, projectID
 		table, col, col, col,
 	)
 
-	rows, err := s.rdb.QueryContext(ctx, q, projectID, projectID)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, env, env, projectID, env, env)
 	if err != nil {
 		return nil, err
 	}

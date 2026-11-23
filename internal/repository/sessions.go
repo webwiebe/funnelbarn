@@ -61,7 +61,7 @@ func (s *ReadStore) SessionByID(ctx context.Context, projectID, id string) (doma
 }
 
 // ListSessions returns paginated sessions for a project.
-func (s *ReadStore) ListSessions(ctx context.Context, projectID string, limit, offset int) ([]domain.Session, error) {
+func (s *ReadStore) ListSessions(ctx context.Context, projectID, env string, limit, offset int) ([]domain.Session, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -76,9 +76,10 @@ func (s *ReadStore) ListSessions(ctx context.Context, projectID string, limit, o
 			geo_anonymized
 		FROM sessions
 		WHERE project_id = ?
+		AND (? = '' OR environment = ?)
 		ORDER BY last_seen_at DESC
 		LIMIT ? OFFSET ?`
-	rows, err := s.rdb.QueryContext(ctx, q, projectID, limit, offset)
+	rows, err := s.rdb.QueryContext(ctx, q, projectID, env, env, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -96,13 +97,14 @@ func (s *ReadStore) ListSessions(ctx context.Context, projectID string, limit, o
 }
 
 // ActiveSessionCount returns the number of sessions with last_seen_at within the last withinMinutes minutes.
-func (s *ReadStore) ActiveSessionCount(ctx context.Context, projectID string, withinMinutes int) (int64, error) {
+func (s *ReadStore) ActiveSessionCount(ctx context.Context, projectID, env string, withinMinutes int) (int64, error) {
 	const q = `
 		SELECT COUNT(*) FROM sessions
 		WHERE project_id = ?
+		AND (? = '' OR environment = ?)
 		AND last_seen_at >= datetime('now', ? || ' minutes')`
 	var count int64
-	err := s.rdb.QueryRowContext(ctx, q, projectID, fmt.Sprintf("-%d", withinMinutes)).Scan(&count)
+	err := s.rdb.QueryRowContext(ctx, q, projectID, env, env, fmt.Sprintf("-%d", withinMinutes)).Scan(&count)
 	return count, err
 }
 

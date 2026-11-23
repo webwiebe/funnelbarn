@@ -244,7 +244,7 @@ func TestSessionService_SessionDistributions(t *testing.T) {
 	p, err := service.NewProjectService(store).CreateProject(ctx, "Dist", "dist-project")
 	require.NoError(t, err)
 
-	got, err := service.NewSessionService(store).SessionDistributions(ctx, p.ID)
+	got, err := service.NewSessionService(store).SessionDistributions(ctx, p.ID, "")
 	require.NoError(t, err)
 	assert.NotNil(t, got)
 }
