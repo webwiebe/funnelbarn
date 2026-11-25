@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 
@@ -135,5 +136,45 @@ func TestRunFlagSet_DefaultOnAndOnInProductionAreRepeatable(t *testing.T) {
 				t.Errorf("coverage_enabled: default %q rules %s", f.DefaultVariant, f.TargetingRules)
 			}
 		}
+	}
+}
+
+func TestRunFlagSet_SplitAddsBooleanVariantsAndRejectsBadSplits(t *testing.T) {
+	cfg := config.Config{DBPath: filepath.Join(t.TempDir(), "split.db")}
+	if err := runProjectCmd(cfg, []string{"create", "--name=Photo"}); err != nil {
+		t.Fatalf("project create: %v", err)
+	}
+	if err := runFlagCmd(cfg, []string{"create", "--project=photo", "--key=hero"}); err != nil {
+		t.Fatalf("flag create: %v", err)
+	}
+	for _, bad := range []string{"true=60,false=60", "true=50", "maybe=100", "true"} {
+		if err := runFlagCmd(cfg, []string{"set", "--project=photo", "--key=hero", "--split=" + bad}); err == nil {
+			t.Errorf("--split=%s: want an error", bad)
+		}
+	}
+	if err := runFlagCmd(cfg, []string{"set", "--project=photo", "--key=hero", "--split=true=50,false=50", "--default=on"}); err == nil {
+		t.Error("--split with --default: want a usage error")
+	}
+	for i := 0; i < 2; i++ {
+		if err := runFlagCmd(cfg, []string{"set", "--project=photo", "--key=hero", "--split=true=50,false=50"}); err != nil {
+			t.Fatalf("split run %d: %v", i, err)
+		}
+	}
+	store, err := repository.Open(cfg.DBPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.Close()
+	p, _ := store.ProjectBySlug(context.Background(), "photo")
+	flags, _ := store.ListFlags(context.Background(), p.ID)
+	if len(flags) != 1 || flags[0].Split != `{"false":50,"true":50}` {
+		t.Fatalf("flags = %+v", flags)
+	}
+	if flags[0].Status != "active" || flags[0].Kind != "experiment" {
+		t.Errorf("status %q kind %q, want active experiment", flags[0].Status, flags[0].Kind)
+	}
+	var variants map[string]any
+	if err := json.Unmarshal([]byte(flags[0].Variants), &variants); err != nil || variants["true"] != true || variants["false"] != false {
+		t.Errorf("variants = %s (%v)", flags[0].Variants, err)
 	}
 }

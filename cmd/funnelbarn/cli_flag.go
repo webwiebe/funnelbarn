@@ -15,7 +15,7 @@ import (
 )
 
 const flagCreateUsage = "usage: funnelbarn flag create --project=<slug> --key=<flag_key> [--on-in=<environment>]"
-const flagSetUsage = "usage: funnelbarn flag set --project=<slug> --key=<flag_key> (--default=on|off | --on-in=<environment>)"
+const flagSetUsage = "usage: funnelbarn flag set --project=<slug> --key=<flag_key> (--default=on|off | --on-in=<environment> | --split=<variant>=<percent>,...)"
 
 // runFlagCmd handles: funnelbarn flag create --project=brandtrace --key=docs_public [--on-in=production]
 //

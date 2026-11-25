@@ -1001,3 +1001,31 @@ func has(m map[string]bool, k string) bool {
 	_, ok := m[k]
 	return ok
 }
+
+func TestUpdateFlagTool_SetsSplitWithNewVariants(t *testing.T) {
+	env := newTestEnv(t, nil)
+	p := env.createProject(t, "Alpha", "alpha")
+	createManualFlag(t, env, p.ID, "hero", func(f *domain.FeatureFlag) {
+		f.Variants = `{"default":false}`
+		f.DefaultVariant = "default"
+		f.Split = `{}`
+	})
+	cs := env.connect(t, tokenReadWrite, p.Slug)
+
+	var out flagDetail
+	callOK(t, cs, "update_flag", map[string]any{
+		"flag_key": "hero", "variants": map[string]any{"true": true, "false": false},
+		"split": map[string]any{"true": 50, "false": 50},
+	}, &out)
+	if out.Split != `{"false":50,"true":50}` {
+		t.Errorf("split = %s", out.Split)
+	}
+	for name, split := range map[string]map[string]any{
+		"short":   {"true": 40, "false": 50},
+		"unknown": {"true": 50, "maybe": 50},
+	} {
+		if msg := callErr(t, cs, "update_flag", map[string]any{"flag_key": "hero", "split": split}); msg == "" {
+			t.Errorf("%s split: want an error", name)
+		}
+	}
+}
