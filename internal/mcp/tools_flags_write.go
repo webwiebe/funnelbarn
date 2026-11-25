@@ -107,6 +107,8 @@ type updateFlagIn struct {
 	Kind           string `json:"flag_kind,omitempty" jsonschema:"\"experiment\" or \"config\"; omit to keep the current kind."`
 	TargetingRules string `json:"targeting_rules,omitempty" jsonschema:"JSON array of targeting rules; omit to keep the current rules. Every rule's variant must exist on the flag."`
 	Status         string `json:"status,omitempty" jsonschema:"\"active\" or \"paused\"; omit to keep the current status."`
+	// Split is a map for the same reason as Variants.
+	Split map[string]int `json:"split,omitempty" jsonschema:"Percentage rollout over the flag's variants, for example {\"true\":50,\"false\":50}. The percentages must add up to 100 and every name must be a variant after this update; omit to keep the current split. A split applies only to an active flag with flag_kind \"experiment\"."`
 	// Variants is a map for the same reason as on createFlagIn.
 	Variants map[string]any `json:"variants,omitempty" jsonschema:"Variants to change, merged by name: a value adds or sets that variant and null removes it. Variants you omit stay. A variant in use as the default, in a rule or in the split cannot be removed."`
 }
@@ -200,6 +202,11 @@ func updateFlag(ctx context.Context, c *Call, in updateFlagIn) (flagDetail, erro
 		status = in.Status
 	}
 
+	split, err := updatedSplit(existing, variants, in.Split)
+	if err != nil {
+		return flagDetail{}, err
+	}
+
 	// FlagService.UpdateFlag validates targeting_rules and normalizes
 	// flag_kind, and the store claims the flag as origin "manual" on any
 	// update. handleUpdateFlag uses the same path.
@@ -209,7 +216,7 @@ func updateFlag(ctx context.Context, c *Call, in updateFlagIn) (flagDetail, erro
 		FlagType:        existing.FlagType,
 		Variants:        variants,
 		DefaultVariant:  existing.DefaultVariant,
-		Split:           existing.Split,
+		Split:           split,
 		ConversionEvent: existing.ConversionEvent,
 		TargetingRules:  targetingRules,
 		Status:          status,
@@ -219,6 +226,22 @@ func updateFlag(ctx context.Context, c *Call, in updateFlagIn) (flagDetail, erro
 		return flagDetail{}, err
 	}
 	return toFlagDetail(updated), nil
+}
+
+// updatedSplit returns the split to store: the request's, checked against the
+// variants the flag has after this update, or the existing one when none is sent.
+func updatedSplit(existing domain.FeatureFlag, variants string, requested map[string]int) (string, error) {
+	if len(requested) == 0 {
+		return existing.Split, nil
+	}
+	b, err := json.Marshal(requested)
+	if err != nil {
+		return "", invalidInput("split: %v", err)
+	}
+	if err := service.ValidateSplit(variants, string(b)); err != nil {
+		return "", invalidInput("%v", err)
+	}
+	return string(b), nil
 }
 
 // ---------------------------------------------------------------------------
