@@ -83,7 +83,7 @@ metadata:
   name: $JOB
 spec:
   backoffLimit: 0
-  activeDeadlineSeconds: 720
+  activeDeadlineSeconds: 1800
   ttlSecondsAfterFinished: 300
   template:
     spec:
@@ -131,12 +131,14 @@ spec:
             limits: {cpu: "1", memory: 1Gi}
 YAML
 
-# activeDeadlineSeconds fails the Job at 12 minutes, so this loop ends. The
+# activeDeadlineSeconds fails the Job at 30 minutes, so this loop ends. The
 # workflow's timeout ends it if layer7 stops answering.
 until [ -n "$(kube get job "$JOB" -o "jsonpath='{.status.conditions[*].type}'")" ]; do
   sleep 10
 done
 
+# A Job that ran out of time leaves a log that stops mid-way; say so in the report.
+echo "job_condition=$(kube get job "$JOB" -o "jsonpath='{range .status.conditions[*]}{.type}:{.reason} {end}'" 2>/dev/null)"
 kube logs "job/$JOB" -c restore 2>/dev/null | grep -E '^PROOF(ROW)? ' > "$OUT/job.log" || true
 chmod 600 "$OUT/job.log"
 count_production > "$OUT/production-after.tsv"
