@@ -26,9 +26,9 @@ permissions:
 jobs:
   restore-proof:
     runs-on: [self-hosted, build]
-    # The Job's own deadline is 12 minutes; the rest covers checkout and the two
+    # The Job's own deadline is 30 minutes; the rest covers checkout and the two
     # production counts.
-    timeout-minutes: 15
+    timeout-minutes: 40
     env:
       HOME: /Users/wiebe
       PATH: /Users/wiebe/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
