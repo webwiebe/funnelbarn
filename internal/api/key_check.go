@@ -2,7 +2,7 @@ package api
 
 import "net/http"
 
-// handleKeyCheck answers whether the X-API-Key header would be accepted by
+// handleKeyCheck answers whether the x-funnelbarn-api-key header would be accepted by
 // POST /api/v1/events: 204 when it is, 401 when it is missing, unknown or
 // revoked. It stores nothing, so a deploy check can call it with a site's
 // public ingest key and fail when FunnelBarn rejects that key.
