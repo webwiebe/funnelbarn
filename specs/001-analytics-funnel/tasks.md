@@ -462,7 +462,7 @@
 
 ## Phase 8 — Documentation
 
-- [ ] T-900: Set up Astro docs site at `site/` with basic layout and navigation
+- [x] T-900: Astro docs site at `site/` retired 2026-11-26; docs moved to `docs/product/`
 - [ ] T-901: Write getting started guide — install, create project, track first event
 - [ ] T-902: Write self-hosting guide — binary, Docker Compose, k8s with Litestream
 - [ ] T-903: Write configuration reference — all `FUNNELBARN_*` env vars with type, default, description

@@ -13,8 +13,6 @@ dist/
 node_modules/
 .pnpm-store/
 web/dist/
-site/dist/
-site/.astro/
 sdks/js/dist/
 
 # Python

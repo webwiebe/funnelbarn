@@ -4,5 +4,4 @@
 .git
 .cache
 .claude
-site/.astro
 web/coverage

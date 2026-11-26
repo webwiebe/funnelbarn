@@ -30,7 +30,6 @@ Key components:
 - **worker** (`internal/ingest/pipeline/`) — reads spool, enriches (geo/UA), writes to SQLite
 - **api** (`internal/api/`) — REST API for the dashboard SPA; session-cookie auth
 - **web** (`web/`) — React + Vite SPA (dashboard)
-- **site** (`site/`) — Astro marketing site
 
 ## Install
 

@@ -333,7 +333,7 @@ All work in this phase is complete unless marked TODO.
 
 ## Phase 8 — Documentation Site
 
-- [ ] Astro docs site (`site/`): getting started guide
+- [x] Astro docs site (`site/`): retired 2026-11-26; docs moved to `docs/product/`
 - [ ] Self-hosting guide: binary, Docker Compose, k8s with Litestream
 - [ ] Configuration reference: all `FUNNELBARN_*` env vars with defaults and descriptions
 - [ ] API reference: full OpenAPI spec embedded as Swagger UI
