@@ -103,6 +103,9 @@ func goldenGETCases(s *goldenSeed) []goldenCase {
 	// API-key authed.
 	add("trace_lookup", "/api/v1/traces/"+s.TraceA, authKey, s.KeyAFull)
 	cs = append(cs, goldenCase{Name: "trace_lookup_not_found", Method: "GET", Path: "/api/v1/traces/00000000000000000000000000000000", Auth: authKey, Key: s.KeyAFull, WantStatus: http.StatusNotFound})
+	cs = append(cs,
+		goldenCase{Name: "key_check", Method: "GET", Path: "/api/v1/key-check", Auth: authKey, Key: s.KeyAFull, WantStatus: http.StatusNoContent},
+		goldenCase{Name: "key_check_unknown_key", Method: "GET", Path: "/api/v1/key-check", Auth: authKey, Key: "unknown-key", WantStatus: http.StatusUnauthorized})
 	add("recording_chunk_by_key", "/api/v1/recordings/"+s.RecordingA1+"/chunks/0", authKey, s.KeyAFull)
 
 	// Session and account.

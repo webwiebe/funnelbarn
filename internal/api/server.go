@@ -207,6 +207,8 @@ func (s *Server) registerRoutes() {
 
 	// Ingest (API key required)
 	s.mux.Handle("POST /api/v1/events", s.limit(s.eventsLimiter, s.ingest))
+	// Validates an ingest key without storing anything: 204 accepted, 401 not.
+	s.mux.Handle("GET /api/v1/key-check", s.limit(s.eventsLimiter, http.HandlerFunc(s.handleKeyCheck)))
 	s.mux.Handle("POST /api/v1/recordings/chunk", s.limit(s.eventsLimiter, s.withRecordingsIngest(s.handleIngestRecordingChunk)))
 	// Cross-stack trace lookup (API key required): trace_id -> session/recording.
 	// Consumed by SpanBarn/BugBarn deep-links and the replay CLI.
