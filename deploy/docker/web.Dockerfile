@@ -14,7 +14,6 @@ WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY web/package.json ./web/
 COPY sdks/js/package.json ./sdks/js/
-COPY site/package.json ./site/
 COPY tools/replay/package.json ./tools/replay/
 
 # Only fetch/link what @funnelbarn/web needs and its dependencies (the

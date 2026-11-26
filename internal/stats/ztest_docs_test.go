@@ -14,7 +14,7 @@ import (
 // A/B test docs and checks its z_score against the product's z-test, so the
 // documented number cannot drift from the code.
 func TestABTestDocsExampleMatchesZTest(t *testing.T) {
-	const docs = "../../site/src/content/docs/ab-tests.md"
+	const docs = "../../docs/product/ab-tests.md"
 	raw, err := os.ReadFile(docs)
 	if err != nil {
 		t.Fatalf("read %s: %v", docs, err)

@@ -19,7 +19,7 @@ Each assertion fails if the corresponding half of the fix is removed:
     reclaiming first                              -> test_every_self_hosted_checkout_reclaims_first
 
 The last one exists because #367 added the step to ci.yml, binary-release.yml
-and deploy-site.yml only. Every workflow of the repo shares one workspace per
+and a site deploy workflow only (since retired). Every workflow of the repo shares one workspace per
 runner, so Build and Deploy Testing run 39041515084 (2026-10-17) failed in
 actions/checkout on runner-9 with EACCES on a read-only .cache/go-mod file.
 
