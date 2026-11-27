@@ -99,10 +99,11 @@ sqlite3 /tmp/funnelbarn-restored.db "SELECT count(*) FROM funnels;"
 Exec into a temporary pod that mounts the PVC, copy the file, then scale back up:
 
 ```sh
-# Spin up a debug pod mounting the existing PVC:
+# Spin up a debug pod mounting the existing PVC. Production data lives on ssd2
+# (claim funnelbarn-data-ssd2, k3s-infra#213), so the pod needs its selector and toleration:
 kubectl -n funnelbarn-production run db-restore --rm -it \
   --image=alpine --restart=Never \
-  --overrides='{"spec":{"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"funnelbarn-data"}}],"containers":[{"name":"db-restore","image":"alpine","command":["sh"],"volumeMounts":[{"name":"data","mountPath":"/var/lib/funnelbarn"}]}]}}'
+  --overrides='{"spec":{"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"funnelbarn-data-ssd2"}}],"nodeSelector":{"topology.wiebe.xyz/link":"wan"},"tolerations":[{"key":"node-role.wiebe.xyz/remote","operator":"Equal","value":"true","effect":"NoSchedule"}],"containers":[{"name":"db-restore","image":"alpine","command":["sh"],"volumeMounts":[{"name":"data","mountPath":"/var/lib/funnelbarn"}]}]}}'
 
 # Inside the pod, copy the restored file over the live db:
 cp /tmp/funnelbarn-restored.db /var/lib/funnelbarn/funnelbarn.db
