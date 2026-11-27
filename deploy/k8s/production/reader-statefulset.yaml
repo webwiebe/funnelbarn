@@ -33,8 +33,15 @@ spec:
         app.kubernetes.io/name: funnelbarn-reader
         app.kubernetes.io/environment: production
     spec:
+      # ssd2 is the remote production node (k3s-infra#213): the taint keeps other
+      # workloads off it, and the data volume funnelbarn-data-ssd2 lives there.
       nodeSelector:
-        kubernetes.io/hostname: layer7-prod
+        topology.wiebe.xyz/link: wan
+      tolerations:
+        - key: node-role.wiebe.xyz/remote
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
       imagePullSecrets:
       - name: ghcr-secret
       containers:
@@ -243,4 +250,4 @@ spec:
       volumes:
       - name: funnelbarn-data
         persistentVolumeClaim:
-          claimName: funnelbarn-data
+          claimName: funnelbarn-data-ssd2
