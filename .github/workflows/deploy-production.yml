@@ -240,9 +240,13 @@ jobs:
             echo "${w%%:*}_revision=${REV}" >> "$GITHUB_OUTPUT"
           done
 
+          # The restore point is read from the running writer. A writer that is
+          # stopped on purpose (a data move, k3s-infra#213) has no pod to ask, and
+          # that must not fail the deploy: the step runs under bash -e, so an
+          # unguarded failing assignment ended the run before the apply.
           RESTORE=$(ssh -o StrictHostKeyChecking=no "${K3S_USER}@${K3S_HOST}" \
             "kubectl -n ${NAMESPACE} exec deploy/funnelbarn -c funnelbarn -- \
-             litestream generations -config /etc/litestream.yml /var/lib/funnelbarn/funnelbarn.db" 2>/dev/null | tail -2)
+             litestream generations -config /etc/litestream.yml /var/lib/funnelbarn/funnelbarn.db" 2>/dev/null | tail -2) || RESTORE=""
           {
             echo "### Pre-deploy state"
             echo ""
